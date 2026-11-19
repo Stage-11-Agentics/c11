@@ -23,10 +23,14 @@ Full command surface for c11. The main `SKILL.md` covers what you reach for most
 - [Notifications](#notifications)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Prompt cache reports](#prompt-cache-reports)
+- [Windows and displays](#windows-and-displays)
+- [Themes](#themes)
+- [Appearance without a Settings control](#appearance-without-a-settings-control)
 - [Skill installation (`c11 skill install`)](#skill-installation-c11-skill-install)
 - [Troubleshooting](#troubleshooting)
 - [New Workspace recents and pins](#new-workspace-recents-and-pins)
 - [Feed](#feed)
+- [Show](#show)
 
 ## Addressing & targeting
 
@@ -77,7 +81,7 @@ Use titled links whenever mentioning a panel or workspace to the operator.
 Cmd-click opens terminal links; Cmd-hover previews the true live destination.
 Bare `c11://` URLs are detected by Ghostty's `link-url` setting (on by default); OSC 8 links work regardless.
 Browser and markdown links use a plain click or Return, with the local-origin
-restrictions in [the skill](../SKILL.md#links-to-panels-and-workspaces).
+restrictions in [links](links.md) (`c11 guide links`).
 Copy Link in panel and workspace context menus copies the plain UUID URL.
 This command formats links only: it grants no socket activation or workspace
 switch capability.
@@ -101,13 +105,14 @@ Auto-exported into every c11 panel child process.
 | `C11_WORKSPACE_ID` | Auto-set in c11 terminals; default for `--workspace` |
 | `C11_MISSION_FILE` | Agent launch's absolute workspace-root C11.md path; empty when no valid local mission file was found. Read it when the task concerns the project's mission or notes; c11 never adds it to the launch prompt. Shared roots share one mission; `--cwd` does not change an existing workspace's mission. |
 | `C11_PANEL_ID` | Auto-set; default for `--panel` |
-| `C11_PANEL_NUM` | Integer N of this panel's `panel:N` ref — the number shown in the panel bar when panel-number display is on. Address yourself as `panel:$C11_PANEL_NUM` in this process; store `C11_PANEL_ID` across a restart |
-| `C11_SOCKET_PATH` | Override socket path (auto-discovers tagged/debug sockets) |
+| `C11_PANEL_NUM` | Integer N of this panel's `panel:N` ref — the number shown in the panel bar when panel-number display is on. Address yourself as `panel:$C11_PANEL_NUM`; the number survives app restarts. `C11_PANEL_ID` is the UUID for stored references |
+| `C11_SOCKET_PATH` | Override socket path (auto-discovers tagged/debug sockets). Must name a c11 socket: in `~/Library/Application Support/c11/`, or `/tmp/c11.sock`, `/tmp/c11-*.sock`, `/tmp/c11.*.sock`. Any other path is refused with an error naming it, never replaced; a c11h or cmux socket is skipped. `--socket <path>` takes any path |
 | `C11_SOCKET_PASSWORD` | Socket auth password (if set in Settings) |
 | `C11_SHELL_INTEGRATION` | Set to `1` in c11 terminals — use to detect you're inside c11 |
 | `C11_AGENT_TYPE` | Declared agent TUI type (`claude-code`, `codex`, `grok`, `kimi`, `opencode`, `github-copilot`, `pi`, `omp`, kebab-case custom); read at panel start |
 | `C11_AGENT_MODEL` | Declared agent model identifier |
 | `C11_AGENT_TASK` | Declared agent task ID |
+| `C11_AGENT_ACCOUNT` | Optional login name a launcher sets for a Claude session (for example the account a config home holds); `fleet` shows it as `account`, source `env` |
 
 ## Discovery & state
 
@@ -123,6 +128,13 @@ The bundled shells' UUID-scoped `report_tty` and `report_shell_state` reports
 are accepted and coalesced during restoration, then applied to the completed
 graph. Their `OK` means the report was retained; it does not bypass readiness
 for commands that read or manipulate panels.
+
+In c11, `tree --json` panel records include `agent_pid`, `cpu_percent`, `rss_mb`
+and the effective `model`, alongside `tty` and `prompt_cache`. Unavailable
+observations are `null`. These are runtime observations, not persisted PIDs:
+local tty ownership and process birth are re-learned from the session inventory
+after restart; remote records never authorize local process reads. Pending
+inventory preserves saved status, flags and delegates and does not prove exit.
 
 Refs are registered when windows, workspaces, areas, and panels are created.
 Steady commands do not rebuild the global ref table. A closed ref is never
@@ -215,31 +227,40 @@ c11 workspace new --dir <path|query> [--layout <id|name>] [--name <text>] [--age
     # panel metadata, say) is refused with an error.
 c11 set-workspace-root [--workspace <id|ref>] (<path> | --clear)
 c11 get-workspace-root [--workspace <id|ref>] [--json]
-c11 new-split <left|right|up|down> [--command <text>] [--cwd <path|inherit>]   # Split any area; the new area is always a terminal
-c11 new-area [--type <terminal|browser|markdown>] [--command <text>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>]
-c11 new-panel [--type <terminal|browser|markdown>] [--command <text>] [--area <id|ref>] [--workspace <id|ref>] [--cwd <path|inherit>]
+c11 new-split <left|right|up|down> [--command <text>] [--cwd <path|inherit>] [--allow-undersized]   # Split any area; the new area is always a terminal
+c11 new-area [--type <terminal|browser|markdown>] [--command <text>] [--direction <dir>] [--url <url>] [--cwd <path|inherit>] [--on <machine>] [--allow-undersized]
+c11 new-panel [--type <terminal|browser|markdown>] [--command <text>] [--area <id|ref>] [--workspace <id|ref>] [--cwd <path|inherit>] [--on <machine>]
 c11 launch-agent --type <kind> [--model <id>] [--effort <tier>] \
     [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
-    [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--cwd <path>] \
+    [--task <id>] [--area <id|ref> | --workspace <id|ref> | --new-workspace] [--split right|down|left|up] [--cwd <path>] [--on <machine>] \
     [--prompt <text> | --prompt-file <path>] [--title <text>] \
-    [--flag <reason>] [--delegated] [--env K=V ...] [--json]
+    [--flag <reason>] [--delegated] [--env K=V ...] [--wait-ready <seconds>] [--json]
     # Launch a typed agent (claude-code|codex|grok|kimi|opencode|github-copilot|pi|omp,
     # or a custom kind with ~/.config/c11/agents/<kind>.json) into a new panel or a
-    # fresh workspace. One command owns the per-agent invocation quirks, model/effort
+    # fresh workspace; --split puts it in a new area beside the target area instead.
+    # One command owns the per-agent invocation quirks, model/effort
     # flag syntax, identity-at-birth (env + metadata + title), and prompt delivery;
     # Both prompt flags stage a private byte-exact file; only a short file-reading
     # instruction reaches the shell. The owned copy lives until panel close.
     # --json returns refs, prompt_file, startup and startup_process. started means
     # an identified foreground process, not readiness or a prompt-read receipt.
-    # pending means startup was not proven. Post-boot kinds start their 2.5-second
+    # pending means startup was not proven. waiting_dialog (claude-code) means the
+    # process is up but stopped on a chooser such as the folder-trust check, with
+    # startup_dialog naming it: answer it before sending work. Post-boot kinds start their 2.5-second
     # prompt delay after the launcher Return, including late terminal attachment.
+    # c11 watches every agent launch's first minute: a start that fails on screen
+    # (not installed, usage limit, not logged in, API error) or stops on Claude's
+    # folder-trust question sets the panel's description and raises a flag.
+    # --wait-ready <seconds> blocks for that verdict and adds launch_watch
+    # {verdict: ready|failed|needs_operator|quiet|timeout|unavailable, cause, message, line,
+    # seconds} to --json; exit 0 ready, 1 failed, 4 needs_operator, 5 otherwise.
     # Canonical reference: docs/launch-agent-reference.md.
     # --system-prompt-mode append|replace injects the kind's system-prompt flag
     # (claude-code only in v1; replace + empty text = blank slate). errors
     # system_prompt_unsupported for a kind with no system-prompt axis.
     # --flag <reason> raises a sticky flag before command delivery (operator-designated
     # priority missions only); --delegated launches the worker as your delegate (its
-    # routine stops go to you, not the operator). Semantics: "Delegates" in SKILL.md.
+    # routine stops go to you, not the operator). Semantics: `c11 guide attention`.
     # cwd precedence: explicit --cwd > workspace root > launching panel cwd (the same
     # rule as every new terminal; see "Where a new terminal starts" below).
     # Linked-worktree cwd values proceed with a coded warning naming the worktree path.
@@ -259,21 +280,39 @@ c11 config recent [--json]                        # observed most-recent, with p
 c11 config stats [--window today|all|<N>d] [--by model|harness|provider] [--json]
 c11 config save <name> --harness <k> [--model <id>] [--effort <tier>] \
     [--system-prompt-mode inherit|append|replace] [--system-prompt <text> | --system-prompt-file <path>] \
-    [--command <c>] [--initial-prompt <p>] [--env K=V ...] [--json]
+    [--command <c>] [--initial-prompt <p>] [--env K=V ...] [--machine ask|local|<machine>] [--json]
 c11 config edit <name|id> [ …same field flags… ]  # supply only what changes; empty string clears to inherit
 c11 config rm <name|id>
 c11 config reorder <name|id> --to <index>
 c11 config default <name|id> | --pin-current [<name>]   # the default is always a pinned config
 c11 config launch <name|id> [--area <id|ref> | --workspace <id|ref> | --new-workspace] \
-    [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--json]
+    [--cwd <path>] [--prompt <text> | --prompt-file <path>] [--title <text>] \
+    [--delegated | --suppressed] [--json]
     # A saved config is a full launch recipe (harness + model/effort/system-prompt +
     # advanced command/initial-prompt/env). `list/recent/stats/save/edit/rm/reorder/
     # default` read & write the state-root files DIRECTLY — they work with the app down.
     # `config launch` is the one command that needs the running app (it spawns a
     # panel); it's a thin client over agent.launch, honoring the config's full recipe
     # and reusing its error codes (unknown_agent_type, invalid_effort, …).
+    # The calling panel is the new panel's parent (`parent_panel_id` / `c11 family`),
+    # including when that caller is in another workspace and when the saved config
+    # names a machine (the launch still goes there via `--on`). No `C11_PANEL_ID`
+    # (a shell outside c11): the launch works and has no parent.
+    # `--delegated` matches `launch-agent`: the child is your delegate, and
+    # `delegated_by` is your panel. With no caller it does what `launch-agent` does
+    # (an ownerless delegate, not a CLI error). A stale caller UUID fails
+    # `caller_surface_not_found`. `--suppressed` is the same flag. `--title` sets
+    # the panel title. Harness, model, effort, system prompt, command, env and
+    # machine stay on the saved config, so those `launch-agent` flags are not
+    # repeated here. Default JSON has `panel_ref`. `panel_id` comes with
+    # `--id-format both` (or `uuids`). `launch_watch` belongs to
+    # `launch-agent --wait-ready`, not to `config launch`.
     # `default --pin-current` snapshots the most-recent launch into a new saved config
     # and pins it (optional name overrides the auto label). `--window <N>d` = last N days.
+    # `--machine` (c11) is where the config launches: `ask` (the default; the operator
+    # is asked when another machine is connected), `local` (this Mac), or a name from
+    # `c11 machine list`. `config launch` passes a saved machine as `--on`; with --new-workspace
+    # it refuses (a new workspace opens on this Mac), and a down link refuses the launch.
 
 c11 usage [--since <ISO-8601|duration>] [--until <ISO-8601>] [--by panel|workspace|model|harness] [--json]
 c11 report [--instance <id>|--all-instances] [--since <ISO-8601|duration>] [--until <ISO-8601>] [--utc] [--format md|json]
@@ -313,7 +352,7 @@ c11 workspace-color get|clear [--workspace <id|ref>]
 c11 workspace-color list-palette                      # the accepted names
 
 # Close
-c11 close-panel --panel <id|ref|self>      # Close a panel; required, `self` = $C11_PANEL_ID
+c11 close-panel --panel <id|ref|self> [--expect-title <text>]  # Exact title guard; text keeps OK panel/workspace prefix and appends UUID and JSON-quoted title
 c11 close-workspace --workspace <id|ref|self>    # Close entire workspace
 ```
 
@@ -325,6 +364,8 @@ For these four create commands, `--command` queues literal text plus Return into
 - **`new-area`** — creates a new area with more options (supports `--type browser|markdown`, `--url`).
 - **`new-panel`** — creates a new **panel** inside an existing area. Use this to add panels to an area that already exists — essential for orchestration (create one area, then add agent panels).
 
+**Default to `new-panel`.** Once a workspace has two areas, new work goes in as panels of the area that holds its kind (terminals with terminals; browsers and docs together), and a third area is the operator's call. The c11 skill's "Where new work goes" carries the rule; the sizes are under Size-aware splits below.
+
 ### Create commands anchor on the caller
 
 `new-split`, `new-area`, `new-panel` and `markdown open` place relative to the **caller's** panel (`$C11_PANEL_ID`) when it is in the target workspace, never the focused one. `new-split` / `new-area` split the caller's area, `new-panel` adds to it, and `markdown open` splits beside the caller once, then adds later docs to the markdown area that first doc made. A caller outside the target workspace (or a shell outside c11) falls back to the focused area; `markdown open` then adds a panel instead of splitting. To place elsewhere, name the target:
@@ -335,7 +376,11 @@ c11 new-panel --type terminal --area area:4
 c11 markdown open plan.md --area area:4
 ```
 
-**Place browsers by anchor, never by focus.** `browser open`, `open-split`, and `new` anchor on the caller (`$C11_PANEL_ID`) unless `--panel` or `--area` is given. The first open splits beside the anchor when space permits; later opens join its browser area. A cross-workspace `--workspace` open adds a panel to an existing area without splitting. `--area <ref>` adds there without splitting. `open --panel <browser>` still navigates that browser in place; `--panel <terminal>` places beside it.
+**Place browsers by anchor, never by focus.** `browser open`, `open-split`, and `new` anchor on the caller (`$C11_PANEL_ID`) unless `--panel` or `--area` is given. The first open splits beside the anchor when space permits; later opens join its browser area. A cross-workspace `--workspace` open adds a panel to an existing area without splitting. `--area <ref>` adds there without splitting, and is how a browser joins a markdown panel's area or any other view area that already exists. `open --panel <browser>` still navigates that browser in place; `--panel <terminal>` places beside it.
+
+### Size-aware splits
+
+`new-split`, `new-area`, the first `browser open` and the first `markdown open` run the area-size policy (setting `paneSizeMode`, default `balance`; `C11_SPLIT_SIZE_POLICY` overrides it for headless runs). Minimums follow the kind of panel on each side of the cut, in cells at the source panel's font: 80×20 for a coding agent (`claude-code`, `codex`, `grok`, `kimi`, `opencode`, `github-copilot` and the other registered kinds), 40×10 for a plain terminal, and a fixed 320×240 pt for a browser or markdown panel. A terminal split inherits the source panel's kind, so splitting an agent holds both halves to the agent minimum. When the requested axis does not fit but the other does, the split flips; when neither fits, `new-split` / `new-area` fail with `pane_too_small` (data: `resulting`, `minimum`, `pane_ref`) and `browser open` / `markdown open` fall back to a panel in an existing area (`placement_strategy: panel_in_area`). A successful result carries `requested_direction`, `applied_direction`, `size_outcome` (`split` | `flipped` | `panel`) and `size_warning` (null, or a note that the new area is near or under its minimum). A panel lowers its own floor with the `min_cols` / `min_rows` metadata keys (a log tail that is fine small). `--allow-undersized` (alias `--force`) on `new-split` / `new-area` skips the policy for that one call.
 
 ### Move a panel into a split
 
@@ -386,6 +431,44 @@ c11 new-panel --cwd .                          # a new panel in your current dir
 
 This removes the orchestrator habit of prefixing every spawned command with `cd /path && …` just to keep a sub-agent out of `~`.
 
+### Terminals on another machine: `--on`
+
+A terminal panel can run on another machine c11's hc session has added (`c11 machine list` lists their names; `hc machine ls` from a panel asks only that panel's own core, which may list none). It sits in the workspace beside this Mac's panels, and its subtitle bar names the machine.
+
+```bash
+c11 new-panel --on <machine>                      # a shell there: the workspace root's ~-relative folder, else home
+c11 new-area --on <machine> --cwd /Users/me/proj  # --cwd is a path on that machine, sent as written
+c11 launch-agent --type claude-code --on <machine> --cwd /Users/me/proj
+c11 new-panel --on local                          # this Mac, explicitly
+```
+
+- With no `--cwd` and no panel there to inherit from, a new terminal on another machine starts in the workspace root's path relative to this Mac's home (root `~/Projects/x` here starts in `~/Projects/x` there) when that folder exists there, else in that machine's home. A root outside the home starts at home.
+- `new-panel`, `new-area` (and `new-pane`) and `launch-agent` take `--on <machine>`. Names match `c11 machine list`; an unknown name returns `machine_unknown` with the machines hc has, a machine whose link is down returns `machine_unreachable`, a machine whose stored link c11 won't use (`c11 machine audit` shows `link unusable`) returns `machine_link_unusable` with what to do, and without the hc backend the call returns `hc_unavailable`. Nothing is created on any of those errors.
+- A split of a panel on another machine (keyboard, panel bar, `new-split`, `new-area`) runs on that machine too and starts in that panel's current folder there (an explicit `--cwd` on such a split is checked on this Mac unless you also pass `--on`). A new panel or tab stays on this Mac unless you pass `--on` or pick **New Terminal on <Machine>** in the File menu.
+- Browser and markdown panels always run on this Mac; `--on` with `--type browser|markdown` returns `remote_unsupported`. `launch-agent --on` does not combine with `--new-workspace`.
+- The remote shell is that machine's login shell with its own `PATH`; it carries the panel's identity (`C11_PANEL_ID`, `C11_WORKSPACE_ID`, `C11_PANEL_NUM`, agent identity) and hc's `HC_TERMINAL_ID` (that machine's own id for it, such as `t7`; c11's diagnostics show it as `<machine>/t7`), not this Mac's paths.
+- Quit, force-quit and a dropped link leave it running. While the link is down the panel reads **Reconnecting** and input to it (keys or `send`) is refused, never silently lost; it comes back live, repainted, when the link returns. Closing the panel ends the terminal on that machine.
+- A file dropped onto it is sent to that machine first (hc `terminal.put`, up to 8 MiB per file) and the remote path is pasted. A pasted image still pastes a path on this Mac.
+- **The operator's machine picker.** When another machine's link is up, the operator's New Terminal (Cmd-T, the panel bar terminal and + buttons, the empty-area Terminal button, New Terminal to Right) and agent launches (A button, agent picker, Save & Launch) ask which machine: 1 is This Mac, then each machine with its roster name; a number picks at once, Return picks This Mac, Esc cancels, a down link is listed but cannot be picked. Splits never ask. CLI and socket creation never ask: pass `--on`. Settings ▸ Herder Topography ▸ "Ask which machine for new terminals" turns it off.
+- `launch-agent --on <machine> --prompt …` sends the prompt file to that machine once its terminal is up and starts the agent with the path there; if the file cannot be sent, the agent is not started and a notification says so.
+
+#### The machine roster: `c11 machine`
+
+The where-it-runs chip takes its name and color from c11's machine roster, stored in c11's own defaults and edited in Settings ▸ Herder Topography (the gear beside each machine on its map) or here. Ids are hc's machine names as `c11 machine list` shows them, or `local` for this Mac (`here` is accepted).
+
+```bash
+c11 machine list [--json]
+c11 machine set --id <machine|local> [--name <name> | --clear-name] [--color <#RRGGBB[AA]> | --clear-color] [--json]
+c11 machine rm --id <machine|local> [--json]
+```
+
+- `list` returns this Mac first, then every machine hc has linked and every roster entry, sorted. Each row has `id`, `name` and `color` (null when unset), `display_name` (what the chip shows), `default_name`, `local`, `linked` (false for an entry hc no longer reports), `connected` (null for this Mac and unlinked machines) and `configured`. `hc_inventory` is `pending` until hc's machine list first loads.
+- `set` changes only the fields it names; an empty value or `--clear-*` clears one, and an entry with neither field is removed. Names are 1 to 48 characters on one line; colors are any hex value and are stored upper case. A `set` that names no field fails before contacting the app; one that repeats the stored values succeeds and changes nothing. Errors: `invalid_params` with the reason.
+- The chip fills with the color and picks black or white text by WCAG contrast against the color as drawn over the bar, so a translucent color can take different text in light and dark mode. All chips share one width: the widest roster name, at least the default sample width, at most twice it; longer names truncate.
+- **Add and remove machines (the operator's):** `c11 machine link --host <ssh-target> [--name <machine>] [--update] [--artifacts <folder>] [--yes] [--json]` links another Mac with Apple silicon, or an x86-64 Linux machine with systemd, Python 3 and linger (its hc and c11 for Linux come from c11's release the first time over https, cached, or only from `--artifacts <folder>` when one is given, each checked against the hash this build names; refusals `needs_linger`, `needs_nofile`, `needs_python`, `needs_sha256`, `needs_tar`, `needs_user_manager`, `remote_artifacts_missing`, `remote_artifact_failed`, `remote_artifact_hash_mismatch`, `remote_artifact_not_in_folder`, each naming its fix): it checks SSH (your keys, BatchMode), installs c11's pinned hc and the relay there over SSH, checks that hc hashes to this build's pin, that hc's folders there are `0700` (repairing them; a symlinked or foreign one refuses the link), and that any core already serving c11's session there is this build's hc (found from the kernel, never signalled), renders `~/.local/share/c11/vias/<machine>-via.sh` (which runs the same checks at every dial), runs `hc machine add`, and waits for `connected`. Each failure has a code and a sentence saying what to fix (`host_key_unknown`, `auth_refused`, `unknown_host`, `unreachable`, `unsupported_machine`, `needs_command_line_tools`, `needs_tar` (the relay step unpacks its kit with tar there, on either platform), `hc_in_use`, `hc_hash_mismatch`, `hc_serving_mismatch`, `dir_refused`, `name_taken`, `update_target_changed`, `not_connected`, …). Before linking it prints what linking grants (a shell there as you; `c11 guide trust`); inside a c11 terminal it takes only a typed answer and refuses `--yes`. `--update` relinks a machine whose hc is older than this c11, or whose via predates the pin check: it keeps the host the machine was linked through (another `--host` is refused `update_target_changed`; that is a new link, with consent), refuses while c11 terminals are open there (`update_needs_no_terminals`), installs this build's hc, stops the old one with it after a hash check, and waits for this version. `c11 machine unlink --id <machine> [--session <session>] [--dry-run] [--yes] [--json]` (socket `machine.unlink`, `dry_run` lists them) ends c11's terminals on that machine, stops c11's hc there and runs `hc machine rm`; if a connected machine's terminals or hc won't stop, nothing is removed (`remove_incomplete`). A machine whose link is down is removed with `left_running: true`: what c11 ran there keeps running until its hc stops. When c11 can't confirm the core there as the hc that link started (its client's hash, or the serving process the kernel names, doesn't match), it doesn't stop it: the machine is removed with `left_running: true, stop_refused: true`. A link an adopted c11h made is removed with `c11h_link: true`: its terminals end (`link_was_up: true`), and c11h's hc there keeps running with none, since c11 stops only an hc it installed. While c11 runs c11h's adopted sessions, `machine link` links in c11's own session (`machine.link_session` starts that session's core and answers `session`), beside c11h's link of the same name, which keeps its terminals; new terminals use the usable link. When both link a name, `unlink` needs `--session <session>` (socket `session`; else `machine_link_ambiguous`, `data.sessions`), and its result names the `session` it removed. Both refuse to run unless the socket is c11's own pinned core. Both are operator actions: they prompt in a terminal and need `--yes` elsewhere; never run them on your own.
+- **The audit log:** `c11 machine audit [--limit <n>] [--machine <machine>] [--kind <kind>] [--json]` prints c11's audit log on this Mac, oldest first, with local times (default the last 50; `--limit 0` for all): `link`, `update`, `unlink`, `remote_launch`, `relay`, `hc_verified`, `hc_hash_mismatch`, `hc_serving_mismatch`, `dir_repaired`, `dir_refused`, `hc_needs_linger`, `hc_needs_user_manager`, `hc_fd_limit` (starts the link refused on a Linux machine with linger off, no user manager, or too few files allowed; one record per cause every 10 minutes), `file_transfer` (a file drop onto a terminal on another machine: sent, cancelled, refused or failed), each with `outcome`, `via` and the machine, panel, method, path or code it concerns; repeated relayed calls of one kind in a minute fold into one line with `count`. It reads `~/Library/Application Support/c11/audit/` directly (`audit.jsonl` for links, machines, terminals and hc checks; `relay.jsonl` for relayed calls, so relay traffic never rotates the others out), so it works with c11 closed; from a linked machine it is refused (the log is on the operator's Mac). A link an older c11 made, whose via has no pin, is migrated before use (`link` outcome `migrated`: its via re-rendered with this build's pin, from its own values). Where that can't happen (`link` outcome `unusable`, code `read_only_shard`, `via_outside`, `migrate_failed` or `pairing_unowned`), c11 won't use the link: `--on` it is refused and its relayed calls are refused `relay_link_unusable`; hc may still redial it until the operator updates or removes it. It never holds command lines, prompts, terminal text or relayed parameters. What it covers: `c11 guide trust`.
+- Socket methods: `machine.list` (each row's `links` lists every session that links the name: `session`, `connected`, `usable`, `c11h_link`), `machine.set` (`id`, optional `name` and `color`, each a string or null to clear), `machine.rm` (`id`). They run off the main thread; open chips repaint on the change.
+
 ## Workspace groups and batch order
 
 All commands below accept `--window <window-ref|uuid>` and `--json`. Omitted window
@@ -405,9 +488,12 @@ c11 workspace-group move --workspace workspace:2 --to-group none
 c11 workspace-group move --workspace workspace:3 --to-group workspace_group:2 --before workspace:2
 c11 workspace-group move --group workspace_group:2 --before workspace_group:1
 c11 workspace-group move --group workspace_group:2 --after workspace_group:1
+c11 workspace-group move --group workspace_group:2 --before workspace:4
+c11 workspace-group move --workspace workspace:4 --to-group none --before workspace_group:1
 c11 workspace-group move --group workspace_group:2 --index 0
 c11 workspace-group set-color --group workspace_group:1 --color '#7C3AED'
 c11 workspace-group set-color --group workspace_group:1 --clear
+c11 workspace-group set-icon --group workspace_group:1 --icon 🚀
 c11 workspace-group set-icon --group workspace_group:1 --icon server.rack
 c11 workspace-group set-icon --group workspace_group:1 --clear
 c11 workspace-group collapse --group workspace_group:1
@@ -431,12 +517,30 @@ handles from `list-workspaces` and `workspace-group list`.
   a partial change. `remove` requires membership in the named group. Use `move` for a
   transfer; a relative workspace must belong to the destination. Without `--before`
   or `--after`, member moves append within the destination's member pin segment.
-- `delete` and `ungroup` both remove the folder record and detach its members, preserving
-  canonical workspace order, pins, panels and live processes. They never close members.
+  With `--to-group none`, `--before`/`--after` name a root item: a group or an
+  ungrouped workspace (a workspace inside a group returns `not_root_item`); without
+  them the workspace goes to the end of its pin segment. With a group, they name a
+  member; naming a group there returns `not_member`.
+- `delete` and `ungroup` both remove the folder record and detach its members, which take
+  the group's place in the root order (members pinned differently from the group keep
+  their own segment). Pins, panels and live processes are kept; members never close.
 - Group pin controls its root position; member pin controls its position inside the
-  group. Neither toggles the other. Group moves clamp within the group's pin segment.
-  Root display order is pinned groups, pinned ungrouped workspaces, unpinned groups,
-  unpinned ungrouped workspaces. Members follow the canonical flat workspace order.
+  group. Neither toggles the other. Root display order is the pinned segment, then the
+  unpinned one; inside each, groups and ungrouped workspaces share one free order, so a
+  workspace can sit above a group. A group move's `--before`/`--after` names a group or
+  an ungrouped workspace, and `--index` counts groups only. Moves clamp within the
+  mover's pin segment; pinning a group or an ungrouped workspace puts it at the end of
+  the pinned segment and unpinning at the top of the unpinned one. A new group goes
+  after the last unpinned group (the top of the unpinned segment when there is none).
+  Flat reorders (`reorder-workspaces`, Move to Top, a notification moving a workspace
+  up) move only the workspaces they name; no group rides along. Move to Top stops
+  below any group already at the top of the segment; drag or `--to-group none
+  --before <group>` places a workspace above it. Move Up/Down (menu,
+  row action, socket `move_up`/`move_down`) steps one sidebar item: an ungrouped
+  workspace passes a group, a member stays inside its group. Members follow the canonical flat workspace order. Every `workspace-group`
+  command returns `root_order` (`kind` `group|workspace`, `id`, `ref`, `is_pinned`, in
+  draw order); text `list` prints it as `order=`. Sessions saved before this order
+  existed restore with groups first, as they drew.
 - Group `focus` keeps the selected member. A request to select another member returns
   `workspace_switch_blocked`; empty groups return `empty_group`. No group command
   activates or raises a macOS window; other verbs preserve selection and focus.
@@ -444,8 +548,10 @@ handles from `list-workspaces` and `workspace-group list`.
   window with `move-workspace-to-window` clears membership and keeps the source folder.
 - `--order` is a nonempty partial priority list. The result is requested pinned,
   remaining pinned, requested unpinned, remaining unpinned, preserving untouched relative
-  order. Group membership/order and selection are unchanged. Apply publishes one final
-  order. Dry-run is advisory against the current snapshot, not a stale-plan token.
+  order. Group membership and selection are unchanged; in the sidebar the requested
+  workspaces take their new places and every other root item keeps its order. Apply
+  publishes one final order. Dry-run is advisory against the current snapshot, not a
+  stale-plan token.
 
 Socket methods are `workspace.group.<verb>` with underscores (`set_color`, `set_icon`),
 and `workspace.reorder_batch`. Parameters: `window_id`; `group_id`; `workspace_ids`
@@ -453,10 +559,30 @@ for add/remove; `workspace_id` and `to_group_id` (null clears) for member move;
 `before_id`/`after_id`/`index` for placement; `name`, `color`, `icon` (null clears a
 property); and `ordered_workspace_ids`, `dry_run` for batch reorder. Text/property
 input is validated; names are trimmed and nonempty, colors normalized hex, icons
-renderable SF Symbols (display fallback `folder.fill`).
+one emoji or a renderable SF Symbol name, bare or `sf:` (stored bare; display
+fallback `folder.fill`).
 
 Group list returns `workspace_groups` records with `id`, `ref`, `name`, `color`,
-`icon`, `is_collapsed`, `is_pinned`, `member_workspace_ids`, and `member_count`.
+`icon`, `is_collapsed`, `is_pinned`, `member_workspace_ids`, `member_count`, and
+the group's Captain facts: `metadata`, `metadata_sources`, `captain`,
+`captain_present`, `captain_state` (`unset|unheld|present|ambiguous`),
+`captain_panel_ids` and `captain_title`. Every `workspace-group` command returns
+this same record, and each `windows[].workspace_groups[]` node in `tree --json`
+uses it.
+
+A group's JSON object (same shape and rules as a workspace's; see
+[metadata](metadata.md#group-metadata-and-the-group-captain)) is read and written
+with `set-workspace-metadata`, `get-workspace-metadata` and `clear-workspace-metadata`
+taking `--group <workspace_group:N|UUID>` instead of `--workspace`. Socket methods
+are `workspace.group.set_metadata`, `workspace.group.get_metadata` and
+`workspace.group.clear_metadata`: params `group_id` (UUID or ref) plus the same
+`metadata`, `mode`, `source`, `keys` and `include_sources` as the workspace methods;
+results carry `group_id`, `group_ref`, `window_id` and `window_ref`. A missing
+`group_id` is `missing_ref`, an unknown group `group_not_found`, and a `window_id`
+that does not hold the group `wrong_window`. The CLI's `--window` only scopes a
+`workspace_group:N` ref and is refused without `--group`.
+These methods are not available over the remote relay: a remote agent cannot write a
+group's object, though its workspace still inherits the group's Captain.
 Tree JSON keeps `windows[].workspaces` flat and complete even for collapsed folders,
 adds window `workspace_groups`, and workspace `group_id` (null when ungrouped).
 Text trees show each workspace once under its folder or the window, retain empty
@@ -467,7 +593,8 @@ Batch responses contain `window_id`, `dry_run`, `changed`, `final_workspace_ids`
 per-request from/to indexes. A changed apply emits one `workspace.reordered` event
 with the window and final workspace UUID order; errors, dry-runs and no-ops emit none.
 Protocol error codes include `invalid_params`, `duplicate_workspace`, `already_grouped`,
-`not_member`, `group_not_found`, `workspace_not_found`, `wrong_window`, and `empty_group`.
+`not_member`, `not_root_item`, `group_not_found`, `workspace_not_found`, `wrong_window`,
+and `empty_group`.
 
 ### Sidebar folder controls and attention
 
@@ -483,9 +610,17 @@ at `99+`; accessibility labels and tooltips retain the exact count.
   name to focus the current member or first member. Empty folders stay empty.
 - New Group in the sidebar menu opens a name editor and creates an empty folder.
   The header menu offers Rename Group, Color, Icon, Pin/Unpin Group, Ungroup and
-  Delete Group. Name/icon editors commit with Save and dismiss with Cancel/Escape;
-  empty names and invalid SF Symbols cannot commit, and validation errors stay in
-  the editor. Color uses the
+  Delete Group. The name editor commits with Save and dismisses with Cancel/Escape;
+  an empty name cannot commit, and validation errors stay in the editor. Icon opens
+  an emoji picker in a popover: one click on an emoji sets it, the field searches
+  emoji by English name and takes any typed emoji (or `sf:` and a symbol name),
+  Emoji & Symbols… opens the macOS Character Viewer, and Clear Icon removes it.
+  A workspace's context menu has Set Icon…, the same picker, which writes the
+  `icon` that `set-workspace-icon` writes; the card draws it before the name in a
+  fixed square. A workspace `icon` is one emoji or `sf:<symbol>` (32 characters
+  at most); the card draws an `sf:` or bare known symbol name as the symbol and
+  any other text as its first character only, so `set-workspace-icon rocket`
+  draws `r`. Color uses the
   existing palette; Clear Color and Clear Icon restore the defaults. An absent or
   unavailable symbol displays `folder.fill`.
 - Ungroup and Delete Group both leave all members running as ungrouped workspaces.
@@ -537,8 +672,13 @@ c11 send --panel panel:3 --allow-unguarded "continue"
 ```
 
 `input-state` inspects one exact terminal panel's bounded active-screen region and
-returns `input_state`, `draft_length`, `source`, and `observed_at_ms`; it never
-returns prompt text. It requires `--panel` and does not use the focused panel as a
+returns `input_state`, `draft_length`, `dialog_kind`, `source`, and `observed_at_ms`; it never
+returns prompt text. `dialog_kind` names a recognized `dialog`: `permission`,
+`choice`, `trust`, `plan`, `resume` (Claude Code's `Resume this conversation?`)
+or `usage_limit` (Claude Code's rate-limit options menu or its auto-continue
+wait); it is null otherwise.
+A Claude Code panel whose cursor window shows no idle prompt also reads the
+screen's bottom rows, where those two dialogs are drawn. It requires `--panel` and does not use the focused panel as a
 fallback. A cold live panel or an unrecognized screen is `unknown`; an exact panel
 that is gone or cannot be read is `unavailable`.
 
@@ -574,9 +714,9 @@ c11 send --panel panel:2 --no-submit -- --literal-flag-text
 
 `--no-submit` suppresses c11's additional Return in raw/paste mode, including input ending in a newline. It does not change how the recipient handles newline content: bracketed-paste-aware composers keep it as a draft, while an unbracketed shell or program can treat those newlines as input/commands. Arbitrary C0 control bytes still use the key path; raw is literal escape/newline handling, not a byte-exact control-byte transport. Unknown `--flags` before `--` are errors (including `--text`); flags after `--` are literal text. `send-panel` accepts the same modes with an explicit `--panel`.
 
-**Delivery status describes c11's action:** JSON keeps `delivered`, `queued` and `submitted` booleans; human output names the same states. `delivered: true` means c11 wrote input to an attached PTY; `queued: true, delivered: false` means the text is waiting to flush on attach. `submitted: true` means a separate Return was scheduled (or armed for queue flush), not that an agent read or processed the text. `submitted: false` means c11 requested no additional Return; newline content retains the recipient-dependent behavior above. A queued payload is never an agent acknowledgment.
+**Delivery status describes c11's action:** JSON keeps `delivered`, `queued` and `submitted` booleans; human output names the same states. `delivered: true` means c11 wrote input to an attached PTY; `queued: true, delivered: false` means the text is waiting to flush on attach. `submitted: true` means a separate Return was scheduled (or armed for queue flush). On an hc terminal whose foreground is an agent it means only that the agent took the line, and `return_written` says whether the Return went out; a line not waited on there (an agent mid-turn with no screen, a slash command) is `submitted: false`, `return_written: true`, printed `delivered, return scheduled`, exit 0. A taken line is `confirmed: true`, `submit_check: confirmed`, `submit_evidence` one of `journal_turn`, `hc_status`, `hc_turn`, `composer_empty`. When that evidence does not come within 3 s the send fails with `send_unconfirmed` (`return_written: true`, `submitted: false`, `unconfirmed_reason` one of `composer_holds_text`, `dialog`, `no_turn_start`, `retry_safe: false`). With nothing to wait on, `submit_check` is `not_applicable` and `submit_check_reason` says why (`no_return`, `bare_return`, `local_command`, `not_agent`, `agent_working`, `prompt_unknown`, `unguarded`). `return_written: false` on a success means c11 requested no additional Return; newline content retains the recipient-dependent behavior above. On a `send_unconfirmed` error, `return_written: true` with `submitted: false` means the Return was written but the agent did not take the line. A queued payload is never an agent acknowledgment.
 
-**Targeting is strict.** An empty or unresolvable ref (`--panel ""`, a stale `panel:99`) is an error — `send` never falls back to whatever area happens to be focused. `read-screen` and `new-split` reject unresolved explicit targets too. The destructive commands (`close-panel`, `close-workspace`, `close-window`, `workspace-action`, `panel-action`, `clear-history`) hold the same rule for every ref they are given. The close commands and close actions also require a ref: none falls back to the caller or the focused target, and `self` names the caller explicitly. For `send` / `send-key`, a panel ref is a global handle: `--panel` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a panel within the caller's workspace, so pass `--workspace` alongside it there.)
+**Targeting is strict.** An empty or unresolvable ref (`--panel ""`, a stale `panel:99`) is an error — `send` never falls back to whatever area happens to be focused. `read-screen` and `new-split` reject unresolved explicit targets too. The destructive commands (`close-panel`, `close-workspace`, `close-window`, `workspace-action`, `panel-action`, `clear-history`) hold the same rule for every ref they are given. The close commands and close actions also require a ref: none falls back to the caller or the focused target, and `self` names the caller explicitly. `close-panel --expect-title <text>` compares the live title exactly before closing; a mismatch returns `title_mismatch` and leaves the panel open. On success, text keeps the `OK <panel> <workspace>` prefix, then appends the panel UUID if `--id-format` did not already show it and the JSON-quoted title; JSON uses `panel_title`. For `send` / `send-key`, a panel ref is a global handle: `--panel` alone reaches an area in any workspace of the window. (Other commands, `read-screen` included, still resolve a panel within the caller's workspace, so pass `--workspace` alongside it there.)
 
 Naming only a workspace (`send --workspace workspace:3 "ls"`, no `--panel`) still targets that workspace's focused area — you named a target, just a coarser one.
 
@@ -616,8 +756,9 @@ c11 clear-metadata --key task
 
 `get-metadata` includes read-only lineage projections: `parent_panel_id` (the
 direct creator UUID), `parent_panel_ref` (its current ref), and
-`parent_panel_title` (its last known title). Each is `null` for a root or
-unknown parent. They are not stored in panel metadata; `set-metadata` and
+`parent_panel_title` (its last known title), each `null` for a root or
+unknown parent, plus `panel_origin` and `panel_origin_detail` (who made the
+panel; see `c11 family`). They are not stored in panel metadata; `set-metadata` and
 `clear-metadata` reject them. Use `c11 family` for the full creation tree.
 
 ## Agent declaration
@@ -671,7 +812,7 @@ c11 sidebar-state --json --workspace <id|ref>  # layout: window_id, double_wide 
 
 These commands are workspace-scoped. Inside c11, `$C11_WORKSPACE_ID` supplies the caller's workspace when `--workspace` is omitted; from a bare shell or cron, pass `--workspace`. Every command above fails without a target; global `--window` alone is not a workspace target. They never read or change the operator's selected workspace.
 
-The workspace metadata commands follow the same rule: `set-workspace-metadata`, `get-workspace-metadata`, `clear-workspace-metadata`, `set-workspace-description` and `set-workspace-icon` need `--workspace` or `$C11_WORKSPACE_ID` and fail otherwise. Raw `workspace.set_metadata`, `workspace.get_metadata` and `workspace.clear_metadata` require `workspace_id` (`missing_ref` without it), and v1 `reset_sidebar` requires `--tab`.
+The workspace metadata commands follow the same rule: `set-workspace-metadata`, `get-workspace-metadata`, `clear-workspace-metadata`, `set-workspace-description` and `set-workspace-icon` need `--workspace` or `$C11_WORKSPACE_ID` and fail otherwise. Raw `workspace.set_metadata`, `workspace.get_metadata` and `workspace.clear_metadata` require `workspace_id` (`missing_ref` without it), and v1 `reset_sidebar` requires `--tab`. The three metadata commands also accept `--group` (exclusive with `--workspace`) for a workspace group's object.
 
 **Constraint:** in the default socket mode, these commands are admitted only from a descendant of c11. A command in a panel is admitted, including a `nohup` that is still a child of that panel's shell. A launchd job, or a `nohup` whose parent has exited, is not a descendant and is refused. Passing `--socket` does not bypass that check. Interactive `claude --dangerously-skip-permissions` stays a descendant.
 
@@ -711,9 +852,18 @@ c11 tree --canvas-cols 100           # Override floor plan canvas width
 c11 tree --json                      # Structured JSON (pixel + percent coords, split paths, content area)
 ```
 
-Live panel nodes include `parent_panel_id`, `parent_panel_ref`, and
-`parent_panel_title`. Roots and panels whose creator is unknown have a null
-parent. Text output marks a known child with `↳ child of <panel ref> <title>`.
+Live panel nodes include `parent_panel_id`, `parent_panel_ref`,
+`parent_panel_title`, `origin`, `origin_detail` and `created_at`. Roots and panels whose
+creator is unknown have a null parent; `origin` says who made them. Text output
+marks a known child with `↳ child of <panel ref> <title>` and any other panel
+with its origin (`↳ launched by operator`, `↳ launched by c11 (restore)`,
+`↳ created by c11 launch at Nov 13, 10:57 AM` in local time,
+`↳ launched from outside c11`, `↳ origin not recorded`).
+
+Every lineage node records its origin once, when the panel first appears, and
+keeps it across moves and relaunches: `operator` (an operator click, shortcut, menu or sidebar action), `panel` (made from its parent panel), `app` (c11 itself; `origin_detail` is `launch` (the workspace c11 opens when it starts with nothing to restore), `restore` or `chaos`), `external` (a socket or CLI call with no caller panel: cron, a LaunchAgent, a bare shell) or `unknown` (recorded before origins existed, or the creator was lost). A caller panel or a
+socket request decides first; nothing is relabelled after the fact, so a null
+parent is never read as the operator.
 
 ```bash
 c11 family                         # Caller panel's root and descendants
@@ -723,9 +873,9 @@ c11 --id-format both family --json # Include stable UUIDs and short refs
 ```
 
 Text output lists type, title, live/closed state, delegate status, and workspace
-for each node. Socket method: `panel.family`. Its version 1 response carries
+for each node, and the origin of the root and of any node that is not a child. Socket method: `panel.family`. Its version 1 response carries
 `selected_panel_id/ref`, `root_panel_id/ref`, and preorder `nodes`. Each node
-has `id`, `ref`, `parent_panel_id/ref`, `title`, `type`, `state` (`live` or
+has `id`, `ref`, `parent_panel_id/ref`, `origin`, `origin_detail`, `created_at` (ISO 8601 with the local offset; `null` for nodes recorded before it existed), `title`, `type`, `state` (`live` or
 `closed`), `agent_type`, `delegated`, `delegated_by`, `closed_at`, and workspace
 identity/title. Closed ancestors remain in the family while a live descendant
 depends on them. The socket response carries stable UUIDs and refs in its
@@ -746,7 +896,9 @@ in an outbox, `rejected` with `rejected_reason`), `from`, `to`, `topic`,
 (`delivered`, `delivering`, `held`, `pending`, `failed`, `not_rung`,
 `not_pushed`), `delivery_reason`, `delivery_route`, `delivered_at`, `read`
 (bool), `read_state` (`read`, `unread`, `taken`, `claimed_unknown`, `gone`,
-`unknown`), `read_at`, `claimed_by_panel_id` and `usage_limit`. Times are
+`unknown`), `read_at`, `claimed_by_panel_id`, `usage_limit`, and for mail not
+yet delivered `pending_since`, `pending_seconds`, `wait_reason`, `wait_since`
+and `wait_reason_text` (why it is not rung yet; all null once delivered). Times are
 ISO-8601 with the local offset. `read` is true only when the recipient panel
 claimed the copy itself. An id that is not a ULID, or is in no dispatch log or
 outbox, exits nonzero.
@@ -786,12 +938,29 @@ A live idle agent's mark goes cold at `cold_at`, within about 20 seconds (two 10
 ## Notifications
 
 ```bash
-c11 notify --title <text> [--subtitle <text>] [--body <text>]
+c11 notify --title <text> [--subtitle <text>] [--body <text>] [--needs-you]
 c11 list-notifications
 c11 clear-notifications
 c11 trigger-flash [--panel <id|ref>] [--workspace <id|ref>] [--color <#hex>] [--persistent]
 c11 cancel-flash [--panel <id|ref>] [--workspace <id|ref>]
+c11 notify-level [silent|quiet|normal|chatty] [--json]   # the operator's routine dial; no stop prints it
+c11 notify-sound [turn-end|needs-you|flag [<sound>|<path>]] [--json]   # the operator's three sounds
 ```
+
+`notify --needs-you` marks an agent stopped on the operator (it plays the needs-you sound);
+without it a notification plays the turn-end sound. `notify-sound` (socket
+`notification.sound.get` / `notification.sound.set` with `channel` and `sound`) sets the
+turn-end, needs-you and flag sounds: `default`, `none` (not for flag), a macOS sound name, or
+a path to an audio file, which c11 copies into its own store. The settings are the operator's;
+change them only when asked. Both are refused through the machine relay. Per-kind sounds:
+`flag-kind set --id <kind> --sound <sound|path|flag>`. Detail: `c11 guide attention`.
+
+`notify-level` (socket `notification.level.get` / `notification.level.set`) dials routine
+notifications only: `silent` keeps them to the Feed and sidebar, `quiet` posts banners
+without sound, `normal` is the default, `chatty` adds a banner per delivered mail and a
+delegate's turn ends. The stop survives a relaunch. A raised flag is never dialed: it posts
+a time-sensitive alert with its kind's sound or the flag sound at every stop. The dial is the operator's; change
+it only when asked. It is refused through the machine relay. Detail: `c11 guide attention`.
 
 Flash requests pulse the panel, its strip and its workspace row without changing
 selection. A repeat replaces and restarts the pulse. Persistent requests keep one
@@ -831,6 +1000,76 @@ The configured Notification Command receives `C11_NOTIFICATION_WORKSPACE_ID`,
 plus identical `CMUX_NOTIFICATION_*` aliases. Workspace-only notices export an
 empty panel ID. Existing CMUX title/subtitle/body fields remain available. Delivery
 requires authorization and successful macOS banner scheduling.
+
+## Themes
+
+`c11 themes` sets the c11 theme (sidebar, title bars, panel bar). c11 shows one theme, day and night. `c11 terminal-theme` sets the Ghostty terminal theme (cells, cursor, ANSI colours), which keeps its own light and dark halves. Setting a theme is the operator's choice: do it only when asked.
+
+```bash
+c11 themes list [--json]                       # every theme, the active one marked (is_active), with its paired_terminal_theme (null when none)
+c11 themes get [--json]                        # the theme (name) and its paired_terminal_theme
+c11 themes set <name> [--with-terminal]
+c11 terminal-theme set <name>                  # or --light <name> / --dark <name>
+```
+
+`--slot` is gone: `themes get` and `themes set` refuse it and name the command to run instead. The socket ignores a `slot` parameter.
+
+c11 bundles seven themes: `stage11`, `c11`, `nocturne`, `bigboard`, `datasheet-mono`, `terminal-grid` and `outrun-horizon`. Theme files the operator adds to the themes folder (`c11 themes path`) list as `user`. Settings > Appearance shows each theme as a live preview of the operator's own window.
+
+A theme can name a paired Ghostty theme (`[terminal] pairedTheme`). Five bundled themes have one, named `c11-<theme>`: `datasheet-mono`, `terminal-grid`, `outrun-horizon`, `nocturne` and `bigboard`. `stage11` and `c11` have none. `--with-terminal` also sets that terminal theme, day and night, through the c11-managed block in c11's own `config.ghostty`; the operator's own Ghostty config is never written. Picking a theme in Settings does the same. Outcomes:
+
+- **No pair:** the command sets the theme only and says so (`--json`: `terminal.applied` false, `reason` `no_pair`).
+- **Pair not installed:** the command fails and changes nothing.
+- **Terminal write fails:** the theme has already switched. The command fails, says so, and leaves the terminal unchanged (`reason` `write_failed`).
+
+Without the flag, the terminal never changes.
+
+**One window, its own theme.** `c11 themes set <name> --window <ref>` gives one window a theme that overrides the app theme for that window's chrome (sidebar, title bar, panel bar, dividers, frames, browser and markdown chrome). `themes get --window <ref>` prints the window's effective theme and whether it is its own; `themes clear --window <ref>` returns it to the app theme. A workspace or panel moved into the window repaints in its theme. Terminal colours stay app-wide, so `--with-terminal` with `--window` is refused and changes nothing. The operator's Window ▸ Theme menu does the same. A window theme survives relaunch.
+
+## Windows and displays
+
+c11 reports where every window and display is, so an agent can read the layout and, when the operator asks, rearrange it. macOS still owns multi-monitor behaviour: c11 does not save layouts or react to docking.
+
+**Coordinates.** Every frame c11 prints or accepts is in **global points, origin at the top-left of the main display (the one with the menu bar), x right, y down**: the convention of `CGWindowList`, `CGDisplayBounds` and Accessibility. Displays left of or above the main display have negative coordinates. Each reply that carries frames names it in `coordinate_space`.
+
+```bash
+c11 display list [--json]                 # every display, numbered left to right
+c11 list-windows [--json]                 # every window (same as c11 window list)
+c11 window name --window <ref> <name>     # or --clear
+c11 window move --window <ref> [--display <ref>] [--frame x,y,w,h | --fill | --left-half | --right-half]
+c11 identify --json                       # caller.window_name and caller.display: the screen you are on
+```
+
+**Displays** (`display list`, socket `display.list`): `ref` `display:N` and `index` N, numbered left to right then top to bottom; `uuid`, the display UUID (stable across reboots and reconnects); `display_id`, the CGDirectDisplayID (this login only); `name` (macOS numbers identical models: `DELL P2715Q (1)`, `DELL P2715Q (2)`); `main`; `builtin`; `frame`; `visible_frame` (minus menu bar and Dock); `scale`; and `windows` on it (`id` with `--id-format both`, `ref`, `name`, `visible_fraction`), which answers "which windows are on display X". A display ref is `display:N` or bare `N`, the UUID, the exact name (ignoring case), `main` or `builtin`; a model name two displays share is refused as ambiguous with both refs.
+
+**Windows** (`list-windows --json`, socket `window.list`, and each window node of `tree --all --json`; `list-windows --json` keeps both UUIDs and refs unless `--id-format` says otherwise): the existing `id`, `ref`, `index`, `key`, `visible` and workspace fields, plus `name` (null when none), `theme` `{override, effective}`, `window_number` (the CGWindowID, for `screencapture -l`), `frame`, `display` `{uuid, display_id, ref, index, name}` (the display holding most of the window), `frame_on_display` (relative to that display's top-left), `visible_fraction` (the share of the display's visible frame the window covers, 0 to 1), and `state` `{key, main, minimized, fullscreen, on_active_space, visible}`.
+
+**Names.** A window name shows in the window's title bar, in `list-windows`, `tree`, `identify` and `fleet` (`window_name` on each row), and in the Move to Window menus, and it survives relaunch with the window's UUID. A name works anywhere a `--window` ref does: `--window "c11 Lab"`. Resolution tries a UUID, then `window:N`, then an index, then a name (ignoring case). Names are unique, at most 64 characters, and cannot be a bare number, a UUID or a ref like `window:2`; a refused name changes nothing and says why. `--window self` names the caller's own window. `rename-window` stays the tmux alias for renaming a workspace.
+
+**Placement.** `window move` places a window with public AppKit and never raises it, activates c11 or switches the visible workspace. **Move windows only when the operator asks.**
+
+- `--frame x,y,w,h` alone is global: exactly the `frame` that `list-windows` prints. With `--display` it is relative to that display's top-left: the `frame_on_display` that `list-windows` prints. Either way a listed frame round-trips.
+- `--fill`, `--left-half`, `--right-half` use the visible frame of `--display`, or of the window's current display.
+- `--display` alone keeps the window's size (shrunk to fit) and its offset from the visible frame's corner.
+- Full-screen and minimized windows are refused (`invalid_state`). macOS may nudge a frame to keep the title bar on screen; the reply is the frame AppKit applied, with `requested`, `changed` and `display_changed`.
+
+Windows and workspaces already move between each other with `move-workspace-to-window --workspace <ref> --window <ref>` and `move-panel --panel <ref> --window <ref>`; pair them with `window move` to lay out work across displays.
+
+**Events.** `display.changed` fires when displays connect, disconnect or change arrangement or resolution; `window.moved` fires when a window settles in a new frame or on a new display, with `source` `socket` or `app` ([events](events.md)). React to them with `c11 events tail` instead of polling.
+
+Feature ids: `window.name`, `window.theme`, `window.move`, `display.list` (version 1). `display.list` is a safe read over the relay; names, themes and moves are refused there.
+
+## Appearance without a Settings control
+
+Settings has no control for these; when the operator asks, write the default in the app's domain (`com.stage11.c11`; a tagged build uses its own). They apply live.
+
+```bash
+defaults write com.stage11.c11 sidebarActiveTabIndicatorStyle -string solidFill   # or leftRail (default)
+defaults write com.stage11.c11 sidebarTintHex -string '#000000'                   # the one sidebar tint, light and dark; a Ghostty sidebar-background overwrites it at each config load
+defaults write com.stage11.c11 sidebarTintOpacity -float 0.18
+```
+
+Workspace color palette overrides live in the `workspaceTabColor.defaultOverrides` dictionary (color name to hex), for example `defaults write com.stage11.c11 workspaceTabColor.defaultOverrides -dict Red '#FF0000'`. Saved custom colors live in the `workspaceTabColor.customColors` array. Settings' Reset All clears these.
 
 ## Skill Installation (`c11 skill install`)
 
@@ -903,7 +1142,7 @@ plain `ERROR:` lines. Legacy V1 multiline replies retain their idle framing.
 
 ## Notes
 
-- `c11 ssh <host>` opens a remote shell and a local SSH proxy so browser traffic can egress from that host. Commands inside that shell do not run on the Mac. `c11 ping` there prints "c11 commands are not available over c11 ssh in this version" and does not return `pong`. Use the local CLI. See the SSH section in SKILL.md.
+- `c11 ssh <host>` opens a remote shell and a local SSH proxy so browser traffic can egress from that host. Commands inside that shell do not run on the Mac. `c11 ping` there prints "c11 commands are not available over c11 ssh in this version" and does not return `pong`. Use the local CLI. See `c11 guide remote`.
 - Socket access modes: disabled, c11-spawned processes only (`c11Only`), or all local processes. Check with `c11 capabilities`.
 
 ## New Workspace recents and pins
@@ -1101,6 +1340,22 @@ Params: `panel_id` (a panel UUID; defaults to the caller's panel) and exactly on
 | `reset` | `reason` (`compaction`, `model_switch` or `effort_change`), optional `at_ms` | Something replaced the cached prefix: cold from then until the next request. Ignored before any request, or when older than the last one. |
 | `unknown` | `true` or `{"reason": "…"}` (≤ 64 chars) | The reporter cannot tell when the cache expires. c11 shows no cache state until the next `request`. |
 
+Beside any one payload, an optional `context_window` object (Claude Code's
+statusline `context_window`) gives the model's window: `context_window_size`
+(a whole number of tokens, 1 to 100,000,000) and optionally `model` (the
+statusline's `model.id`). `fleet` shows it as `context.limit` with
+`limit_source: "harness"` only with proof that it belongs to the agent's
+current model. It is bound to the model it names, else the `request`
+report's, else the transcript's at that moment, and to the transcript's model
+epoch then. It is used only if the transcript had named a model when it
+arrived, still names that model, and has seen no model change since (a line
+naming another model, or a recorded `/model`, even back to the first);
+anything less leaves `limit` null. A `reset` with `model_switch` or a
+`request` naming another model drops it too. So a window reported before the
+transcript names a model is unused until the next report; reports repeat with
+every request, so that is seconds. A build without fleet version 3 refuses the
+key, which fails the whole report: update c11 before the snippet.
+
 The lifetime comes from `ttl_seconds` when given, else from the provider:
 Anthropic (a provider naming `anthropic`; a model id `anthropic/…`,
 `anthropic.…` or `….anthropic.…` on a router or cloud; or a `claude-…` id on a
@@ -1138,7 +1393,7 @@ reads stdin into `$input` (c11 never writes the file):
 # c11: report Claude Code's exact prompt cache to this panel's cold mark.
 c11_panel="${C11_PANEL_ID:-${CMUX_SURFACE_ID:-}}"
 if [ -n "$c11_panel" ] && command -v c11 >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-    c11_pc=$(printf '%s' "${input:-}" | jq -c '.prompt_cache // empty | {prompt_cache: .}' 2>/dev/null) || c11_pc=""
+    c11_pc=$(printf '%s' "${input:-}" | jq -c '(.model.id // null) as $m | select(.prompt_cache) | {prompt_cache, context_window: (.context_window // null | if . then ({context_window_size} + (if $m then {model: $m} else {} end)) else null end)} | with_entries(select(.value != null))' 2>/dev/null) || c11_pc=""
     c11_last="${TMPDIR:-/tmp}/c11-prompt-cache-$c11_panel"
     if [ -n "$c11_pc" ] && [ "$c11_pc" != "$(cat "$c11_last" 2>/dev/null || true)" ]; then
         # Mark it sent first, so a redraw during the send does not send again;
@@ -1219,44 +1474,123 @@ conversations, snapshots, launch statistics, or tenant configuration.
 
 ## Fleet
 
-`c11 fleet --json` calls `system.fleet` once with `{}`. Plain `c11 fleet` prints
-a short table. Discovery: feature `fleet` version 1 and method `system.fleet`
-in `c11 capabilities --json`. The method takes no parameters. The CLI ignores
-global `--window` for this app-wide read; no workspace or panel filter exists.
+Every tree panel node and fleet agent row includes `is_captain`, derived from
+exact mailbox addresses across the whole app. Each tree workspace node carries
+its effective `metadata`, `metadata_sources`, and the captain fields described
+below; a workspace-only tree still resolves holders in other workspaces/windows.
+
+`c11 fleet --json` calls `system.fleet` once. Plain `c11 fleet` prints
+a short table. Discovery: feature `fleet` and method `system.fleet` in
+`c11 capabilities --json`; version 2 takes the filters and `since` below,
+version 3 adds `stalled`, `context`, `restore` and the `--stalled` filter, and
+an older build refuses a parameter it lacks with `invalid_params`. The CLI ignores global `--window` for this
+app-wide read.
+
+Optional filters narrow `panels` (the `workspaces` and `workspace_groups`
+arrays stay whole) and AND together: `--workspace <ref|uuid>` (param
+`workspace`), `--group <ref|uuid|name>` (`group`; a name in any case, and a
+name several groups share selects them all), `--lifecycle <working,waiting,idle,cold>`
+(`lifecycle`, a list), `--flagged` (`flagged: true`), `--blocked`
+(`blocked: true`), `--stalled` (`stalled: true`), `--parent <ref|uuid>`
+(`parent`: the creator panel). Refs
+resolve as in every other command (the handles `tree` prints, their old
+aliases, durable panel numbers) and must name something live: a workspace or
+group that no longer exists, a ref of the wrong kind (`--workspace panel:3`)
+or an unknown name is `not_found`. A live workspace or group with no agents
+is an empty success. A parent UUID may name a closed panel, whose crew still
+carry it.
+
+**Delta reads.** Every response has `fleet_seq`, and every row `changed_seq`
+and `changed_at`: when its fields last changed, not counting pure clocks
+(`input.observed_at`, `mailbox_unread.oldest_age_seconds`,
+`mailbox_unread.reason_text`, `last_seen_at`, `being_seen`, and a status
+glyph alone in `panel_title` such as Claude's `✳` or `⠂`). A change is seen
+when fleet is read, so `changed_at` is the read that first saw it. `--since
+<fleet_seq>` (param `since`, or an ISO 8601 time) returns only rows changed
+after it, plus `since`, `full` and `removed_panel_ids`: agents gone from the
+fleet since (anywhere, whatever the filters), then, with filters, rows that
+changed since and no longer match them. Drop every listed id from your copy;
+an id you never held is harmless. Use the same filters on every read of one
+cursor.
+`fleet_seq` is process-local and starts at the run's first read in Unix
+milliseconds, so every value an earlier run handed out is below it. A cursor
+the run cannot answer exactly (from an earlier run, above `fleet_seq`, a time
+before the run's first read or after this read, or older than the last 1024
+removals) returns
+every row with `full: true` and no removals: replace your copy rather than
+merge. A heartbeat stores the last `fleet_seq` and passes it next time.
 
 Scope is every **live agent terminal** in every registered window, including
 hidden workspaces, collapsed folders and background windows. The existing
 agent-kind resolver decides inclusion: a detected shell excludes a terminal
-whose old agent declaration remains. Browsers, markdown and ordinary terminals
+whose old agent declaration remains, except a seat whose agent has not come back
+after a host end (its `restore.outcome` is `resuming` or `needs_operator`):
+that row stays, with `agent_type` from the saved conversation's kind. Browsers, markdown and ordinary terminals
 are excluded even if they carry agent metadata. Closed panels are excluded.
 
 The result is an object with `schema_version: 1`, `scope: "agents"`,
 `captured_at` (ISO-8601), `window_count`, `workspace_count`,
 `main_copy_duration_ms`, `serialization_on_main_thread` (false on the socket
 path), and `panels` (array sorted by panel UUID). Counts include workspaces
-and windows without agents. UUIDs always remain UUIDs, regardless of CLI
+and windows without agents. A top-level `waiting_check` object reports the setting and Jev: `{enabled, show_done_button, jev, jev_failing_since, jev_failure, done_count}`, where `jev` is `off`, `no_key`, `live` or `failing`. UUIDs always remain UUIDs, regardless of CLI
 `--id-format`. Every field below is present; unavailable values are JSON null.
+
+The additive `workspaces` array includes every workspace, even one with no
+agent rows. Its captain summary uses `captain` (address or null),
+`captain_present` (boolean), `captain_state` (`unset`, `unheld`, `present`, or
+`ambiguous`), `captain_panel_ids` (all matching open panel UUIDs), and
+`captain_title` (the unique holder's title, otherwise null). These are the
+resolved values: a workspace's own Captain, else its workspace group's. Each row
+and each tree workspace node also carries `captain_scope` (`"workspace"`,
+`"workspace_group"`, or null when unset) and `captain_group_id` (the group's UUID
+when `captain_scope` is `workspace_group`, else null). A tree workspace node's
+`metadata.captain` stays the workspace's own key, so it can differ from the
+resolved `captain`. Presence is an
+address-holder fact, not a transport or process-health claim. One panel can
+captain multiple workspaces; title or role metadata alone never grants it.
+
+A top-level `workspace_groups` array lists every window's groups: `id`,
+`window_id`, `name`, `member_workspace_ids`, and the five presence fields
+(`captain`, `captain_present`, `captain_state`, `captain_panel_ids`,
+`captain_title`). The fields are additive, so `schema_version` stays 1.
 
 | Panel field | Type and source |
 | --- | --- |
 | `window_id`, `workspace_id`, `panel_id` | UUID strings from the live graph |
+| `window_name` | The window's name (`c11 window name`) or null |
 | `workspace_title`, `panel_title` | Strings using the same title resolution as tree |
 | `agent_type` | String from detected terminal kind, falling back to `terminal_type` metadata |
 | `model`, `model_label` | String or null; same explicit/declared, detected, launch precedence as the panel sheet |
-| `lifecycle` | `working`, `waiting`, `idle`, `cold` or null; existing panel activity resolver, including notification/journal attention and delegation presentation |
+| `lifecycle` | `working`, `waiting`, `idle`, `cold` or null; existing panel activity resolver, including notification/journal attention and delegation presentation. A turn end judged done does not count as an unread notification here, so it never reads `waiting` from that notification; it is counted by Done (see `waiting_check`) |
 | `flag` | Boolean, whether canonical flag reason exists |
 | `flag_reason` | Canonical flag string or null |
 | `flag_kind` | Null or the active kind's immutable `{id,name,color,emoji}` snapshot; absent emoji is null |
 | `delegated` | Canonical delegation boolean |
 | `delegated_by` | Owner panel UUID string or null for no owner, including legacy ownerless delegation |
 | `parent_panel_id` | Creator panel UUID string or null; same lineage as tree/get-metadata, distinct from delegation |
+| `origin`, `origin_detail` | Who made the panel (`operator`, `panel`, `app`, `external`, `unknown`) and the app reason (`launch`, `restore`, `chaos`) or null |
 | `last_turn_end` | ISO-8601 or null; latest accepted completed/interrupted journal event for the exact current session, retained across later turns |
 | `prompt_cache` | Null or existing tree/panel-list cache projection, described below |
 | `mailbox_address` | `mailbox.address` string or null |
+| `is_captain` | Boolean: this panel's mailbox address is a resolved captain address for at least one workspace, or a workspace group's `captain` |
 | `mailbox_unread_count` | Integer or null; last known MailboxBadgeStore count used by the mailbox cell |
-| `mailbox_unread` | Null until the panel's inbox is counted, else `{count, oldest_at, oldest_age_seconds}` from the same cached count; `oldest_*` are null when `count` is 0. No bodies |
+| `mailbox_unread` | Null until the panel's inbox is counted, else `{count, oldest_at, oldest_age_seconds, reason, reason_since, reason_text}` from the same cached count; `oldest_*` and `reason*` are null when `count` is 0. `reason` is why the oldest unread is not rung yet (`journal_turn`, `working_edge`, `core_working`, or the doorbell's hold reason), null when no hold has been seen. No bodies |
+| `waiting_check` | Null, or the waiting check's verdict on the panel's unread turn-end notification (only Claude's Stop hook and Codex's turn-complete callback are judged; `c11 notify` never is): `{outcome, source, needs_human, stop_kind, quote, judged_at, notification_id}`. `outcome` is `done` (counted by Done, not Waiting) or `waiting`; `source` is `convention` (a `Needs you:` line) or `jev`; `needs_human` and `stop_kind` are Jev's, null for the convention |
 | `description` | Canonical description string or null |
 | `last_seen_at`, `being_seen` | Same timestamp/null and boolean as tree; while being seen the timestamp represents now |
+| `blocked` | Null, or why the agent cannot go on without someone: `{reason, since, source, detail, resets_at, account}`. `reason` is `usage_limit`, `api_error`, `permission_prompt`, `question_dialog` or `resume_dialog`; `source` is `screen`, `journal` or `hook`; `detail` is the limit (`five_hour`, `weekly`, `monthly_spend`, `other`), the API error code (`server_error`, `authentication_failed`, …) or the question's kind (`question`, `plan_review`, `choice`, `trust`, `plan`); `resets_at` is the limit's reset time (ISO-8601) when Claude printed one. Null while the agent works and for an agent that is merely idle |
+| `input` | Null, or the last look at an idle agent's prompt: `{state, draft_length, dialog_kind, since, observed_at}`, the same states as `input-state`. Null while the agent works, for a panel not yet looked at, and when the look is over 300 s old; `observed_at` says how old it is |
+| `account`, `account_source` | The login a Claude seat runs under, or null: `C11_AGENT_ACCOUNT` from the session's environment (`env`), else the last path component of `CLAUDE_CONFIG_DIR` without its leading dot (`claude_config_dir`). Null in the default config home and for other harnesses |
+| `last_message` | Null, or the agent's final message of its last completed turn: `{text, chars, at, text_recorded, source}`, at most 300 characters on one line. `source` is `claude_stop_hook`. `text` is null and `text_recorded` false when Settings → Data & Privacy → Keep message and input text is off |
+| `panel_ref`, `workspace_ref` | The handles `tree` prints (`panel:N`, `workspace:N`) |
+| `workspace_group_id`, `workspace_group_name` | The row's workspace group, or null |
+| `workspace_captain`, `workspace_captain_present` | The workspace's resolved Captain address (its own, else its group's) or null, and whether a panel holds it |
+| `background_tasks` | Null, or `{count, at}`: how many entries Claude's Stop payload listed in `background_tasks` (its background tasks at that Stop), and when; a count only. Null again after a Stop without the list |
+| `changed_seq`, `changed_at` | When the row last changed (see delta reads) |
+| `last_turn_stop` | Null, or how the last turn ended: `{reason, text}` with `reason` `done`, `interrupted`, `usage_limit` or `api_error`; `text` is the provider's failure sentence (same text rule as `last_message`), else null |
+| `stalled` | Null, or why an agent nobody holds has gone quiet: `{reason, since, detail, threshold_seconds, last_progress_at, turn_ended_at}`. `no_progress`: working with no transcript output for the threshold (the Supervisor's stall). `announced_work`: the last turn ended announcing work of its own (`detail` `background_tasks`: Claude's Stop listed background tasks; `next_step`: the final message's last line is the agent's own next step, such as `Let me run the tests.` or a line ending in `:`), no turn started since, and the threshold passed; `since` is when it passed. Not announced: a `Needs you:` line, a question, waiting on someone (`Let me know…`, `I'll wait…`), or a Stop with `session_crons`. The threshold is `c11.supervisor.stallMinutes` (default 10). A blocked agent is never also stalled. `announced_work` is Claude only |
+| `context` | Null, or `{prompt_tokens, limit, fraction, limit_source}`: the last request's whole prompt (`prompt_cache.prompt_tokens`) against the model's window. `limit_source` is `harness` (the harness's own number for its current model: Codex's rollout `model_context_window`, or Claude's statusline `context_window_size` through the tap below; a window is used only with proof it belongs to the current model: it arrived after the transcript had named a model, that model is still the one named, and no change, even back, has come since; a Codex window read before the rollout named a model is not kept) or `catalog` (the model catalog's records of the row's own harness only: a codex row reads Codex's list; Claude Code publishes no windows, so a Claude row without the tap is null; an id with a provider prefix names one route, a bare id counts every route the harness lists, and records without a window or that disagree give null). An unknown window is null, never guessed; `fraction` (3 places) needs both |
+| `restore` | Null, or the panel's restore record after a host end, the same one `c11 restore status` lists: `{outcome, state, phase, reason, cause, signal, ended_at, offers_resume, conversation_kind}`, `ended_at` in the Mac's zone as `restore status` writes it. `outcome` is `resuming` (pending or resuming), `resumed`, `needs_operator` (not resumed or failed with a conversation to bring back; `c11 restore run --panel <ref>` does it; `agent.restore_needs_operator` announces it once per launch) or `skipped` |
 
 `prompt_cache` objects contain `state`, `source`, `basis`, `lifetime_seconds`,
 `requested_at`, `cold_at`, `reset`, `prompt_tokens`, and `misses`. Values are
@@ -1270,6 +1604,70 @@ interrupt events do not count. After restart the existing retained journal
 window (up to 64 owner events) supplies this value; missing/pruned evidence is
 null. Changing exact session ownership clears it. It is never inferred from
 last activity, cache expiry or an arbitrary idle observation.
+
+**Blocked, input, account and last message.** These read three process-local
+sources, none written to disk, the journal or the activity log, and all empty
+again after c11 restarts until the agent reports or is looked at:
+
+- Claude's own hooks report through `agent.report` (below): SessionStart names
+  the login, Stop gives the turn's final message (Claude's `last_assistant_message`,
+  else the bounded transcript tail the Stop hook already reads), and StopFailure
+  gives its closed `error` code, the limit and the parsed reset time.
+- Every 10 s, c11 looks at the prompt of agents whose live journal is not
+  `working`, including agents on a linked machine (their screen as this Mac
+  already shows it, or hc's paint; nothing crosses the relay and only the
+  classification is kept), in up to three main-thread hops a second apart; a hop starts no
+  new look after 2 ms, and main only copies bounded screen rows (a Claude
+  panel's cursor window and bottom rows). Each look is classified off-main.
+  Priority panels (last seen on a dialog, then suspects: no live journal
+  owner, as after a restore, or a failed turn) alternate with a walk over every
+  agent that resumes where the last sweep stopped. With L looks per sweep,
+  every agent is looked at within 2·⌈N/L⌉ sweeps however many dialogs persist,
+  and a cleared dialog clears `blocked` at the next sweep while the priority
+  panels fit in half a sweep. A headless panel (no surface yet, as after a
+  restore until it is shown) is read from hc's paint instead, off main, up to
+  four per sweep; the walk stops at a headless panel past those four and
+  starts there next sweep. The four reads run one at a time, each within hc's
+  own deadlines (about 18 s at worst), so under a loaded hc a sweep can take
+  about a minute and the next one waits for it.
+- The sweep runs only while `fleet` is in use: read in the last 45 minutes (a
+  30-minute heartbeat keeps it on). The first read after a quiet spell starts
+  a sweep at once, so that read may show `input: null` and the next one has looks.
+- A look over 300 s old is not shown (`input: null`). With many agents and few
+  looks per sweep a full pass can approach that; `screen_sweep` tells how many
+  looks a sweep makes.
+- The Supervisor's wait and the journal phase, as in `agents --json`.
+
+A top-level `restore_summary` is `restore status`'s summary across every
+terminal panel: `{total, pending, resuming, resumed, failed, skipped, need_you,
+finished}`. A top-level `agent_edges` reports the last pass of the agent edge
+monitor (`c11 events tail --filter agent`): `{at, agents, ms}`, null before the
+first.
+
+A top-level `screen_sweep` reports the last sweep's cost: `{at, main_ms,
+max_hop_ms, hops, looked, wanted, headless_looked}` (null before the first sweep). `main_ms` sums
+the hops; a hop can run one look past 2 ms, which `max_hop_ms` shows. `looked`
+below `wanted` means the rest wait for the next sweeps; `wanted / looked` sweeps
+is roughly how long a full pass takes.
+
+`blocked` takes the strongest of: a dialog on the screen now, the Supervisor's
+wait, then a failed turn (the hook's report while the journal says the turn
+failed, else the journal alone). Claude Code's resume dialog, its rate-limit
+menu and its auto-continue wait (`⚠ Usage limit reached · limit resets …`) are
+recognized by the screen look, with the printed reset time; a usage limit that
+ended the turn is recognized from StopFailure even when nothing is on screen,
+and stays until the agent's next turn starts or completes. A `resets_at` in the
+past means the limit has reset and the seat is waiting for a nudge.
+
+`agent.report` (feature-less, method `agent.report`, socket worker) takes
+`panel_id`, `event` (`session_start`, `turn_start`, `stop`, `stop_failure`) and optional
+`account` + `account_source`, `last_message`, `background_tasks` (stop),
+`announces_work` (stop: `background_tasks` or `next_step`, a code the hook
+decides; the message text never decides it in the app), `failure_code`,
+`limit`, `resets_at_ms` and `failure_text`. It is for the bundled Claude hook; other
+adapters may send the same shape. A Claude on a linked machine sends the same
+report through the relay, which admits it only for the caller's own panel
+(any other is `relay_target_refused`) and never spools it.
 
 Mail counts are asynchronous: dispatcher/receipt recounts and the existing
 periodic reconcile update the cell. Fleet neither recounts nor starts tracking
@@ -1430,3 +1828,60 @@ Codex and other harnesses are unsupported pending recorded terminal signals.
 Mail to a limited recipient is copied unread; the delivery trace's `copied` row
 adds `recipient_usage_limit`. Detection never acknowledges the envelope.
 See [supported shapes and recovery](../../../docs/agent-usage-limits.md).
+
+## Show
+
+```bash
+c11 show <path|url> [--dir <folder>] [--wait <seconds>] [--json]
+c11 show close [<path|url>] [--dir <folder>] [--json]
+```
+
+`show` displays a file or URL to the operator in a viewer beside the calling panel, from any machine, and waits for the load check. It needs a caller (`C11_PANEL_ID`). A target of the form `<scheme>://…` is a URL; anything else is a path on the machine the CLI runs on, made absolute against the working directory, `~` expanded and symlinks resolved. A URL is never resolved by the CLI; c11 applies URL policy, and on a linked machine it must be reachable from the operator's Mac (not `localhost` or the Mac's own addresses). `.md`, `.markdown`, `.mdown` and `.mkd` open in the markdown viewer; everything else in a browser viewer. Showing the same source again (same caller, path or URL, and `--dir`) refreshes its viewer: in place, keeping hash and scroll, when the viewer is still on the shown page; back to the source when the operator moved to another page. A caller has at most eight live viewers, the next replaces the oldest. A viewer the operator closed stays closed until the agent shows it again. The viewer reloads on a file change while visible, keeping hash and scroll; a reload that fails is retried on the next check. A redirect's final page counts as loaded. Markdown counts as loaded only once the reader has rendered it; empty markdown is `blank`.
+
+| Flag | Meaning |
+|---|---|
+| `--dir <folder>` | An existing folder the page may fetch assets from: html, css, js and mjs, json and map, png, jpg, gif, webp, avif and ico, woff, woff2, ttf and otf, txt, md and csv, mp4, webm, mp3 and wav. No `..`, no encoded traversal or backslash; symlinks are resolved on the machine that holds the file and must stay inside the folder; svg is not served. Path form only. |
+| `--wait <seconds>` | How long the load check waits, 1 to 60 (clamped), default 15. |
+
+The result (`--json` prints it):
+
+| Field | Value |
+|---|---|
+| `viewer_panel_id` | The viewer's UUID (a child of the caller: `parent_panel_id`, `c11 family`, metadata `show.source`). |
+| `workspace_id` | Its workspace. |
+| `viewer_kind` | `browser` or `markdown`. |
+| `action` | `opened`, `refreshed` or `reopened`; `replaced_panel_id` when an older viewer made room. |
+| `address` | `c11-show://<machine>/<home-relative path>` (`/_/<absolute path>` outside home); a URL shows as itself. |
+| `load.status` | `loaded`, `failed`, `blank` or `timeout`. |
+| `load.reason`, `load.http_status` | Why it failed. |
+| `load.script_errors`, `load.refused_assets` | Counts; nonzero prints a warning line. |
+| `load.text_length`, `load.elements` | What `blank` is judged on. |
+
+Text output is `OK <action> <address> → panel:<ref> (<status>)`, then `warning: <n> script errors` and `warning: <n> assets refused (…)` when nonzero.
+
+Exit codes: 0 when `load.status` is `loaded`, and when a linked machine recorded the show while c11 is away. 1 for everything else, with one line on stderr: `show_load_failed: <reason>`, `show_blank: …`, `show_load_timeout: not loaded within <n> s`, or a refusal `<code>: <message>`.
+
+| Code | Means |
+|---|---|
+| `show_not_found` | No file at that path (checked on the CLI's machine before anything is sent). |
+| `show_not_a_file` | The path is a folder or another non-regular file. |
+| `show_too_large` | Over 8 MB: host it and `show <url>`. |
+| `show_dir_invalid` | `--dir` is not an existing folder, or was given with a URL. |
+| `show_url_refused` | The URL is not allowed from this caller (`file:`, loopback, the operator's own machine from a linked machine). |
+| `show_invalid_source` | No target, or a malformed source. |
+| `show_no_caller` | Not run inside a c11 panel. |
+| `show_source_unreachable` | c11 could not read the file through the machine link. |
+| `show_viewer_display_only` | A browser command named a viewer: viewers are display only, for every caller. |
+| `show_unrecorded` | On a linked machine with c11 away, the record could not be kept. |
+
+On a linked machine, `show` keeps a durable record in that machine's hc document store. With c11 away it prints `OK recorded; c11 is away; it will load when the Mac wakes` and exits 0; when the Mac wakes the operator sees it once in Feed with an open action, never a panel that opens unasked. `show close` while away marks the record closed and prints `OK closed in record; c11 is away`.
+
+`show close` closes viewers the caller showed: those for `<path|url>` (narrowed by `--dir` when given), or all of them. It prints `OK closed <n>`.
+
+Point and say: in a shown page the operator Option-clicks an element and types one line. It arrives as mail to the showing agent's panel (topic `show.point`, from `operator`) with the line, `page:` (the address the element was read from, hash included), the element's selector, tag and text, and a cropped screenshot path. It is offered on the shown page and on other pages of the same source (the same `c11-show://<machine>` host, or the same origin as a shown URL); there the mail adds `note: not the shown page; shown: <address>`. On any other page the Option-click goes to the page and nothing is taken or sent. The composer names the recipient (`To <panel title> · <machine>`) above the field for as long as the operator types, then says in place `Sent to <title>` once a copy is in your inbox, or `Not sent: <reason>`. If the showing panel has closed, or its terminal ended and was not resumed, the composer and the viewer's bar say the agent has closed and nothing is offered; a resume, or a re-show from that panel, restores it. A page with embedded content (any iframe, frame, embed or object) gets no screenshot: the mail carries `screenshot: omitted (the page has embedded content)`. A note is bound to the page it was read from; if the page navigates first, nothing of it is sent. Mail goes to the workspace that holds the showing panel now. On a linked machine the screenshot is written to that machine (`~/.local/share/c11/show/shots/`); for an agent in an Incus container it is pushed into the container (`/tmp/c11-show/shots/`). Nothing a page's own script does can start it.
+
+A viewer's address bar keeps its own address: Return on the viewer's `c11-show://` address (or picking it from the suggestions) reloads the shown page, as a re-show does. Any other `c11-show:` input, in a viewer or an ordinary browser panel, is refused with a notice; it is never sent to a search engine and never offered as a search or search suggestion.
+
+A viewer is a child of the caller with its own non-persistent website data: it never shares cookies or storage with ordinary browser panels, and a link it would open in a new panel (`target="_blank"`, Cmd- or middle-click) loads in the same viewer. A viewer restores as a viewer when c11 restarts, on the page and hash it was showing, hibernated if it was, and keeping its age for the eight-viewer limit.
+
+Discovery: capability feature `show` version 1; methods `show.open` and `show.close`.

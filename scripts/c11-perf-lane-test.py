@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hermetic tests for Atlas performance record parsing and admission results."""
+"""Hermetic tests for build-host performance record parsing and admission results."""
 
 from __future__ import annotations
 

@@ -19,9 +19,9 @@ The fill hook takes the actual `embedded.Surface.core_surface.app.mailbox`, push
 
 The native-read agent owns the archive's build root. The parent owner must add these exports and make the resulting `libghostty-c11-read-test.a` available to the runner. Unresolved symbols are a build failure, never a skipped test or pass.
 
-## Atlas run
+## Build-host run
 
-On Atlas with an unlocked macOS GUI session, build the opt-in native fixture archive using the repository remote build procedure. Then run:
+On the build host with an unlocked macOS GUI session, build the opt-in native fixture archive using the repository remote build procedure. Then run:
 
 ```sh
 tests/ghostty_patchset/run-teardown-host.sh \

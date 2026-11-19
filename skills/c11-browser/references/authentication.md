@@ -58,7 +58,7 @@ c11 browser open https://app.example.com/auth/google --json
 c11 browser panel:7 wait --url-contains "accounts.google.com" --timeout-ms 30000
 c11 browser panel:7 snapshot --interactive
 
-c11 browser panel:7 fill e1 "user@gmail.com"
+c11 browser panel:7 fill e1 "user@example.com"
 c11 browser panel:7 click e2 --snapshot-after --json
 
 c11 browser panel:7 wait --url-contains "app.example.com" --timeout-ms 45000

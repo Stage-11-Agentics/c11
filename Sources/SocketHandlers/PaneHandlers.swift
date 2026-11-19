@@ -203,8 +203,16 @@ extension TerminalController {
         // Validate the optional --cwd override server-side. Only meaningful for
         // terminal panes (browser/markdown have no shell), but validate
         // regardless so a bad path is rejected rather than silently ignored.
+        // Ticket 12: --on <machine>. A remote --cwd is a path on that machine.
+        let machineParam: V2MachineParam
+        switch v2ResolveMachineParam(params, panelType: panelType, absent: .inherit) {
+        case .failure(let error): return error
+        case .success(let value): machineParam = value
+        }
         var cwdOverride: String?
-        if let err = v2ResolveCwdParam(params, resolved: &cwdOverride) {
+        if machineParam.isRemote {
+            cwdOverride = machineParam.remoteCwd
+        } else if let err = v2ResolveCwdParam(params, resolved: &cwdOverride) {
             return err
         }
 
@@ -282,7 +290,8 @@ extension TerminalController {
                     case .markdown:
                         return ws.newMarkdownPanel(inPane: paneId, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
                     case .terminal:
-                        return ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
+                        return ws.newTerminalSurface(inPane: paneId, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride,
+                                                     initialInput: initialInput, machine: machineParam.request)?.id
                     }
                 }
 
@@ -306,12 +315,18 @@ extension TerminalController {
                     case .markdown:
                         return ws.newMarkdownSplit(from: sourcePanelId, orientation: orientation, insertFirst: insertFirst, filePath: resolvedMarkdownPath!, focus: self.v2FocusAllowed())?.id
                     case .terminal:
-                        return ws.newTerminalSplit(from: sourcePanelId, orientation: orientation, insertFirst: insertFirst, focus: self.v2FocusAllowed(), workingDirectory: cwdOverride, initialInput: initialInput)?.id
+                        return ws.newTerminalSplit(from: sourcePanelId, orientation: orientation, insertFirst: insertFirst, focus: self.v2FocusAllowed(),
+                                                   workingDirectory: cwdOverride, initialInput: initialInput, machine: machineParam.request)?.id
                     }
                 }
             }
 
             guard let createdPanelId = newPanelId else {
+                // C11H-391 (NB3): a split of a terminal whose machine's link c11 won't use.
+                if panelType == .terminal, let refusal = ws.lastHCRemoteRefusal {
+                    result = Self.v2MachineError(refusal)
+                    return
+                }
                 result = .err(code: "internal_error", message: "Failed to create area", data: nil)
                 return
             }

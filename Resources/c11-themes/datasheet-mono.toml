@@ -1,0 +1,208 @@
+# Datasheet Mono: square everything, 1 px rules, mono uppercase labels, white accent, and
+# international orange only where something needs you (waiting marks, the waiting pill, the
+# waiting area's frame). Selection is inversion. Prototype key 2 (data-theme="datasheet") of
+# design/themes/c11-themes.html; colour register from design/themes/toml/datasheet-mono.toml.
+# Spec: the Datasheet Mono aesthetic (Stage 11 design notes).
+
+[identity]
+name         = "datasheet-mono"
+display_name = "Datasheet Mono"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 2
+
+[palette]
+surface = "#111214"
+sidebar = "#0C0D0F"
+chip    = "#1A1B1F"
+edge    = "#2C2E33"
+rule    = "#1F2024"          # card inner rule and progress track
+ink     = "#FFFFFF"
+text    = "#FFFFFFEB"        # rgba(255,255,255,.92)
+text2   = "#FFFFFF94"        # rgba(255,255,255,.58); was opaque #A3A4A8 in the schema-1 register
+dim     = "#FFFFFF75"        # rgba(255,255,255,.46)
+orange  = "#FF4F1F"
+clear   = "#00000000"
+
+[variables]
+background          = "$palette.sidebar"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.text2"
+accent              = "$palette.ink"
+accentAlt           = "$palette.orange"
+separator           = "$palette.edge"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$separator"   # quiet frame: white is the focused area's alone (C11H-169)
+thicknessPt      = 1.0
+inactiveOpacity  = 0.18
+unfocusedOpacity = 0.4
+
+[chrome.sidebar]
+tintOverlay                   = "$background"
+tintBase                      = "$background"
+tintBaseOpacity               = 1.0
+activeTabFill                 = "$surface"
+activeTabFillFallback         = "$surface"
+activeTabRail                 = "$accent"
+activeTabRailFallback         = "$accent"
+# JUDGMENT: the register had the rail at 1.0, but the prototype draws no left-edge strip
+# (the active card is a full-perimeter white outline; aesthetics rule: no coloured edge strips).
+activeTabRailOpacity          = 0.0
+inactiveTabCustomOpacity      = 0.6
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accentAlt"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$separator"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$surface"
+backgroundOpacity   = 1.0
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+# JUDGMENT: --chrome-ctl is #1A1B1F, but the CSS sets .ctl and .ctl-group to background:none and
+# draws a 1 px rule round the group instead, so the control fill is clear.
+controlFill         = "$palette.clear"
+controlForeground   = "$foreground"
+
+[chrome.tabBar]
+background      = "$surface"
+activeFill      = "$accent"
+divider         = "$separator"
+activeIndicator = "$accent"
+text            = "$foreground"
+textSecondary   = "$foregroundSecondary"
+activeText      = "$palette.surface"
+# `number` left unset on purpose: the CSS gives the tab number the tab text colour, and
+# #111214 on the active (inverted) tab, never the accent.
+
+[chrome.browserChrome]
+background  = "$surface"
+omnibarFill = "$palette.chip"
+
+[chrome.markdownChrome]
+background = "$surface"
+
+[behavior]
+animateWorkspaceCrossfade = false
+
+# ---- schema 2 ----
+
+[type]
+ui      = "system"
+display = "system"
+mono    = "system-mono"
+
+[type.windowTitle]
+family   = "mono"
+scale    = 0.85            # 11 / 13
+weight   = "medium"
+case     = "upper"
+tracking = 0.06
+
+[type.cardTitle]
+family = "display"
+scale  = 0.88              # 15 / 17
+weight = "semibold"
+
+[type.cardLabel]
+family   = "mono"
+scale    = 0.95            # 10.5 / 11
+case     = "upper"
+tracking = 0.06
+
+[type.agentRow]
+family = "ui"
+scale  = 0.96              # 13 / 13.5
+
+[type.tab]
+family   = "mono"
+scale    = 0.84            # 10.5 / 12.5
+case     = "upper"
+tracking = 0.05            # the CSS uses .05em on tabs, .06em elsewhere
+
+[type.chip]
+family   = "mono"
+scale    = 0.88            # 10.5 / 12 = 0.875
+case     = "upper"
+tracking = 0.06
+
+[type.pill]
+family   = "mono"
+scale    = 0.75            # 10.5 / 14
+case     = "upper"
+tracking = 0.06
+
+[geometry]
+cardRadius         = 0.0
+cardBorderPt       = 1.0
+cardActiveBorderPt = 1.0
+cardPaddingPt      = 12.0
+pillRadius         = 0.0
+controlRadius      = 0.0
+chipRadius         = 0.0
+markRadius         = 0.0
+progressHeightPt   = 4.0
+progressRadius     = 0.0
+tabSelection       = "invert"
+
+[chrome.card]
+sheen = false   # the prototype cards are flat: no top sheen, no identity wash
+fill          = "$surface"
+fillActive    = "$surface"
+border        = "$separator"
+borderActive  = "$accent"
+borderWaiting = "$separator"   # the theme resets .card.waiting to the plain edge; orange lives on the marks
+text          = "$foreground"
+textSecondary = "$foregroundSecondary"
+textDim       = "$palette.dim"
+rule          = "$palette.rule"
+accent        = "$accent"
+progress      = "$accent"
+progressTrack = "$palette.rule"
+
+[chrome.pill]
+style = "filled"
+fill  = "$palette.orange"
+ink   = "$palette.surface"
+
+[chrome.descriptionBar]
+# chipFill unset: the chip has no fill here. Border is color-mix(chrome-text 25%, transparent),
+# which is white at .92 x .25 = .23 alpha.
+chipBorder = "#FFFFFF3B"
+chipText   = "$foreground"
+
+[chrome.area]
+focusBorder   = "$accent"
+waitingBorder = "$palette.orange"
+thicknessPt   = 1.0
+
+[backdrop]
+kind  = "solid"
+color = "$background"
+
+[states]
+waiting     = "$palette.orange"
+waitingInk  = "$palette.surface"
+# JUDGMENT: --live is #FF4F1F in the CSS, but the theme paints the running state in plain card
+# text (ink); Atin's 2026-11-02 ruling took running back to ink, so only waiting is orange.
+running     = "$foreground"
+idle        = "$palette.dim"
+cold        = "$palette.dim"
+flag        = "$accent"
+unread      = "$palette.text2"
+# notification and usageLimit unset: the prototype draws neither.
+
+[ornaments]
+hoverBrackets = true
+
+# Ghostty terminal theme for `c11 themes set <name> --with-terminal`
+[terminal]
+pairedTheme = "c11-datasheet-mono"

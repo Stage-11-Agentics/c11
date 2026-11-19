@@ -92,9 +92,9 @@ No substantive disagreements. The two reviews are remarkably aligned. Minor fram
 ---
 
 ## Files Touched
-- `/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude`
+- `~/src/c11/Resources/bin/claude`
 
 ## Source Reviews
-- `/Users/atin/Projects/Stage11/code/c11/notes/trident-review-claude-agents-passthrough-pack-20260512-1301/standard-claude.md`
-- `/Users/atin/Projects/Stage11/code/c11/notes/trident-review-claude-agents-passthrough-pack-20260512-1301/standard-codex.md`
+- `~/src/c11/notes/trident-review-claude-agents-passthrough-pack-20260512-1301/standard-claude.md`
+- `~/src/c11/notes/trident-review-claude-agents-passthrough-pack-20260512-1301/standard-codex.md`
 - standard-gemini.md — UNAVAILABLE (quota exhausted)

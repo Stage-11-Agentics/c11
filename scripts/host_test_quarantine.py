@@ -7,6 +7,9 @@ from pathlib import Path
 
 
 TEST_ID = re.compile(r"c11(?:Logic)?Tests/[A-Za-z0-9_]+/test[A-Za-z0-9_]+\Z")
+# Scopes: "all" skips everywhere; "remote" skips only on the remote build route (remote-build.sh).
+# An older inventory's name for "remote" still reads as "remote".
+SCOPE_ALIASES = {"all": "all", "remote": "remote", "atlas": "remote"}
 
 
 def read_host_test_quarantine(path):
@@ -28,8 +31,9 @@ def read_host_test_quarantine(path):
             raise ValueError(f"{path}:{line_number}: expected selector and one-line reason")
         if not TEST_ID.fullmatch(test_id):
             raise ValueError(f"{path}:{line_number}: expected one exact c11Tests or c11LogicTests method selector")
-        if scope not in ("all", "atlas"):
-            raise ValueError(f"{path}:{line_number}: scope must be all or atlas")
+        if scope not in SCOPE_ALIASES:
+            raise ValueError(f"{path}:{line_number}: scope must be all or remote")
+        scope = SCOPE_ALIASES[scope]
         if test_id in seen:
             raise ValueError(f"{path}:{line_number}: duplicate host quarantine selector {test_id}")
         seen.add(test_id)
@@ -38,7 +42,7 @@ def read_host_test_quarantine(path):
 
 
 def ci_actions(rows):
-    """Return the CI decision for every row, keeping Atlas-only tests in CI."""
+    """Return the CI decision for every row, keeping remote-only tests in CI."""
     return [
         {"action": "skip" if row["scope"] == "all" else "run", **row}
         for row in rows

@@ -1,0 +1,23 @@
+# c11 Big Board: paired with the Big Board chrome theme (design/themes/gen-terminal-themes.py)
+palette = 0=#292d31
+palette = 1=#ff6b6b
+palette = 2=#3ddc84
+palette = 3=#ffb224
+palette = 4=#6fb6ff
+palette = 5=#ff7a9e
+palette = 6=#56c9c2
+palette = 7=#b6c4ce
+palette = 8=#52677a
+palette = 9=#fe9692
+palette = 10=#5bf49a
+palette = 11=#fed292
+palette = 12=#9dccfe
+palette = 13=#b4a0e8
+palette = 14=#6fe0d9
+palette = 15=#dfebf4
+background = #05070a
+foreground = #cfdbe3
+cursor-color = #3ddc84
+cursor-text = #05070a
+selection-background = #353a3e
+selection-foreground = #cfdbe3

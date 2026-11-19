@@ -44,7 +44,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Validate Atlas admission helpers
+      - name: Validate build-host admission helpers
         run: ./tests/test_ci_atlas_tools.sh
 
       - name: Validate create-dmg version pinning
@@ -65,10 +65,10 @@ jobs:
       - name: Validate completed-attempt timing
         run: python3 tests/test_ci_workflow_timing.py
 
-      - name: Validate Atlas performance lane
+      - name: Validate build-host performance lane
         run: python3 scripts/c11-perf-lane-test.py
 
-      - name: Validate Atlas main backstop
+      - name: Validate build-host main backstop
         timeout-minutes: 2
         run: python3 scripts/c11-main-backstop-test.py
 
@@ -128,6 +128,7 @@ jobs:
           python3 tests/test_opencode_wrapper_hooks.py
           python3 tests/test_pi_wrapper_hooks.py
           python3 tests/test_omp_wrapper_hooks.py
+          python3 tests/test_c11_agent_note.py
           python3 tests/test_agent_wrapper_interactive_marker.py
           python3 tests/test_socket_guard.py
           # Full sweep is the hourly python job. This is the incident pair only.

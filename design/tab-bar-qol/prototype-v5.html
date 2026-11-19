@@ -178,9 +178,9 @@ const TABS = [
   { n:150, t:'Agent Build 3', d:'Implementing sheet anchor tracking; next, re-validate the workspace switch.', st:'working', since:12*m, active:5e3, launched:2.2*h, agent:'Claude · Sonnet 5.5' },
   { n:137, t:'Overwatch Assessment', d:'September 29 state, all nine surfaces, eight ordered actions.', st:'idle', since:48*m, active:48*m, launched:6*h, agent:'Claude · Opus 5.5' },
   { n:160, t:'Ralph DAF Intake', d:'Needs a call: attach the admin prototype or send the link?', st:'waiting', since:6*m, active:6*m, launched:1.3*h, agent:'Codex · gpt-5.5' },
-  { n:158, t:'REPLY-2-DRAFT.md', d:'~/Projects/Stage11/deployments/ralph-daf/REPLY-2-DRAFT.md', st:null, active:30*m, launched:50*m, agent:null },
+  { n:158, t:'REPLY-2-DRAFT.md', d:'~/src/deployments/ralph-daf/REPLY-2-DRAFT.md', st:null, active:30*m, launched:50*m, agent:null },
   { n:154, t:'Migration Review', d:'Flagged: schema migration vs dual-write needs your ruling.', st:'flag', since:14*m, active:14*m, launched:3.4*h, agent:'Pi · kimi-k2.5' },
-  { n:171, t:'zsh', d:'~/Projects/Stage11/code/c11', st:null, active:4*m, launched:4*h, agent:null },
+  { n:171, t:'zsh', d:'~/src/c11', st:null, active:4*m, launched:4*h, agent:null },
 ];
 const S = { w: 560, dir: 'unfold', open: false, sel: 150, hover: null };
 const ago = ms => ms < m ? Math.max(1, Math.floor(ms/1e3))+'s' : ms < h ? Math.floor(ms/m)+'m' : (ms/h).toFixed(ms < 10*h ? 1 : 0).replace('.0','')+'h';

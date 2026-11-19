@@ -40,15 +40,33 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-DERIVED_ROOT="$HOME/Library/Developer/Xcode/DerivedData"
-C11D_SOCK_DIR="$HOME/Library/Application Support/c11"
+DERIVED_ROOT="${C11_PRUNE_DERIVED_ROOT:-$HOME/Library/Developer/Xcode/DerivedData}"
+TMP_ROOT="${C11_PRUNE_TMP_ROOT:-/tmp}"
+# Tagged builds since C11H-364 keep their sockets, logs and DerivedData link in
+# c11's per-user folder ($(getconf DARWIN_USER_TEMP_DIR)c11); older ones in /tmp.
+# shellcheck source=lib/c11-user-paths.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/c11-user-paths.sh"
+RUNTIME_ROOT="${C11_PRUNE_RUNTIME_ROOT:-$(c11_user_runtime_dir)}"
+C11D_SOCK_DIR="${C11_PRUNE_SUPPORT_DIR:-$HOME/Library/Application Support/c11}"
+
+# BSD sed uses `|` as the `s|||` delimiter, so the `(c11|cmux)` alternation
+# needs a different separator or the substitution never extracts a tag.
+tag_from_process_line() {
+  printf '%s\n' "$1" | sed -E 's#.*DerivedData/(c11h|c11|cmux)-([^/]+)/Build/Products/Debug/.*#\2#' # c11-2.0:legacy
+}
 
 running_tags() {
-  # Each app lives at .../c11-<tag>/Build/Products/Debug/c11 DEV <tag>.app/.../c11
-  pgrep -afl "c11 DEV " 2>/dev/null \
-    | sed -E 's|.*DerivedData/(c11|cmux)-([^/]+)/Build/Products/Debug/.*|\2|' \
-    | grep -vE '^$' \
-    | sort -u
+  # Each c11 app lives at .../c11-<tag>/Build/Products/Debug/c11 DEV <tag>.app/.../c11.
+  # Path-scoped. Also keep a live c11 DEV bundle (executable ends in /c11, not /c11)
+  # so this prune cannot drop DerivedData out from under the operator's c11.
+  {
+    pgrep -afl 'c11 DEV [^/]*\.app/Contents/MacOS/c11' 2>/dev/null || true
+    pgrep -afl 'c11 DEV [^/]*\.app/Contents/MacOS/c11([^h]|$)' 2>/dev/null || true
+    # The retired line's tagged builds, which prune also clears: a running one is kept.
+    pgrep -afl 'c11h DEV [^/]*\.app/Contents/MacOS/c11h' 2>/dev/null || true # c11-2.0:legacy
+  } | while IFS= read -r line; do
+    tag_from_process_line "$line"
+  done | grep -vE '^$' | sort -u
 }
 
 human_bytes() {
@@ -60,84 +78,105 @@ human_bytes() {
   fi
 }
 
-is_tag_artifact() {
-  # Returns 0 if the given path is a per-tag build artifact we can safely prune.
-  # Criteria: (a) symlink whose target is exactly a DerivedData/c11-<SAME_TAG> root
-  # (reload.sh compat link — NOT a bin symlink like /tmp/c11-cli), or
-  # (b) a dir containing Build/ (used as -derivedDataPath).
-  local p="$1"
-  local path_tag="${p##*/c11-}"
-  path_tag="${path_tag##*/cmux-}"
-  path_tag="${path_tag##*/c11mux-}"
-  if [[ -L "$p" ]]; then
-    local target
-    target="$(readlink "$p" 2>/dev/null || true)"
-    # Reject if symlink target has anything after the DerivedData/c11-<tag>/ component
-    # (e.g. points at Build/Products/Debug/c11). Those are bin symlinks, not tag roots.
-    if [[ "$target" == */DerivedData/c11-${path_tag} || "$target" == */DerivedData/cmux-${path_tag} ]]; then
-      return 0
+# A DerivedData directory is deleted only when every built app is in the c11
+# family and at least one such app exists. One coexisting c11, cmux, or
+# unreadable product keeps the whole root, including the c11 app beside it.
+is_c11_product_root() {
+  local root="$1"
+  [[ -d "$root" ]] || return 1
+  local app plist id owned=0
+  shopt -s nullglob
+  local apps=(
+    "$root"/Build/Products/*/*.app
+    "$root"/Build/Products/*/*/*.app
+  )
+  shopt -u nullglob
+  [[ ${#apps[@]} -gt 0 ]] || return 1
+  for app in "${apps[@]}"; do
+    [[ -d "$app" ]] || continue
+    plist="$app/Contents/Info.plist"
+    id=""
+    if [[ -f "$plist" ]]; then
+      id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" 2>/dev/null || true)"
+    fi
+    # c11 2.0's own builds, and the retired line's tagged builds it still cleans up.
+    if [[ "$id" == "com.stage11.c11" || "$id" == com.stage11.c11.* ||
+          "$id" == "com.stage11.c11h" || "$id" == com.stage11.c11h.* ]]; then # c11-2.0:legacy
+      owned=1
+      continue
     fi
     return 1
-  fi
-  [[ -d "$p/Build" ]] && return 0
-  return 1
+  done
+  [[ "$owned" -eq 1 ]]
 }
 
 collect_tags() {
-  # /tmp is a symlink on macOS, so use shell globs (which expand via the link) instead of find.
   {
     if [[ -d "$DERIVED_ROOT" ]]; then
-      local d
-      for d in "$DERIVED_ROOT"/c11-* "$DERIVED_ROOT"/cmux-*; do
+      local d leaf
+      shopt -s nullglob
+      for d in "$DERIVED_ROOT"/c11-* "$DERIVED_ROOT"/c11h-*; do # c11-2.0:legacy
         [[ -d "$d" ]] || continue
-        local leaf="${d##*/}"
-        echo "${leaf#*-}"
+        is_c11_product_root "$d" || continue
+        leaf="${d##*/}"
+        if [[ "$leaf" == c11h-* ]]; then # c11-2.0:legacy
+          echo "${leaf#c11h-}" # c11-2.0:legacy
+        elif [[ "$leaf" == c11-* ]]; then
+          echo "${leaf#c11-}"
+        fi
       done
+      shopt -u nullglob
     fi
-    local p tag
+    local p base
     shopt -s nullglob
-    for p in /tmp/c11-* /tmp/cmux-* /tmp/c11mux-*; do
-      is_tag_artifact "$p" || continue
-      tag="${p##*/c11-}"
-      tag="${tag##*/cmux-}"
-      tag="${tag##*/c11mux-}"
-      echo "$tag"
+    for p in "$RUNTIME_ROOT"/c11-* "$TMP_ROOT"/c11-* "$TMP_ROOT"/c11h-*; do # c11-2.0:legacy
+      base="${p##*/}"
+      [[ "$base" != *.sock && "$base" != *.log ]] || continue
+      [[ -d "$p/Build" ]] || continue
+      is_c11_product_root "$p" || continue
+      base="${base#c11h-}" # c11-2.0:legacy
+      echo "${base#c11-}"
     done
     shopt -u nullglob
   } | sort -u
 }
 
 GENERIC_CACHES=(
-  /tmp/c11-build-cache
-  /tmp/c11-build-module-cache
-  /tmp/c11-build-home
-  /tmp/c11-module-cache
-  /tmp/c11-swift-module-cache
-  /tmp/cmux-build-cache
-  /tmp/cmux-build-module-cache
-  /tmp/cmux-build-home
-  /tmp/cmux-module-cache
-  /tmp/cmux-swift-module-cache
+  "$TMP_ROOT/c11-build-cache"
+  "$TMP_ROOT/c11-build-module-cache"
+  "$TMP_ROOT/c11-build-home"
+  "$TMP_ROOT/c11-module-cache"
+  "$TMP_ROOT/c11-swift-module-cache"
 )
+
+LEGACY_TAG_PREFIX=c11h # c11-2.0:legacy (the retired line's tagged builds)
 
 tag_paths() {
   local tag="$1"
-  printf '%s\n' \
-    "$DERIVED_ROOT/c11-$tag" \
-    "$DERIVED_ROOT/cmux-$tag" \
-    "/tmp/c11-$tag" \
-    "/tmp/cmux-$tag" \
-    "/tmp/c11mux-$tag" \
-    "/tmp/c11-debug-$tag.sock" \
-    "/tmp/c11-debug-$tag.log" \
-    "/tmp/c11-debug-$tag-bg.log" \
-    "/tmp/c11-xcodebuild-$tag.log" \
-    "/tmp/cmux-debug-$tag.sock" \
-    "/tmp/cmux-debug-$tag.log" \
-    "/tmp/cmux-debug-$tag-bg.log" \
-    "/tmp/cmux-xcodebuild-$tag.log" \
-    "$C11D_SOCK_DIR/c11d-dev-$tag.sock" \
-    "$C11D_SOCK_DIR/cmuxd-dev-$tag.sock"
+  local p
+  for p in "$DERIVED_ROOT/c11-$tag" "$DERIVED_ROOT/c11h-$tag"; do # c11-2.0:legacy
+    if is_c11_product_root "$p"; then
+      printf '%s\n' "$p"
+    fi
+  done
+  for p in \
+    "$RUNTIME_ROOT/c11-$tag" \
+    "$(c11_socket_path_for_stem "c11-debug-$tag" "$RUNTIME_ROOT")" \
+    "$RUNTIME_ROOT/c11-debug-$tag.log" \
+    "$RUNTIME_ROOT/c11-debug-$tag-bg.log" \
+    "$RUNTIME_ROOT/c11-xcodebuild-$tag.log" \
+    "$TMP_ROOT/c11-$tag" \
+    "$TMP_ROOT/$LEGACY_TAG_PREFIX-$tag" \
+    "$TMP_ROOT/c11-debug-$tag.sock" \
+    "$TMP_ROOT/c11-debug-$tag.log" \
+    "$TMP_ROOT/c11-debug-$tag-bg.log" \
+    "$TMP_ROOT/c11-xcodebuild-$tag.log" \
+    "$C11D_SOCK_DIR/c11d-dev-$tag.sock"
+  do
+    case "${p##*/}" in
+      c11-*|c11h-*|c11d-dev-*.sock) printf '%s\n' "$p" ;; # c11-2.0:legacy
+    esac
+  done
 }
 
 path_size_bytes() {
@@ -151,6 +190,10 @@ path_size_bytes() {
     echo 0
   fi
 }
+
+if [[ "${C11_PRUNE_LIB_ONLY:-}" == 1 ]]; then
+  return 0
+fi
 
 RUNNING=()
 while IFS= read -r t; do

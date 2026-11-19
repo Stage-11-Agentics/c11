@@ -23,6 +23,30 @@ final class WorkspaceGroupTests: XCTestCase {
         XCTAssertEqual(WorkspaceGroupProjection.restoredGroups(restored.workspaceGroups), [])
     }
 
+    /// C11H-342: a session saved by a build without the root order (every
+    /// build before this one) has no `workspaceRootOrder` key and restores
+    /// exactly as it drew: groups first, then ungrouped workspaces.
+    func testSnapshotWithoutRootOrderRestoresGroupsFirstAndInterleavedOrderRoundTrips() throws {
+        let group = WorkspaceGroup(name: "Fleet")
+        let flagship = UUID(), member = UUID()
+        let entries = [WorkspaceOrderEntry(id: flagship, isPinned: false),
+                       WorkspaceOrderEntry(id: member, isPinned: false, groupId: group.id)]
+        let groupJSON = String(decoding: try JSONEncoder().encode(group), as: UTF8.self)
+        let old = try JSONDecoder().decode(SessionWorkspaceManagerSnapshot.self, from: Data(
+            #"{"selectedWorkspaceIndex":0,"workspaces":[],"workspaceGroups":[\#(groupJSON)]}"#.utf8))
+        XCTAssertNil(old.workspaceRootOrder)
+        XCTAssertEqual(WorkspaceRootOrder.resolve(stored: old.workspaceRootOrder, groups: old.workspaceGroups ?? [],
+                                                  workspaces: entries).map(\.id), [group.id, flagship])
+        let unsaved = SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: nil, workspaces: [], workspaceGroups: [group])
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(unsaved), as: UTF8.self).contains("workspaceRootOrder"),
+                       "no order, no key: the saved shape stays as before")
+        let saved = SessionWorkspaceManagerSnapshot(selectedWorkspaceIndex: nil, workspaces: [], workspaceGroups: [group],
+                                                    workspaceRootOrder: [flagship, group.id])
+        let restored = try JSONDecoder().decode(SessionWorkspaceManagerSnapshot.self, from: JSONEncoder().encode(saved))
+        XCTAssertEqual(WorkspaceRootOrder.resolve(stored: restored.workspaceRootOrder, groups: [group],
+                                                  workspaces: entries).map(\.id), [flagship, group.id])
+    }
+
     func testCorruptGroupRestoreKeepsFirstDuplicateAndNormalizesPinOrder() {
         let first = WorkspaceGroup(name: "First")
         var duplicate = first

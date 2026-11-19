@@ -73,14 +73,11 @@ final class WorkspaceGitProbeHardeningTests: XCTestCase {
         XCTAssertFalse(clean.isDirty, "pass-through filters leave every file unchanged, as plain git reports")
         XCTAssertNotNil(clean.gitContext)
 
-        // Real changes still register, in the superproject and in the
-        // submodule (plain git reports the latter as ` M sub`).
-        try Data("changed\n".utf8).write(to: docs.appendingPathComponent("notes.txt"))
-        try makeStatDirty(root)
-        XCTAssertTrue(probe(docs.path).isDirty)
-        XCTAssertEqual(markerNames(markers), [], "the workspace probe ran a repository-configured program")
-
-        try Data("doc\n".utf8).write(to: docs.appendingPathComponent("notes.txt"))
+        // A real change still registers under the hostile config: here in the
+        // submodule (plain git reports it as ` M sub`). A superproject file
+        // change is covered against plain git by
+        // testDirtyCheckInAnOrdinaryRepositoryMatchesPlainGit (C11H-30 trims
+        // the duplicate probe to keep the run budget).
         try Data("changed\n".utf8).write(to: root.appendingPathComponent("sub/s.txt"))
         XCTAssertEqual(try gitOutput(root, ["status", "--porcelain", "-uno"]), " M sub", "plain git reports the submodule")
         try clearMarkers(markers)

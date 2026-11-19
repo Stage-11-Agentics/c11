@@ -36,7 +36,7 @@ REPO = TESTS_DIR.parent
 
 # Host-affecting files refuse to start unless C11_TEST_ALLOW_LIVE_APP=1.
 # The canary does not set that, and does not execute their bodies.
-# The Atlas slot suite is not here: its locks stay in a temp directory.
+# The build-host slot suite is not here: its locks stay in a temp directory.
 SKIP = {
     "test_socket_guard_canary.py": "this runner",
     "test_socket_access.py": "refuses without C11_TEST_ALLOW_LIVE_APP; launches and kills a dev app",

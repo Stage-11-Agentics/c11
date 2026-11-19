@@ -27,7 +27,7 @@ final class HealthSentryParserTests: XCTestCase {
         XCTAssertTrue(events.allSatisfy { $0.summary.hasPrefix("com.stage11.c11.debug.foo/") })
     }
 
-    func testIncludesLegacyC11muxBundles() throws {
+    func testIgnoresLegacyC11muxBundles() throws {
         let tmp = try makeTempHome()
         defer { try? FileManager.default.removeItem(at: tmp) }
 
@@ -39,8 +39,7 @@ final class HealthSentryParserTests: XCTestCase {
         try Data([0]).write(to: legacy.appendingPathComponent("legacy-envelope"))
 
         let events = scanSentryQueued(home: tmp.path, since: Date.distantPast)
-        XCTAssertEqual(events.count, 1, "legacy c11mux bundles must remain in scope for v1")
-        XCTAssertEqual(events.first?.summary, "com.stage11.c11mux/legacy-envelope")
+        XCTAssertTrue(events.isEmpty)
     }
 
     func testSkipsBundlesWithoutIoSentryDir() throws {

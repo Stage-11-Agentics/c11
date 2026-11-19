@@ -51,3 +51,14 @@ test("marks guard as partial when only some immutable assets exist", () => {
   assert.equal(result.shouldSkipBuildAndUpload, false);
   assert.equal(result.shouldSkipUpload, false);
 });
+
+test("C11H-392: a release with the Linux machine's files guards them as immutable too", () => {
+  const { releaseAssetNames, LINUX_MACHINE_ASSETS } = require("./release_asset_guard");
+  assert.deepEqual(releaseAssetNames(), IMMUTABLE_RELEASE_ASSETS);
+  const linux = releaseAssetNames({ linux: true });
+  assert.deepEqual(linux, [...IMMUTABLE_RELEASE_ASSETS, ...LINUX_MACHINE_ASSETS]);
+  const result = evaluateReleaseAssetGuard({ existingAssetNames: ["c11-linux-x86_64"], immutableAssetNames: linux });
+  assert.equal(result.guardState, RELEASE_ASSET_GUARD_STATE.PARTIAL);
+  assert.deepEqual(result.conflicts, ["c11-linux-x86_64"]);
+  assert.equal(evaluateReleaseAssetGuard({ existingAssetNames: ["c11-linux-x86_64"] }).guardState, RELEASE_ASSET_GUARD_STATE.CLEAR);
+});

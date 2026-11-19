@@ -201,6 +201,10 @@ extension TerminalController {
         v2MainSync {
             guard let ws = v2ResolveWorkspace(params: params, workspaceManager: workspaceManager),
                   let browserPanel = ws.browserPanel(for: surfaceId) else { return }
+            // C11H-377: a local agent's back, forward or reload acts on the
+            // page, so a download it brings may proceed (`navigate` stamps
+            // through `navigateSmart`).
+            browserPanel.noteLocalBrowserCommand()
             switch action {
             case "back":
                 browserPanel.goBack()
@@ -971,7 +975,7 @@ extension TerminalController {
         let timeout = Double(timeoutMs) / 1000.0
         let path = v2String(params, "path")
 
-        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: false) {
+        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: false, activates: true) {
         case .result(let result):
             return result
         case .ready(let target):
@@ -1536,13 +1540,16 @@ extension TerminalController {
                 return
             }
 
+            // C11H-104: the ref the panel had before the close; one minted
+            // afterwards is the next ordinal, a panel that never existed.
+            let surfaceRef = v2Ref(kind: .surface, uuid: targetId)
             let ok = ws.closePanel(targetId, force: true)
             result = ok
                 ? .ok([
                     "workspace_id": ws.id.uuidString,
                     "workspace_ref": v2Ref(kind: .workspace, uuid: ws.id),
                     "surface_id": targetId.uuidString,
-                    "surface_ref": v2Ref(kind: .surface, uuid: targetId)
+                    "surface_ref": surfaceRef
                 ])
                 : .err(code: "internal_error", message: "Failed to close browser panel", data: ["surface_id": targetId.uuidString])
         }
@@ -1876,7 +1883,7 @@ extension TerminalController {
         guard let script = v2String(params, "script") ?? v2String(params, "content") else {
             return .err(code: "invalid_params", message: "Missing script", data: nil)
         }
-        return v2BrowserWithWorkerPanel(params: params, requireDocument: true) { target in
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true, activates: true) { target in
             let surfaceId = target.surfaceId
             switch v2RunBrowserJavaScriptOffMain(target.webView, frameSelector: target.frameSelector, script: script, timeout: 10.0) {
             case .failure(let message):

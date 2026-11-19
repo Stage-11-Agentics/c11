@@ -6,7 +6,6 @@ import Combine
 import CryptoKit
 import Darwin
 import Network
-import CoreText
 
 func cmuxSurfaceContextName(_ context: ghostty_surface_context_e) -> String {
     switch context {
@@ -21,13 +20,11 @@ func cmuxSurfaceContextName(_ context: ghostty_surface_context_e) -> String {
     }
 }
 
-func cmuxCurrentSurfaceFontSizePoints(_ surface: ghostty_surface_t) -> Float? {
-    guard let quicklookFont = ghostty_surface_quicklook_font(surface) else {
-        return nil
-    }
-
-    let ctFont = Unmanaged<CTFont>.fromOpaque(quicklookFont).takeUnretainedValue()
-    let points = Float(CTFontGetSize(ctFont))
+func c11CurrentSurfaceFontSizePoints(_ surface: ghostty_surface_t) -> Float? {
+    // Font inheritance runs on main before native creation. Quicklook consults
+    // renderer-owned font faces and can wait for glyph rasterization; the
+    // surface's main-thread font-size scalar is the authoritative zoom value.
+    let points = ghostty_surface_font_size(surface)
     guard points > 0 else { return nil }
     return points
 }
@@ -41,7 +38,7 @@ func cmuxInheritedSurfaceConfig(
 
     // Make runtime zoom inheritance explicit, even when Ghostty's
     // inherit-font-size config is disabled.
-    let runtimePoints = cmuxCurrentSurfaceFontSizePoints(sourceSurface)
+    let runtimePoints = c11CurrentSurfaceFontSizePoints(sourceSurface)
     if let points = runtimePoints {
         config.font_size = points
     }
@@ -60,6 +57,12 @@ func cmuxInheritedSurfaceConfig(
 }
 
 struct SidebarStatusEntry {
+    /// The same entry, last reported at `date` (a heartbeat: the value stands).
+    func reported(at date: Date) -> SidebarStatusEntry {
+        SidebarStatusEntry(key: key, value: value, icon: icon, color: color, url: url, priority: priority,
+                           format: format, timestamp: date, staleFromRestart: false)
+    }
+
     let key: String
     let value: String
     let icon: String?
@@ -205,7 +208,7 @@ extension Workspace {
                 conversationsByPanelId: conversationsByPanelId
             ) }
 
-        let statusSnapshots = statusEntries.values
+        let statusSnapshots = statusEntries.values.map(statusEntryWithReportedTime)
             .sorted { lhs, rhs in lhs.key < rhs.key }
             .map { entry in
                 SessionStatusEntrySnapshot(
@@ -240,7 +243,7 @@ extension Workspace {
             SessionGitBranchSnapshot(branch: branch.branch, isDirty: branch.isDirty)
         }
 
-        let metadataSnapshot: [String: String]? = metadata.isEmpty ? nil : metadata
+        let metadataSnapshot = WorkspaceMetadataStore.shared.persistenceSnapshot(workspaceId: id)
 
         return SessionWorkspaceSnapshot(
             id: id,
@@ -253,6 +256,7 @@ extension Workspace {
             currentDirectory: currentDirectory,
             rootDirectory: rootDirectory,
             rootAdoptionArmed: rootAdoptionArmed,
+            currentDirectoryIsRemoteReport: currentDirectoryIsRemoteReport ? true : nil,
             focusedPanelId: focusedPanelId,
             layout: layout,
             panels: panelSnapshots,
@@ -260,12 +264,42 @@ extension Workspace {
             logEntries: logSnapshots,
             progress: progressSnapshot,
             gitBranch: gitBranchSnapshot,
-            metadata: metadataSnapshot
+            metadata: metadataSnapshot.metadata,
+            metadataValues: metadataSnapshot.metadataValues,
+            metadataSources: metadataSnapshot.metadataSources,
+            hcShard: HCShardPlacement.shared.shard(forWorkspace: id).map { HCShardID(index: $0) }
         )
     }
 
     func restoreSessionSnapshot(_ savedSnapshot: SessionWorkspaceSnapshot) {
+        isApplyingSessionSnapshot = true
+        defer { isApplyingSessionSnapshot = false }
         let (snapshot, drops) = SessionRestoreNormalization.normalize(savedSnapshot)
+        // C11H-67: placement and each terminal's shard come back before any
+        // surface starts, so restore resolves every panel on its own shard.
+        let shardPool = HCBackendComposition.shared.pool
+        HCShardPlacement.shared.seed(workspace: id, shard: snapshot.hcShard?.index)
+        // Register the whole workspace before constructing any native surface.
+        // An old/keyless snapshot still resolves labels and durable intents.
+        for panel in snapshot.panels where panel.type == .terminal {
+            // C11H-92: a session this app does not have is an unknown shard, never S0.
+            shardPool?.seedRestored(panel: panel.id, savedSession: panel.terminal?.hcSession)
+            do {
+                if let identity = try (panel.terminal ?? SessionTerminalPanelSnapshot()).seedHCRestore(
+                    panelID: panel.id, backendActive: HCBackendComposition.shared.session != nil
+                ) {
+                    // C11H-38: a terminal restored by the launch's own startup
+                    // restore gets one launch-scoped resolution (see
+                    // LaunchRestoreMarks). A later restore (reopen, move) does not.
+                    if identity.persistence == .persistent,
+                       AppDelegate.shared?.isApplyingStartupSessionRestore == true {
+                        launchRestoreMarks.mark(panel.id)
+                    }
+                }
+            } catch {
+                NSLog("hc.restore.invalid_identity panel=%@", panel.id.uuidString)
+            }
+        }
         for drop in drops {
             NSLog("%@", drop.diagnostic(workspaceId: snapshot.id))
         }
@@ -274,6 +308,9 @@ extension Workspace {
         let normalizedCurrentDirectory = snapshot.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
         if !normalizedCurrentDirectory.isEmpty {
             currentDirectory = normalizedCurrentDirectory
+            // C11H-363: the directory's provenance travels with it.
+            let remote = snapshot.currentDirectoryIsRemoteReport ?? false
+            if currentDirectoryIsRemoteReport != remote { currentDirectoryIsRemoteReport = remote }
         }
         restoreRootDirectory(snapshot.rootDirectory, adoptionArmed: snapshot.rootAdoptionArmed)
 
@@ -292,6 +329,13 @@ extension Workspace {
         }
 
         restoreSurfaceMetadataFromSnapshot(panels: snapshot.panels)
+        // C11H-209: settled host-end decisions come back before any terminal
+        // resolves, so a resolution never decides them again.
+        for panelSnapshot in snapshot.panels {
+            guard let saved = panelSnapshot.terminal?.hcHostEnd,
+                  let terminal = panels[panelSnapshot.id] as? TerminalPanel else { continue }
+            terminal.restoreSavedHostEnd(saved)
+        }
         syncSurfacePanelActivityStates()
 
         // CMUX-11 Phase 3: rehydrate PaneMetadataStore entries from each
@@ -322,7 +366,15 @@ extension Workspace {
         setCustomColor(snapshot.customColor)
         isPinned = snapshot.isPinned
         groupId = snapshot.groupId
-        metadata = snapshot.metadata ?? [:]
+        do {
+            try WorkspaceMetadataStore.shared.restoreMetadata(workspaceId: id, legacy: snapshot.metadata,
+                values: snapshot.metadataValues, sources: snapshot.metadataSources)
+        } catch {
+            // The store retained the exact saved fields for the next autosave.
+            NSLog("workspace.metadata.restore retained workspace=%@ code=%@", id.uuidString,
+                  WorkspaceMetadataStore.rejectionCategory(error))
+        }
+        refreshMetadataProjection()
 
         // Tier 1 Phase 3: restore `statusEntries` from the snapshot, stamping
         // each entry with `staleFromRestart: true` so the sidebar can render
@@ -442,9 +494,13 @@ extension Workspace {
                 deadline: .now() + base + Double(index) * stagger
             ) { [weak self] in
                 guard let self,
-                      let terminalPanel = self.panels[panelId] as? TerminalPanel else {
+                      let terminalPanel = self.panels[panelId] as? TerminalPanel,
+                      self.isUntouchedShell(panelId, idleShellRequired: false) else {
                     return
                 }
+                // The legacy metadata fallback has no authoritative ended
+                // proof. It must never type into a persistent survivor.
+                guard terminalPanel.hcIdentity?.persistence != .persistent else { return }
                 TextBoxSubmit.send(command, via: terminalPanel.surface)
             }
         }
@@ -527,13 +583,28 @@ extension Workspace {
         registry: ConversationStrategyRegistry,
         mode: ResumeRecoveryMode,
         conversations: [String: PanelConversations],
-        awaitingScrape: Set<String> = []
+        awaitingScrape: Set<String> = [],
+        candidacy: ((UUID) -> LaunchResumeCandidacy)? = nil
     ) -> RestartPlan {
         guard SessionPersistencePolicy.agentRestartOnRestoreEnabled else { return RestartPlan() }
         var plan = RestartPlan()
         for panelSnapshot in snapshot.panels {
             guard panelSnapshot.type == .terminal else { continue }
             let key = panelSnapshot.id.uuidString
+            // C11H-98: before any decision. A terminal hc kept live with an
+            // agent in its foreground is kept, never planned; a persistent hc
+            // terminal is decided by its own recovery once hc says whether it
+            // ended (`persistentLifecycleChanged`), never from the snapshot.
+            switch (candidacy ?? launchResumeCandidacy)(panelSnapshot.id) {
+            case .liveAgent(let agentKind):
+                keepLiveAgent(panelId: panelSnapshot.id, agentKind: agentKind,
+                              conversation: conversations[key]?.active, stage: "plan")
+                continue
+            case .hcRecovery:
+                continue
+            case .candidate:
+                break
+            }
             // A placeholder or inferred ref is decided once its scrape lands:
             // the scrape may replace a stale inferred id or prove ambiguity.
             if awaitingScrape.contains(key) {
@@ -626,6 +697,60 @@ extension Workspace {
         case awaitingScrape
         case resumed
         case skipped(code: ResumeSkipCode, reason: String)
+        /// C11H-98/99: the agent never stopped; hc kept its terminal live.
+        /// Not a resume candidate, and not a skip.
+        case kept(agentKind: String)
+    }
+
+    /// C11H-98: whether the launch's snapshot pass may decide a resume for a
+    /// panel at all.
+    enum LaunchResumeCandidacy: Equatable {
+        /// An ordinary restored terminal: decide from the snapshot.
+        case candidate
+        /// hc reports an agent in the foreground of its live terminal.
+        case liveAgent(String)
+        /// A persistent hc terminal whose lifecycle decides (an ended terminal
+        /// resumes once through `persistentLifecycleChanged`; a survivor never).
+        case hcRecovery
+    }
+
+    /// The agent hc reports in the foreground of this panel's running
+    /// terminal right now, or nil. A terminal on another machine reads that
+    /// machine's report (C11H-87), never local process state.
+    func hcLiveAgentKind(panelId: UUID) -> String? {
+        if let owns = hcRemoteAgentOwnsTerminal[panelId] {
+            guard owns, let foreground = hcRemoteForeground[panelId],
+                  let kind = HCRemoteStatus.classification(foreground),
+                  AgentIdentityPolicy.isAgentKind(kind) else { return nil }
+            return kind
+        }
+        guard let runtime = (panels[panelId] as? TerminalPanel)?.hcSession,
+              case .live(let record) = runtime.lifecycle else { return nil }
+        return HCLiveAgent.kind(record)
+    }
+
+    func launchResumeCandidacy(_ panelId: UUID) -> LaunchResumeCandidacy {
+        if let agentKind = hcLiveAgentKind(panelId: panelId) { return .liveAgent(agentKind) }
+        if (panels[panelId] as? TerminalPanel)?.hcIdentity != nil
+            || HCPanelRestoreState.shared.entry(for: panelId)?.identity.persistence == .persistent {
+            return .hcRecovery
+        }
+        return .candidate
+    }
+
+    /// Record a live agent as kept and log the refusal as its own event, once
+    /// per panel and kind.
+    func keepLiveAgent(panelId: UUID, agentKind: String, conversation: ConversationRef?, stage: String) {
+        guard launchResumeOutcomes[panelId] != .kept(agentKind: agentKind) else { return }
+        launchResumeOutcomes[panelId] = .kept(agentKind: agentKind)
+        EventEmitter.shared.emitConversationResumeRefused(
+            workspace: id, surface: panelId, agentKind: agentKind,
+            conversationKind: conversation?.kind, conversationId: conversation?.id, stage: stage)
+    }
+
+    nonisolated static func liveAgentRefusal(_ agentKind: String) -> String {
+        String(format: String(localized: "conversation.resume.liveAgent",
+            defaultValue: "%@ is still running in this terminal, so it was not resumed."), agentKind)
     }
 
     func recordLaunchResumeDecision(
@@ -635,6 +760,7 @@ extension Workspace {
         mode: ResumeRecoveryMode,
         decision: ResumeDecision
     ) {
+        resumeDecisionCounts[panelId, default: 0] += 1
         if case .skip(let code, let reason) = decision {
             launchResumeOutcomes[panelId] = .skipped(code: code, reason: reason)
         }
@@ -659,7 +785,8 @@ extension Workspace {
     /// also accepts an attached shell that has not reported its state yet.
     func isUntouchedShell(_ panelId: UUID, idleShellRequired: Bool = true) -> Bool {
         guard let panel = panels[panelId] as? TerminalPanel,
-              panel.surface.lastOperatorKeyAt == nil else { return false }
+              panel.surface.lastOperatorKeyAt == nil,
+              panel.permitsConversationResume else { return false }
         switch panelShellActivityStates[panelId] ?? .unknown {
         case .promptIdle:
             return true
@@ -794,7 +921,8 @@ extension Workspace {
             self.dispatchRestartCommands(
                 plan.commands,
                 firstAt: max(restoredAt + SessionPersistencePolicy.agentRestartDelay, .now()),
-                idleShellRequired: false
+                idleShellRequired: false,
+                launchScoped: true
             )
 
             let awaitingByKind = Dictionary(grouping: plan.awaitingScrape) {
@@ -838,6 +966,11 @@ extension Workspace {
         for panelId in panelIds {
             guard launchResumeOutcomes[panelId] == .awaitingScrape else { continue }
             let ref = conversations[panelId.uuidString]?.active
+            // C11H-98: a live agent is kept before any decision.
+            if let agentKind = hcLiveAgentKind(panelId: panelId) {
+                keepLiveAgent(panelId: panelId, agentKind: agentKind, conversation: ref, stage: "scrape")
+                continue
+            }
             let kind = ref?.kind
                 ?? panelsById[panelId]?.surfaceConversations?.active?.kind
                 ?? Self.stringValues(from: panelsById[panelId]?.metadata)[PanelMetadataKeyName.terminalType]
@@ -868,7 +1001,7 @@ extension Workspace {
                 conversation: ref
             ))
         }
-        dispatchRestartCommands(commands, firstAt: firstAt, idleShellRequired: true)
+        dispatchRestartCommands(commands, firstAt: firstAt, idleShellRequired: true, launchScoped: true)
     }
 
     /// C11-156: stagger the resumes so N agents don't all boot in the same
@@ -878,7 +1011,8 @@ extension Workspace {
     func dispatchRestartCommands(
         _ commands: [RestartCommand],
         firstAt: DispatchTime,
-        idleShellRequired: Bool
+        idleShellRequired: Bool,
+        launchScoped: Bool
     ) {
         let stagger = SessionPersistencePolicy.agentRestartStagger
         for (index, plan) in commands.enumerated() {
@@ -886,7 +1020,7 @@ extension Workspace {
                 deadline: firstAt + Double(index) * stagger
             ) { [weak self] in
                 Task { @MainActor [weak self] in
-                    await self?.submitResume(plan, idleShellRequired: idleShellRequired)
+                    await self?.submitResume(plan, idleShellRequired: idleShellRequired, launchScoped: launchScoped)
                 }
             }
         }
@@ -896,8 +1030,58 @@ extension Workspace {
     /// at the moment of typing: another live c11 panel already running the
     /// conversation, a panel this launch already resumed, or a panel someone
     /// has used since launch each turn the command into a skip.
-    func submitResume(_ plan: RestartCommand, idleShellRequired: Bool) async {
+    ///
+    /// C11H-38: a resume decided at launch (`launchScoped`) goes through the
+    /// ask gate first, which parks it while the operator is choosing and drops
+    /// it after Not now. A manual resume, or a recovery that began after the
+    /// launch window, is never parked.
+    func submitResume(_ plan: RestartCommand, idleShellRequired: Bool, launchScoped: Bool = false,
+                      gate: LaunchResumeGate = .shared) async {
+        let panelID = plan.panelId
+        guard resumeSubmissionsInFlight.insert(panelID).inserted else { return }
+        defer { resumeSubmissionsInFlight.remove(panelID) }
+        await gate.submit(
+            panelID: plan.panelId, workspaceTitle: title,
+            panelTitle: panels[plan.panelId]?.displayTitle ?? plan.panelId.uuidString,
+            launchScoped: launchScoped,
+            dropped: {
+                // C11H-196: Not now (or left out of a subset) is a choice: the
+                // record says so and keeps Resume conversation.
+                MainActor.assumeIsolated {
+                    guard let (workspace, panel) = HCRestoreProgress.shared.locate(panelID) else { return }
+                    panel.pendingHCConversationRecovery = nil
+                    workspace.noteHostEndNotResumed(panelID, reason: String(localized: "hc.hostEnd.declined",
+                        defaultValue: "you chose not to resume it at launch."), failed: false)
+                }
+            }
+        ) { [weak self] in
+            // C11H-272: only a resume someone asked for may take a live shell.
+            await self?.performResume(plan, idleShellRequired: idleShellRequired, liveShell: !launchScoped)
+        }
+        // C11H-196: typed, refused or parked by Ask: its queue slot is free.
+        HCHostEndResumeQueue.shared.finished(panelID: plan.panelId)
+    }
+
+    private func performResume(_ plan: RestartCommand, idleShellRequired: Bool, liveShell: Bool) async {
         let conversationsBySurface = await ConversationStore.shared.snapshot()
+        guard conversationsBySurface[plan.panelId.uuidString]?.active == plan.conversation else {
+            // C11H-203: final, like every other outcome; a plan left standing
+            // would be retried on every inventory revision.
+            if let panel = panels[plan.panelId] as? TerminalPanel,
+               panel.pendingHCConversationRecovery?.plan.conversation == plan.conversation {
+                panel.pendingHCConversationRecovery = nil
+            }
+            noteHostEndNotResumed(plan.panelId, reason: String(localized: "hc.hostEnd.conversationChanged",
+                defaultValue: "another conversation took this panel before it was resumed."))
+            return
+        }
+        // C11H-98: never type into a terminal whose agent is still running.
+        if let agentKind = hcLiveAgentKind(panelId: plan.panelId) {
+            keepLiveAgent(panelId: plan.panelId, agentKind: agentKind, conversation: plan.conversation, stage: "submit")
+            noteHostEndNotResumed(plan.panelId, reason: Self.liveAgentRefusal(agentKind),
+                                  phase: { .kept(reason: $0) })
+            return
+        }
         let liveWriterSurfaceIds = AppDelegate.shared?.liveAttributedAgentSurfaceIds(
             matching: plan.conversation,
             excluding: plan.panelId,
@@ -910,23 +1094,200 @@ extension Workspace {
             conversationsBySurface: conversationsBySurface,
             liveAttributedAgentSurfaceIds: liveWriterSurfaceIds
         )
-        if case .typeCommand = action {
-            if launchResumeOutcomes[plan.panelId] == .resumed {
-                action = .skip(reason: "already resumed this launch")
-            } else if !isUntouchedShell(plan.panelId, idleShellRequired: idleShellRequired) {
-                action = .skip(reason: "panel was used before its resume was typed")
+        if case .typeCommand = action,
+           let reason = resumeSubmissionRefusal(plan.panelId, idleShellRequired: idleShellRequired,
+                                                liveShell: liveShell) {
+            action = .skip(reason: reason)
+        }
+        await executeResumeAction(action, on: plan.panelId, liveShell: liveShell)
+    }
+
+    /// One `c11 conversation resume` target (C11-468). C11H-98: a terminal hc
+    /// reports running with an agent in front is kept before any decision,
+    /// whatever its stored ref says (missing, unknown, unverified or valid). A
+    /// real attempt records the keep and its `conversation.resume.refused`
+    /// (stage `cli`, deduplicated); a dry run only reports it. Otherwise the
+    /// shared decision, the submission guards, and `schedule` for a command.
+    func conversationResumeTarget(
+        panelId: UUID,
+        conversation ref: ConversationRef?,
+        registry: ConversationStrategyRegistry,
+        mode: ResumeRecoveryMode,
+        transcriptEvidence: ResumeTranscriptEvidence?,
+        dryRun: Bool,
+        conversationsBySurface: [String: PanelConversations],
+        liveWriters: (ConversationRef) -> Set<UUID>,
+        schedule: (RestartCommand) -> Void
+    ) -> [String: Any] {
+        var row: [String: Any] = [
+            "panel_id": panelId.uuidString,
+            "workspace_id": id.uuidString,
+            "kind": ref?.kind ?? NSNull(),
+            "conversation_id": ref?.id ?? NSNull(),
+        ]
+        if let agentKind = hcLiveAgentKind(panelId: panelId) {
+            row["outcome"] = "kept"
+            row["agent_kind"] = agentKind
+            row["skip_code"] = NSNull()
+            row["reason"] = Self.liveAgentRefusal(agentKind)
+            if !dryRun {
+                keepLiveAgent(panelId: panelId, agentKind: agentKind, conversation: ref, stage: "cli")
+            }
+            return row
+        }
+        // C11H-196: a panel whose terminal ended with the host and was not
+        // resumed takes the banner's Resume conversation route: a fresh
+        // terminal through the staggered queue, then the guarded submit.
+        if let panel = panels[panelId] as? TerminalPanel, let status = panel.hcHostEnd, status.offersResume {
+            row["conversation_id"] = status.conversation?.id ?? NSNull()
+            row["kind"] = status.conversation?.kind ?? NSNull()
+            if dryRun {
+                row["outcome"] = "would_resume"
+            } else if let refusal = resumeHostEndedConversation(panelId: panelId) {
+                row["outcome"] = "refused"
+                row["skip_code"] = ResumeSkipCode.panelInUse.rawValue
+                row["reason"] = refusal
+            } else {
+                row["outcome"] = "scheduled"
+            }
+            return row
+        }
+        let decision: ResumeDecision = ref.map {
+            Self.resumeDecision(for: $0, registry: registry, mode: mode, transcriptEvidence: transcriptEvidence)
+        } ?? .skip(code: .conversationUnavailable, reason: "no active conversation in the store")
+        switch decision {
+        case .skip(let code, let reason):
+            row["outcome"] = "skipped"
+            row["skip_code"] = code.rawValue
+            row["reason"] = reason
+        case .command(let command):
+            row["command"] = command.text
+            let refusal: String?
+            if let guardReason = resumeSubmissionRefusal(panelId, liveShell: true) {
+                refusal = guardReason
+            } else if let ref, case .skip(let reason) = Self.resumeActionBeforeSubmission(
+                .typeCommand(text: command.text, submitWithReturn: command.submitWithReturn),
+                conversation: ref,
+                targetSurfaceId: panelId,
+                conversationsBySurface: conversationsBySurface,
+                liveAttributedAgentSurfaceIds: liveWriters(ref)
+            ) {
+                refusal = reason
+            } else {
+                refusal = nil
+            }
+            if let refusal {
+                row["outcome"] = "refused"
+                row["skip_code"] = ResumeSkipCode.panelInUse.rawValue
+                row["reason"] = refusal
+            } else if dryRun {
+                row["outcome"] = "would_resume"
+            } else if let ref {
+                // Typed after the stagger, through the guarded submission,
+                // which can still refuse; the launch outcome records it.
+                row["outcome"] = "scheduled"
+                recordLaunchResumeDecision(panelId: panelId, kind: ref.kind, conversationId: ref.id,
+                                           mode: mode, decision: decision)
+                schedule((panelId: panelId,
+                          action: .typeCommand(text: command.text, submitWithReturn: command.submitWithReturn),
+                          conversation: ref))
             }
         }
-        executeResumeAction(action, on: plan.panelId)
+        return row
+    }
+
+    /// Used by the CLI preview and the final submission. A persistent panel's
+    /// eligibility belongs to its replacement terminal, not the app launch;
+    /// `liveShell` (a resume someone asked for, never a launch-time one) also
+    /// admits the live shell an agent left (C11H-272).
+    func resumeSubmissionRefusal(_ panelId: UUID, idleShellRequired: Bool = true, liveShell: Bool = false) -> String? {
+        if let agentKind = hcLiveAgentKind(panelId: panelId) {
+            return Self.liveAgentRefusal(agentKind)
+        }
+        if let panel = panels[panelId] as? TerminalPanel, panel.hcIdentity?.persistence == .persistent {
+            if panel.permitsConversationResume, persistentResumeShellReady(panel) { return nil }
+            switch liveShell ? liveShellResumeReadiness(panel) : .notApplicable {
+            case .ready: return nil
+            case .promptNotEmpty: return Self.promptNotEmptyRefusal
+            case .notApplicable:
+                return String(localized: "hc.resume.notReady", defaultValue: "The ended session does not have a fresh shell ready for resume.")
+            }
+        } else if launchResumeOutcomes[panelId] == .resumed {
+            return "already resumed this launch"
+        } else if !isUntouchedShell(panelId, idleShellRequired: idleShellRequired) {
+            return "panel was used before its resume was typed"
+        }
+        return nil
     }
 
     /// Execute a `ResumeAction` against a live terminal panel. Logs `.skip`
     /// reasons for diagnostic visibility and records the launch outcome.
     /// Main-actor; called from restore dispatch and `c11 conversation resume`.
-    func executeResumeAction(_ action: ResumeAction, on panelId: UUID) {
+    func executeResumeAction(_ action: ResumeAction, on panelId: UUID, liveShell: Bool = false) async {
         switch action {
         case .typeCommand(let text, let submit):
             guard let terminalPanel = self.panels[panelId] as? TerminalPanel else { return }
+            // C11H-272: the live shell an agent left, when the replacement
+            // route does not admit this panel. Its prompt epoch is the attempt.
+            let liveShellEpoch: Date? = {
+                guard liveShell, !(terminalPanel.permitsConversationResume && persistentResumeShellReady(terminalPanel)),
+                      case .ready(let epoch) = liveShellResumeReadiness(terminalPanel) else { return nil }
+                return epoch
+            }()
+            guard terminalPanel.permitsConversationResume || liveShellEpoch != nil else {
+                launchResumeOutcomes[panelId] = .skipped(code: .panelInUse, reason: String(
+                    localized: "conversation.resume.terminalNotReplaced",
+                    defaultValue: "The terminal is still running or reconnecting."
+                ))
+                return
+            }
+            if terminalPanel.hcIdentity?.persistence == .persistent {
+                guard let runtime = terminalPanel.hcSession, let attachment = runtime.attachment else { return }
+                let guardCurrent: @MainActor @Sendable () -> Bool = { [weak self, weak terminalPanel, weak runtime] in
+                    guard let self, let terminalPanel, let runtime,
+                          self.panels[panelId] as? TerminalPanel === terminalPanel,
+                          terminalPanel.hcSession === runtime,
+                          runtime.attachment === attachment,
+                          HCSessionEnd.coordinator?.isEndPending(panelID: panelId) != true else { return false }
+                    if let liveShellEpoch {
+                        return self.liveShellResumeReadiness(terminalPanel) == .ready(epoch: liveShellEpoch)
+                    }
+                    return terminalPanel.permitsConversationResume && self.persistentResumeShellReady(terminalPanel)
+                }
+                let outcome = await terminalPanel.surface.submitHCConversationResume(text: text, submitReturn: submit,
+                    runtime: runtime, attachment: attachment, attemptEpoch: liveShellEpoch, permitsResume: guardCurrent)
+                switch outcome {
+                case .written, .uncertain:
+                    // One resume per empty prompt, typed or possibly typed: the
+                    // prompt it consumed, the same epoch the attempt latch holds.
+                    if let liveShellEpoch { panelLiveShellResumePrompt[panelId] = liveShellEpoch }
+                case .refused: break
+                }
+                switch outcome {
+                case .written(let receipt):
+                    launchResumeOutcomes[panelId] = .resumed
+                    terminalPanel.pendingHCConversationRecovery = nil
+                    updateHostEnd(panelId: panelId, phase: .resumed)
+                    EventEmitter.shared.emitPanelInputSent(workspace: id, surface: panelId,
+                        callerPanelId: nil, callerTitle: nil, targetTitle: terminalPanel.displayTitle,
+                        kind: "resume", text: text, submitted: receipt.returnWritten)
+                case .uncertain:
+                    // `submitInput` already latched the runtime's input fault and
+                    // recorded the interruption for the panel. Never replay a
+                    // resume whose command or Return may have arrived.
+                    launchResumeOutcomes[panelId] = .skipped(code: .panelInUse,
+                        reason: String(localized: "hc.resume.interrupted", defaultValue: "Resume input was interrupted and will not be sent again."))
+                    terminalPanel.pendingHCConversationRecovery = nil
+                    noteHostEndNotResumed(panelId, reason: String(localized: "hc.hostEnd.interrupted",
+                        defaultValue: "typing the resume was interrupted, so it was not sent again."), phase: { .interrupted(reason: $0) })
+                case .refused(let reason):
+                    launchResumeOutcomes[panelId] = .skipped(code: .panelInUse,
+                        reason: String(format: String(localized: "hc.resume.refused", defaultValue: "Resume input was refused: %@"), reason.rawValue))
+                    noteHostEndNotResumed(panelId, reason: String(format: String(localized: "hc.hostEnd.refused",
+                        defaultValue: "the terminal refused the resume (%@)."), reason.rawValue))
+                }
+                return
+            }
             launchResumeOutcomes[panelId] = .resumed
             if submit {
                 // Use the deferred-Return submission path (see
@@ -945,10 +1306,961 @@ extension Workspace {
             if launchResumeOutcomes[panelId] != .resumed {
                 launchResumeOutcomes[panelId] = .skipped(code: .panelInUse, reason: reason)
             }
+            // A refusal while the plan still stands (the fresh shell's prompt
+            // was not idle at typing time) is retried at its next idle prompt;
+            // only a resume that will not be typed is a failure.
+            if (panels[panelId] as? TerminalPanel)?.pendingHCConversationRecovery == nil {
+                noteHostEndNotResumed(panelId, reason: reason)
+            }
             #if DEBUG
             dlog("conversation.resume.skipped panel=\(panelId.uuidString.prefix(8)) reason=\(reason)")
             #endif
         }
+    }
+
+    /// This guard belongs to the new shell's lifetime. Old keystrokes and the
+    /// dead agent's commandRunning state cannot establish a new draft.
+    private func persistentResumeShellReady(_ panel: TerminalPanel) -> Bool {
+        guard let pending = panel.pendingHCConversationRecovery, pending.admitted,
+              panel.surface.lastOperatorKeyAt == pending.operatorKeyAt,
+              panelShellActivityStates[panel.id] == .promptIdle else { return false }
+        return true
+    }
+
+    /// C11H-272: the agent in a persistent panel ended and its shell lives
+    /// (killed, crashed, or quit). It is the same terminal, not a replacement,
+    /// so the replacement route never admits it. This route does when hc names
+    /// the shell itself in front, the shell reports an idle prompt, no key
+    /// reached it since its last empty prompt (C11H-196's rule), and no resume
+    /// was typed at that prompt. `epoch` (the last empty prompt) makes each
+    /// prompt take one resume. Every prompt report counts, an empty Return or
+    /// Ctrl-C included: the shells send each one and the socket passes a
+    /// repeated prompt through (`TerminalController.ShellActivityPublish`).
+    enum LiveShellResumeReadiness: Equatable {
+        /// Not a live shell in front: the replacement route's answer stands.
+        case notApplicable
+        case ready(epoch: Date)
+        /// The shell is in front, but its prompt may hold typed text.
+        case promptNotEmpty
+    }
+
+    static func liveShellResumeReadiness(
+        foregroundKind: String?,
+        shellState: PanelShellActivityState?,
+        lastOperatorKeyAt: Date?,
+        lastEmptyPrompt: Date?,
+        resumedPrompt: Date?
+    ) -> LiveShellResumeReadiness {
+        guard foregroundKind == "shell" else { return .notApplicable }
+        guard shellState == .promptIdle, let lastEmptyPrompt,
+              (lastOperatorKeyAt ?? .distantPast) <= lastEmptyPrompt,
+              (resumedPrompt ?? .distantPast) < lastEmptyPrompt else { return .promptNotEmpty }
+        return .ready(epoch: lastEmptyPrompt)
+    }
+
+    /// The program hc reports in front of this panel's terminal, classified
+    /// like a local scan (`shell`, an agent kind, `unknown`). Nil without a
+    /// running record.
+    func hcForegroundKind(panelId: UUID) -> String? {
+        if hcRemoteAgentOwnsTerminal[panelId] != nil {
+            return HCRemoteStatus.classification(hcRemoteForeground[panelId])
+        }
+        guard let runtime = (panels[panelId] as? TerminalPanel)?.hcSession,
+              case .live(let record) = runtime.lifecycle, record.state == .running else { return nil }
+        return HCRemoteStatus.classification(record.foreground)
+    }
+
+    /// The live-shell route for a persistent panel with no replacement
+    /// recovery pending (a pending one keeps its own queue and guards).
+    func liveShellResumeReadiness(_ panel: TerminalPanel) -> LiveShellResumeReadiness {
+        guard panel.hcIdentity?.persistence == .persistent, panel.pendingHCConversationRecovery == nil,
+              let runtime = panel.hcSession, case .live = runtime.lifecycle,
+              HCSessionEnd.coordinator?.isEndPending(panelID: panel.id) != true else { return .notApplicable }
+        return Self.liveShellResumeReadiness(
+            foregroundKind: hcForegroundKind(panelId: panel.id),
+            shellState: panelShellActivityStates[panel.id],
+            lastOperatorKeyAt: panel.surface.lastOperatorKeyAt,
+            lastEmptyPrompt: lastEmptyPromptAt(panel.id),
+            resumedPrompt: panelLiveShellResumePrompt[panel.id])
+    }
+
+    /// The latest moment the shell's prompt was reported empty: its last
+    /// state edge (into the idle prompt while it is idle) or a repeated idle
+    /// report (an empty Return or Ctrl-C).
+    private func lastEmptyPromptAt(_ panelId: UUID) -> Date? {
+        let edge = panelShellEdgeAt[panelId], report = panelPromptIdleReportAt[panelId]
+        guard edge != nil || report != nil else { return nil }
+        return max(edge ?? .distantPast, report ?? .distantPast)
+    }
+
+    private static var promptNotEmptyRefusal: String {
+        String(localized: "hc.hostEnd.promptNotEmpty",
+               defaultValue: "The terminal may have something typed at its prompt. Press Return on an empty prompt (or run a command), then resume.")
+    }
+
+    func observePersistentRecovery(_ panel: TerminalPanel) {
+        guard let runtime = panel.hcSession else { return }
+        // C11H-238: a bound port is its own trigger. The lifecycle no longer
+        // republishes on every inventory revision, which used to retry a
+        // resume that found no attachment yet.
+        let changes = runtime.$lifecycle.map { _ in () }
+            .merge(with: runtime.$boundGeneration.dropFirst().removeDuplicates().map { _ in () })
+        hcResumeSubscriptions[panel.id] = changes.sink { [weak self, weak panel, weak runtime] _ in
+            // @Published delivers in willSet; inspect the committed runtime
+            // on the next main turn, including its exact native attachment.
+            Task { @MainActor in
+                guard let self, let panel, let runtime,
+                      self.panels[panel.id] as? TerminalPanel === panel,
+                      panel.hcSession === runtime else { return }
+                if case .ended = runtime.lifecycle { self.noteTerminalEnded(panelId: panel.id) }
+                self.noteHCLocalStatus(panel)
+                self.noteHCLocalMailbox(panel)
+                self.persistentLifecycleChanged(panel)
+            }
+        }
+    }
+
+    /// C11H-321: an ended terminal runs nothing, so a lifecycle restored from
+    /// the last session (or last seen before the end) goes with it. A panel
+    /// whose terminal ended at a reboot and was not resumed has no tty for
+    /// the sweep to visit and would otherwise keep drawing working.
+    private func noteTerminalEnded(panelId: UUID) {
+        PanelLivenessDeriver.onTerminalEnded(surfaceId: panelId, workspaceId: id) { [weak self] mirrored in
+            self?.setAgentCold(false, forSurface: panelId)
+            self?.setDerivedActivity(mirrored, forSurface: panelId)
+        }
+    }
+
+    /// C11H-323: hc's status for the agent in front of a local terminal is the
+    /// panel's lifecycle where nothing newer speaks for it
+    /// (`PanelLivenessDeriver.onHCStatus`). After a relaunch it is the
+    /// survivor's real read: the agent's own last report, which hc kept while
+    /// c11 was down. Reconnecting keeps the last phase; an end is
+    /// `noteTerminalEnded`'s. The deriver judges the raw word and hc's time
+    /// against the journal whenever it uses them, so a Codex whose own signal
+    /// ended a turn after hc's `working` was stamped is not working, whichever
+    /// of hc's record and the journal row arrives first (C11H-123).
+    func noteHCLocalStatus(_ panel: TerminalPanel) {
+        guard let runtime = panel.hcSession, hcRemoteStatusBindings[panel.id] == nil, panel.hcRemoteTarget == nil,
+              case .live(let record) = runtime.lifecycle, record.machineName == nil else { return }
+        let word = HCLiveAgent.kind(record) == nil ? nil : record.status.map {
+            PanelLivenessDeriver.HCStatusWord(status: $0, stampMs: record.statusTimestampMilliseconds)
+        }
+        let panelId = panel.id
+        PanelLivenessDeriver.onHCStatus(surfaceId: panelId, workspaceId: id, word: word) { [weak self] mirrored in
+            self?.setAgentCold(false, forSurface: panelId)
+            self?.setDerivedActivity(mirrored, forSurface: panelId)
+        }
+    }
+
+    /// C11H-117: the doorbell for an agent in a local hc terminal. A relaunch
+    /// restores the panel with no SessionStart and no turn edge, so the
+    /// doorbell knows neither the agent's process nor its tty, and an agent
+    /// idle through it reports nothing new: mail is held as
+    /// `agent_not_foreground` forever. hc still reports the terminal. When an
+    /// agent is in front, its process and tty are relearned from hc's record
+    /// under the kernel's own checks (hc alone never authorizes typing here),
+    /// and hc's status is a turn edge, the first one after a relaunch
+    /// included. Either change re-runs the ring decision for the panel's
+    /// queue once; working or blocked holds it. Remote terminals follow their
+    /// own core (`noteHCRemoteMailbox`).
+    func noteHCLocalMailbox(_ panel: TerminalPanel) {
+        var record: HCTerminalRecord?
+        if let runtime = panel.hcSession, case .live(let live) = runtime.lifecycle { record = live }
+        noteHCLocalMailbox(panelId: panel.id, record: record)
+    }
+
+    /// One hc report for a local terminal panel (nil: not live).
+    ///
+    /// C11H-238: the kernel probes behind ownership (`sysctl`, `stat`, and
+    /// `open` plus `tcgetattr` on the tty) run off main, and only when what
+    /// they answer for changed: hc's foreground pid, the tty, or the agent
+    /// process the doorbell holds (pid and start time). A probe that found no
+    /// owner is repeated on a short backoff. The ring itself still checks
+    /// the live kernel before typing (`mailboxAgentOwnsTerminal`), so this
+    /// cache never authorizes input.
+    func noteHCLocalMailbox(panelId: UUID, record: HCTerminalRecord?) {
+        guard let panel = panels[panelId] as? TerminalPanel,
+              hcRemoteStatusBindings[panelId] == nil, panel.hcRemoteTarget == nil,
+              let record, record.machineName == nil, HCLiveAgent.kind(record) != nil else {
+            hcLocalMailboxStatus.removeValue(forKey: panelId)
+            hcLocalOwnershipPendingSince.removeValue(forKey: panelId)
+            hcLocalOwnership.forget(panel: panelId)
+            return
+        }
+        // Ownership can also arrive without a relearn (a hook already named
+        // the agent); a waiting claim costs nothing to look at.
+        retryCarriedMailboxClaim(surfaceId: panelId)
+        if seedHCLocalTurn(panelId: panelId, record: record) {
+            flushBufferedMailboxStdin(surfaceId: panelId, trigger: .agentPrompt)
+        }
+        probeHCLocalOwnership(panelId: panelId, record: record)
+    }
+
+    private static let hcLocalOwnershipQueue = DispatchQueue(label: "com.stage11.c11.mailbox-ownership", qos: .utility)
+
+    /// Starts a probe for `record` unless the last one already answers for it.
+    private func probeHCLocalOwnership(panelId: UUID, record: HCTerminalRecord, force: Bool = false) {
+        let key = HCLocalOwnershipKey(record: record, knownTTY: panelTTYNames[panelId],
+                                      process: mailboxStdinState.buffer.agentProcess(surfaceId: panelId))
+        guard let generation = hcLocalOwnership.observe(panel: panelId, key: key, record: record,
+                                                        now: Date(), force: force) else { return }
+        let kernel = mailboxKernel
+        let deliver: (HCLocalOwnershipVerdict) -> Void = { [weak self] verdict in
+            self?.applyHCLocalOwnership(panelId: panelId, generation: generation, verdict: verdict)
+        }
+        if let run = hcLocalOwnershipRunForTesting {
+            run({ HCLocalOwnershipVerdict.probe(key, kernel: kernel) }, { deliver($0) })
+            return
+        }
+        Self.hcLocalOwnershipQueue.async {
+            let verdict = HCLocalOwnershipVerdict.probe(key, kernel: kernel)
+            DispatchQueue.main.async { deliver(verdict) }
+        }
+    }
+
+    /// Main: applies a verdict computed for the newest observation only. An
+    /// answer for an older key, or for an agent process the doorbell has
+    /// since replaced, is dropped and the current state probed again.
+    private func applyHCLocalOwnership(panelId: UUID, generation: UInt64, verdict: HCLocalOwnershipVerdict) {
+        guard panels[panelId] is TerminalPanel else { hcLocalOwnership.forget(panel: panelId); return }
+        let currentKey: (HCTerminalRecord) -> HCLocalOwnershipKey = { [unowned self] record in
+            HCLocalOwnershipKey(record: record, knownTTY: self.panelTTYNames[panelId],
+                                process: self.mailboxStdinState.buffer.agentProcess(surfaceId: panelId))
+        }
+        switch hcLocalOwnership.accept(panel: panelId, generation: generation, currentKey: currentKey) {
+        case .dropped:
+            return
+        case .stale(let record):
+            noteHCLocalMailbox(panelId: panelId, record: record)
+            return
+        case .current(let key, let record):
+            let wasConfirmed = hcLocalOwnership.isConfirmed(panel: panelId)
+            var owned = verdict.ownsCurrent
+            var relearned = false
+            if !owned, let candidate = verdict.candidate, let tty = key.relearnTTY {
+                panelTTYNames[panelId] = tty
+                relearned = mailboxStdinState.buffer.relearnAgentProcess(surfaceId: panelId, process: candidate)
+                owned = mailboxStdinState.buffer.agentProcess(surfaceId: panelId) == candidate && verdict.candidateOwns
+                #if DEBUG
+                dlog("mailbox.hcRelearn panel=\(panelId.uuidString.prefix(8)) pid=\(candidate.pid) tty=\(tty) relearned=\(relearned)")
+                #endif
+            }
+            if let delay = hcLocalOwnership.settle(panel: panelId, key: currentKey(record), owned: owned) {
+                let settled = currentKey(record)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self, self.panels[panelId] is TerminalPanel,
+                          let again = self.hcLocalOwnership.retryRecord(panel: panelId, key: settled) else { return }
+                    self.probeHCLocalOwnership(panelId: panelId, record: again, force: true)
+                }
+            }
+            notePendingOwnership(surfaceId: panelId, owned: owned)
+            // Ownership newly confirmed, by a relearn or by the held process
+            // passing the check it failed before (its tty left canonical mode):
+            // a waiting carried claim and buffered mail get their look now.
+            // Nothing else would bring them back: the inventory no longer
+            // re-runs this on every revision. The ring checks the kernel again.
+            if relearned || (owned && !wasConfirmed) {
+                retryCarriedMailboxClaim(surfaceId: panelId)
+                flushBufferedMailboxStdin(surfaceId: panelId, trigger: .agentPrompt)
+            }
+        }
+    }
+
+    /// A tty report for a panel: the ownership probe answers for the tty, so
+    /// a new one for a local hc agent is probed now rather than at hc's next
+    /// change.
+    func noteReportedTTY(panelId: UUID, ttyName: String) {
+        let previous = panelTTYNames[panelId]
+        panelTTYNames[panelId] = ttyName
+        guard previous != ttyName, let panel = panels[panelId] as? TerminalPanel, panel.hcSession != nil else { return }
+        noteHCLocalMailbox(panel)
+    }
+
+    /// C11H-184: hc reports an agent here that the kernel has not confirmed.
+    /// The unconfirmed window starts now; when it ends the ring decision runs
+    /// once more, so mail held as unconfirmed reads cannot ring if it still is.
+    private func notePendingOwnership(surfaceId: UUID, owned: Bool) {
+        guard !owned else { hcLocalOwnershipPendingSince.removeValue(forKey: surfaceId); return }
+        guard hcLocalOwnershipPendingSince[surfaceId] == nil else { return }
+        let since = Date()
+        hcLocalOwnershipPendingSince[surfaceId] = since
+        relookAfterOwnershipWindow(surfaceId: surfaceId) { $0.hcLocalOwnershipPendingSince[surfaceId] == since }
+    }
+
+    /// Its own timer, not the shared recheck slot, so a later ring cannot cancel it.
+    private func relookAfterOwnershipWindow(surfaceId: UUID, stillCurrent: @escaping (Workspace) -> Bool) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.ownershipPendingWindow + 0.5) { [weak self] in
+            guard let self, stillCurrent(self), self.mailboxStdinState.buffer.pendingCount(surfaceId: surfaceId) > 0 else { return }
+            self.ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+        }
+    }
+
+    /// One hc status word for a local terminal, as turn evidence. hc clears
+    /// the status time whenever the word changes (`HCInventoryReducer`), so
+    /// a change is stamped when c11 first saw it, and hc's own time replaces
+    /// that once a report carries it. The same word repeated with no new time
+    /// is not new evidence: it never moves the clock again, so a stale word
+    /// cannot reopen a turn the agent's hooks or a submit moved since. A new
+    /// hc turn number is new evidence even under the same word: one report
+    /// can coalesce a short turn (idle, working, idle).
+    struct HCLocalStatusEvidence: Equatable {
+        let status: String?
+        var turn: Int64? = nil
+        let firstSeen: Date
+        let hcStamp: Date?
+        var stamp: Date { hcStamp ?? firstSeen }
+
+        /// The evidence after one report, or nil when it adds nothing.
+        static func next(_ prior: HCLocalStatusEvidence?, status: String?, turn: Int64? = nil, hcStamp: Date?,
+                         now: Date) -> HCLocalStatusEvidence? {
+            guard let prior, prior.status == status, prior.turn == turn else {
+                return HCLocalStatusEvidence(status: status, turn: turn, firstSeen: now, hcStamp: hcStamp)
+            }
+            guard let hcStamp, hcStamp != prior.hcStamp else { return nil }
+            return HCLocalStatusEvidence(status: status, turn: turn, firstSeen: prior.firstSeen, hcStamp: hcStamp)
+        }
+    }
+
+    /// hc's status as a turn edge: idle or done is at its prompt, working or
+    /// blocked is mid-turn. The buffer rejects evidence older than the current
+    /// turn edge, the latest submit or the agent's attach. True when it
+    /// opened the prompt.
+    private func seedHCLocalTurn(panelId: UUID, record: HCTerminalRecord) -> Bool {
+        let hcStamp = record.statusTimestampMilliseconds.flatMap {
+            $0 >= 0 ? Date(timeIntervalSince1970: Double($0) / 1000) : nil
+        }
+        guard let evidence = HCLocalStatusEvidence.next(hcLocalMailboxStatus[panelId], status: record.status,
+                                                        turn: record.turn, hcStamp: hcStamp, now: Date()) else { return false }
+        hcLocalMailboxStatus[panelId] = evidence
+        guard let atPrompt = HCRemoteMailboxForeground.turnEdge(previous: nil, current: record.status) else { return false }
+        // C11H-123: after Codex's own signal ended a turn, hc's working is a
+        // hint; only hc's own later time moves the turn (a new report with
+        // that time is new evidence and comes back here).
+        if CodexTurnAuthority.hcWordIsStale(record.status, hcStampMs: record.statusTimestampMilliseconds,
+                                            turnEndMs: CodexTurnAuthority.turnEndMs(mailboxJournalSnapshot(panelId))) {
+            return false
+        }
+        return mailboxStdinState.buffer.noteHCStatusEdge(surfaceId: panelId, atPrompt: atPrompt, at: evidence.stamp) && atPrompt
+    }
+
+    /// The agent hc reports in front of a local terminal becomes the
+    /// doorbell's owner when the one learned (if any) no longer owns the
+    /// terminal. The kernel must agree: a live process whose group is the
+    /// foreground group of the terminal's tty (`hcLocalOwnershipVerdict`).
+    ///
+    /// C11H-184: hc's inventory carries no tty, so the tty is the one agent
+    /// recovery read from the terminal's own root process under admission
+    /// (`HCAgentRecoveryController`, which runs this again once it has it),
+    /// or the panel's shell report, or one a restored snapshot kept (the
+    /// kernel check rejects a tty the agent is not on). A tty in hc's record
+    /// is the last resort: hc alone never decides which tty is this panel's.
+    /// Pure kernel check for the relearn candidate.
+    nonisolated static func hcLocalAgentProcess(pid: pid_t, info: MailboxAgentForeground.ProcessTerminalInfo?,
+                                                ttyDevice: dev_t?) -> MailboxStdinBuffer.AgentProcess? {
+        guard let info, !info.isZombie, info.startTime > 0, info.processGroup > 0,
+              info.processGroup == info.terminalForegroundGroup,
+              let ttyDevice, info.terminalDevice == ttyDevice else { return nil }
+        return .init(pid: pid, startTime: info.startTime)
+    }
+
+    private func persistentLifecycleChanged(_ panel: TerminalPanel) {
+        guard SessionPersistencePolicy.agentRestartOnRestoreEnabled,
+              !ConversationStorePolicy.isDisabled,
+              !panel.retainsAfterEndAllSessions,
+              StartupConversationAudit.shared.mode != .noResume,
+              HCSessionEnd.coordinator?.isEndPending(panelID: panel.id) != true,
+              let runtime = panel.hcSession else { return }
+        // C11H-38: the first resolved lifecycle of a terminal the launch
+        // restored is its startup resolution; carry that into the recovery.
+        let isResolved: Bool
+        switch runtime.lifecycle {
+        case .live, .ended: isResolved = true
+        case .new, .unresolved: isResolved = false
+        }
+        let startupResolution = launchRestoreMarks.isStartupResolution(panel.id, resolved: isResolved)
+        // C11H-98: a terminal hc reports live with an agent in its foreground
+        // is never a resume candidate, including a replacement someone started
+        // an agent in. At the launch's startup resolution it is reported kept.
+        if let agentKind = hcLiveAgentKind(panelId: panel.id) {
+            if startupResolution {
+                launchRestoreMarks.consume(panel.id)
+                keepLiveAgent(panelId: panel.id, agentKind: agentKind, conversation: nil, stage: "hc-restore")
+            }
+            // C11H-196: an agent someone started in the fresh terminal before
+            // the resume was typed: nothing to type; free its turn now.
+            if let pending = panel.pendingHCConversationRecovery, panel.hcHostEnd?.endedKey == pending.endedKey {
+                panel.pendingHCConversationRecovery = nil
+                noteHostEndNotResumed(panel.id, reason: Self.liveAgentRefusal(agentKind), phase: { .kept(reason: $0) })
+            }
+            return
+        }
+        if let pending = panel.pendingHCConversationRecovery, panel.permitsConversationResume {
+            // C11H-196: the operator used the fresh terminal first, so the
+            // resume will never be typed; say so and offer it instead.
+            if panel.surface.lastOperatorKeyAt != pending.operatorKeyAt {
+                panel.pendingHCConversationRecovery = nil
+                noteHostEndNotResumed(panel.id, reason: String(
+                    localized: "hc.hostEnd.operatorTyped", defaultValue: "you typed in this panel first."), failed: false)
+                return
+            }
+            guard pending.admitted, persistentResumeShellReady(panel) else { return }
+            let launchScoped = pending.launchScoped
+            Task { @MainActor [weak self] in
+                await self?.submitResume(pending.plan, idleShellRequired: true, launchScoped: launchScoped)
+            }
+            return
+        }
+        // The ended terminal this recovery answers to comes from the live
+        // `.ended` state or from the end evidence 3A retains on a replacement
+        // that startup already started. A keyless proof, a survivor and a
+        // brand-new terminal have neither, and never get a resume.
+        func endedSource() -> HCRecoveryEndedProof.Source? {
+            HCRecoveryEndedProof.source(lifecycle: runtime.lifecycle,
+                creation: HCPanelRestoreState.shared.entry(for: panel.id)?.creation)
+        }
+        // A resolved terminal with no ended source (a survivor) never needs a
+        // recovery: its startup mark is spent, so a later end is not scoped.
+        if isResolved, endedSource() == nil { launchRestoreMarks.consume(panel.id) }
+        guard let started = endedSource(),
+              !panel.plannedHCEndedKeys.contains(started.key),
+              panel.pendingHCConversationRecovery?.endedKey != started.key,
+              hcRecoveryTasks[panel.id] == nil else { return }
+        let endedKey = started.key
+        let operatorKeyAt = panel.surface.lastOperatorKeyAt
+        // C11H-196: one decision per ended terminal. Every outcome below marks
+        // the key decided; republished `.ended` snapshots (a fresh evidence id
+        // on every inventory revision) find it decided and do nothing.
+        // Only an end the host caused gets the banner; an ordinary exit closes
+        // its panel as before.
+        let endEvidence = Self.hostEndEvidence(lifecycle: runtime.lifecycle,
+            creation: HCPanelRestoreState.shared.entry(for: panel.id)?.creation)
+        let hostReason = endEvidence?.hcReason
+        if HCRestoreLifecycleProjection.isHostEnd(hostReason), panel.hcHostEnd?.endedKey != endedKey {
+            panel.hcHostEnd = HCHostEndStatus(endedKey: endedKey,
+                cause: hostEndCause(reason: hostReason, startupResolution: startupResolution,
+                    endedAt: endEvidence?.endedAt),
+                phase: .deciding, conversation: nil)
+        }
+        // C11H-232: an outside signal the child-exit path did not decide (no
+        // attachment started it, or the end was found at launch) is classified
+        // below, once the conversation store answers.
+        let outsideSignal = panel.hcRemoteTarget == nil ? endEvidence.flatMap { HCRestoreLifecycleProjection.outsideSignal($0) } : nil
+        hcRecoveryTasks[panel.id] = Task { @MainActor [weak self, weak panel, weak runtime] in
+            guard let self, let panel, let runtime else { return }
+            defer { self.hcRecoveryTasks.removeValue(forKey: panel.id) }
+            let classification = await StartupConversationAudit.shared.awaitClassification()
+            guard classification.mode != .noResume else {
+                self.decideHostEnd(panel, endedKey: endedKey, phase: .notResumed(reason: String(
+                    localized: "hc.hostEnd.noResumePolicy", defaultValue: "c11 was started without resuming agents.")),
+                    conversation: nil)
+                return
+            }
+            if let scrape = classification.scrape(forSurface: panel.id.uuidString) { _ = await scrape.value }
+            let records = await ConversationStore.shared.snapshot()
+            let surfaceID = panel.id.uuidString
+            let filesystem = Self.hostEndTranscriptFilesystem()
+            let verdicts = await Task.detached(priority: .userInitiated) {
+                ConversationStore.crashTranscriptVerdicts(for: records,
+                    registry: .v1, filesystem: filesystem, surfaceIds: [surfaceID])
+            }.value
+            // The runtime may have advanced from `.ended` to a bound
+            // replacement while the audit ran. Re-read the same source: only a
+            // different ended terminal, or none, abandons this recovery.
+            guard !Task.isCancelled, self.panels[panel.id] as? TerminalPanel === panel,
+                  panel.hcSession === runtime, let now = endedSource(), now.key == endedKey,
+                  !panel.plannedHCEndedKeys.contains(endedKey),
+                  HCSessionEnd.coordinator?.isEndPending(panelID: panel.id) != true else {
+                // An end is published once now: a decision abandoned here is
+                // settled, never left "deciding" (nothing would retry it).
+                if !Task.isCancelled, let status = panel.hcHostEnd, status.endedKey == endedKey,
+                   case .deciding = status.phase, !panel.plannedHCEndedKeys.contains(endedKey) {
+                    self.decideHostEnd(panel, endedKey: endedKey, phase: .failed(reason: String(
+                        localized: "hc.hostEnd.terminalChanged",
+                        defaultValue: "its terminal changed before it could be resumed.")),
+                        conversation: records[surfaceID]?.active)
+                }
+                return
+            }
+            if outsideSignal != nil, let endEvidence {
+                // The inventory can resolve a replacement's live agent while
+                // the transcript audit is suspended. Recheck before deciding.
+                if let agentKind = self.hcLiveAgentKind(panelId: panel.id) {
+                    self.launchRestoreMarks.consume(panel.id)
+                    let ref = records[surfaceID]?.active
+                    self.keepLiveAgent(panelId: panel.id, agentKind: agentKind, conversation: ref, stage: "hc-recovery")
+                    self.decideHostEnd(panel, endedKey: endedKey,
+                        phase: .kept(reason: Self.liveAgentRefusal(agentKind)), conversation: ref)
+                    return
+                }
+                // Hidden/startup and child-exit paths use the same surviving
+                // session evidence, before any crash audit changes its state.
+                if !self.keepPanelAfterOutsideSignal(panelId: panel.id, evidence: endEvidence,
+                    lastLive: runtime.lastLiveRecord, found: startupResolution ? "launch" : "hidden") {
+                    self.launchRestoreMarks.consume(panel.id)
+                    self.decideHostEnd(panel, endedKey: endedKey, phase: .noConversation, conversation: nil)
+                }
+                return
+            }
+            // C11H-196 gate B: the launch's real mode. A transcript found on
+            // disk resumes, a missing one does not, and a kind that cannot be
+            // checked resumes after a clean shutdown only.
+            let mode = classification.mode
+            await ConversationStore.shared.applyCrashTranscriptVerdicts(verdicts,
+                downgradeUnverifiable: mode == .dirty)
+            let currentRecords = await ConversationStore.shared.snapshot()
+            guard let ref = currentRecords[panel.id.uuidString]?.active else {
+                self.launchRestoreMarks.consume(panel.id)
+                self.decideHostEnd(panel, endedKey: endedKey, phase: .noConversation, conversation: nil)
+                return
+            }
+            // C11H-98: before the decision, never after it.
+            if let agentKind = self.hcLiveAgentKind(panelId: panel.id) {
+                self.launchRestoreMarks.consume(panel.id)
+                self.keepLiveAgent(panelId: panel.id, agentKind: agentKind, conversation: ref, stage: "hc-recovery")
+                self.decideHostEnd(panel, endedKey: endedKey, phase: .kept(reason: Self.liveAgentRefusal(agentKind)),
+                                   conversation: ref)
+                return
+            }
+            let decision = Self.resumeDecision(for: ref, registry: .v1, mode: mode)
+            // C11H-232: an outside signal's conversation is offered, never
+            // typed unasked, wherever its end was found.
+            if case .command = decision, let status = panel.hcHostEnd, status.endedKey == endedKey, status.signal != nil {
+                self.launchRestoreMarks.consume(panel.id)
+                self.decideHostEnd(panel, endedKey: endedKey,
+                                   phase: .notResumed(reason: HCHostEndStatus.outsideSignalReason), conversation: ref)
+                return
+            }
+            // C11H-209 (C11H-205 decision 2): a launch resumes on its own only
+            // an end it is the first to find. One the previous session found
+            // and left (agent restart off, a no-resume launch) is offered,
+            // never typed unasked. A skip keeps its own reason below.
+            if case .command = decision, panel.hcEndsFoundByPreviousSession.contains(endedKey) {
+                self.launchRestoreMarks.consume(panel.id)
+                self.decideHostEnd(panel, endedKey: endedKey,
+                                   phase: .notResumed(reason: Self.foundByPreviousSessionReason), conversation: ref)
+                return
+            }
+            self.recordLaunchResumeDecision(panelId: panel.id, kind: ref.kind, conversationId: ref.id,
+                mode: mode, decision: decision)
+            guard case .command(let command) = decision else {
+                self.launchRestoreMarks.consume(panel.id)
+                let reason: String
+                if case .skip(let code, let skipReason) = decision {
+                    reason = Self.hostEndSkipReason(code: code, reason: skipReason)
+                } else {
+                    reason = String(localized: "hc.hostEnd.notResumable", defaultValue: "it cannot be resumed automatically.")
+                }
+                self.decideHostEnd(panel, endedKey: endedKey, phase: .notResumed(reason: reason), conversation: ref)
+                return
+            }
+            guard !Task.isCancelled else { return }
+            guard panel.surface.lastOperatorKeyAt == operatorKeyAt else {
+                self.launchRestoreMarks.consume(panel.id)
+                self.decideHostEnd(panel, endedKey: endedKey, phase: .notResumed(reason: String(
+                    localized: "hc.hostEnd.operatorTyped", defaultValue: "you typed in this panel first.")),
+                    conversation: ref)
+                return
+            }
+            // Most recently active first: the conversation's last transcript
+            // write, else the panel's last recorded input.
+            let activity = [verdicts[surfaceID]?.lastActivity,
+                            PanelActivityTracker.shared.lastActivity(for: surfaceID)].compactMap { $0 }.max()
+            self.planHostEndResume(panel, runtime: runtime, endedKey: endedKey, command: command, conversation: ref,
+                                   operatorKeyAt: operatorKeyAt, launchScoped: startupResolution,
+                                   replacementStarted: now.replacementStarted, priority: nil, activity: activity)
+        }
+    }
+
+    /// C11H-232: the child-exit path asks this before it closes a panel.
+    /// A local terminal whose root a signal c11 did not send ended (hc
+    /// `exited` with a signal other than SIGINT or SIGQUIT), while the panel
+    /// held a live agent conversation, keeps its panel like a host end: the
+    /// banner names the signal and offers Resume conversation, and the restore
+    /// record (skipped) waits for the operator or `c11 restore run`. Decided
+    /// once, never typed unasked: the signal may have been meant. An end the
+    /// child-exit path never sees (a hidden restored panel, an end found at
+    /// launch) is classified by the host-end recovery instead. Returns false,
+    /// and the caller closes the panel as before, for every other end: an exit,
+    /// the keyboard's stop keys, an end c11 asked for, End All, a remote
+    /// terminal, or a shell with no live conversation.
+    @discardableResult
+    func keepPanelAfterOutsideSignal(panelId: UUID, evidence: HCEndEvidence, lastLive: HCTerminalRecord?,
+                                     found: String = "live") -> Bool {
+        guard let signal = HCRestoreLifecycleProjection.outsideSignal(evidence), let key = evidence.key,
+              let panel = panels[panelId] as? TerminalPanel, let runtime = panel.hcSession,
+              runtime.identity.persistence == .persistent, panel.hcRemoteTarget == nil else { return false }
+        let conversation = HCOutsideSignalConversation.resolve(panelID: panelId, evidence: evidence,
+            conversation: ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelId)?.active,
+            journal: JournalCoordinator.shared.snapshot(panelID: panelId))
+        let agentKind = conversation?.kind ?? lastLive.flatMap { $0.key == key ? HCLiveAgent.kind($0) : nil }
+        func decided(_ kept: Bool) -> Bool {
+            HCOutsideSignalEndLog.note(workspaceID: id, panelID: panelId, endedKey: key, signal: signal, kept: kept,
+                agent: agentKind, endedAt: evidence.endedAt.map { min($0, Date()) } ?? Date(), found: found)
+            return kept
+        }
+        guard !panel.retainsAfterEndAllSessions,
+              HCSessionEnd.coordinator?.isEndPending(panelID: panelId) != true else { return decided(false) }
+        // Decided already (a relaunch carried this end's record back, or the
+        // host-end recovery classified it first): keep it as it is. A decided
+        // end with no record was an ordinary end and closes.
+        if panel.hcHostEnd?.endedKey == key { return true }
+        guard let conversation else { return decided(false) }
+        panel.plannedHCEndedKeys.insert(key)
+        launchRestoreMarks.consume(panelId)
+        // Deciding (no Resume offered) until the transcript check settles it.
+        panel.hcHostEnd = HCHostEndStatus(endedKey: key, cause: Self.outsideSignalCause(evidence, signal: signal),
+            phase: .deciding, conversation: conversation)
+        checkOutsideSignalTranscript(panel, evidence: evidence, endedKey: key, conversation: conversation)
+        return decided(true)
+    }
+
+    nonisolated static func outsideSignalCause(_ evidence: HCEndEvidence, signal: Int32) -> HCHostEndStatus.Cause {
+        let now = Date()
+        return .outsideSignal(at: evidence.endedAt.map { min($0, now) } ?? now, signal: signal)
+    }
+
+    /// The transcript check a host end runs before it decides (C11H-196), so
+    /// the offered conversation carries the cwd its transcript records: a
+    /// SessionStart ref has none, and `claude --resume` finds a session only
+    /// from its own project folder. Resume is offered only once it is done
+    /// (the record stays deciding until then). A missing transcript marks the
+    /// ref, and Resume then says so instead of starting the agent.
+    private func checkOutsideSignalTranscript(_ panel: TerminalPanel, evidence: HCEndEvidence, endedKey: HCTerminalKey,
+                                              conversation: ConversationRef) {
+        let surfaceID = panel.id.uuidString
+        let filesystem = Self.hostEndTranscriptFilesystem()
+        Task { @MainActor [weak panel] in
+            guard let panel else { return }
+            let prepared = await ConversationStore.shared.prepareOutsideSignalRecovery(surfaceId: panel.id,
+                expected: conversation, evidence: evidence, journal: JournalCoordinator.shared.snapshot(panelID: panel.id))
+            guard prepared?.id == conversation.id, prepared?.kind == conversation.kind else {
+                if var status = panel.hcHostEnd, status.endedKey == endedKey, case .deciding = status.phase {
+                    status.phase = .noConversation
+                    status.conversation = nil
+                    panel.hcHostEnd = status
+                }
+                return
+            }
+            let records = await ConversationStore.shared.snapshot()
+            let verdicts = await Task.detached(priority: .userInitiated) {
+                ConversationStore.crashTranscriptVerdicts(for: records, registry: .v1, filesystem: filesystem,
+                                                          surfaceIds: [surfaceID])
+            }.value
+            await ConversationStore.shared.applyCrashTranscriptVerdicts(verdicts, downgradeUnverifiable: false)
+            let checked = await ConversationStore.shared.snapshot()[surfaceID]?.active
+            // Read the record after the last suspension.
+            guard var status = panel.hcHostEnd, status.endedKey == endedKey,
+                  case .deciding = status.phase, status.conversation?.id == conversation.id else { return }
+            if let checked, checked.id == conversation.id, checked.kind == conversation.kind {
+                status.conversation = checked
+            }
+            status.phase = .notResumed(reason: HCHostEndStatus.outsideSignalReason)
+            panel.hcHostEnd = status
+        }
+    }
+
+    /// A planned host-end resume that will not be typed after all.
+    func noteHostEndNotResumed(_ panelId: UUID, reason: String, failed: Bool = true,
+                                       phase: ((String) -> HCHostEndStatus.Phase)? = nil) {
+        guard let panel = panels[panelId] as? TerminalPanel, let status = panel.hcHostEnd else { return }
+        switch status.phase {
+        case .queued, .starting, .resuming: break
+        default: return
+        }
+        let next = phase?(reason) ?? (failed ? .failed(reason: reason) : .notResumed(reason: reason))
+        updateHostEnd(panelId: panelId, phase: next)
+        HCHostEndResumeQueue.shared.finished(panelID: panelId)
+    }
+
+    /// Where host-end recovery stats transcripts. Test seam; production reads
+    /// the real disk (stat, plus a capped head read for the cwd).
+    nonisolated(unsafe) static var hostEndTranscriptFilesystem: @Sendable () -> ConversationFilesystem = {
+        SessionNameIndexFilesystem(base: DefaultConversationFilesystem())
+    }
+
+    /// C11H-209: what the session snapshot keeps of a panel's host-end
+    /// recovery. A plan still pending, or a recovery task still running, is
+    /// unsettled: the next launch decides that end itself.
+    func savedHostEnd(_ panel: TerminalPanel) -> HCSavedHostEnd? {
+        let creation = HCPanelRestoreState.shared.entry(for: panel.id)?.creation
+        let source = panel.hcSession.flatMap { HCRecoveryEndedProof.source(lifecycle: $0.lifecycle, creation: creation) }
+        let identityKey = panel.hcSession?.identity.key
+        var relevant = Set([identityKey, source?.key].compactMap { $0 })
+        if let record = panel.hcHostEnd { relevant.insert(record.endedKey) }
+        var unsettled = Set([panel.pendingHCConversationRecovery?.endedKey].compactMap { $0 })
+        if hcRecoveryTasks[panel.id] != nil, let key = source?.key { unsettled.insert(key) }
+        // End All ended this panel's session on purpose: never offered again,
+        // even when hc had not confirmed the end before the quit.
+        let endedOnPurpose: Set<HCTerminalKey> = panel.retainsAfterEndAllSessions
+            ? Set([identityKey, source?.key].compactMap { $0 }) : []
+        var found = panel.hcEndsFoundByPreviousSession
+        if let key = source?.key { found.insert(key) }
+        var record = panel.hcHostEnd
+        // A shown panel's fresh shell replaced an end this session found and
+        // left. The replacement's provenance does not outlive the app, so the
+        // next launch could not tell; keep the offer itself.
+        if record == nil, let source, source.replacementStarted, endedOnPurpose.isEmpty,
+           !panel.plannedHCEndedKeys.contains(source.key), !unsettled.contains(source.key),
+           let evidence = creation?.replaces, HCRestoreLifecycleProjection.isHostEnd(evidence.hcReason),
+           let conversation = ConversationStorePanelRefCache.shared.snapshot(surfaceId: panel.id)?.active {
+            record = HCHostEndStatus(endedKey: source.key,
+                cause: hostEndCause(reason: evidence.hcReason, startupResolution: false, endedAt: evidence.endedAt),
+                phase: .notResumed(reason: Self.foundByPreviousSessionReason), conversation: conversation)
+        }
+        return HCSavedHostEnd.capture(decided: panel.plannedHCEndedKeys, record: record, relevant: relevant,
+            found: found, unsettled: unsettled, dismissedKey: panel.hcHostEndDismissedKey,
+            endedOnPurpose: endedOnPurpose)
+    }
+
+    nonisolated static var foundByPreviousSessionReason: String {
+        String(localized: "hc.hostEnd.foundByPreviousSession",
+               defaultValue: "c11's previous session had already found it ended.")
+    }
+
+    /// Record the one decision for this ended key (C11H-196).
+    private func decideHostEnd(_ panel: TerminalPanel, endedKey: HCTerminalKey, phase: HCHostEndStatus.Phase,
+                               conversation: ConversationRef?) {
+        panel.plannedHCEndedKeys.insert(endedKey)
+        guard var status = panel.hcHostEnd, status.endedKey == endedKey else { return }
+        status.phase = phase
+        if let conversation { status.conversation = conversation }
+        panel.hcHostEnd = status
+    }
+
+    /// Move a decided host end to a later phase (queued, starting, resumed …).
+    func updateHostEnd(panelId: UUID, phase: HCHostEndStatus.Phase) {
+        guard let panel = panels[panelId] as? TerminalPanel, var status = panel.hcHostEnd else { return }
+        guard status.phase != phase else { return }
+        status.phase = phase
+        panel.hcHostEnd = status
+    }
+
+    /// What ended this terminal, and when, in the operator's terms. An end
+    /// found at startup was last known live when the previous session saved;
+    /// one seen during this session was live a moment ago.
+    private func hostEndCause(reason: String?, startupResolution: Bool, endedAt: Date?) -> HCHostEndStatus.Cause {
+        let now = Date()
+        return HCHostEndStatus.cause(hcReason: reason, observedAt: now, bootedAt: HCHostEndStatus.systemBootTime(),
+            lastKnownLive: startupResolution ? HCHostEndStatus.previousSessionSavedAt : now, endedAt: endedAt)
+    }
+
+    /// The end this recovery answers: the live `.ended`, or the end a
+    /// replacement already started for records.
+    nonisolated static func hostEndEvidence(lifecycle: HCLifecycle, creation: HCCreationProvenance?) -> HCEndEvidence? {
+        if case .ended(let evidence) = lifecycle { return evidence }
+        return creation?.replaces
+    }
+
+    /// hc's reason for the end this recovery answers.
+    nonisolated static func hostEndReason(lifecycle: HCLifecycle, creation: HCCreationProvenance?) -> String? {
+        hostEndEvidence(lifecycle: lifecycle, creation: creation)?.hcReason
+    }
+
+    /// Plain-English reason a host-ended conversation was not resumed.
+    nonisolated static func hostEndSkipReason(code: ResumeSkipCode, reason: String) -> String {
+        switch code {
+        case .transcriptMissing:
+            return String(localized: "hc.hostEnd.transcriptMissing",
+                defaultValue: "no saved conversation was found on disk for this session.")
+        case .transcriptUnverified:
+            return String(localized: "hc.hostEnd.transcriptUnverified",
+                defaultValue: "its saved conversation could not be checked after an unclean shutdown.")
+        case .stateNotResumable:
+            let lowered = reason.lowercased()
+            if lowered.contains("transcript not found") {
+                return String(localized: "hc.hostEnd.transcriptMissing",
+                    defaultValue: "no saved conversation was found on disk for this session.")
+            }
+            return String(localized: "hc.hostEnd.stateNotResumable",
+                defaultValue: "the conversation had already ended.")
+        case .placeholder:
+            return String(localized: "hc.hostEnd.placeholder",
+                defaultValue: "the agent had not started a conversation yet.")
+        case .duplicateOwnership, .ambiguousOwnership:
+            return String(localized: "hc.hostEnd.ownership",
+                defaultValue: "another panel holds the same conversation.")
+        default:
+            return reason
+        }
+    }
+
+    /// C11H-196: a `command` decision. A shown panel whose own start already
+    /// made the fresh terminal waits for its prompt; every other panel, shown
+    /// or hidden, takes its turn in the app-wide staggered queue, which starts
+    /// its fresh terminal (headless when hidden) without showing it.
+    private func planHostEndResume(_ panel: TerminalPanel, runtime: HCPanelSession, endedKey: HCTerminalKey,
+                                   command: ResumeCommand, conversation ref: ConversationRef, operatorKeyAt: Date?,
+                                   launchScoped: Bool, replacementStarted: Bool,
+                                   priority: HCHostEndResumeQueue.Priority?, activity: Date? = nil) {
+        panel.plannedHCEndedKeys.insert(endedKey)
+        panel.pendingHCConversationRecovery = HCPendingConversationRecovery(
+            endedKey: endedKey, operatorKeyAt: operatorKeyAt,
+            plan: (panel.id, .typeCommand(text: command.text, submitWithReturn: command.submitWithReturn), ref),
+            launchScoped: launchScoped, admitted: false)
+        launchRestoreMarks.consume(panel.id)
+        if var status = panel.hcHostEnd, status.endedKey == endedKey {
+            status.conversation = ref
+            status.phase = .queued
+            panel.hcHostEnd = status
+        }
+        let panelID = panel.id
+        HCRestoreProgress.shared.noteWorkspace(self)
+        // A shown panel whose own start already made the fresh terminal still
+        // waits its turn; then its idle prompt types the resume (its prompt
+        // state belongs to the new shell and is not reset). Every other panel's
+        // turn starts its fresh terminal, headless when hidden.
+        let shown = replacementStarted || { if case .ended = runtime.lifecycle { return false }; return true }()
+            || panel.surface.isShownInRealWindow
+        let enqueue: @MainActor (_ shown: Bool) -> Void = { shown in
+            HCHostEndResumeQueue.shared.enqueue(panelID: panelID, endedKey: endedKey,
+                priority: priority ?? (shown ? .shown : .hidden), activity: activity,
+                admit: { try await Workspace.admitHostEndResume(panelID: panelID, endedKey: endedKey) },
+                abandon: { reason in Workspace.abandonHostEndResume(panelID: panelID, endedKey: endedKey, reason: reason) })
+        }
+        // C11H-203: while the operator is asked whether to resume, the fresh
+        // terminal waits too. A declined panel stays ended, so its resume is
+        // still offered here and after a relaunch; a fresh shell started for
+        // it would look like any running terminal once c11 quits.
+        if launchScoped, LaunchResumeGate.shared.intercept(panelID: panelID, workspaceTitle: title,
+            panelTitle: panel.displayTitle,
+            run: { @MainActor in
+                guard let (_, current) = HCRestoreProgress.shared.locate(panelID),
+                      let pending = current.pendingHCConversationRecovery,
+                      pending.endedKey == endedKey, pending.launchScoped else { return }
+                // The operator chose it: its submit is not asked again. Shown
+                // or not is judged now, when they answered.
+                current.pendingHCConversationRecovery?.launchScoped = false
+                enqueue(shown || current.surface.isShownInRealWindow
+                    || { if case .some(.ended) = current.hcSession?.lifecycle { return false }; return true }())
+            },
+            dropped: { MainActor.assumeIsolated {
+                Workspace.dropDeclinedHostEndResume(panelID: panelID, endedKey: endedKey)
+            } }, spaced: false) {
+            return
+        }
+        enqueue(shown)
+    }
+
+    /// Not now (or left out of a subset) for a host-end resume that never got
+    /// its fresh terminal: the record says so and keeps Resume conversation.
+    static func dropDeclinedHostEndResume(panelID: UUID, endedKey: HCTerminalKey) {
+        // Only the launch's own plan: an operator's Resume conversation made
+        // since answers to them, not to this question.
+        guard let (workspace, panel) = HCRestoreProgress.shared.locate(panelID),
+              let pending = panel.pendingHCConversationRecovery,
+              pending.endedKey == endedKey, pending.launchScoped else { return }
+        panel.pendingHCConversationRecovery = nil
+        workspace.noteHostEndNotResumed(panelID, reason: String(localized: "hc.hostEnd.declined",
+            defaultValue: "you chose not to resume it at launch."), failed: false)
+    }
+
+    /// The queue's turn for one panel. The panel is found where it lives now:
+    /// a workspace move keeps its place in the queue.
+    static func admitHostEndResume(panelID: UUID, endedKey: HCTerminalKey) async throws {
+        guard let (workspace, panel) = HCRestoreProgress.shared.locate(panelID), let runtime = panel.hcSession,
+              panel.pendingHCConversationRecovery?.endedKey == endedKey else {
+            HCHostEndResumeQueue.shared.finished(panelID: panelID)
+            return
+        }
+        panel.pendingHCConversationRecovery?.admitted = true
+        // Already replaced (shown, or shown meanwhile): its idle prompt types.
+        guard case .ended = runtime.lifecycle else {
+            workspace.updateHostEnd(panelId: panelID, phase: .resuming)
+            workspace.persistentLifecycleChanged(panel)
+            return
+        }
+        workspace.updateHostEnd(panelId: panelID, phase: .starting)
+        workspace.panelShellActivityStates[panelID] = .unknown
+        try await panel.surface.startHostEndReplacement()
+        guard let (now, current) = HCRestoreProgress.shared.locate(panelID), current === panel,
+              panel.pendingHCConversationRecovery?.endedKey == endedKey else { return }
+        if case .starting = panel.hcHostEnd?.phase { now.updateHostEnd(panelId: panelID, phase: .resuming) }
+        now.persistentLifecycleChanged(panel)
+    }
+
+    /// The queue gave up on a panel: its start failed every attempt, or it did
+    /// not finish within the slot timeout. With no fresh terminal the plan is
+    /// dropped; with one, it stays, so a late idle prompt still resumes it.
+    static func abandonHostEndResume(panelID: UUID, endedKey: HCTerminalKey, reason: String) {
+        guard let (workspace, panel) = HCRestoreProgress.shared.locate(panelID),
+              panel.pendingHCConversationRecovery?.endedKey == endedKey else { return }
+        let stalled = reason == HCHostEndResumeQueue.stalledReason
+        // A stall keeps the plan: a start still in flight (hc can be slow
+        // after a reboot) may finish, and its idle prompt still resumes it.
+        // Only a start that failed every attempt drops the plan.
+        if !stalled { panel.pendingHCConversationRecovery = nil }
+        let text = stalled
+            ? String(localized: "hc.hostEnd.stalled", defaultValue: "its fresh terminal did not reach a prompt in time.")
+            : String(localized: "hc.hostEnd.replacementFailed", defaultValue: "a fresh terminal could not be started for it.")
+        workspace.updateHostEnd(panelId: panelID, phase: .failed(reason: text))
+    }
+
+    /// C11H-196: the operator's Resume conversation (the banner button, or
+    /// `c11 conversation resume` on an ended panel). Their request is the
+    /// consent the automatic path lacked, so the transcript gate is skipped;
+    /// a live agent, a placeholder or a shared conversation still refuses.
+    @discardableResult
+    func resumeHostEndedConversation(panelId: UUID) -> String? {
+        guard let panel = panels[panelId] as? TerminalPanel, let runtime = panel.hcSession,
+              runtime.identity.persistence == .persistent, let status = panel.hcHostEnd else {
+            return String(localized: "hc.hostEnd.notEnded", defaultValue: "This panel has no ended session to resume.")
+        }
+        if let agentKind = hcLiveAgentKind(panelId: panelId) { return Self.liveAgentRefusal(agentKind) }
+        guard !panel.retainsAfterEndAllSessions else {
+            return String(localized: "hc.hostEnd.endedOnPurpose", defaultValue: "This session was ended with End All Sessions.")
+        }
+        if case .interrupted = status.phase {
+            return String(localized: "hc.hostEnd.checkFirst",
+                defaultValue: "Typing the resume was cut off in this terminal. Check the panel, then start the agent yourself.")
+        }
+        // A live fresh shell: only an empty prompt takes the resume. A key
+        // since the shell's last prompt edge may be a half-typed command.
+        if case .live = runtime.lifecycle {
+            let lastKey = panel.surface.lastOperatorKeyAt ?? .distantPast
+            let lastEmptyPrompt = max(panelShellEdgeAt[panelId] ?? .distantPast,
+                                      panelPromptIdleReportAt[panelId] ?? .distantPast)
+            guard panelShellActivityStates[panelId] == .promptIdle, lastKey <= lastEmptyPrompt else {
+                return String(localized: "hc.hostEnd.promptNotEmpty",
+                    defaultValue: "The terminal may have something typed at its prompt. Press Return on an empty prompt (or run a command), then resume.")
+            }
+        }
+        guard let saved = status.conversation ?? ConversationStorePanelRefCache.shared.snapshot(surfaceId: panelId)?.active else {
+            return String(localized: "hc.hostEnd.noConversationToResume", defaultValue: "No saved conversation is known for this panel.")
+        }
+        guard !saved.placeholder, ConversationStrategyRegistry.v1.strategy(forKind: saved.kind)?.isValidId(saved.id) == true else {
+            return Self.hostEndSkipReason(code: .placeholder, reason: "")
+        }
+        if panel.hcHostEndDismissedKey != nil { panel.resetHCHostEndDismissal() }
+        // The operator's last key as of this click: any later key cancels it.
+        let operatorKeyAt = panel.surface.lastOperatorKeyAt
+        updateHostEnd(panelId: panelId, phase: .queued)
+        // Bring the saved conversation back as the panel's own, so the guarded
+        // submit's ownership check matches what is typed.
+        Task { @MainActor [weak self, weak panel, weak runtime] in
+            guard let self, let panel, let runtime, self.panels[panelId] as? TerminalPanel === panel else { return }
+            guard let ref = await ConversationStore.shared.restoreForOperatorResume(surfaceId: panelId.uuidString, ref: saved) else { return }
+            let decision = Self.resumeDecision(for: ref, registry: .v1, mode: .clean)
+            self.recordLaunchResumeDecision(panelId: panelId, kind: ref.kind, conversationId: ref.id, mode: .clean,
+                                            decision: decision)
+            guard case .command(let command) = decision else {
+                var reason = String(localized: "hc.hostEnd.notResumable", defaultValue: "it cannot be resumed automatically.")
+                if case .skip(let code, let skipReason) = decision { reason = Self.hostEndSkipReason(code: code, reason: skipReason) }
+                self.updateHostEnd(panelId: panelId, phase: .notResumed(reason: reason))
+                return
+            }
+            let replacementStarted: Bool
+            if case .ended = runtime.lifecycle { replacementStarted = false } else { replacementStarted = true }
+            // A fresh shell that is already live counts as replaced: the
+            // resume waits for its idle prompt and the operator's draft guard.
+            self.panelShellActivityStates[panelId] = replacementStarted
+                ? self.panelShellActivityStates[panelId] : .unknown
+            self.planHostEndResume(panel, runtime: runtime, endedKey: status.endedKey, command: command,
+                                   conversation: ref, operatorKeyAt: operatorKeyAt,
+                                   launchScoped: false, replacementStarted: replacementStarted,
+                                   priority: .operatorRequest)
+        }
+        return nil
     }
 
     private func sessionLayoutSnapshot(from node: ExternalTreeNode) -> SessionWorkspaceLayoutSnapshot {
@@ -1084,24 +2396,32 @@ extension Workspace {
         switch panel.panelType {
         case .terminal:
             guard let terminalPanel = panel as? TerminalPanel else { return nil }
-            let shouldPersistScrollback = terminalPanel.shouldPersistScrollbackForSessionSnapshot()
-            let capturedScrollback = includeScrollback && shouldPersistScrollback
-                ? TerminalController.shared.readTerminalTextForSnapshot(
-                    terminalPanel: terminalPanel,
-                    includeScrollback: true,
-                    lineLimit: SessionPersistencePolicy.maxScrollbackLinesPerTerminal
-                )
-                : nil
-            let resolvedScrollback = terminalSnapshotScrollback(
-                panelId: panelId,
-                capturedScrollback: capturedScrollback,
-                includeScrollback: includeScrollback,
-                allowFallbackScrollback: shouldPersistScrollback
-            )
-            terminalSnapshot = SessionTerminalPanelSnapshot(
+            terminalSnapshot = SessionTerminalPanelSnapshot.capture(
                 workingDirectory: panelDirectories[panelId],
-                scrollback: resolvedScrollback
-            )
+                // An exec fallback has no HCPanelSession after restore, but
+                // its saved nonpersistent classification still belongs to
+                // this panel. Keep it through the next autosave too.
+                hcIdentity: terminalPanel.hcIdentity ?? HCPanelRestoreState.shared.entry(for: panelId)?.identity,
+                hcRemoteTarget: terminalPanel.hcRemoteTarget,
+                hcSession: HCShardPlacement.shared.home(forPanel: panelId)
+                    .flatMap { HCBackendComposition.shared.pool?.shard($0)?.name },
+                hcHostEnd: savedHostEnd(terminalPanel),
+                hcMigrationEnd: HCPanelRestoreState.shared.entry(for: panelId)?.migrationEnd
+            ) {
+                let shouldPersistScrollback = terminalPanel.shouldPersistScrollbackForSessionSnapshot()
+                let capturedScrollback = includeScrollback && shouldPersistScrollback
+                    ? TerminalController.shared.readTerminalTextForSnapshot(
+                        terminalPanel: terminalPanel,
+                        includeScrollback: true,
+                        lineLimit: SessionPersistencePolicy.maxScrollbackLinesPerTerminal
+                    )
+                    : nil
+                return terminalSnapshotScrollback(
+                    panelId: panelId, capturedScrollback: capturedScrollback,
+                    includeScrollback: includeScrollback,
+                    allowFallbackScrollback: shouldPersistScrollback
+                )
+            }
             browserSnapshot = nil
             markdownSnapshot = nil
         case .browser:
@@ -1264,23 +2584,15 @@ extension Workspace {
         case .pane(let pane):
             leaves.append(SessionAreaRestoreEntry(paneId: paneId, snapshot: pane))
         case .split(let split):
-            var anchorPanelId = bonsplitController
-                .tabs(inPane: paneId)
-                .compactMap { tabIdFromBonsplitTabId($0.id) }
-                .first
-
-            if anchorPanelId == nil {
-                anchorPanelId = newTerminalSurface(inPane: paneId, focus: false)?.id
-            }
-
-            guard let anchorPanelId,
-                  let newSplitPanel = newTerminalSplit(
-                    from: anchorPanelId,
-                    orientation: split.orientation.splitOrientation,
-                    insertFirst: false,
-                    focus: false
-                  ),
-                  let secondPaneId = self.paneId(forPanelId: newSplitPanel.id) else {
+            // Build layout with Bonsplit placeholders only. A terminal anchor
+            // would authorize a fresh hc create unrelated to any saved panel.
+            let previousProgrammaticSplit = isProgrammaticSplit
+            isProgrammaticSplit = true
+            let secondPaneId = bonsplitController.splitPane(
+                paneId, orientation: split.orientation.splitOrientation
+            )
+            isProgrammaticSplit = previousProgrammaticSplit
+            guard let secondPaneId else {
                 leaves.append(
                     SessionAreaRestoreEntry(
                         paneId: paneId,
@@ -1300,9 +2612,10 @@ extension Workspace {
         snapshot: SessionAreaLayoutSnapshot,
         panelSnapshotsById: [UUID: SessionPanelSnapshot]
     ) {
-        let existingPanelIds = bonsplitController
-            .tabs(inPane: paneId)
+        let existingTabs = bonsplitController.tabs(inPane: paneId)
+        let existingPanelIds = existingTabs
             .compactMap { tabIdFromBonsplitTabId($0.id) }
+        let placeholderTabs = existingTabs.filter { tabIdFromBonsplitTabId($0.id) == nil }
         let desiredPanelIds = snapshot.panelIds.filter { panelSnapshotsById[$0] != nil }
 
         var createdPanelIds: [UUID] = []
@@ -1321,6 +2634,7 @@ extension Workspace {
         for existingPanelId in existingPanelIds where !createdPanelIds.contains(existingPanelId) {
             _ = closePanel(existingPanelId, force: true)
         }
+        for placeholder in placeholderTabs { bonsplitController.closeTab(placeholder.id) }
 
         for (index, panelId) in createdPanelIds.enumerated() {
             _ = reorderSurface(panelId: panelId, toIndex: index)
@@ -1345,8 +2659,12 @@ extension Workspace {
         switch snapshot.type {
         case .terminal:
             let workingDirectory = snapshot.terminal?.workingDirectory ?? snapshot.directory ?? currentDirectory
+            // A corrupted identity must never attach another panel's terminal.
+            if let identity = snapshot.terminal?.hcIdentity, identity.panelID != snapshot.id { return nil }
+            let persistent = HCPanelRestoreState.shared.entry(for: snapshot.id)?.identity.persistence == .persistent
+            let replayableScrollback = persistent ? nil : snapshot.terminal?.replayableScrollback
             let replayEnvironment = SessionScrollbackReplayStore.replayEnvironment(
-                for: snapshot.terminal?.scrollback
+                for: replayableScrollback
             )
             guard let terminalPanel = newTerminalSurface(
                 inPane: paneId,
@@ -1354,11 +2672,12 @@ extension Workspace {
                 workingDirectory: workingDirectory,
                 startupEnvironment: replayEnvironment,
                 panelId: restoredPanelId,
-                createdAt: snapshot.createdAt
+                createdAt: snapshot.createdAt,
+                machine: snapshot.terminal?.hcRemoteTarget.map { .restored($0) } ?? .local
             ) else {
                 return nil
             }
-            let fallbackScrollback = SessionPersistencePolicy.truncatedScrollback(snapshot.terminal?.scrollback)
+            let fallbackScrollback = SessionPersistencePolicy.truncatedScrollback(replayableScrollback)
             if let fallbackScrollback {
                 restoredTerminalScrollbackByPanelId[terminalPanel.id] = fallbackScrollback
             } else {
@@ -1374,31 +2693,64 @@ extension Workspace {
             // matches the executor-driven restore path and closes the same
             // privacy/billing leak on session-snapshot restore.
             let restoredHibernated = snapshotRequestsHibernated(snapshot)
+            // C11H-228: a `c11 show` viewer comes back as a viewer, with its
+            // own store and scheme handler, loading what it showed.
+            let showSession = ShowViewerSession.restored(from: snapshot.metadata
+                .flatMap { $0[ShowSpec.metadataKey] }
+                .map { PersistedMetadataBridge.decodeValues([ShowSpec.metadataKey: $0])[ShowSpec.metadataKey] as Any })
+            // Its saved page (hash included) and hibernation come back as the
+            // operator left them; a linked machine's URL is checked again first.
+            let showLoad = showSession.map {
+                ShowViewerController.restoredLoad(session: $0, savedURL: initialURL, hibernated: restoredHibernated)
+            }
+            let restoredURL: URL? = {
+                guard let showLoad else { return initialURL }
+                switch showLoad {
+                case .savedURL, .hibernated: return initialURL
+                case .preflight, .source: return nil
+                }
+            }()
             guard let browserPanel = newBrowserSurface(
                 inPane: paneId,
-                url: initialURL,
+                url: restoredURL,
                 focus: false,
                 preferredProfileID: snapshot.browser?.profileID,
                 panelId: restoredPanelId,
                 pendingHibernate: restoredHibernated,
-                createdAt: snapshot.createdAt
+                createdAt: snapshot.createdAt,
+                showViewer: showSession
             ) else {
                 return nil
             }
             applySessionPanelMetadata(snapshot, toPanelId: browserPanel.id)
+            if let showSession, let showLoad {
+                ShowViewerController.shared.adoptRestored(showSession, panel: browserPanel, workspace: self,
+                                                          openedAt: snapshot.createdAt, load: showLoad)
+            }
             return browserPanel.id
         case .markdown:
+            // C11H-228: a markdown viewer of another machine's file comes back
+            // fed by its fetcher, never as a local path.
+            let showSession = ShowViewerSession.restored(from: snapshot.metadata
+                .flatMap { $0[ShowSpec.metadataKey] }
+                .map { PersistedMetadataBridge.decodeValues([ShowSpec.metadataKey: $0])[ShowSpec.metadataKey] as Any })
+            let remoteKey = showSession.flatMap { $0.origin.isRemote ? $0.address.absoluteString : nil }
             guard let markdownPanel = newMarkdownPanel(
                 inPane: paneId,
-                filePath: snapshot.markdown?.filePath,
+                filePath: remoteKey == nil ? snapshot.markdown?.filePath : nil,
                 focus: false,
                 panelId: restoredPanelId,
-                createdAt: snapshot.createdAt
+                createdAt: snapshot.createdAt,
+                remoteShowKey: remoteKey
             ) else {
                 return nil
             }
             markdownPanel.applyRestoredPresentation(snapshot.markdown ?? SessionMarkdownPanelSnapshot())
             applySessionPanelMetadata(snapshot, toPanelId: markdownPanel.id)
+            if let showSession {
+                ShowViewerController.shared.adoptRestored(showSession, panel: markdownPanel, workspace: self,
+                                                          openedAt: snapshot.createdAt, load: .source)
+            }
             return markdownPanel.id
         }
     }
@@ -1588,15 +2940,11 @@ final class WorkspaceRemoteDaemonPendingCallRegistry {
     }
 }
 
-private final class WorkspaceRemoteDaemonRPCClient {
+private final class WorkspaceRemoteDaemonRPCClient: RemoteProxyStreamTransport {
     private static let maxStdoutBufferBytes = 256 * 1024
     static let requiredProxyStreamCapability = "proxy.stream.push"
 
-    enum StreamEvent {
-        case data(Data)
-        case eof(Data)
-        case error(String)
-    }
+    typealias StreamEvent = RemoteProxyStreamEvent
 
     private struct StreamSubscription {
         let queue: DispatchQueue
@@ -1701,7 +3049,7 @@ private final class WorkspaceRemoteDaemonRPCClient {
         stop(suppressTerminationCallback: true)
     }
 
-    func openStream(host: String, port: Int, timeoutMs: Int = 10000) throws -> String {
+    func openStream(host: String, port: Int, timeoutMs: Int) throws -> String {
         let result = try call(
             method: "proxy.open",
             params: [
@@ -2376,500 +3724,649 @@ enum RemoteLoopbackHTTPResponseRewriter {
     }
 }
 
-private final class WorkspaceRemoteDaemonProxyTunnel {
-    private final class ProxySession {
-        private static let maxHandshakeBytes = 64 * 1024
-        private static let remoteLoopbackProxyAliasHost = "c11-loopback.localtest.me"
+enum RemoteProxyStreamEvent {
+    case data(Data)
+    case eof(Data)
+    case error(String)
+}
 
-        private enum HandshakeProtocol {
-            case undecided
-            case socks5
-            case connect
+/// The remote side of a proxied connection: the c11 ssh workspace's remote daemon, or a fake in tests.
+protocol RemoteProxyStreamTransport: AnyObject {
+    func openStream(host: String, port: Int, timeoutMs: Int) throws -> String
+    func attachStream(
+        streamID: String,
+        queue: DispatchQueue,
+        onEvent: @escaping (RemoteProxyStreamEvent) -> Void
+    ) throws
+    func writeStream(streamID: String, data: Data) throws
+    func closeStream(streamID: String)
+}
+
+/// The client half of a c11 ssh workspace proxy connection, before any byte reaches the remote.
+/// SOCKS5 must use username/password (RFC 1929) and HTTP CONNECT must carry Basic
+/// `Proxy-Authorization`, both with the broker's credential. Any other local client, including
+/// another account on this Mac, is refused before it can name a target.
+struct RemoteProxyHandshake {
+    static let maxHandshakeBytes = 64 * 1024
+
+    enum Action: Equatable {
+        /// Send these bytes and keep reading.
+        case reply(Data)
+        /// Send these bytes (if any), then close the connection.
+        case refuse(Data)
+        /// Authenticated: open host:port on the remote, answer with `success` or `failure`,
+        /// then forward `pending`.
+        case open(host: String, port: Int, success: Data, failure: Data, pending: Data)
+    }
+
+    static let socksNoAcceptableMethod = Data([0x05, 0xFF])
+    static let socksAuthFailed = Data([0x01, 0x01])
+    static let socksAuthSucceeded = Data([0x01, 0x00])
+
+    private enum Phase {
+        case undecided
+        case socksGreeting
+        case socksAuth
+        case socksRequest
+        case connect
+        case done
+    }
+
+    private struct SocksRequest {
+        let host: String
+        let port: Int
+        let command: UInt8
+        let consumedBytes: Int
+    }
+
+    private let credential: BrowserProxyCredential
+    private var phase: Phase = .undecided
+    private var buffer = Data()
+
+    init(credential: BrowserProxyCredential) {
+        self.credential = credential
+    }
+
+    var isFinished: Bool { phase == .done }
+
+    /// Feeds client bytes and returns the actions to take, in order. After `.refuse` or `.open`
+    /// the handshake is over and ignores further input.
+    mutating func consume(_ data: Data) -> [Action] {
+        guard phase != .done else { return [] }
+        buffer.append(data)
+        guard buffer.count <= Self.maxHandshakeBytes else {
+            phase = .done
+            buffer = Data()
+            return [.refuse(Data())]
+        }
+        var actions: [Action] = []
+        while phase != .done, let action = step() {
+            actions.append(action)
+            switch action {
+            case .refuse, .open:
+                phase = .done
+            case .reply:
+                break
+            }
+        }
+        return actions
+    }
+
+    private mutating func step() -> Action? {
+        switch phase {
+        case .undecided:
+            guard let first = buffer.first else { return nil }
+            phase = first == 0x05 ? .socksGreeting : .connect
+            return step()
+        case .socksGreeting:
+            return socksGreetingStep()
+        case .socksAuth:
+            return socksAuthStep()
+        case .socksRequest:
+            return socksRequestStep()
+        case .connect:
+            return connectStep()
+        case .done:
+            return nil
+        }
+    }
+
+    private mutating func socksGreetingStep() -> Action? {
+        let bytes = [UInt8](buffer)
+        guard bytes.count >= 2 else { return nil }
+        let total = 2 + Int(bytes[1])
+        guard bytes.count >= total else { return nil }
+        let methods = bytes[2..<total]
+        buffer = Data(bytes[total...])
+        // 0x02 is username/password. No-auth (0x00) is never accepted, even when offered.
+        guard methods.contains(0x02) else { return .refuse(Self.socksNoAcceptableMethod) }
+        phase = .socksAuth
+        return .reply(Data([0x05, 0x02]))
+    }
+
+    private mutating func socksAuthStep() -> Action? {
+        let bytes = [UInt8](buffer)
+        guard bytes.count >= 2 else { return nil }
+        guard bytes[0] == 0x01 else { return .refuse(Self.socksAuthFailed) }
+        let usernameLength = Int(bytes[1])
+        guard bytes.count >= 3 + usernameLength else { return nil }
+        let passwordLength = Int(bytes[2 + usernameLength])
+        let total = 3 + usernameLength + passwordLength
+        guard bytes.count >= total else { return nil }
+        let username = Data(bytes[2..<(2 + usernameLength)])
+        let password = Data(bytes[(3 + usernameLength)..<total])
+        buffer = Data(bytes[total...])
+        let usernameMatches = Self.constantTimeEquals(username, Data(credential.username.utf8))
+        let passwordMatches = Self.constantTimeEquals(password, Data(credential.password.utf8))
+        guard usernameMatches && passwordMatches else { return .refuse(Self.socksAuthFailed) }
+        phase = .socksRequest
+        return .reply(Self.socksAuthSucceeded)
+    }
+
+    private mutating func socksRequestStep() -> Action? {
+        let request: SocksRequest
+        do {
+            guard let parsed = try Self.parseSocksRequest(from: buffer) else { return nil }
+            request = parsed
+        } catch {
+            return .refuse(Data([0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
+        }
+        let pending = buffer.count > request.consumedBytes
+            ? Data(buffer[(buffer.startIndex + request.consumedBytes)...])
+            : Data()
+        buffer = Data()
+        guard request.command == 0x01 else {
+            return .refuse(Data([0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
+        }
+        return .open(
+            host: request.host,
+            port: request.port,
+            success: Data([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]),
+            failure: Data([0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]),
+            pending: pending
+        )
+    }
+
+    private mutating func connectStep() -> Action? {
+        let marker = Data([0x0D, 0x0A, 0x0D, 0x0A])
+        guard let headerRange = buffer.range(of: marker) else { return nil }
+
+        let headerData = Data(buffer[..<headerRange.upperBound])
+        let pending = headerRange.upperBound < buffer.endIndex
+            ? Data(buffer[headerRange.upperBound...])
+            : Data()
+        buffer = Data()
+        guard let headerText = String(data: headerData, encoding: .utf8) else {
+            return .refuse(Self.httpResponse(status: "400 Bad Request"))
         }
 
-        private enum SocksStage {
-            case greeting
-            case request
+        let headerLines = headerText.components(separatedBy: "\r\n")
+        let firstLine = headerLines.first ?? ""
+        let parts = firstLine.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard parts.count >= 2, parts[0].uppercased() == "CONNECT" else {
+            return .refuse(Self.httpResponse(status: "400 Bad Request"))
+        }
+        guard Self.hasProxyAuthorization(headerLines.dropFirst(), credential: credential) else {
+            return .refuse(Self.proxyAuthenticationRequiredResponse)
+        }
+        guard let (host, port) = Self.parseConnectAuthority(parts[1]) else {
+            return .refuse(Self.httpResponse(status: "400 Bad Request"))
+        }
+        return .open(
+            host: host,
+            port: port,
+            success: Self.httpResponse(status: "200 Connection Established", closeAfterResponse: false),
+            failure: Self.httpResponse(status: "502 Bad Gateway", closeAfterResponse: true),
+            pending: pending
+        )
+    }
+
+    static let proxyAuthenticationRequiredResponse = Data(
+        ("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Agent: cmux\r\n" +
+            "Proxy-Authenticate: Basic realm=\"c11\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").utf8
+    )
+
+    private static func hasProxyAuthorization<Lines: Sequence>(
+        _ headerLines: Lines,
+        credential: BrowserProxyCredential
+    ) -> Bool where Lines.Element == String {
+        let expected = Data("\(credential.username):\(credential.password)".utf8)
+        var matched = false
+        for line in headerLines {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
+            guard name == "proxy-authorization" else { continue }
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            let fields = value.split(maxSplits: 1, whereSeparator: \.isWhitespace).map(String.init)
+            guard fields.count == 2, fields[0].lowercased() == "basic",
+                  let decoded = Data(base64Encoded: fields[1].trimmingCharacters(in: .whitespaces)) else {
+                continue
+            }
+            if constantTimeEquals(decoded, expected) {
+                matched = true
+            }
+        }
+        return matched
+    }
+
+    static func constantTimeEquals(_ lhs: Data, _ rhs: Data) -> Bool {
+        let left = [UInt8](lhs)
+        let right = [UInt8](rhs)
+        var difference: UInt8 = left.count == right.count ? 0 : 1
+        for index in 0..<max(left.count, right.count) {
+            let a = index < left.count ? left[index] : 0
+            let b = index < right.count ? right[index] : 0
+            difference |= a ^ b
+        }
+        return difference == 0
+    }
+
+    private static func parseSocksRequest(from data: Data) throws -> SocksRequest? {
+        let bytes = [UInt8](data)
+        guard bytes.count >= 4 else { return nil }
+        guard bytes[0] == 0x05 else {
+            throw NSError(domain: "cmux.remote.proxy", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid SOCKS version"])
         }
 
-        private struct SocksRequest {
-            let host: String
-            let port: Int
-            let command: UInt8
-            let consumedBytes: Int
-        }
+        let command = bytes[1]
+        let addressType = bytes[3]
+        var cursor = 4
+        let host: String
 
-        let id = UUID()
+        switch addressType {
+        case 0x01:
+            guard bytes.count >= cursor + 4 + 2 else { return nil }
+            let octets = bytes[cursor..<(cursor + 4)].map { String($0) }
+            host = octets.joined(separator: ".")
+            cursor += 4
 
-        private let connection: NWConnection
-        private let rpcClient: WorkspaceRemoteDaemonRPCClient
-        private let queue: DispatchQueue
-        private let onClose: (UUID) -> Void
+        case 0x03:
+            guard bytes.count >= cursor + 1 else { return nil }
+            let length = Int(bytes[cursor])
+            cursor += 1
+            guard bytes.count >= cursor + length + 2 else { return nil }
+            let hostData = Data(bytes[cursor..<(cursor + length)])
+            host = String(data: hostData, encoding: .utf8) ?? ""
+            cursor += length
 
-        private var isClosed = false
-        private var protocolKind: HandshakeProtocol = .undecided
-        private var socksStage: SocksStage = .greeting
-        private var handshakeBuffer = Data()
-        private var streamID: String?
-        private var localInputEOF = false
-        private var rewritesLoopbackHTTPHeaders = false
-        private var loopbackRequestHeaderRewriter: RemoteLoopbackHTTPRequestStreamRewriter?
-        private var pendingRemoteHTTPHeaderBytes = Data()
-        private var hasForwardedRemoteHTTPHeaders = false
-
-        init(
-            connection: NWConnection,
-            rpcClient: WorkspaceRemoteDaemonRPCClient,
-            queue: DispatchQueue,
-            onClose: @escaping (UUID) -> Void
-        ) {
-            self.connection = connection
-            self.rpcClient = rpcClient
-            self.queue = queue
-            self.onClose = onClose
-        }
-
-        func start() {
-            connection.stateUpdateHandler = { [weak self] state in
-                guard let self else { return }
-                switch state {
-                case .failed(let error):
-                    self.close(reason: "proxy client connection failed: \(error)")
-                case .cancelled:
-                    self.close(reason: nil)
-                default:
-                    break
+        case 0x04:
+            guard bytes.count >= cursor + 16 + 2 else { return nil }
+            var address = in6_addr()
+            withUnsafeMutableBytes(of: &address) { target in
+                for i in 0..<16 {
+                    target[i] = bytes[cursor + i]
                 }
             }
-            connection.start(queue: queue)
-            receiveNext()
+            var text = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+            let pointer = withUnsafePointer(to: &address) {
+                inet_ntop(AF_INET6, UnsafeRawPointer($0), &text, socklen_t(INET6_ADDRSTRLEN))
+            }
+            host = pointer != nil ? String(cString: text) : ""
+            cursor += 16
+
+        default:
+            throw NSError(domain: "cmux.remote.proxy", code: 2, userInfo: [NSLocalizedDescriptionKey: "invalid SOCKS address type"])
         }
 
-        func stop() {
-            close(reason: nil)
+        guard !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NSError(domain: "cmux.remote.proxy", code: 3, userInfo: [NSLocalizedDescriptionKey: "empty SOCKS host"])
+        }
+        guard bytes.count >= cursor + 2 else { return nil }
+        let port = Int(UInt16(bytes[cursor]) << 8 | UInt16(bytes[cursor + 1]))
+        cursor += 2
+
+        guard port > 0 && port <= 65535 else {
+            throw NSError(domain: "cmux.remote.proxy", code: 4, userInfo: [NSLocalizedDescriptionKey: "invalid SOCKS port"])
         }
 
-        private func receiveNext() {
-            guard !isClosed else { return }
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 32768) { [weak self] data, _, isComplete, error in
-                guard let self, !self.isClosed else { return }
+        return SocksRequest(host: host, port: port, command: command, consumedBytes: cursor)
+    }
 
-                if let data, !data.isEmpty {
-                    if self.streamID == nil {
-                        if self.handshakeBuffer.count + data.count > Self.maxHandshakeBytes {
-                            self.close(reason: "proxy handshake exceeded \(Self.maxHandshakeBytes) bytes")
-                            return
-                        }
-                        self.handshakeBuffer.append(data)
-                        self.processHandshakeBuffer()
-                    } else {
-                        self.forwardToRemote(data, eof: isComplete)
-                    }
-                }
+    private static func parseConnectAuthority(_ authority: String) -> (host: String, port: Int)? {
+        let trimmed = authority.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
 
-                if isComplete {
-                    // Treat local EOF as a half-close: keep remote read loop alive so we can
-                    // drain upstream response bytes (for example curl closing write-side after
-                    // sending an HTTP request through SOCKS/CONNECT).
-                    self.localInputEOF = true
-                    if self.streamID != nil, data?.isEmpty ?? true {
-                        self.forwardToRemote(Data(), eof: true, allowAfterEOF: true)
-                    }
-                    if self.streamID == nil {
-                        self.close(reason: nil)
-                    }
-                    return
-                }
-                if let error {
-                    self.close(reason: "proxy client receive error: \(error)")
-                    return
-                }
-
-                self.receiveNext()
-            }
-        }
-
-        private func processHandshakeBuffer() {
-            guard !isClosed else { return }
-            while streamID == nil {
-                switch protocolKind {
-                case .undecided:
-                    guard let first = handshakeBuffer.first else { return }
-                    protocolKind = (first == 0x05) ? .socks5 : .connect
-                case .socks5:
-                    if !processSocksHandshakeStep() {
-                        return
-                    }
-                case .connect:
-                    if !processConnectHandshakeStep() {
-                        return
-                    }
-                }
-            }
-        }
-
-        private func processSocksHandshakeStep() -> Bool {
-            switch socksStage {
-            case .greeting:
-                guard handshakeBuffer.count >= 2 else { return false }
-                let methodCount = Int(handshakeBuffer[1])
-                let total = 2 + methodCount
-                guard handshakeBuffer.count >= total else { return false }
-
-                let methods = [UInt8](handshakeBuffer[2..<total])
-                handshakeBuffer = Data(handshakeBuffer.dropFirst(total))
-                socksStage = .request
-
-                if !methods.contains(0x00) {
-                    sendAndClose(Data([0x05, 0xFF]))
-                    return false
-                }
-                sendLocal(Data([0x05, 0x00]))
-                return true
-
-            case .request:
-                let request: SocksRequest
-                do {
-                    guard let parsed = try parseSocksRequest(from: handshakeBuffer) else { return false }
-                    request = parsed
-                } catch {
-                    sendAndClose(Data([0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
-                    return false
-                }
-
-                let pending = handshakeBuffer.count > request.consumedBytes
-                    ? Data(handshakeBuffer[request.consumedBytes...])
-                    : Data()
-                handshakeBuffer = Data()
-                guard request.command == 0x01 else {
-                    sendAndClose(Data([0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]))
-                    return false
-                }
-
-                openRemoteStream(
-                    host: request.host,
-                    port: request.port,
-                    successResponse: Data([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]),
-                    failureResponse: Data([0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]),
-                    pendingPayload: pending
-                )
-                return false
-            }
-        }
-
-        private func parseSocksRequest(from data: Data) throws -> SocksRequest? {
-            let bytes = [UInt8](data)
-            guard bytes.count >= 4 else { return nil }
-            guard bytes[0] == 0x05 else {
-                throw NSError(domain: "cmux.remote.proxy", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid SOCKS version"])
-            }
-
-            let command = bytes[1]
-            let addressType = bytes[3]
-            var cursor = 4
-            let host: String
-
-            switch addressType {
-            case 0x01:
-                guard bytes.count >= cursor + 4 + 2 else { return nil }
-                let octets = bytes[cursor..<(cursor + 4)].map { String($0) }
-                host = octets.joined(separator: ".")
-                cursor += 4
-
-            case 0x03:
-                guard bytes.count >= cursor + 1 else { return nil }
-                let length = Int(bytes[cursor])
-                cursor += 1
-                guard bytes.count >= cursor + length + 2 else { return nil }
-                let hostData = Data(bytes[cursor..<(cursor + length)])
-                host = String(data: hostData, encoding: .utf8) ?? ""
-                cursor += length
-
-            case 0x04:
-                guard bytes.count >= cursor + 16 + 2 else { return nil }
-                var address = in6_addr()
-                withUnsafeMutableBytes(of: &address) { target in
-                    for i in 0..<16 {
-                        target[i] = bytes[cursor + i]
-                    }
-                }
-                var text = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-                let pointer = withUnsafePointer(to: &address) {
-                    inet_ntop(AF_INET6, UnsafeRawPointer($0), &text, socklen_t(INET6_ADDRSTRLEN))
-                }
-                host = pointer != nil ? String(cString: text) : ""
-                cursor += 16
-
-            default:
-                throw NSError(domain: "cmux.remote.proxy", code: 2, userInfo: [NSLocalizedDescriptionKey: "invalid SOCKS address type"])
-            }
-
-            guard !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw NSError(domain: "cmux.remote.proxy", code: 3, userInfo: [NSLocalizedDescriptionKey: "empty SOCKS host"])
-            }
-            guard bytes.count >= cursor + 2 else { return nil }
-            let port = Int(UInt16(bytes[cursor]) << 8 | UInt16(bytes[cursor + 1]))
-            cursor += 2
-
-            guard port > 0 && port <= 65535 else {
-                throw NSError(domain: "cmux.remote.proxy", code: 4, userInfo: [NSLocalizedDescriptionKey: "invalid SOCKS port"])
-            }
-
-            return SocksRequest(host: host, port: port, command: command, consumedBytes: cursor)
-        }
-
-        private func processConnectHandshakeStep() -> Bool {
-            let marker = Data([0x0D, 0x0A, 0x0D, 0x0A])
-            guard let headerRange = handshakeBuffer.range(of: marker) else { return false }
-
-            let headerData = Data(handshakeBuffer[..<headerRange.upperBound])
-            let pending = headerRange.upperBound < handshakeBuffer.count
-                ? Data(handshakeBuffer[headerRange.upperBound...])
-                : Data()
-            handshakeBuffer = Data()
-            guard let headerText = String(data: headerData, encoding: .utf8) else {
-                sendAndClose(Self.httpResponse(status: "400 Bad Request"))
-                return false
-            }
-
-            let firstLine = headerText.components(separatedBy: "\r\n").first ?? ""
-            let parts = firstLine.split(whereSeparator: \.isWhitespace).map(String.init)
-            guard parts.count >= 2, parts[0].uppercased() == "CONNECT" else {
-                sendAndClose(Self.httpResponse(status: "400 Bad Request"))
-                return false
-            }
-
-            guard let (host, port) = Self.parseConnectAuthority(parts[1]) else {
-                sendAndClose(Self.httpResponse(status: "400 Bad Request"))
-                return false
-            }
-
-            openRemoteStream(
-                host: host,
-                port: port,
-                successResponse: Self.httpResponse(status: "200 Connection Established", closeAfterResponse: false),
-                failureResponse: Self.httpResponse(status: "502 Bad Gateway", closeAfterResponse: true),
-                pendingPayload: pending
-            )
-            return false
-        }
-
-        private func openRemoteStream(
-            host: String,
-            port: Int,
-            successResponse: Data,
-            failureResponse: Data,
-            pendingPayload: Data
-        ) {
-            guard !isClosed else { return }
-            do {
-                rewritesLoopbackHTTPHeaders =
-                    BrowserInsecureHTTPSettings.normalizeHost(host)
-                    == BrowserInsecureHTTPSettings.normalizeHost(Self.remoteLoopbackProxyAliasHost)
-                loopbackRequestHeaderRewriter = rewritesLoopbackHTTPHeaders
-                    ? RemoteLoopbackHTTPRequestStreamRewriter(aliasHost: Self.remoteLoopbackProxyAliasHost)
-                    : nil
-                pendingRemoteHTTPHeaderBytes = Data()
-                hasForwardedRemoteHTTPHeaders = false
-                let targetHost = Self.normalizedProxyTargetHost(host)
-                let streamID = try rpcClient.openStream(host: targetHost, port: port)
-                self.streamID = streamID
-                try rpcClient.attachStream(streamID: streamID, queue: queue) { [weak self] event in
-                    self?.handleRemoteStreamEvent(streamID: streamID, event: event)
-                }
-                connection.send(content: successResponse, completion: .contentProcessed { [weak self] error in
-                    guard let self else { return }
-                    if let error {
-                        self.close(reason: "proxy client send error: \(error)")
-                        return
-                    }
-                    if !pendingPayload.isEmpty {
-                        self.forwardToRemote(pendingPayload, allowAfterEOF: true)
-                    }
-                })
-            } catch {
-                sendAndClose(failureResponse)
-            }
-        }
-
-        private func forwardToRemote(_ data: Data, eof: Bool = false, allowAfterEOF: Bool = false) {
-            guard !isClosed else { return }
-            guard !localInputEOF || allowAfterEOF else { return }
-            guard let streamID else { return }
-            do {
-                let outgoingData: Data
-                if rewritesLoopbackHTTPHeaders {
-                    outgoingData = loopbackRequestHeaderRewriter?.rewriteNextChunk(data, eof: eof) ?? data
-                } else {
-                    outgoingData = data
-                }
-                guard !outgoingData.isEmpty else { return }
-                try rpcClient.writeStream(streamID: streamID, data: outgoingData)
-            } catch {
-                close(reason: "proxy.write failed: \(error.localizedDescription)")
-            }
-        }
-
-        private func handleRemoteStreamEvent(
-            streamID: String,
-            event: WorkspaceRemoteDaemonRPCClient.StreamEvent
-        ) {
-            guard !isClosed else { return }
-            guard self.streamID == streamID else { return }
-
-            switch event {
-            case .data(let data):
-                forwardRemotePayloadToLocal(data, eof: false)
-
-            case .eof(let data):
-                forwardRemotePayloadToLocal(data, eof: true)
-
-            case .error(let detail):
-                close(reason: "proxy.stream failed: \(detail)")
-            }
-        }
-
-        private func forwardRemotePayloadToLocal(_ data: Data, eof: Bool) {
-            let localData = rewriteRemoteResponseIfNeeded(data, eof: eof)
-            if !localData.isEmpty {
-                connection.send(content: localData, completion: .contentProcessed { [weak self] error in
-                    guard let self else { return }
-                    if let error {
-                        self.close(reason: "proxy client send error: \(error)")
-                        return
-                    }
-                    if eof {
-                        self.close(reason: nil)
-                    }
-                })
-                return
-            }
-
-            if eof {
-                close(reason: nil)
-            }
-        }
-
-        private func rewriteRemoteResponseIfNeeded(_ data: Data, eof: Bool) -> Data {
-            guard rewritesLoopbackHTTPHeaders else { return data }
-            guard !data.isEmpty else { return data }
-            guard !hasForwardedRemoteHTTPHeaders else { return data }
-
-            pendingRemoteHTTPHeaderBytes.append(data)
-            let marker = Data([0x0D, 0x0A, 0x0D, 0x0A])
-            guard pendingRemoteHTTPHeaderBytes.range(of: marker) != nil else {
-                guard eof else { return Data() }
-                hasForwardedRemoteHTTPHeaders = true
-                let payload = pendingRemoteHTTPHeaderBytes
-                pendingRemoteHTTPHeaderBytes = Data()
-                return payload
-            }
-
-            hasForwardedRemoteHTTPHeaders = true
-            let payload = pendingRemoteHTTPHeaderBytes
-            pendingRemoteHTTPHeaderBytes = Data()
-            return RemoteLoopbackHTTPResponseRewriter.rewriteIfNeeded(
-                data: payload,
-                aliasHost: Self.remoteLoopbackProxyAliasHost
-            )
-        }
-
-        private func close(reason: String?) {
-            guard !isClosed else { return }
-            isClosed = true
-
-            let streamID = self.streamID
-            self.streamID = nil
-
-            if let streamID {
-                rpcClient.closeStream(streamID: streamID)
-            }
-            connection.cancel()
-            onClose(id)
-        }
-
-        private func sendLocal(_ data: Data) {
-            guard !isClosed else { return }
-            connection.send(content: data, completion: .contentProcessed { [weak self] error in
-                guard let self else { return }
-                if let error {
-                    self.close(reason: "proxy client send error: \(error)")
-                }
-            })
-        }
-
-        private func sendAndClose(_ data: Data) {
-            guard !isClosed else { return }
-            connection.send(content: data, completion: .contentProcessed { [weak self] _ in
-                self?.close(reason: nil)
-            })
-        }
-
-        private static func parseConnectAuthority(_ authority: String) -> (host: String, port: Int)? {
-            let trimmed = authority.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return nil }
-
-            if trimmed.hasPrefix("[") {
-                guard let closing = trimmed.firstIndex(of: "]") else { return nil }
-                let host = String(trimmed[trimmed.index(after: trimmed.startIndex)..<closing])
-                let portStart = trimmed.index(after: closing)
-                guard portStart < trimmed.endIndex, trimmed[portStart] == ":" else { return nil }
-                let portString = String(trimmed[trimmed.index(after: portStart)...])
-                guard let port = Int(portString), port > 0, port <= 65535 else { return nil }
-                return (host, port)
-            }
-
-            guard let colon = trimmed.lastIndex(of: ":") else { return nil }
-            let host = String(trimmed[..<colon])
-            let portString = String(trimmed[trimmed.index(after: colon)...])
-            guard !host.isEmpty else { return nil }
+        if trimmed.hasPrefix("[") {
+            guard let closing = trimmed.firstIndex(of: "]") else { return nil }
+            let host = String(trimmed[trimmed.index(after: trimmed.startIndex)..<closing])
+            let portStart = trimmed.index(after: closing)
+            guard portStart < trimmed.endIndex, trimmed[portStart] == ":" else { return nil }
+            let portString = String(trimmed[trimmed.index(after: portStart)...])
             guard let port = Int(portString), port > 0, port <= 65535 else { return nil }
             return (host, port)
         }
 
-        private static func normalizedProxyTargetHost(_ host: String) -> String {
-            let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
-            let normalized = trimmed
-                .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                .lowercased()
-            // BrowserPanel rewrites loopback URLs to this alias so proxy routing works.
-            // Resolve it back to true loopback before dialing from the remote daemon.
-            if normalized == remoteLoopbackProxyAliasHost {
-                return "127.0.0.1"
-            }
-            return host
-        }
+        guard let colon = trimmed.lastIndex(of: ":") else { return nil }
+        let host = String(trimmed[..<colon])
+        let portString = String(trimmed[trimmed.index(after: colon)...])
+        guard !host.isEmpty else { return nil }
+        guard let port = Int(portString), port > 0, port <= 65535 else { return nil }
+        return (host, port)
+    }
 
-        private static func httpResponse(status: String, closeAfterResponse: Bool = true) -> Data {
-            var text = "HTTP/1.1 \(status)\r\nProxy-Agent: cmux\r\n"
-            if closeAfterResponse {
-                text += "Connection: close\r\n"
+    static func httpResponse(status: String, closeAfterResponse: Bool = true) -> Data {
+        var text = "HTTP/1.1 \(status)\r\nProxy-Agent: cmux\r\n"
+        if closeAfterResponse {
+            text += "Connection: close\r\n"
+        }
+        text += "\r\n"
+        return Data(text.utf8)
+    }
+}
+
+/// One client connection to a c11 ssh workspace's loopback proxy.
+final class WorkspaceRemoteProxySession {
+    private static let remoteLoopbackProxyAliasHost = "c11-loopback.localtest.me"
+
+    let id = UUID()
+
+    private let connection: NWConnection
+    private let transport: any RemoteProxyStreamTransport
+    private let queue: DispatchQueue
+    private let onClose: (UUID) -> Void
+
+    private var isClosed = false
+    private var handshake: RemoteProxyHandshake
+    private var streamID: String?
+    private var localInputEOF = false
+    private var rewritesLoopbackHTTPHeaders = false
+    private var loopbackRequestHeaderRewriter: RemoteLoopbackHTTPRequestStreamRewriter?
+    private var pendingRemoteHTTPHeaderBytes = Data()
+    private var hasForwardedRemoteHTTPHeaders = false
+
+    init(
+        connection: NWConnection,
+        transport: any RemoteProxyStreamTransport,
+        credential: BrowserProxyCredential,
+        queue: DispatchQueue,
+        onClose: @escaping (UUID) -> Void
+    ) {
+        self.connection = connection
+        self.transport = transport
+        self.handshake = RemoteProxyHandshake(credential: credential)
+        self.queue = queue
+        self.onClose = onClose
+    }
+
+    func start() {
+        connection.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .failed(let error):
+                self.close(reason: "proxy client connection failed: \(error)")
+            case .cancelled:
+                self.close(reason: nil)
+            default:
+                break
             }
-            text += "\r\n"
-            return Data(text.utf8)
+        }
+        connection.start(queue: queue)
+        receiveNext()
+    }
+
+    func stop() {
+        close(reason: nil)
+    }
+
+    private func receiveNext() {
+        guard !isClosed else { return }
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 32768) { [weak self] data, _, isComplete, error in
+            guard let self, !self.isClosed else { return }
+
+            if let data, !data.isEmpty {
+                if self.streamID == nil {
+                    self.processHandshake(data)
+                } else {
+                    self.forwardToRemote(data, eof: isComplete)
+                }
+            }
+
+            if isComplete {
+                // Treat local EOF as a half-close: keep remote read loop alive so we can
+                // drain upstream response bytes (for example curl closing write-side after
+                // sending an HTTP request through SOCKS/CONNECT).
+                self.localInputEOF = true
+                if self.streamID != nil, data?.isEmpty ?? true {
+                    self.forwardToRemote(Data(), eof: true, allowAfterEOF: true)
+                }
+                if self.streamID == nil {
+                    self.close(reason: nil)
+                }
+                return
+            }
+            if let error {
+                self.close(reason: "proxy client receive error: \(error)")
+                return
+            }
+
+            self.receiveNext()
         }
     }
 
+    private func processHandshake(_ data: Data) {
+        guard !isClosed, !handshake.isFinished else { return }
+        for action in handshake.consume(data) {
+            switch action {
+            case .reply(let bytes):
+                sendLocal(bytes)
+            case .refuse(let bytes):
+                if bytes.isEmpty {
+                    close(reason: "proxy handshake refused")
+                } else {
+                    sendAndClose(bytes)
+                }
+                return
+            case .open(let host, let port, let success, let failure, let pending):
+                openRemoteStream(
+                    host: host,
+                    port: port,
+                    successResponse: success,
+                    failureResponse: failure,
+                    pendingPayload: pending
+                )
+                return
+            }
+        }
+    }
+
+    private func openRemoteStream(
+        host: String,
+        port: Int,
+        successResponse: Data,
+        failureResponse: Data,
+        pendingPayload: Data
+    ) {
+        guard !isClosed else { return }
+        do {
+            rewritesLoopbackHTTPHeaders =
+                BrowserInsecureHTTPSettings.normalizeHost(host)
+                == BrowserInsecureHTTPSettings.normalizeHost(Self.remoteLoopbackProxyAliasHost)
+            loopbackRequestHeaderRewriter = rewritesLoopbackHTTPHeaders
+                ? RemoteLoopbackHTTPRequestStreamRewriter(aliasHost: Self.remoteLoopbackProxyAliasHost)
+                : nil
+            pendingRemoteHTTPHeaderBytes = Data()
+            hasForwardedRemoteHTTPHeaders = false
+            let targetHost = Self.normalizedProxyTargetHost(host)
+            let streamID = try transport.openStream(host: targetHost, port: port, timeoutMs: 10000)
+            self.streamID = streamID
+            try transport.attachStream(streamID: streamID, queue: queue) { [weak self] event in
+                self?.handleRemoteStreamEvent(streamID: streamID, event: event)
+            }
+            connection.send(content: successResponse, completion: .contentProcessed { [weak self] error in
+                guard let self else { return }
+                if let error {
+                    self.close(reason: "proxy client send error: \(error)")
+                    return
+                }
+                if !pendingPayload.isEmpty {
+                    self.forwardToRemote(pendingPayload, allowAfterEOF: true)
+                }
+            })
+        } catch {
+            sendAndClose(failureResponse)
+        }
+    }
+
+    private func forwardToRemote(_ data: Data, eof: Bool = false, allowAfterEOF: Bool = false) {
+        guard !isClosed else { return }
+        guard !localInputEOF || allowAfterEOF else { return }
+        guard let streamID else { return }
+        do {
+            let outgoingData: Data
+            if rewritesLoopbackHTTPHeaders {
+                outgoingData = loopbackRequestHeaderRewriter?.rewriteNextChunk(data, eof: eof) ?? data
+            } else {
+                outgoingData = data
+            }
+            guard !outgoingData.isEmpty else { return }
+            try transport.writeStream(streamID: streamID, data: outgoingData)
+        } catch {
+            close(reason: "proxy.write failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func handleRemoteStreamEvent(
+        streamID: String,
+        event: RemoteProxyStreamEvent
+    ) {
+        guard !isClosed else { return }
+        guard self.streamID == streamID else { return }
+
+        switch event {
+        case .data(let data):
+            forwardRemotePayloadToLocal(data, eof: false)
+
+        case .eof(let data):
+            forwardRemotePayloadToLocal(data, eof: true)
+
+        case .error(let detail):
+            close(reason: "proxy.stream failed: \(detail)")
+        }
+    }
+
+    private func forwardRemotePayloadToLocal(_ data: Data, eof: Bool) {
+        let localData = rewriteRemoteResponseIfNeeded(data, eof: eof)
+        if !localData.isEmpty {
+            connection.send(content: localData, completion: .contentProcessed { [weak self] error in
+                guard let self else { return }
+                if let error {
+                    self.close(reason: "proxy client send error: \(error)")
+                    return
+                }
+                if eof {
+                    self.close(reason: nil)
+                }
+            })
+            return
+        }
+
+        if eof {
+            // The daemon sends its last data and then an empty EOF back to back. Close only once
+            // every queued send is processed: NWConnection.cancel() drops sends still in flight.
+            connection.send(
+                content: nil,
+                contentContext: .finalMessage,
+                isComplete: true,
+                completion: .contentProcessed { [weak self] _ in
+                    self?.close(reason: nil)
+                }
+            )
+        }
+    }
+
+    private func rewriteRemoteResponseIfNeeded(_ data: Data, eof: Bool) -> Data {
+        guard rewritesLoopbackHTTPHeaders else { return data }
+        guard !data.isEmpty else { return data }
+        guard !hasForwardedRemoteHTTPHeaders else { return data }
+
+        pendingRemoteHTTPHeaderBytes.append(data)
+        let marker = Data([0x0D, 0x0A, 0x0D, 0x0A])
+        guard pendingRemoteHTTPHeaderBytes.range(of: marker) != nil else {
+            guard eof else { return Data() }
+            hasForwardedRemoteHTTPHeaders = true
+            let payload = pendingRemoteHTTPHeaderBytes
+            pendingRemoteHTTPHeaderBytes = Data()
+            return payload
+        }
+
+        hasForwardedRemoteHTTPHeaders = true
+        let payload = pendingRemoteHTTPHeaderBytes
+        pendingRemoteHTTPHeaderBytes = Data()
+        return RemoteLoopbackHTTPResponseRewriter.rewriteIfNeeded(
+            data: payload,
+            aliasHost: Self.remoteLoopbackProxyAliasHost
+        )
+    }
+
+    private func close(reason: String?) {
+        guard !isClosed else { return }
+        isClosed = true
+
+        let streamID = self.streamID
+        self.streamID = nil
+
+        if let streamID {
+            transport.closeStream(streamID: streamID)
+        }
+        connection.cancel()
+        onClose(id)
+    }
+
+    private func sendLocal(_ data: Data) {
+        guard !isClosed else { return }
+        connection.send(content: data, completion: .contentProcessed { [weak self] error in
+            guard let self else { return }
+            if let error {
+                self.close(reason: "proxy client send error: \(error)")
+            }
+        })
+    }
+
+    private func sendAndClose(_ data: Data) {
+        guard !isClosed else { return }
+        connection.send(content: data, completion: .contentProcessed { [weak self] _ in
+            self?.close(reason: nil)
+        })
+    }
+
+    private static func normalizedProxyTargetHost(_ host: String) -> String {
+        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = trimmed
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        // BrowserPanel rewrites loopback URLs to this alias so proxy routing works.
+        // Resolve it back to true loopback before dialing from the remote daemon.
+        if normalized == remoteLoopbackProxyAliasHost {
+            return "127.0.0.1"
+        }
+        return host
+    }
+}
+
+private final class WorkspaceRemoteDaemonProxyTunnel {
     private let configuration: WorkspaceRemoteConfiguration
     private let remotePath: String
     private let localPort: Int
+    private let credential: BrowserProxyCredential
     private let onFatalError: (String) -> Void
     private let queue = DispatchQueue(label: "com.stage11.c11.remote-ssh.daemon-tunnel.\(UUID().uuidString)", qos: .utility)
 
     private var listener: NWListener?
     private var rpcClient: WorkspaceRemoteDaemonRPCClient?
-    private var sessions: [UUID: ProxySession] = [:]
+    private var sessions: [UUID: WorkspaceRemoteProxySession] = [:]
     private var isStopped = false
 
     init(
         configuration: WorkspaceRemoteConfiguration,
         remotePath: String,
         localPort: Int,
+        credential: BrowserProxyCredential,
         onFatalError: @escaping (String) -> Void
     ) {
         self.configuration = configuration
         self.remotePath = remotePath
         self.localPort = localPort
+        self.credential = credential
         self.onFatalError = onFatalError
     }
 
@@ -2944,9 +4441,10 @@ private final class WorkspaceRemoteDaemonProxyTunnel {
             return
         }
 
-        let session = ProxySession(
+        let session = WorkspaceRemoteProxySession(
             connection: connection,
-            rpcClient: rpcClient,
+            transport: rpcClient,
+            credential: credential,
             queue: queue
         ) { [weak self] id in
             self?.queue.async {
@@ -3114,10 +4612,14 @@ private final class WorkspaceRemoteProxyBroker {
         }
 
         do {
+            // A fresh credential on every start: one sent to a port c11 no longer holds is
+            // useless against the next broker.
+            let credential = BrowserProxyCredential.generate()
             let tunnel = WorkspaceRemoteDaemonProxyTunnel(
                 configuration: entry.configuration,
                 remotePath: entry.remotePath,
-                localPort: localPort
+                localPort: localPort,
+                credential: credential
             ) { [weak self] detail in
                 self?.queue.async {
                     self?.handleTunnelFailureLocked(key: key, detail: detail)
@@ -3125,7 +4627,7 @@ private final class WorkspaceRemoteProxyBroker {
             }
             try tunnel.start()
             entry.tunnel = tunnel
-            let endpoint = BrowserProxyEndpoint(host: "127.0.0.1", port: localPort)
+            let endpoint = BrowserProxyEndpoint(host: "127.0.0.1", port: localPort, credential: credential)
             entry.endpoint = endpoint
             notifyLocked(entry, update: .ready(endpoint))
         } catch {
@@ -4143,7 +5645,7 @@ final class WorkspaceRemoteSessionController {
             create: true
         )
         let cacheRoot = appSupportRoot
-            .appendingPathComponent("c11", isDirectory: true)
+            .appendingPathComponent(C11Identity.stateDirectoryName, isDirectory: true)
             .appendingPathComponent("remote-daemons", isDirectory: true)
         try fileManager.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
         return cacheRoot
@@ -4597,10 +6099,14 @@ final class WorkspaceRemoteSessionController {
 
     private static func findRepoRoot() -> URL? {
         var candidates: [URL] = []
+        #if DEBUG
+        // The checkout this build came from. Debug only: in a release, #filePath
+        // would ship the builder's home path in the binary (C11H-133).
         let compileTimeRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // Sources
             .deletingLastPathComponent() // repo root
         candidates.append(compileTimeRoot)
+        #endif
         let environment = ProcessInfo.processInfo.environment
         if let envRoot = c11Env("C11_REMOTE_DAEMON_SOURCE_ROOT", in: environment),
            !envRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -5023,12 +6529,30 @@ final class Workspace: Identifiable, ObservableObject {
     /// for the current c11 process only.
     private(set) lazy var displayOrdinal: Int =
         TerminalController.shared.workspaceOrdinal(forWorkspaceUUID: id)
+    /// The active theme's `[states]`, refreshed with the bonsplit chrome. Not
+    /// published: a change re-syncs the tab marks, which publish themselves.
+    private(set) var themeStatePalette = ThemeStatePalette.unset
+    /// c11 (C11H-197): the theme override of the window this workspace was last
+    /// shown in (nil follows the app theme). `WorkspaceContentView` sets it on
+    /// appear and on change; `applyGhosttyChrome` paints the bonsplit chrome with it.
+    var windowThemeName: String?
     @Published var title: String
-    @Published var customTitle: String?
+    @Published var customTitle: String? {
+        // C11H-101: a workspace rename reaches disk without waiting for the tick.
+        didSet { if oldValue != customTitle { AppDelegate.shared?.noteLayoutChanged(source: "workspace.rename") } }
+    }
     @Published var isPinned: Bool = false
-    @Published var groupId: UUID? = nil
+    /// Joining or leaving a group can change which Captain this workspace
+    /// resolves (its own key first, then its group's).
+    @Published var groupId: UUID? = nil {
+        didSet { if oldValue != groupId { WorkspaceCaptainCoordinator.shared.invalidate() } }
+    }
     @Published var customColor: String?  // hex string, e.g. "#C0392B"
     @Published var currentDirectory: String
+    /// C11H-363: true while `currentDirectory` was last copied from a
+    /// terminal on another machine. That path names a file there (one that
+    /// may also exist here), so it is never offered as a folder on this Mac.
+    @Published private(set) var currentDirectoryIsRemoteReport = false
     /// Stable project-level cwd. Every new terminal surface in the workspace
     /// starts here (see `newSurfaceWorkingDirectory`). Unlike
     /// `currentDirectory`, this does not follow shell navigation.
@@ -5036,10 +6560,12 @@ final class Workspace: Identifiable, ObservableObject {
         didSet { if oldValue != rootDirectory { refreshMissionObservation() } }
     }
     @Published private(set) var mission: WorkspaceMission?
-    private lazy var missionBinding = WorkspaceMissionBinding { [weak self] value in
-        guard let self, self.mission != value else { return }
-        self.mission = value
-    }
+    private lazy var missionBinding = WorkspaceMissionBinding(receiveDocument: { [weak self] document in
+        guard let self else { return }
+        if self.mission != document?.mission { self.mission = document?.mission }
+        WorkspaceMetadataStore.shared.setCaptainDefault(workspaceId: self.id,
+            address: document?.captain, path: document?.path)
+    })
     var missionRoot: String? { remoteConfiguration == nil ? rootDirectory : nil }
     /// C11-238: armed while the workspace has no root, so the first cwd its
     /// focused shell reports (other than home or `/`) becomes the root. Any
@@ -5073,15 +6599,13 @@ final class Workspace: Identifiable, ObservableObject {
     private var panelOrdinalDisplayObserver: PanelOrdinalDisplayObserver?
     private var panelLayoutObserver: PanelLayoutObserver?
 
-    /// Operator-authored workspace metadata (e.g. "description", "icon").
-    /// Workspace-scoped; not to be confused with surface-scoped
-    /// `SurfaceMetadataStore`. Persisted across restart via
-    /// `SessionWorkspaceSnapshot.metadata`.
-    @Published var metadata: [String: String] = [:]
+    /// Read-only string projection for existing UI consumers. The workspace
+    /// store owns JSON values, sources, persistence and the file fallback.
+    @Published private(set) var metadata: [String: String] = [:]
+    @Published var captainSummary: WorkspaceCaptainSummary = .unset
+    @Published var captainPanelIDs: Set<UUID> = []
+    private var workspaceMetadataObserver: AnyCancellable?
     private(set) var preferredBrowserProfileID: UUID?
-
-    /// Ordinal for CMUX_PORT range assignment (monotonically increasing per app session)
-    var portOrdinal: Int = 0
 
     /// The bonsplit controller managing the split panes for this workspace
     let bonsplitController: BonsplitController
@@ -5089,6 +6613,12 @@ final class Workspace: Identifiable, ObservableObject {
     /// Mapping from bonsplit TabID to our Panel instances
     @Published private(set) var panels: [UUID: any Panel] = [:] {
         didSet {
+            // C11H-101: create, close and move change the key set. Deferred-start
+            // panels are in `panels` before their terminal starts, so they count.
+            if oldValue.count != panels.count || !oldValue.keys.allSatisfy({ panels[$0] != nil }) {
+                AppDelegate.shared?.noteLayoutChanged(source: "panels")
+                WorkspaceCaptainCoordinator.shared.invalidate()
+            }
             for panelID in panels.keys where oldValue[panelID] == nil {
                 JournalCoordinator.shared.register(panelID: panelID, workspaceID: id)
             }
@@ -5108,8 +6638,15 @@ final class Workspace: Identifiable, ObservableObject {
 
     func setJournalSnapshot(_ value: JournalSnapshot?, forPanel panelID: UUID) {
         guard panels[panelID] != nil else { return }
+        let prior = journalByPanel[panelID]
         journalByPanel[panelID] = value
         syncSurfacePanelActivityStateForPanel(panelID)
+        // C11H-238: every structural event projects a new snapshot (its
+        // observation time alone changes), about 1.4 a second under a working
+        // fleet. Views read only the presentation fields, so only a change
+        // there republishes the workspace and re-renders its row and panes.
+        guard prior?.presentation != value?.presentation else { return }
+        GraphChurnMeter.note(.journalSnapshot)
         objectWillChange.send()
     }
 
@@ -5159,6 +6696,11 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// When true, suppresses auto-creation in didSplitPane (programmatic splits handle their own panels)
     private var isProgrammaticSplit = false
+    /// C11H-391: the panel c11 is moving into a split (`splitPane(movingTab:)`),
+    /// so `shouldSplitPane` knows the split moves that panel and creates
+    /// nothing, unless the move empties the area it splits.
+    private var splitMoveTab: TabID?
+    private var isApplyingSessionSnapshot = false
     private var debugStressPreloadSelectionDepth = 0
 
     /// Last terminal panel used as an inheritance source (typically last focused terminal).
@@ -5236,11 +6778,14 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// The currently focused pane's panel ID
     var focusedPanelId: UUID? {
+        // C11H-238: read only the pane's selection. Reading the selected tab
+        // reads every tab in the pane, so the root view, which asks for the
+        // focused panel, re-rendered on each activity-mark or title change.
         guard let paneId = bonsplitController.focusedPaneId,
-              let bonsplitTab = bonsplitController.selectedTab(inPane: paneId) else {
+              let bonsplitTabId = bonsplitController.selectedTabId(inPane: paneId) else {
             return nil
         }
-        return tabIdFromBonsplitTabId(bonsplitTab.id)
+        return tabIdFromBonsplitTabId(bonsplitTabId)
     }
 
     /// The currently focused terminal panel (if any)
@@ -5263,8 +6808,22 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// Published directory for each panel
     @Published var panelDirectories: [UUID: String] = [:]
-    @Published var panelTitles: [UUID: String] = [:]
-    @Published private(set) var panelCustomTitles: [UUID: String] = [:]
+    @Published var panelTitles: [UUID: String] = [:] {
+        didSet {
+            if oldValue != panelTitles {
+                AppDelegate.shared?.noteLayoutChanged(source: "panel.title")
+                WorkspaceCaptainCoordinator.shared.invalidateTitle()
+            }
+        }
+    }
+    @Published private(set) var panelCustomTitles: [UUID: String] = [:] {
+        didSet {
+            if oldValue != panelCustomTitles {
+                AppDelegate.shared?.noteLayoutChanged(source: "panel.rename")
+                WorkspaceCaptainCoordinator.shared.invalidateTitle()
+            }
+        }
+    }
     /// Per-surface custom color, normalized as `#RRGGBB`. Identity marker for
     /// individual pane tabs; distinct from workspace-level `customColor` which
     /// drives sidebar/theme chrome. See ticket C11-10.
@@ -5275,6 +6834,89 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var titleBarUserCollapsed: Set<UUID> = []
     /// M7 workspace-scoped visibility for surface title bars (default: visible).
     @Published var titleBarVisible: Bool = true
+    /// Terminal session chips keyed by panel. Published so the title bar refreshes.
+    /// 2C (C11H-22) is the caller; this store does not observe hc.
+    @Published private(set) var sessionPlacements: [UUID: SessionPlacement] = [:]
+    private var hcRemoteStatusBindings: [UUID: HCRemoteStatusBinding] = [:]
+    /// Ticket 12: each remote panel's lifecycle subscription that binds
+    /// `observeHCRemoteStatus` once its exact hc key is known.
+    private var hcRemoteStatusFollowers: [UUID: AnyCancellable] = [:]
+    private(set) var hcRemoteForeground: [UUID: HCForeground] = [:]
+    /// C11H-87: the doorbell's owner for a terminal on another machine, from
+    /// that machine's core (`HCRemoteMailboxForeground`), and its last status.
+    private(set) var hcRemoteAgentOwnsTerminal: [UUID: Bool] = [:]
+    /// C11H-184: since when a remote terminal's link has been reconnecting.
+    private var hcRemoteMailboxReconnecting: [UUID: Date] = [:]
+    /// C11H-184: since when hc has reported an agent c11 has not confirmed.
+    private var hcLocalOwnershipPendingSince: [UUID: Date] = [:]
+    /// C11H-184: inline mail a surviving bridge holds, and carried claims
+    /// waiting for the agent's ownership.
+    private var mailboxCarriedHolds: [UUID: MailboxCarriedHold] = [:]
+    private var mailboxCarriedClaims: [UUID: (registration: MailboxNativeDoorbell.Registration, ids: [String], until: Date)] = [:]
+    /// C11H-117: the last hc status evidence for a local terminal with an agent in front.
+    private(set) var hcLocalMailboxStatus: [UUID: HCLocalStatusEvidence] = [:]
+    /// C11H-237: since when the journal last showed each panel's turn open
+    /// (absent: not open), so its close looks at held mail once.
+    private var mailboxJournalTurnOpenSince: [UUID: Date] = [:]
+    /// C11H-237: when the journal last recorded that panel's turn closing
+    /// (the closing hook's own time, never later than its commit), the stamp
+    /// a remote confirmation's idle edge carries.
+    private var mailboxJournalTurnEndedAt: [UUID: Date] = [:]
+    /// C11H-237: why each panel's waiting mail is not rung yet, for `fleet`.
+    private(set) var mailboxWaitByPanel: [UUID: MailboxStdinDelivery.GateHold] = [:]
+
+    /// The kernel reads behind the doorbell's owner check. Live in production.
+    var mailboxKernel: MailboxAgentForeground.Kernel = .live
+    /// C11H-238: the last ownership probe per local hc agent panel.
+    private(set) var hcLocalOwnership = HCLocalOwnershipTracker()
+    /// Test seam: runs a probe (`compute`, off main in production) and hands
+    /// its verdict to `deliver` (on main), when and where the test decides.
+    var hcLocalOwnershipRunForTesting: ((_ compute: @escaping () -> HCLocalOwnershipVerdict,
+                                         _ deliver: @escaping (HCLocalOwnershipVerdict) -> Void) -> Void)?
+    /// Test seams for the ring path; nil in production.
+    var mailboxDoorbellScreenForTesting: ((UUID) -> PromptInputState?)?
+    var onMailboxDoorbellRingForTesting: ((UUID) -> Void)?
+    /// C11H-237: each `doorbell_recheck` reason a closed gate logs.
+    var onMailboxRecheckForTesting: ((UUID, String) -> Void)?
+    var mailboxJournalSnapshotForTesting: ((UUID) -> JournalSnapshot?)?
+    var journalAppendForTesting: ((JournalDraft) -> Void)?
+    var mailboxComposerReadForTesting: ((UUID) -> (region: PromptRegionSnapshot, state: PromptInputState)?)?
+    var mailboxNoOpReturnCheckForTesting: ((UUID, MailboxNoOpReturn.Probe) -> Void)?
+    /// C11H-304: makes every terminal panel read as headless (no screen), with this as hc's record of it.
+    var mailboxHeadlessRecordForTesting: ((UUID) -> HCTerminalRecord?)?
+    /// C11H-304: whether a panel has no screen, ahead of every other rule.
+    var mailboxIsHeadlessForTesting: ((UUID) -> Bool)?
+    /// C11H-304: each doorbell row as it is written (envelope id, outcome, reason, why), dispatcher or not.
+    var onMailboxDoorbellRowForTesting: ((String, MailboxDispatchLog.HandlerOutcome, String, String?) -> Void)?
+    /// C11H-306: stands in for hc's paint of a headless panel's screen, read afresh on every composer read. The
+    /// real replay and classifier run on it.
+    var mailboxHeadlessPaintForTesting: ((UUID) -> Result<HCComposerPaint, HCComposerReadFailure>)?
+    /// C11H-306: scales every scheduled doorbell look (the held series, rechecks), so a test runs the real timers
+    /// in milliseconds; and each look as it is scheduled, with its unscaled delay.
+    var mailboxDoorbellDelayScaleForTesting: Double?
+    var onMailboxDoorbellRecheckScheduledForTesting: ((UUID, TimeInterval) -> Void)?
+    /// C11H-306: a test workspace has no dispatcher to confirm its queued mail is still in the inbox; this treats
+    /// it as there, so a held look plans its next look as it does with one.
+    var mailboxQueueLiveWithoutDispatcherForTesting = false
+    /// C11H-306: the last composer read of each headless panel, and the reads in flight.
+    private var mailboxHeadlessComposerReads: [UUID: MailboxHeadlessComposerRead] = [:]
+    private var mailboxHeadlessComposerReadsInFlight: Set<UUID> = []
+    /// C11H-346 test seam: a composer read `startMailboxHeadlessComposerRead` began is still under way. The look its
+    /// completion runs happens in the same main-actor turn that clears it.
+    var mailboxHeadlessComposerReadInFlightForTesting: Bool { !mailboxHeadlessComposerReadsInFlight.isEmpty }
+    /// C11H-123: the status word each remote terminal's core reports now,
+    /// whether or not it was a turn edge.
+    private var hcRemoteReportedStatus: [UUID: String] = [:]
+
+    /// The journal's view of a panel's agent, as the doorbell reads it.
+    func mailboxJournalSnapshot(_ surfaceId: UUID) -> JournalSnapshot? {
+        if let seam = mailboxJournalSnapshotForTesting { return seam(surfaceId) }
+        return JournalCoordinator.shared.snapshot(panelID: surfaceId)
+    }
+
+    private var hcRemoteMailboxStatus: [UUID: String] = [:]
+    /// C11H-237: when c11 recorded each remote terminal's current word.
+    private var hcRemoteMailboxStatusSince: [UUID: Date] = [:]
     @Published private(set) var pinnedPanelIds: Set<UUID> = []
     @Published private(set) var manualUnreadPanelIds: Set<UUID> = []
     private var manualUnreadMarkedAt: [UUID: Date] = [:]
@@ -5357,8 +6999,67 @@ final class Workspace: Identifiable, ObservableObject {
     /// When each panel's shell last started or finished a command (tab sheet
     /// `active` for plain terminals). Plain store, not published.
     var panelShellEdgeAt: [UUID: Date] = [:]
+    /// C11H-196: the last idle-prompt report per panel, repeated reports included.
+    var panelPromptIdleReportAt: [UUID: Date] = [:]
+    /// C11H-272: the empty prompt (its epoch) a live-shell resume was last
+    /// typed at, per panel; the next one waits for a newer empty prompt.
+    var panelLiveShellResumePrompt: [UUID: Date] = [:]
+    /// How many resume decisions each panel got this launch (C11H-196: one per
+    /// ended terminal; ~26k for 38 panels was the decision loop).
+    private(set) var resumeDecisionCounts: [UUID: Int] = [:]
     /// What this launch did with each restored agent panel (C11-468).
-    private(set) var launchResumeOutcomes: [UUID: LaunchResumeOutcome] = [:]
+    private(set) var launchResumeOutcomes: [UUID: LaunchResumeOutcome] = [:] {
+        didSet { reportLaunchResumeOutcomes(since: oldValue) }
+    }
+
+    /// C11H-38: tell the launch banner what changed. It only reads.
+    private func reportLaunchResumeOutcomes(since old: [UUID: LaunchResumeOutcome]) {
+        for (panelId, outcome) in launchResumeOutcomes where old[panelId] != outcome {
+            switch outcome {
+            case .awaitingScrape:
+                continue
+            case .resumed:
+                LaunchResumeReport.shared.record(panelID: panelId, outcome: .resumed)
+            case .skipped(_, let reason):
+                LaunchResumeReport.shared.record(panelID: panelId, outcome: .skipped(
+                    workspaceTitle: title,
+                    panelTitle: panels[panelId]?.displayTitle ?? panelId.uuidString,
+                    reason: reason))
+            case .kept:
+                LaunchResumeReport.shared.record(panelID: panelId, outcome: .kept)
+            }
+        }
+    }
+    private var hcResumeSubscriptions: [UUID: AnyCancellable] = [:]
+    private var launchRestoreMarks = LaunchRestoreMarks()
+    private var hcRecoveryTasks: [UUID: Task<Void, Never>] = [:]
+    /// C11H-203: panels whose resume is being submitted (checked and typed).
+    /// Another trigger meanwhile (an inventory revision, an idle-prompt
+    /// report) is the same plan and must not start a second try, whose dedup
+    /// refusal would read as a failure.
+    private var resumeSubmissionsInFlight: Set<UUID> = []
+
+    /// Test seam: what restoring the launch's snapshot does for a terminal
+    /// (C11H-38), so its startup resolution is launch-scoped.
+    func markLaunchRestoredForTesting(_ panelID: UUID) { launchRestoreMarks.mark(panelID) }
+
+    func prepareForEndAllSessions(_ panelIDs: [UUID]) {
+        for panelID in panelIDs {
+            hcRecoveryTasks.removeValue(forKey: panelID)?.cancel()
+            HCHostEndResumeQueue.shared.cancel(panelID: panelID)
+            if let terminal = panels[panelID] as? TerminalPanel,
+               terminal.hcIdentity?.persistence == .persistent {
+                terminal.pendingHCConversationRecovery = nil
+                terminal.retainsAfterEndAllSessions = true
+                // C11H-196: the operator ended it on purpose; no restore record.
+                terminal.hcHostEnd = nil
+            }
+        }
+    }
+
+    func retainsEndedPanelAfterEndAll(_ panelID: UUID) -> Bool {
+        (panels[panelID] as? TerminalPanel)?.retainsAfterEndAllSessions == true
+    }
     /// Per-tab queue of framed `<c11-msg>` blocks that arrived while the
     /// recipient was busy, plus the agent turn edges that gate them. Flushed
     /// at an agent's prompt edge or a shell's return to `.promptIdle` (see
@@ -5558,6 +7259,11 @@ final class Workspace: Identifiable, ObservableObject {
         lightBackground ? "#2C5597" : "#5287D6"
     }
 
+    /// The cold line in the active theme's `states.cold`, else c11's blue.
+    nonisolated static func promptCacheColdHex(lightBackground: Bool, states: ThemeStatePalette) -> String {
+        states.cold ?? promptCacheColdHex(lightBackground: lightBackground)
+    }
+
     /// The mark's recolor: a named flag uses its adaptive token, generic flag
     /// stays violet, then cache blue; nil keeps the lifecycle color.
     /// Delegation never recolors a mark; its baseline carries lineage
@@ -5567,12 +7273,15 @@ final class Workspace: Identifiable, ObservableObject {
         promptCacheExpired: Bool,
         lightBackground: Bool,
         flagKind: PanelFlagKind? = nil,
-        usageLimited: Bool = false
+        usageLimited: Bool = false,
+        states: ThemeStatePalette = .unset
     ) -> String? {
+        // A schema-2 theme recolors the generic flag, usage limit and cold line;
+        // named flag kinds keep their registry colors, and which tint wins is c11's.
         switch ActivityMarkTint.resolve(flagged: isFlagged, promptCacheExpired: promptCacheExpired, usageLimited: usageLimited) {
-        case .flag: return flagKind?.colorHex(lightBackground: lightBackground) ?? "#9D8AD9"
-        case .usageLimit: return lightBackground ? "#B42318" : "#FF6B6B"
-        case .promptCacheCold: return promptCacheColdHex(lightBackground: lightBackground)
+        case .flag: return flagKind?.colorHex(lightBackground: lightBackground) ?? states.flag ?? "#9D8AD9"
+        case .usageLimit: return states.usageLimit ?? (lightBackground ? "#B42318" : "#FF6B6B")
+        case .promptCacheCold: return promptCacheColdHex(lightBackground: lightBackground, states: states)
         case .lifecycle: return nil
         }
     }
@@ -5580,31 +7289,55 @@ final class Workspace: Identifiable, ObservableObject {
     /// Agent-state palette shared by sidebar workspace pulse marks, the card
     /// agent rollup bar, and bonsplit surface-tab activity chips.
     ///
-    /// running/idle/cold are a neutral white-to-gray ramp (running most present,
-    /// cold most receded) so `waiting` gold stays the only chromatic lifecycle
-    /// color in the chrome: the brand's deliberate "needs you" signal. Two
-    /// modifiers recolor a mark: a flag kind (or generic violet) wins, then blue on a cold mark
+    /// Working is yellow, waiting is white, done (idle) stays gray (Atin,
+    /// C11H-344). Working is the one chromatic lifecycle colour; waiting is
+    /// the highest-contrast neutral (white on dark chrome, near-black on
+    /// light); idle and cold recede through gray. Two modifiers recolor a
+    /// mark: a flag kind (or generic violet) wins, then blue on a cold mark
     /// whose prompt cache expired. Delegates keep these colors and draw a
     /// lineage baseline instead.
     nonisolated static func resolvedSurfaceTabActivityColors(
-        from backgroundColor: NSColor
+        from backgroundColor: NSColor,
+        states: ThemeStatePalette = .unset
     ) -> BonsplitConfiguration.Appearance.TabActivityColors {
-        if backgroundColor.isLightColor {
-            return .init(
-                runningHex: "#1D2024",
+        resolvedSurfaceTabActivityColors(lightBackground: backgroundColor.isLightColor, states: states)
+    }
+
+    /// The same palette for a known chrome slot.
+    nonisolated static func resolvedSurfaceTabActivityColors(
+        lightBackground: Bool,
+        states: ThemeStatePalette = .unset
+    ) -> BonsplitConfiguration.Appearance.TabActivityColors {
+        var colors = defaultSurfaceTabActivityColors(lightBackground: lightBackground)
+        // A schema-2 theme's `[states]` replaces the ramp colour by colour.
+        // `states.cold` is the cache-cold line (`promptCacheColdHex`); the
+        // dormant gray of an agent with no cache data stays c11's.
+        colors.runningHex = states.running ?? colors.runningHex
+        colors.idleHex = states.idle ?? colors.idleHex
+        colors.waitingHex = states.waiting ?? colors.waitingHex
+        colors.waitingInkHex = states.waitingInk ?? colors.waitingInkHex
+        return colors
+    }
+
+    /// c11's lifecycle colours before any theme `[states]`, for one chrome slot.
+    nonisolated static func defaultSurfaceTabActivityColors(
+        lightBackground: Bool
+    ) -> BonsplitConfiguration.Appearance.TabActivityColors {
+        lightBackground
+            ? .init(
+                runningHex: "#9B7415",
                 idleHex: "#585D66",
                 coldHex: "#8D939C",
-                waitingHex: "#9B7415",
+                waitingHex: "#1D2024",
                 waitingInkHex: "#FFFDF8"
             )
-        }
-        return .init(
-            runningHex: "#E8E8E8",
-            idleHex: "#9AA0A9",
-            coldHex: "#62676F",
-            waitingHex: "#D0AA45",
-            waitingInkHex: "#08090B"
-        )
+            : .init(
+                runningHex: "#D0AA45",
+                idleHex: "#9AA0A9",
+                coldHex: "#62676F",
+                waitingHex: "#E8E8E8",
+                waitingInkHex: "#08090B"
+            )
     }
 
     /// Resolved theme-aware divider presentation for bonsplit. `borderHex` encodes
@@ -5783,7 +7516,7 @@ final class Workspace: Identifiable, ObservableObject {
         let useThemeM1bPath = ThemeAppStorage.bool(
             forKey: ThemeAppStorage.Keys.m1bBonsplitAppearanceMigrated,
             default: false
-        )
+        ) || ThemeManager.shared.themeOwnsChrome(windowThemeName: windowThemeName)
 
         // Theme-resolved divider presentation threads through the M2a bonsplit
         // `DividerStyle` seam. Resolution uses the workspace's current `customColor`
@@ -5791,11 +7524,16 @@ final class Workspace: Identifiable, ObservableObject {
         var nextBorderHex: String? = nil
         var nextThicknessPt: CGFloat? = nil
         var nextActiveIndicatorHex: String? = nil
+        var nextStrip = ThemeStripStyle.unset
+        var nextStates = ThemeStatePalette.unset
         if ThemeManager.shared.isEnabled {
             let context = ThemeManager.shared.makeContext(
                 workspaceColor: customColor,
-                colorScheme: ThemeManager.currentColorScheme()
+                colorScheme: ThemeManager.currentColorScheme(),
+                windowThemeName: windowThemeName
             )
+            nextStrip = ThemeStripStyle.current(context: context, themedPathLive: useThemeM1bPath)
+            nextStates = ThemeStatePalette.current(context: context)
             if useThemeM1bPath,
                let themed: NSColor = ThemeManager.shared.resolve(.tabBar_background, context: context) {
                 nextHex = themed.hexString(includeAlpha: themed.alphaComponent < 0.999)
@@ -5813,7 +7551,8 @@ final class Workspace: Identifiable, ObservableObject {
         let currentChromeColors = currentAppearance.chromeColors
         let currentActivityColors = currentAppearance.tabActivityColors
         let nextActivityColors = Self.resolvedSurfaceTabActivityColors(
-            from: NSColor(hex: nextHex) ?? backgroundColor
+            from: NSColor(hex: nextHex) ?? backgroundColor,
+            states: nextStates
         )
         let currentThickness = currentAppearance.dividerStyle.thicknessPt
 
@@ -5832,7 +7571,11 @@ final class Workspace: Identifiable, ObservableObject {
             currentActivityColors.coldHex == nextActivityColors.coldHex &&
             currentActivityColors.waitingHex == nextActivityColors.waitingHex &&
             currentActivityColors.waitingInkHex == nextActivityColors.waitingInkHex
-        let isNoOp = backgroundMatches && borderMatches && thicknessMatches && activeIndicatorMatches && activityColorsMatch
+        let stripMatches = ThemeStripStyle(appearance: currentAppearance) == nextStrip
+            && currentChromeColors.notificationHex == nextStates.notification
+        let statesMatch = themeStatePalette == nextStates
+        let isNoOp = backgroundMatches && borderMatches && thicknessMatches && activeIndicatorMatches
+            && activityColorsMatch && stripMatches && statesMatch
 
         if GhosttyApp.shared.backgroundLogEnabled {
             let currentBackgroundHex = currentChromeColors.backgroundHex ?? "nil"
@@ -5853,14 +7596,18 @@ final class Workspace: Identifiable, ObservableObject {
         nextAppearance.chromeColors.backgroundHex = nextHex
         nextAppearance.chromeColors.borderHex = nextBorderHex
         nextAppearance.chromeColors.activeIndicatorHex = nextActiveIndicatorHex
+        nextAppearance.chromeColors.notificationHex = nextStates.notification
         nextAppearance.tabActivityColors = nextActivityColors
         nextAppearance.dividerStyle.thicknessPt = nextThicknessPt
+        nextStrip.apply(to: &nextAppearance)
+        themeStatePalette = nextStates
 
         var nextConfiguration = bonsplitController.configuration
         nextConfiguration.appearance = nextAppearance
         bonsplitController.configuration = nextConfiguration
-        // Mark recolors are resolved per theme; a light/dark flip re-resolves them.
-        if !activityColorsMatch {
+        // Mark recolors are resolved per theme; a light/dark flip or a theme's
+        // `[states]` re-resolves them.
+        if !activityColorsMatch || !statesMatch {
             syncSurfacePanelActivityStates()
         }
 
@@ -5877,11 +7624,12 @@ final class Workspace: Identifiable, ObservableObject {
         stableDefaultTitle: String? = nil,
         workingDirectory: String? = nil,
         rootDirectory: String? = nil,
-        portOrdinal: Int = 0,
         configTemplate: ghostty_surface_config_s? = nil,
         initialTerminalCommand: String? = nil,
         initialTerminalInput: String? = nil,
         initialTerminalEnvironment: [String: String] = [:],
+        initialPanelID: UUID? = nil,
+        initialRemoteTarget: HCRemoteTarget? = nil,
         restoringSession: Bool = false
     ) {
         // Tier 1 persistence, Phase 1.5: accept an optional restore-time id so
@@ -5890,8 +7638,8 @@ final class Workspace: Identifiable, ObservableObject {
         // restore path in `TabManager.restoreSessionSnapshot`).
         let workspaceID = id ?? UUID()
         self.id = workspaceID
+        WorkspaceMetadataStore.shared.register(workspaceId: workspaceID)
         EventEmitter.shared.enrollTransientWorkspaceConstruction(workspaceID)
-        self.portOrdinal = portOrdinal
         self.processTitle = title
         let trimmedStableDefaultTitle = stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         self.stableDefaultTitle = trimmedStableDefaultTitle.isEmpty ? nil : trimmedStableDefaultTitle
@@ -6023,36 +7771,43 @@ final class Workspace: Identifiable, ObservableObject {
         // Remove the default "Welcome" tab that bonsplit creates
         let welcomeBonsplitTabIds = bonsplitController.allTabIds
 
-        // Create initial terminal panel
-        let terminalPanel = TerminalPanel(
-            workspaceId: self.id,
-            context: GHOSTTY_SURFACE_CONTEXT_TAB,
-            configTemplate: configTemplate,
-            workingDirectory: hasWorkingDirectory ? trimmedWorkingDirectory : nil,
-            portOrdinal: portOrdinal,
-            initialCommand: initialTerminalCommand,
-            initialInput: initialTerminalInput,
-            initialEnvironmentOverrides: initialTerminalEnvironment
-        )
-        panels[terminalPanel.id] = terminalPanel
-        // Initialization bypasses panels.didSet. Register the first tab through
-        // the same identity-only seam used by later inserts and restored tabs.
-        JournalCoordinator.shared.register(panelID: terminalPanel.id, workspaceID: self.id)
-        panelTitles[terminalPanel.id] = terminalPanel.displayTitle
-        seedTerminalInheritanceFontPoints(panelId: terminalPanel.id, configTemplate: configTemplate)
-
-        // Create initial tab in bonsplit and store the mapping
         var initialBonsplitTabId: TabID?
-        if let bonsplitTabId = bonsplitController.createTab(
-            title: TitleFormatting.sidebarLabel(from: title),
-            icon: "terminal.fill",
-            kind: PanelKind.terminal,
-            isDirty: false,
-            isPinned: false,
-            displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: terminalPanel.id)
-        ) {
-            bonsplitTabIdToTabId[bonsplitTabId] = terminalPanel.id
-            initialBonsplitTabId = bonsplitTabId
+        // Restore supplies every panel itself. Constructing a fresh placeholder
+        // here could start a second hc terminal before the saved IDs are applied.
+        if !restoringSession {
+            // C11H-363: a recovered terminal on a linked machine keeps its
+            // machine; a local path never becomes its working directory.
+            let terminalPanel = TerminalPanel(
+                id: initialPanelID,
+                workspaceId: self.id,
+                context: GHOSTTY_SURFACE_CONTEXT_TAB,
+                configTemplate: configTemplate,
+                workingDirectory: hasWorkingDirectory && initialRemoteTarget == nil ? trimmedWorkingDirectory : nil,
+                initialCommand: initialTerminalCommand,
+                initialInput: initialTerminalInput,
+                initialEnvironmentOverrides: initialTerminalEnvironment,
+                remoteTarget: initialRemoteTarget
+            )
+            panels[terminalPanel.id] = terminalPanel
+            // Initialization bypasses panels.didSet. Register the first tab through
+            // the same identity-only seam used by later inserts and restored tabs.
+            JournalCoordinator.shared.register(panelID: terminalPanel.id, workspaceID: self.id)
+            panelTitles[terminalPanel.id] = terminalPanel.displayTitle
+            seedTerminalInheritanceFontPoints(panelId: terminalPanel.id, configTemplate: configTemplate)
+            followHCRemoteStatus(terminalPanel)
+
+            // Create initial tab in bonsplit and store the mapping
+            if let bonsplitTabId = bonsplitController.createTab(
+                title: TitleFormatting.sidebarLabel(from: title),
+                icon: "terminal.fill",
+                kind: PanelKind.terminal,
+                isDirty: false,
+                isPinned: false,
+                displayOrdinal: TerminalController.shared.surfaceOrdinal(forSurfaceUUID: terminalPanel.id)
+            ) {
+                bonsplitTabIdToTabId[bonsplitTabId] = terminalPanel.id
+                initialBonsplitTabId = bonsplitTabId
+            }
         }
 
         // Close the default Welcome tab(s)
@@ -6062,6 +7817,9 @@ final class Workspace: Identifiable, ObservableObject {
 
         bonsplitController.onExternalTabDrop = { [weak self] request in
             self?.handleExternalTabDrop(request) ?? false
+        }
+        bonsplitController.onTabSelectedByUser = { [weak self] bonsplitTabId, _ in
+            self?.noteOperatorTabSelection(bonsplitTabId: bonsplitTabId)
         }
         bonsplitController.onTabCloseRequest = { [weak self] bonsplitTabId, _ in
             self?.markExplicitClose(bonsplitTabId: bonsplitTabId)
@@ -6144,6 +7902,12 @@ final class Workspace: Identifiable, ObservableObject {
             .sink { [weak self] newPanels in
                 self?.reconcilePanelEvents(newPanels)
             }
+        workspaceMetadataObserver = NotificationCenter.default.publisher(for: WorkspaceMetadataStore.didChangeNotification)
+            .sink { [weak self] notification in
+                guard let self, notification.userInfo?["workspaceId"] as? UUID == self.id else { return }
+                self.refreshMetadataProjection()
+            }
+        refreshMetadataProjection()
         refreshMissionObservation()
     }
 
@@ -6178,19 +7942,34 @@ final class Workspace: Identifiable, ObservableObject {
         guard newIds != lastKnownPanelIds else { return }
         for createdId in newIds.subtracting(lastKnownPanelIds) {
             guard let panel = newPanels[createdId] else { continue }
+            if let terminal = panel as? TerminalPanel { observePersistentRecovery(terminal) }
             // This callback runs in @Published.willSet. Register the supplied
             // new tab directly; self.panels still contains the old collection.
             _ = TerminalController.shared.v2EnsureHandleRef(kind: .surface, uuid: createdId)
-            let parentPanelId = PanelLineage.shared.panelInserted(panel, in: self)
+            let lineage = PanelLineage.shared.panelInserted(panel, in: self)
             EventEmitter.shared.emitPanelCreated(
                 workspace: id,
                 panel: createdId,
                 kind: panel.panelType.rawValue,
                 title: panel.displayTitle,
-                parentPanelId: parentPanelId
+                parentPanelId: lineage?.parentPanelId,
+                origin: lineage?.origin ?? .unknown,
+                originDetail: lineage?.originDetail
             )
         }
         for closedId in lastKnownPanelIds.subtracting(newIds) {
+            hcResumeSubscriptions.removeValue(forKey: closedId)
+            hcRecoveryTasks.removeValue(forKey: closedId)?.cancel()
+            // A move closes here and creates in the other workspace: only a
+            // panel gone from every workspace leaves the queue and the strip.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard HCRestoreProgress.shared.locate(closedId) == nil else { return }
+                    HCHostEndResumeQueue.shared.cancel(panelID: closedId)
+                    LaunchResumeGate.shared.forget(closedId)
+                    HCRestoreProgress.shared.remove(panelID: closedId)
+                }
+            }
             EventEmitter.shared.emitSurfaceClosed(workspace: id, surface: closedId)
         }
         lastKnownPanelIds = newIds
@@ -6227,6 +8006,32 @@ final class Workspace: Identifiable, ObservableObject {
             guard let owner = ConversationStorePanelRefCache.shared.mailboxOwner(surfaceId: panelID),
                   let workspaceID = JournalCoordinator.shared.target(panelID: owner.panelID) else { return nil }
             return (owner.panelID, workspaceID)
+        }, linkedMachines: { [weak self] in
+            // C11H-360: which of this workspace's panels run on a linked machine.
+            let read: () -> [UUID: String] = {
+                MainActor.assumeIsolated {
+                    guard let self else { return [:] }
+                    return self.panels.reduce(into: [UUID: String]()) { result, entry in
+                        if let machine = (entry.value as? TerminalPanel)?.hcRemoteTarget?.machine { result[entry.key] = machine }
+                    }
+                }
+            }
+            if Thread.isMainThread { return read() }
+            var result: [UUID: String] = [:]
+            DispatchQueue.main.sync { result = read() }
+            return result
+        }, localAnswersAnywhere: { address in
+            // C11H-360: asked only when every match here is a linked panel.
+            let read: () -> Bool = {
+                MainActor.assumeIsolated {
+                    let surfaces = AppDelegate.shared?.mailboxAddressableSurfaces() ?? []
+                    return MailboxMatcher.localAnswers(address, from: surfaces, identity: { $0.identity })
+                }
+            }
+            if Thread.isMainThread { return read() }
+            var result = false
+            DispatchQueue.main.sync { result = read() }
+            return result
         }) { [weak self] in
             guard let self else { return [] }
             // `panels` is @Published. Read it from main to avoid the SwiftUI/Combine
@@ -6422,12 +8227,20 @@ final class Workspace: Identifiable, ObservableObject {
         )
         let ledger = mailboxStdinState.doorbell.ledger(for: surfaceId)
         let now = Date()
-        let journalSnapshot = JournalCoordinator.shared.snapshot(panelID: surfaceId)
+        let journalSnapshot = mailboxJournalSnapshot(surfaceId)
         let epoch = mailboxStdinState.buffer.ringEpoch(surfaceId: surfaceId)
         let prompt: PromptInputState?
         let nativeRoute = registeredNativeMailbox(surfaceId: surfaceId) != nil
+        let headless = mailboxDoorbellIsHeadless(terminalPanel)
+        var headlessHold: String?
         if capturePrompt && !nativeRoute {
-            if let captured = mailboxDoorbellCapture(terminalPanel: terminalPanel) {
+            if headless {
+                // C11H-306: nil while the composer read is under way. The caller then takes the busy-read path
+                // (no row), and the read's completion looks again.
+                let read = mailboxHeadlessRead(terminalPanel)
+                prompt = read?.prompt
+                headlessHold = read?.hold
+            } else if let captured = mailboxDoorbellCapture(terminalPanel: terminalPanel) {
                 prompt = captured.state
             } else {
                 prompt = nil
@@ -6473,7 +8286,96 @@ final class Workspace: Identifiable, ObservableObject {
             coveredIds: ledger.coveredIds
         )
         input.strandedPending = ledger.strandedPending
+        input.headless = headless
+        input.headlessHold = headlessHold
+        input.headlessStranded = headless && ledger.headlessStrandedEpoch == epoch
         return input
+    }
+
+    /// C11H-304: an hc terminal running with no screen (a hidden workspace's panel restored headless after a
+    /// relaunch, or one started behind a locked screen). The typed doorbell reads hc's status and hc's paint of the
+    /// screen instead (C11H-306).
+    private func mailboxDoorbellIsHeadless(_ terminalPanel: TerminalPanel) -> Bool {
+        if let seam = mailboxIsHeadlessForTesting { return seam(terminalPanel.id) }
+        let surface = terminalPanel.surface
+        return surface.surface == nil && surface.hcHeadlessBridge != nil && surface.usesPersistentHCInput
+    }
+
+    private func mailboxHeadlessRecord(_ terminalPanel: TerminalPanel) -> HCTerminalRecord? {
+        if let seam = mailboxHeadlessRecordForTesting { return seam(terminalPanel.id) }
+        return terminalPanel.surface.hcLiveRecord
+    }
+
+    /// C11H-304, C11H-306: the prompt read for a panel with no screen. hc's status says whether the agent is at
+    /// its prompt (only a record from a reachable core counts); at its prompt, a read of hc's paint of the screen
+    /// says what its composer holds, classified as the screen path classifies its own capture. Nil while that read
+    /// is under way: this starts it, and its completion looks again (`startMailboxHeadlessComposerRead`).
+    private func mailboxHeadlessRead(_ terminalPanel: TerminalPanel) -> MailboxHeadlessPrompt.Read? {
+        let record = mailboxHeadlessRecord(terminalPanel)
+        let reachable = record.map { $0.machineAvailability == .local || $0.machineAvailability == .connected } ?? false
+        let readiness = reachable ? HCHeadless.promptReadiness(record) : .waiting
+        let fresh = mailboxFreshHeadlessComposerRead(terminalPanel.id, record: record)
+        if let read = MailboxHeadlessPrompt.read(readiness: readiness, composer: fresh?.observation) { return read }
+        startMailboxHeadlessComposerRead(terminalPanel)
+        return nil
+    }
+
+    /// A read taken against the hc record the panel still has, within `MailboxHeadlessComposerRead.freshnessNanoseconds`.
+    /// It only steers the decision; the ring reads again before its text and before its Return.
+    private func mailboxFreshHeadlessComposerRead(_ surfaceId: UUID, record: HCTerminalRecord?) -> MailboxHeadlessComposerRead? {
+        guard let read = mailboxHeadlessComposerReads[surfaceId], read.isFresh, read.matches(record) else { return nil }
+        return read
+    }
+
+    /// One read for the panel unless one is under way; when it lands, the buffered ring looks again.
+    private func startMailboxHeadlessComposerRead(_ terminalPanel: TerminalPanel) {
+        let surfaceId = terminalPanel.id
+        guard !mailboxHeadlessComposerReadsInFlight.contains(surfaceId) else { return }
+        mailboxHeadlessComposerReadsInFlight.insert(surfaceId)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await self.readMailboxHeadlessComposer(surfaceId: surfaceId)
+            self.mailboxHeadlessComposerReadsInFlight.remove(surfaceId)
+            self.ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+        }
+    }
+
+    /// C11H-306: a panel that had no screen got one (`TerminalSurface.handOffHeadlessHC`). Its last headless read no
+    /// longer counts, and held mail looks again once the first paint has had a moment to reach the screen; nothing
+    /// else would look before the held series' next step.
+    func mailboxPanelGotScreen(surfaceId: UUID) {
+        mailboxHeadlessComposerReads.removeValue(forKey: surfaceId)
+        guard mailboxStdinState.buffer.pendingCount(surfaceId: surfaceId) > 0 else { return }
+        scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: MailboxDoorbellSequence.shortRecheck)
+    }
+
+    /// C11H-306: one read of a headless panel's composer, now: hc's paint through a watch-only attach, replayed and
+    /// classified off the main thread. The panel lookups and the remembered result stay on main. Nil when the
+    /// panel is gone.
+    @MainActor
+    func readMailboxHeadlessComposer(surfaceId: UUID) async -> HCComposerObservation? {
+        guard let panel = panels[surfaceId] as? TerminalPanel else { return nil }
+        let record = mailboxHeadlessRecord(panel)
+        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
+        #if DEBUG
+        let started = DispatchTime.now().uptimeNanoseconds
+        #endif
+        let observation: HCComposerObservation
+        if let seam = mailboxHeadlessPaintForTesting {
+            observation = await HCHeadlessComposer.classify(seam(surfaceId), harness: harness)
+        } else if let session = panel.surface.hcSession?.session, let key = record?.key {
+            observation = await HCHeadlessComposer.read(session: session, key: key, harness: harness)
+        } else {
+            observation = .failed(.unavailable)
+        }
+        guard (panels[surfaceId] as? TerminalPanel) === panel else { return nil }
+        mailboxHeadlessComposerReads[surfaceId] = MailboxHeadlessComposerRead(observation: observation, record: record)
+        #if DEBUG
+        let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
+        dlog("mailbox.headless.read panel=\(surfaceId.uuidString.prefix(8)) state=\(observation.state.rawValue) " +
+             "why=\(observation.why ?? "-") ms=\(String(format: "%.1f", elapsedMs))")
+        #endif
+        return observation
     }
 
     private struct MailboxDoorbellScreen {
@@ -6483,6 +8385,9 @@ final class Workspace: Identifiable, ObservableObject {
 
     /// One prompt read. Nil when the surface is gone or the renderer is busy.
     private func mailboxDoorbellCapture(terminalPanel: TerminalPanel) -> MailboxDoorbellScreen? {
+        if let screen = mailboxDoorbellScreenForTesting {
+            return screen(terminalPanel.id).map { MailboxDoorbellScreen(state: $0, composer: nil) }
+        }
         let harness = surfaceActivityTerminalKind(panelId: terminalPanel.id)
         guard let native = terminalPanel.surface.surface,
               let region = TerminalController.shared.capturePromptInputRegion(surface: native, harness: harness) else {
@@ -6494,9 +8399,19 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func mailboxDoorbellComposerIsInvitation(terminalPanel: TerminalPanel) -> Bool {
-        guard let captured = mailboxDoorbellCapture(terminalPanel: terminalPanel),
-              captured.state == .draft,
-              let composer = captured.composer else { return false }
+        let composer: String?
+        if mailboxDoorbellIsHeadless(terminalPanel) {
+            // C11H-306: the read the decision just used, never a new one.
+            let fresh = mailboxFreshHeadlessComposerRead(terminalPanel.id, record: mailboxHeadlessRecord(terminalPanel))
+            guard let observation = fresh?.observation, observation.state == .draft else { return false }
+            composer = observation.composer
+        } else {
+            guard let captured = mailboxDoorbellCapture(terminalPanel: terminalPanel), captured.state == .draft else {
+                return false
+            }
+            composer = captured.composer
+        }
+        guard let composer else { return false }
         let compared = FeedAnswerComposerCheck.compare(
             state: .draft,
             composer: composer,
@@ -6565,16 +8480,21 @@ final class Workspace: Identifiable, ObservableObject {
         outcome: MailboxDispatchLog.HandlerOutcome,
         reason: String
     ) {
+        // C11H-237: a closed gate whose cause changes (the journal turn, then
+        // the remote core's word) logs again, so status names the cause now.
+        let cause = reason == "gate_closed" ? mailboxGateHold(surfaceId: surfaceId)?.code : nil
+        let key = cause.map { "\(reason):\($0)" } ?? reason
+        noteMailboxWait(surfaceId: surfaceId, outcome: outcome, reason: reason)
         let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
         let fresh = entries.filter {
             // A later timer may observe the next working turn after submit.
             // It has no refused delivery to report for an already-covered id.
             !(outcome == .doorbellSkipped && covered.contains($0.id))
-                && mailboxDoorbellLastReason[$0.id] != reason
+                && mailboxDoorbellLastReason[$0.id] != key
         }
         guard !fresh.isEmpty else { return }
         for entry in fresh {
-            mailboxDoorbellLastReason[entry.id] = reason
+            mailboxDoorbellLastReason[entry.id] = key
         }
         logMailboxDoorbellEntries(fresh, outcome: outcome, reason: reason)
     }
@@ -6584,8 +8504,15 @@ final class Workspace: Identifiable, ObservableObject {
         outcome: MailboxDispatchLog.HandlerOutcome,
         reason: String,
         bytes: Int? = nil,
-        route: MailboxNativeDoorbell.Route = .typed
+        route: MailboxNativeDoorbell.Route = .typed,
+        why: String? = nil
     ) {
+        if let panel = entries.first?.recipientPanelId { noteMailboxWait(surfaceId: panel, outcome: outcome, reason: reason) }
+        if let seam = onMailboxDoorbellRowForTesting { entries.forEach { seam($0.id, outcome, reason, why) } }
+        let hold = reason == "gate_closed"
+            ? entries.first?.recipientPanelId.flatMap { mailboxWaitByPanel[$0] }.flatMap {
+                MailboxStdinDelivery.GateHold.codes.contains($0.code) ? $0 : nil }
+            : nil
         guard let dispatcher = mailboxDispatcher else { return }
         for entry in entries {
             let fallback = route == .typed ? mailboxNativeFallback.values.first { $0.ids.contains(entry.id) } : nil
@@ -6601,9 +8528,38 @@ final class Workspace: Identifiable, ObservableObject {
                 nativeRoute: fallback?.registration.route.rawValue,
                 nativeFailure: fallback?.reason,
                 recipientPanel: entry.recipientPanelId,
-                nativeState: nativeState
+                nativeState: nativeState,
+                hold: hold?.code,
+                holdSince: hold?.since,
+                why: why
             )
         }
+    }
+
+    /// C11H-237: why the panel's waiting mail is not rung, as `fleet` shows
+    /// it. A closed gate names its cause (`journal_turn` or `working_edge`);
+    /// any other hold its reason. A ring under way clears it.
+    private func noteMailboxWait(surfaceId: UUID, outcome: MailboxDispatchLog.HandlerOutcome, reason: String) {
+        switch outcome {
+        case .doorbell:
+            mailboxWaitByPanel.removeValue(forKey: surfaceId)
+        case .doorbellSkipped, .doorbellCapped:
+            if reason == "gate_closed", let hold = mailboxGateHold(surfaceId: surfaceId) {
+                mailboxWaitByPanel[surfaceId] = hold
+            } else {
+                mailboxWaitByPanel[surfaceId] = .init(code: reason, since: nil)
+            }
+        default:
+            return
+        }
+    }
+
+    /// The live cause of a closed gate (`MailboxStdinDelivery.gateHold`).
+    private func mailboxGateHold(surfaceId: UUID) -> MailboxStdinDelivery.GateHold? {
+        guard let terminalPanel = panels[surfaceId] as? TerminalPanel else { return nil }
+        let gate = mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: terminalPanel)
+        let since = mailboxJournalSnapshot(surfaceId).map { Date(timeIntervalSince1970: Double($0.sinceMs) / 1000) }
+        return MailboxStdinDelivery.gateHold(state: mailboxStdinState, surfaceId: surfaceId, gate: gate, journalSince: since)
     }
 
     /// Why a typed ring was not native, as the wrapper recorded it at launch
@@ -6682,8 +8638,26 @@ final class Workspace: Identifiable, ObservableObject {
         var busyExhausted = false
         var stranded = false
         var composerCheck: FeedAnswerComposerCheck?
-        if MailboxDoorbell.needsPrompt(input) || MailboxDoorbellSequence.needsStrandedLook(input) {
-            if let captured = mailboxDoorbellCapture(terminalPanel: terminalPanel) {
+        // C11H-306: a headless line held as stranded is read too (read-only, never retyped): a read that finds the
+        // composer without it is the only thing that can end that hold while the agent stays idle.
+        if MailboxDoorbell.needsPrompt(input) || MailboxDoorbellSequence.needsStrandedLook(input)
+            || (input.headless && input.headlessStranded) {
+            if input.headless {
+                // C11H-306: hc's status, then a read of hc's paint. While the read is under way there is nothing
+                // to decide; its completion looks again.
+                guard let read = mailboxHeadlessRead(terminalPanel) else { return }
+                input.prompt = read.prompt
+                input.headlessHold = read.hold
+                if read.prompt == .draft, let composer = read.composer {
+                    let compared = FeedAnswerComposerCheck.compare(
+                        state: .draft,
+                        composer: composer,
+                        expected: MailboxDoorbell.text
+                    )
+                    composerCheck = compared
+                    stranded = compared == .matches || compared == .notVisible
+                }
+            } else if let captured = mailboxDoorbellCapture(terminalPanel: terminalPanel) {
                 input.prompt = captured.state
                 if captured.state == .draft, let composer = captured.composer {
                     let compared = FeedAnswerComposerCheck.compare(
@@ -6712,10 +8686,28 @@ final class Workspace: Identifiable, ObservableObject {
                 prompt: input.prompt,
                 composer: composerCheck
             )
-            mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.strandedPending = pending }
+            // C11H-306: a headless read that shows the composer without the line ends its stranded hold too.
+            let clearsHeadless = input.headless && input.prompt != nil && !pending
+            mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+                ledger.strandedPending = pending
+                if clearsHeadless { ledger.headlessStrandedEpoch = nil }
+            }
+            if clearsHeadless { input.headlessStranded = false }
+        }
+        // C11H-306: a headless stranded line read back exactly gets its bare Return, under every other ring check
+        // (the hold itself is what this look is resolving, so it does not count against it).
+        if input.headless, composerCheck == .matches {
+            var probe = input
+            probe.headlessStranded = false
+            if MailboxDoorbellSequence.submitsStranded(probe, composer: composerCheck) {
+                submitHeadlessStrandedReturn(surfaceId: surfaceId, terminalPanel: terminalPanel, epoch: input.epoch)
+                return
+            }
         }
         let decision: MailboxDoorbell.Decision
         switch MailboxDoorbellSequence.look(input, composer: composerCheck, busyExhausted: busyExhausted) {
+        case .submitStranded where input.headless:
+            decision = .skip(reason: "stranded")
         case .submitStranded:
             submitStrandedMailboxDoorbell(surfaceId: surfaceId, terminalPanel: terminalPanel, epoch: input.epoch)
             return
@@ -6812,6 +8804,10 @@ final class Workspace: Identifiable, ObservableObject {
         then: @escaping (Workspace, [MailboxStdinBuffer.Entry]) -> Void
     ) {
         let queued = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId)
+        if mailboxDispatcher == nil, mailboxQueueLiveWithoutDispatcherForTesting, !queued.isEmpty {
+            then(self, queued)
+            return
+        }
         guard !queued.isEmpty, let dispatcher = mailboxDispatcher else {
             if queued.isEmpty {
                 mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
@@ -6903,18 +8899,19 @@ final class Workspace: Identifiable, ObservableObject {
             turnlessReringAt: mailboxTurnlessReringAt(surfaceId: surfaceId, epoch: epoch)
         )
         mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+            // C11H-327: a ring ends the held series unless it is refused before its text, which continues it.
+            if decision == .ring { ledger.seriesBeforeRing = ledger.draftWatch }
             ledger.draftWatch = plan.draftWatch
         }
         return plan
     }
 
-    /// When once-per-idle stops holding a panel that has reported no turn
-    /// edge since it attached (C11-555). Nil for a panel with turn edges.
+    /// When once-per-idle stops holding a panel whose idle period no edge
+    /// has closed since its last ring (C11-555, C11H-163).
     private func mailboxTurnlessReringAt(surfaceId: UUID, epoch: String) -> Date? {
         MailboxDoorbellSequence.turnlessReringAt(
             ledger: mailboxStdinState.doorbell.ledger(for: surfaceId),
-            epoch: epoch,
-            hasTurnEdge: mailboxStdinState.buffer.agentTurn(surfaceId: surfaceId) != nil
+            epoch: epoch
         )
     }
 
@@ -6942,7 +8939,8 @@ final class Workspace: Identifiable, ObservableObject {
     ) {
         let token = UUID()
         mailboxDoorbellDeferTokens[surfaceId] = token
-        let delay = max(after, 0.05)
+        let delay = max(after * (mailboxDoorbellDelayScaleForTesting ?? 1), mailboxDoorbellDelayScaleForTesting == nil ? 0.05 : 0.001)
+        onMailboxDoorbellRecheckScheduledForTesting?(surfaceId, after)
         let owner = mailboxDoorbellOwner(surfaceId: surfaceId)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             owner.workspace?.recheckMailboxDoorbell(surfaceId: surfaceId, token: token, busyTry: busyTry)
@@ -6983,10 +8981,14 @@ final class Workspace: Identifiable, ObservableObject {
     /// is marked only once typing starts, so a missed surface does not
     /// consume it.
     private func startMailboxDoorbell(surfaceId: UUID, terminalPanel _: TerminalPanel) {
+        onMailboxDoorbellRingForTesting?(surfaceId)
         // The composer is no longer a draft, or this ring would not have started.
         // Clearing the indicator does not type into or clear the composer.
         MailboxBadgeStore.shared.setDraftHold(panelId: surfaceId, count: 0)
-        let queued = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId)
+        retryCarriedMailboxClaim(surfaceId: surfaceId)
+        // C11H-184: mail a surviving bridge still holds is not offered twice.
+        let held = mailboxCarriedHeldIds(surfaceId: surfaceId)
+        let queued = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId).filter { !held.contains($0.id) }
         guard !queued.isEmpty, let dispatcher = mailboxDispatcher else { return }
         mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
             ledger.reserve()
@@ -7094,6 +9096,7 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func nativeMailboxRouteChanged(surfaceId: UUID) {
+        defer { retryCarriedMailboxClaim(surfaceId: surfaceId) }
         let registration = MailboxNativeDoorbell.shared.registration(panelID: surfaceId)
         let current = registration?.id
         if mailboxNativeIdentity[surfaceId] != current {
@@ -7173,6 +9176,7 @@ final class Workspace: Identifiable, ObservableObject {
         logMailboxDoorbellEntries(entries, outcome: .doorbell, reason: "started", bytes: bytes, route: registration.route)
         let owner = mailboxDoorbellOwner(surfaceId: surfaceId)
         MailboxNativeDoorbell.shared.deliver(registration, attemptID: attemptID, inlineText: inline?.text,
+            inlineIDs: inline?.ids ?? [],
             diagnostic: { [log = mailboxDispatcher?.log, workspaceID = id] diagnostic in
                 log?.recordNativeFailure(diagnostic, workspaceID: workspaceID)
             }
@@ -7266,6 +9270,133 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
+    /// C11H-184: inline mail a surviving Claude bridge still holds from an
+    /// earlier c11 process (its `holding` frame). While the hold lasts those
+    /// envelopes are not offered again; the bridge's carried acceptance claims
+    /// them. The hold matches the bridge's queued window.
+    struct MailboxCarriedHold: Equatable {
+        static let lifetime: TimeInterval = 300
+        let registrationID: UUID
+        let ids: Set<String>
+        let until: Date
+    }
+
+    func noteCarriedInlineHold(registration: MailboxNativeDoorbell.Registration, ids: [String]) {
+        let surfaceId = registration.panelID
+        guard panels[surfaceId] is TerminalPanel, !ids.isEmpty,
+              MailboxNativeDoorbell.shared.registration(panelID: surfaceId)?.id == registration.id else { return }
+        let until = Date().addingTimeInterval(MailboxCarriedHold.lifetime)
+        let prior = mailboxCarriedHolds[surfaceId].flatMap { $0.registrationID == registration.id ? $0.ids : nil } ?? []
+        mailboxCarriedHolds[surfaceId] = MailboxCarriedHold(registrationID: registration.id, ids: prior.union(ids), until: until)
+        // Unconfirmed when the hold ends: the mail is offered again then. Its
+        // own timer, so a later ring cannot cancel it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + MailboxCarriedHold.lifetime + 1) { [weak self] in
+            guard let self, self.mailboxCarriedHolds[surfaceId]?.until == until else { return }
+            self.mailboxCarriedHolds.removeValue(forKey: surfaceId)
+            if self.mailboxStdinState.buffer.pendingCount(surfaceId: surfaceId) > 0 {
+                self.ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+            }
+        }
+    }
+
+    /// Ids held for the panel's current bridge. An ended or superseded hold is dropped.
+    func mailboxCarriedHeldIds(surfaceId: UUID, now: Date = Date()) -> Set<String> {
+        guard let hold = mailboxCarriedHolds[surfaceId] else { return [] }
+        guard now < hold.until,
+              MailboxNativeDoorbell.shared.registration(panelID: surfaceId)?.id == hold.registrationID else {
+            mailboxCarriedHolds.removeValue(forKey: surfaceId)
+            return []
+        }
+        return hold.ids
+    }
+
+    /// C11H-184: the bridge confirmed mail an earlier c11 process sent it.
+    /// Its report is not ownership: the kernel must agree that its agent owns
+    /// this terminal (`registeredNativeMailbox`), as for any delivery, so a
+    /// claim that arrives before the relearn waits for it. Only envelopes
+    /// still unread in one of this panel's inboxes are claimed.
+    func claimCarriedInlineMailbox(registration: MailboxNativeDoorbell.Registration, ids: [String]) {
+        let surfaceId = registration.panelID
+        guard panels[surfaceId] is TerminalPanel, !ids.isEmpty,
+              MailboxNativeDoorbell.shared.registration(panelID: surfaceId)?.id == registration.id else { return }
+        guard registeredNativeMailbox(surfaceId: surfaceId)?.id == registration.id else {
+            mailboxCarriedClaims[surfaceId] = (registration, ids, Date().addingTimeInterval(MailboxCarriedHold.lifetime))
+            return
+        }
+        mailboxCarriedClaims.removeValue(forKey: surfaceId)
+        guard let dispatcher = mailboxDispatcher else { return }
+        if let hold = mailboxCarriedHolds[surfaceId] {
+            let rest = hold.ids.subtracting(ids)
+            mailboxCarriedHolds[surfaceId] = rest.isEmpty ? nil
+                : MailboxCarriedHold(registrationID: hold.registrationID, ids: rest, until: hold.until)
+        }
+        let wanted = Set(ids)
+        let entries = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId).filter { wanted.contains($0.id) }
+        let known = Set(entries.map(\.id))
+        let unknown = ids.filter { !known.contains($0) }
+        let stateURL = dispatcher.stateURL, workspaceID = id
+        let knownSources = MailboxStdinDelivery.inlineSources(entries, stateURL: stateURL,
+                                                              workspaceId: workspaceID, panelId: surfaceId)
+        if !entries.isEmpty {
+            logMailboxDoorbellEntries(entries, outcome: .doorbell, reason: "native_late_accept",
+                                      bytes: nil, route: registration.route)
+        }
+        let owner = mailboxDoorbellOwner(surfaceId: surfaceId)
+        Self.mailboxPushIOQueue.async {
+            let found = Self.carriedInlineSources(ids: unknown, stateURL: stateURL, panelId: surfaceId,
+                                                  preferredWorkspace: workspaceID)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    owner.workspace?.claimInlineMailbox(surfaceId: surfaceId, entries: entries,
+                                                        sources: knownSources + found)
+                }
+            }
+        }
+    }
+
+    /// A carried claim that waited for the agent's ownership, run again when
+    /// ownership is confirmed (a relearn, a re-attach, a new route), buffered
+    /// mail or not. The same Claude process may have reconnected its bridge
+    /// meanwhile, so the claim follows the agent process, not the listener.
+    private func retryCarriedMailboxClaim(surfaceId: UUID) {
+        guard let pending = mailboxCarriedClaims[surfaceId] else { return }
+        guard Date() < pending.until else { mailboxCarriedClaims.removeValue(forKey: surfaceId); return }
+        guard let current = registeredNativeMailbox(surfaceId: surfaceId), current.route == .claudeInbox,
+              current.agentPID == pending.registration.agentPID,
+              current.processStart == pending.registration.processStart else { return }
+        claimCarriedInlineMailbox(registration: current, ids: pending.ids)
+    }
+
+    /// True while a carried claim waits for the agent's ownership (tests, diagnostics).
+    func hasPendingCarriedMailboxClaim(surfaceId: UUID) -> Bool {
+        mailboxCarriedClaims[surfaceId] != nil
+    }
+
+    /// Where carried ids the in-memory buffer does not know are still unread:
+    /// this panel's inbox in this workspace first, then in any other, since a
+    /// moved panel keeps its mail in the inbox it arrived in. Off-main.
+    nonisolated static func carriedInlineSources(ids: [String], stateURL: URL, panelId: UUID,
+                                                 preferredWorkspace: UUID,
+                                                 fileManager: FileManager = .default) -> [MailboxInlineBatch.Source] {
+        guard !ids.isEmpty else { return [] }
+        var workspaces = [preferredWorkspace]
+        let root = stateURL.appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true)
+        if let names = try? fileManager.contentsOfDirectory(atPath: root.path) {
+            workspaces += names.compactMap(UUID.init(uuidString:)).filter { $0 != preferredWorkspace }.sorted { $0.uuidString < $1.uuidString }
+        }
+        var remaining = ids
+        var sources: [MailboxInlineBatch.Source] = []
+        for workspace in workspaces where !remaining.isEmpty {
+            let inbox = MailboxLayout.inboxURL(state: stateURL, workspaceId: workspace, panelId: panelId)
+            let here = remaining.filter {
+                fileManager.fileExists(atPath: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: $0)).path)
+            }
+            sources += here.map { MailboxInlineBatch.Source(id: $0, inbox: inbox) }
+            remaining.removeAll { here.contains($0) }
+        }
+        return sources
+    }
+
     /// The final typed-delivery identity read uses a lock-backed projection so
     /// both the initial send and Return revalidation stay nonblocking on main.
     private func openCodeIdentityAllowsTypedMailbox(surfaceId: UUID) -> Bool {
@@ -7310,7 +9441,9 @@ final class Workspace: Identifiable, ObservableObject {
             }
             return
         }
-        let hasSurface = terminalPanel.surface.surface != nil
+        // C11H-304: a terminal with no screen is typed through hc (`beginHCHeadlessMailboxDoorbell`).
+        let headless = mailboxDoorbellIsHeadless(terminalPanel)
+        let hasSurface = terminalPanel.surface.surface != nil || headless
         let transactionActive = terminalPanel.surface.isInputTransactionActive
         let began = hasSurface && !transactionActive && FeedAnswerInFlight.begin(panelID: surfaceId)
         let start = MailboxDoorbellSequence.start(
@@ -7318,10 +9451,13 @@ final class Workspace: Identifiable, ObservableObject {
             inputTransactionActive: transactionActive,
             feedAnswerBegan: began
         )
+        let attemptAt = Date()
+        let priorCharge = mailboxStdinState.doorbell.ledger(for: surfaceId)
         mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
-            MailboxDoorbellSequence.apply(start: start, ledger: &ledger, now: Date(), epoch: input.epoch)
+            MailboxDoorbellSequence.apply(start: start, ledger: &ledger, now: attemptAt, epoch: input.epoch)
         }
-        guard case .type = start, let native = terminalPanel.surface.surface else {
+        let native = terminalPanel.surface.surface
+        guard case .type = start, headless || native != nil else {
             if began { FeedAnswerInFlight.end(panelID: surfaceId) }
             logMailboxDoorbellEntries(queued, outcome: .doorbellFailed, reason: "unavailable")
             let gate = mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: terminalPanel)
@@ -7354,6 +9490,18 @@ final class Workspace: Identifiable, ObservableObject {
         let operatorInputAt = terminalPanel.surface.lastOperatorInputAt
         let lifetime = terminalPanel.surface.nativeSurfaceLifetimeID
         let surfaceObject = terminalPanel.surface
+        guard !headless, let native else {
+            beginHCHeadlessMailboxDoorbell(surfaceId: surfaceId, terminalSurface: surfaceObject,
+                epoch: input.epoch, attempted: queued,
+                charge: .init(at: attemptAt, priorRungEpoch: priorCharge.rungEpoch, priorRungAt: priorCharge.rungAt))
+            return
+        }
+        if surfaceObject.usesPersistentHCInput {
+            beginHCMailboxDoorbell(surfaceId: surfaceId, terminalSurface: surfaceObject,
+                nativeSurface: native, surfaceLifetimeID: lifetime, operatorInputAt: operatorInputAt,
+                attempted: queued, strandedEpoch: nil)
+            return
+        }
         // The gate runs on main inside the paste-settle delay. Do not wait on
         // it: `wait` from main would deadlock the terminal.
         let owner = mailboxDoorbellOwner(surfaceId: surfaceId)
@@ -7451,6 +9599,12 @@ final class Workspace: Identifiable, ObservableObject {
                 holdStranded()
                 return
             }
+            if panel.surface.usesPersistentHCInput {
+                workspace.beginHCMailboxDoorbell(surfaceId: surfaceId, terminalSurface: panel.surface,
+                    nativeSurface: native, surfaceLifetimeID: panel.surface.nativeSurfaceLifetimeID,
+                    operatorInputAt: operatorInputAt, attempted: live, strandedEpoch: epoch)
+                return
+            }
             let outcome = workspace.completeMailboxDoorbell(
                 surfaceId: surfaceId,
                 terminalSurface: panel.surface,
@@ -7478,11 +9632,351 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
+    /// C11H-304, C11H-306: the ring for a terminal with no screen, on #311's confirmed headless path. Before the
+    /// text, a fresh read of hc's paint must show an empty composer or a dim suggestion. The line goes through hc
+    /// without its Return; after the typed burst's settle delay a fresh read must show exactly the doorbell line,
+    /// and only then is the Return written, on its own. Both reads and both writes need the panel still headless,
+    /// the agent in front and idle by hc, and no journal turn open or settling. The read sits between the two
+    /// writes because every RPC on the connection waits behind an input write held at its Return check: a read
+    /// inside that check could never be sent (the guest run found the 2 s attach timeout). The mail is delivered
+    /// only on the agent's own evidence of a turn (hc's status or the journal). Otherwise the line is held as
+    /// stranded with why, and is not typed again in this idle period.
+    @discardableResult
+    private func beginHCHeadlessMailboxDoorbell(surfaceId: UUID, terminalSurface: TerminalSurface, epoch: String,
+                                                attempted: [MailboxStdinBuffer.Entry],
+                                                charge: MailboxHeadlessAttemptCharge?,
+                                                strandedReturn: Bool = false) -> Task<Void, Never> {
+        Task { @MainActor [weak self, weak terminalSurface] in
+            guard let self else { FeedAnswerInFlight.end(panelID: surfaceId); return }
+            defer {
+                self.mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                FeedAnswerInFlight.end(panelID: surfaceId)
+            }
+            // Every way out after the `started` row writes one, so `mailbox status` never sits at delivering.
+            guard let terminalSurface else {
+                self.logMailboxDoorbellEntries(attempted, outcome: .doorbellSkipped, reason: "target_gone")
+                return
+            }
+            let panel: @MainActor () -> TerminalPanel? = { [weak self, weak terminalSurface] in
+                guard let self, let terminalSurface, let panel = self.panels[surfaceId] as? TerminalPanel,
+                      panel.surface === terminalSurface, self.openCodeIdentityAllowsTypedMailbox(surfaceId: surfaceId) else {
+                    return nil
+                }
+                return panel
+            }
+            // The screen-free facts: still this panel with no screen, the agent in front and at its prompt by hc,
+            // no journal turn open or settling.
+            let stillEligible: @MainActor () -> Bool = { [weak self] in
+                guard let self, let current = panel(), self.mailboxDoorbellIsHeadless(current) else { return false }
+                let record = self.mailboxHeadlessRecord(current)
+                let reachable = record.map { $0.machineAvailability == .local || $0.machineAvailability == .connected } ?? false
+                guard reachable, HCHeadless.promptReadiness(record) == .ready else { return false }
+                let snapshot = self.mailboxJournalSnapshot(surfaceId)
+                return self.mailboxAgentOwnsTerminal(surfaceId: surfaceId)
+                    && !MailboxStdinDelivery.journalTurnOpen(snapshot)
+                    && !MailboxStdinDelivery.journalInterruptionSettling(snapshot, now: Date())
+            }
+            // C11H-306: a fresh read of hc's paint, judged with the facts on both sides of it.
+            let readNow: @Sendable () async -> HCComposerObservation? = { [weak self] in
+                guard let self, await MainActor.run(body: { stillEligible() }),
+                      let read = await self.readMailboxHeadlessComposer(surfaceId: surfaceId),
+                      await MainActor.run(body: { stillEligible() }) else { return nil }
+                return read
+            }
+            // What the read before the text saw, to name the hold when it refuses the text.
+            let preText = HCComposerObservationBox()
+            let eligible: @Sendable () async -> Bool = { [weak self] in
+                guard let self, await MainActor.run(body: { stillEligible() }),
+                      let read = await self.readMailboxHeadlessComposer(surfaceId: surfaceId) else { return false }
+                preText.set(read)
+                guard await MainActor.run(body: { stillEligible() }) else { return false }
+                return MailboxHeadlessPrompt.admitsText(read)
+            }
+            // Between the writes: the agent echoes the line a moment after it lands; look a few times.
+            let lineInComposer: @Sendable () async -> Bool = {
+                for attempt in 0..<MailboxHeadlessPrompt.returnReadAttempts {
+                    if attempt > 0 { try? await Task.sleep(nanoseconds: MailboxHeadlessPrompt.returnReadGapNanoseconds) }
+                    guard let read = await readNow() else { return false }
+                    if MailboxHeadlessPrompt.admitsReturn(read) { return true }
+                    // Anything but the line still landing (typed text that is not it, a dialog) is a no at once.
+                    guard read.state == .draft || read.state == .empty || read.state == .suggestion,
+                          FeedAnswerComposerCheck.compare(state: read.state, composer: read.composer,
+                                                          expected: MailboxDoorbell.text) == .notVisible else {
+                        return false
+                    }
+                }
+                return false
+            }
+            // hc's record and the journal: with no screen, only the agent's turn can confirm the Return.
+            let facts: @MainActor () -> SendSubmitConfirmation.Facts? = { [weak self] in
+                guard let self, let current = panel() else { return nil }
+                let journal = self.mailboxJournalSnapshot(surfaceId).flatMap { $0.isHistorical ? nil : $0 }
+                let record = self.mailboxHeadlessRecord(current)
+                return SendSubmitConfirmation.Facts(hcStatus: record?.status, hcStatusMs: record?.statusTimestampMilliseconds,
+                    hcTurn: record?.turn, journalPhase: journal?.phase, journalSinceMs: journal?.sinceMs,
+                    journalTurnID: journal?.turnID)
+            }
+            guard let baseline = facts() else {
+                self.logMailboxDoorbellEntries(attempted, outcome: .doorbellSkipped, reason: "target_gone")
+                return
+            }
+            let stillEligibleNow: @Sendable () async -> Bool = { await MainActor.run(body: { stillEligible() }) }
+            let textOutcome: HCInputOutcome
+            if strandedReturn {
+                // c11's own line already sits in the composer (a stranded ring): only its Return is owed.
+                textOutcome = .written(HCWriteReceipt(operationID: UUID(), attachmentGeneration: 0,
+                    bodyBytesWritten: MailboxDoorbell.text.utf8.count, returnWritten: false))
+            } else {
+                textOutcome = await terminalSurface.submitHCInput(MailboxDoorbell.text, submit: false, source: .mailbox,
+                                                                  eligibility: eligible)
+            }
+            var lineRead = false
+            var returnOutcome: HCInputOutcome?
+            if case .written(let receipt) = textOutcome, receipt.bodyBytesWritten > 0 {
+                // The burst the agent must see end before a Return is a submit, as the encoder waits it out for a
+                // line written with its Return.
+                if !strandedReturn { try? await Task.sleep(nanoseconds: MailboxHeadlessPrompt.returnSettleNanoseconds()) }
+                lineRead = await lineInComposer()
+                if lineRead {
+                    returnOutcome = await terminalSurface.submitHCInput("", submit: true, source: .mailbox,
+                                                                        eligibility: stillEligibleNow)
+                    if strandedReturn, case .written(let sent)? = returnOutcome, sent.returnWritten {
+                        // A Return on a stranded line counts toward the cap like a ring.
+                        self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) {
+                            $0.recordStrandedReturn(at: Date(), epoch: epoch)
+                        }
+                    }
+                }
+            }
+            guard panel() != nil else {
+                self.logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed, reason: "target_lost")
+                return
+            }
+            let returnAt = Date()
+            var verdict: SendSubmitConfirmation.Verdict?
+            if case .written(let receipt)? = returnOutcome, receipt.returnWritten {
+                verdict = await SendSubmitConfirmation.waitOnMain(baseline: baseline,
+                    deadline: returnAt.addingTimeInterval(SendSubmitConfirmation.waitSeconds)) { facts() }
+                guard panel() != nil else {
+                    self.logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed, reason: "target_lost")
+                    return
+                }
+            }
+            // The last read was taken before this ring's own writes: the next look reads afresh.
+            self.mailboxHeadlessComposerReads.removeValue(forKey: surfaceId)
+            switch MailboxHeadlessPrompt.result(text: textOutcome, lineRead: lineRead, returnOutcome: returnOutcome,
+                                                verdict: verdict) {
+            case .delivered:
+                self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+                    ledger.strandedPending = false
+                    ledger.headlessStrandedEpoch = nil
+                }
+                self.recordMailboxDoorbellSubmitted(surfaceId: surfaceId, attempted: attempted,
+                                                    reason: strandedReturn ? "stranded_return" : "submitted",
+                                                    via: .hcInput, at: returnAt)
+                self.noteRemoteCodexTurnStart(surfaceId: surfaceId, at: returnAt)
+            case .stranded(let why):
+                // The line may sit in the composer: the next read decides, and nothing types over it meanwhile.
+                self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+                    ledger.strandedPending = true
+                    ledger.headlessStrandedEpoch = epoch
+                }
+                self.logMailboxDoorbellEntries(attempted, outcome: .doorbellSkipped, reason: "stranded", why: why)
+                let plan = self.mailboxDoorbellPlan(decision: .skip(reason: "stranded"), surfaceId: surfaceId,
+                    epoch: epoch, busyExhausted: false, strandedDoorbell: false)
+                self.logMailboxDoorbellRelook(attempted, plan: plan, surfaceId: surfaceId)
+                self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
+            case .failed(let reason):
+                // C11H-306: zero bytes reached the agent. The attempt gives back its idle period, the row names the
+                // hold the read before the text found (`draft`, `dialog`, or `composer_unread` with its why), and the
+                // held series looks again (5, 15, 30, then every 60 s): no turn edge may ever come.
+                let hold = MailboxHeadlessPrompt.heldReason(afterRefusedRead: preText.value)
+                if let hold {
+                    self.logMailboxDoorbellEntries(attempted, outcome: .doorbellSkipped, reason: hold.reason, why: hold.why)
+                } else {
+                    self.logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed, reason: reason)
+                }
+                self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+                    if let charge {
+                        if hold != nil {
+                            // The read held the text, as a look would have: its place under the cap comes back too.
+                            ledger.refundAttempt(at: charge.at, epoch: epoch, priorRungEpoch: charge.priorRungEpoch,
+                                                 priorRungAt: charge.priorRungAt)
+                        } else {
+                            // C11H-327: the read admitted the text and the input refused it (a latched input fault,
+                            // no attachment). That can persist, so the attempt stays under the cap.
+                            ledger.refundIdlePeriod(at: charge.at, epoch: epoch, priorRungEpoch: charge.priorRungEpoch,
+                                                    priorRungAt: charge.priorRungAt)
+                        }
+                    }
+                    // C11H-327: the ring decision ended the held series; a ring that typed nothing continues it.
+                    ledger.draftWatch = ledger.seriesBeforeRing
+                }
+                let plan = self.mailboxDoorbellPlan(decision: .skip(reason: hold?.reason ?? MailboxHeadlessHold.unread),
+                    surfaceId: surfaceId, epoch: epoch, busyExhausted: false, strandedDoorbell: false)
+                self.logMailboxDoorbellRelook(attempted, plan: plan, surfaceId: surfaceId)
+                self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
+            }
+        }
+    }
+
+    /// C11H-306: the bare Return on c11's own doorbell line, read back exactly in a headless composer: the ring's
+    /// own tail (a fresh read showing exactly the line, then a Return behind the screen-free checks), delivered only
+    /// on the agent's turn.
+    private func submitHeadlessStrandedReturn(surfaceId: UUID, terminalPanel: TerminalPanel, epoch: String) {
+        mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.reserve() }
+        pruneMailboxDoorbellQueue(surfaceId: surfaceId) { workspace, live in
+            guard !live.isEmpty, let panel = workspace.panels[surfaceId] as? TerminalPanel, panel === terminalPanel,
+                  workspace.mailboxDoorbellIsHeadless(panel), FeedAnswerInFlight.begin(panelID: surfaceId) else {
+                workspace.mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                return
+            }
+            workspace.beginHCHeadlessMailboxDoorbell(surfaceId: surfaceId, terminalSurface: panel.surface, epoch: epoch,
+                attempted: live, charge: nil, strandedReturn: true)
+        }
+    }
+
+    /// C11H-304 test seam: one headless ring of the panel's queued mail, as `typeMailboxDoorbell` starts it,
+    /// awaited to its end.
+    func ringHeadlessMailboxDoorbellForTesting(surfaceId: UUID) async {
+        guard let panel = panels[surfaceId] as? TerminalPanel else { return }
+        let epoch = mailboxStdinState.buffer.ringEpoch(surfaceId: surfaceId)
+        let at = Date()
+        let prior = mailboxStdinState.doorbell.ledger(for: surfaceId)
+        mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.beginAttempt(at: at, epoch: epoch) }
+        _ = FeedAnswerInFlight.begin(panelID: surfaceId)  // as `typeMailboxDoorbell` holds it for the whole ring
+        await beginHCHeadlessMailboxDoorbell(surfaceId: surfaceId, terminalSurface: panel.surface, epoch: epoch,
+            attempted: mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId),
+            charge: .init(at: at, priorRungEpoch: prior.rungEpoch, priorRungAt: prior.rungAt)).value
+    }
+
+    /// Test seam: the doorbell's memory for one panel.
+    func mailboxDoorbellLedgerForTesting(surfaceId: UUID) -> MailboxDoorbell.Ledger {
+        mailboxStdinState.doorbell.ledger(for: surfaceId)
+    }
+
     /// Recheck the prompt, then submit with the feed-answer Return. The queue
     /// stays either way. A failed submit is logged and not retyped over a
     /// line that is still in the composer. This does not lower the agent's flag.
     /// `rearmOnFailure` is false when the caller schedules its own next look;
     /// its repeated failure reasons are logged once per envelope.
+    private func beginHCMailboxDoorbell(
+        surfaceId: UUID, terminalSurface: TerminalSurface, nativeSurface: ghostty_surface_t,
+        surfaceLifetimeID: UUID, operatorInputAt: Date?, attempted: [MailboxStdinBuffer.Entry],
+        strandedEpoch: String?
+    ) {
+        Task { @MainActor [weak self, weak terminalSurface] in
+            guard let self else { FeedAnswerInFlight.end(panelID: surfaceId); return }
+            defer {
+                self.mailboxStdinState.doorbell.endAttemptIfPresent(surfaceId: surfaceId)
+                FeedAnswerInFlight.end(panelID: surfaceId)
+            }
+            guard let terminalSurface else {
+                self.logMailboxDoorbellEntries(attempted, outcome: .doorbellSkipped, reason: "target_gone")
+                return
+            }
+            // C11H-298: the same panel, surface and agent. Operator input after the Return says nothing about
+            // whether this Return was taken, so the confirmation's looks check only this.
+            let sameTarget: @MainActor () -> Bool = { [weak self, weak terminalSurface] in
+                guard let self, let terminalSurface,
+                      let panel = self.panels[surfaceId] as? TerminalPanel else { return false }
+                return panel.surface === terminalSurface
+                    && terminalSurface.nativeSurfaceLifetimeID == surfaceLifetimeID
+                    && terminalSurface.surface == nativeSurface
+                    && self.openCodeIdentityAllowsTypedMailbox(surfaceId: surfaceId)
+            }
+            let current: @MainActor () -> Bool = { [weak terminalSurface] in
+                sameTarget() && terminalSurface?.lastOperatorInputAt == operatorInputAt
+            }
+            let guardPrompt: @MainActor (Bool) -> Bool = { [weak self] needsComposer in
+                guard let self, current() else { return false }
+                let harness = self.surfaceActivityTerminalKind(panelId: surfaceId)
+                guard let region = TerminalController.shared.capturePromptInputRegion(surface: nativeSurface, harness: harness) else { return false }
+                let state = PromptInputClassifier.classify(region, harness: harness).state
+                let snapshot = self.mailboxJournalSnapshot(surfaceId)
+                let turnOpen = MailboxStdinDelivery.journalTurnOpen(snapshot)
+                let settling = MailboxStdinDelivery.journalInterruptionSettling(snapshot, now: Date())
+                guard self.mailboxAgentOwnsTerminal(surfaceId: surfaceId), !turnOpen, !settling else { return false }
+                guard needsComposer else { return FeedAnswerPromptCommit.admits(state) }
+                let composer = state == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
+                return MailboxDoorbellSequence.preReturn(rowIsCurrent: true, operatorInputUnchanged: true,
+                    agentOwnsTerminal: true, captured: true, prompt: state, composer: composer,
+                    journalTurnOpen: false, journalInterruptionSettling: false) == nil
+            }
+            // C11H-298: the facts the Return is judged against. The guards admit only an empty composer for a
+            // fresh ring and the doorbell line for a stranded one.
+            let confirmationFacts: @MainActor () -> SendSubmitConfirmation.Facts = { [weak self, weak terminalSurface] in
+                let journal = self?.mailboxJournalSnapshot(surfaceId).flatMap { $0.isHistorical ? nil : $0 }
+                let record = terminalSurface?.hcLiveRecord
+                return SendSubmitConfirmation.Facts(hcStatus: record?.status, hcStatusMs: record?.statusTimestampMilliseconds,
+                    hcTurn: record?.turn, journalPhase: journal?.phase, journalSinceMs: journal?.sinceMs,
+                    journalTurnID: journal?.turnID)
+            }
+            var baseline = confirmationFacts()
+            baseline.prompt = strandedEpoch == nil ? .empty : .draft
+            let outcome = await terminalSurface.submitHCInput(strandedEpoch == nil ? MailboxDoorbell.text : "",
+                submit: true, source: .mailbox,
+                screenGuard: { _ in guardPrompt(strandedEpoch != nil) },
+                returnGuard: { _ in guardPrompt(true) })
+            guard current() else {
+                self.logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed,
+                                               reason: sameTarget() ? "operator_input" : "target_lost")
+                return
+            }
+            switch outcome {
+            case .written(let receipt) where receipt.returnWritten:
+                let returnAt = Date()
+                // C11H-298: a written Return is not a taken line (a chooser can eat it). The mail is delivered
+                // only on the agent's own evidence; otherwise the line is stranded and held, and the stranded
+                // look presses Return on it later with every ring check.
+                let verdict = await SendSubmitConfirmation.waitOnMain(baseline: baseline,
+                    deadline: returnAt.addingTimeInterval(SendSubmitConfirmation.waitSeconds)) { [weak self] in
+                    guard let self, sameTarget() else { return nil }
+                    var now = confirmationFacts()
+                    let harness = self.surfaceActivityTerminalKind(panelId: surfaceId)
+                    if let region = TerminalController.shared.capturePromptInputRegion(surface: nativeSurface, harness: harness) {
+                        now.prompt = PromptInputClassifier.classify(region, harness: harness).state
+                    }
+                    return now
+                }
+                guard sameTarget() else {
+                    self.logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed, reason: "target_lost")
+                    return
+                }
+                if case .unconfirmed(let why) = verdict {
+                    let epoch = strandedEpoch ?? self.mailboxStdinState.buffer.ringEpoch(surfaceId: surfaceId)
+                    self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
+                        ledger.strandedPending = true
+                        // A pressed Return counts toward the cap even unconfirmed: the cap errs toward holding.
+                        if strandedEpoch != nil { ledger.recordStrandedReturn(at: returnAt, epoch: epoch) }
+                    }
+                    // C11H-305: the row says why the line was not taken.
+                    self.logMailboxDoorbellEntries(attempted, outcome: .doorbellSkipped, reason: "stranded", why: why)
+                    // The stranded look backs off (5 s, 15, 30, then 60) like any held composer.
+                    let plan = self.mailboxDoorbellPlan(decision: .skip(reason: "draft"), surfaceId: surfaceId,
+                        epoch: epoch, busyExhausted: false, strandedDoorbell: true)
+                    self.logMailboxDoorbellRelook(attempted, plan: plan, surfaceId: surfaceId)
+                    self.scheduleMailboxDoorbellRearm(surfaceId: surfaceId, rearm: plan.rearm)
+                    return
+                }
+                self.recordMailboxDoorbellSubmitted(surfaceId: surfaceId, attempted: attempted,
+                    reason: strandedEpoch == nil ? "submitted" : "stranded_return", via: .hcInput, at: returnAt)
+                self.noteRemoteCodexTurnStart(surfaceId: surfaceId, at: returnAt)
+                if let epoch = strandedEpoch {
+                    self.mailboxDoorbellDeferTokens.removeValue(forKey: surfaceId)
+                    self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.recordStrandedReturn(at: Date(), epoch: epoch) }
+                }
+            case .refused(let reason):
+                self.logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed, reason: "hc_input_" + reason.rawValue)
+                // Zero bytes: a later prompt edge may make a new guarded attempt.
+            case .uncertain, .written:
+                self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { $0.strandedPending = false }
+                self.logMailboxDoorbellEntries(attempted, outcome: .doorbellFailed, reason: "hc_input_uncertain")
+                // Never schedule another Return or retype an uncertain body.
+            }
+        }
+    }
+
     private func completeMailboxDoorbell(
         surfaceId: UUID,
         terminalSurface: TerminalSurface,
@@ -7556,7 +10050,7 @@ final class Workspace: Identifiable, ObservableObject {
         }
         let inputState = PromptInputClassifier.classify(region, harness: harness).state
         let composer = inputState == .draft ? PromptInputClassifier.composerText(region, harness: harness) : nil
-        let journalSnapshot = JournalCoordinator.shared.snapshot(panelID: surfaceId)
+        let journalSnapshot = mailboxJournalSnapshot(surfaceId)
         let journalTurnOpen = MailboxStdinDelivery.journalTurnOpen(journalSnapshot)
         let journalInterruptionSettling = MailboxStdinDelivery.journalInterruptionSettling(
             journalSnapshot,
@@ -7584,6 +10078,13 @@ final class Workspace: Identifiable, ObservableObject {
             startKind: .turnEnd
         ) { .unavailable }
         guard case .submitted = outcome else { return finish(outcome, inputState, composer) }
+        recordMailboxDoorbellSubmitted(surfaceId: surfaceId, attempted: attempted, reason: submittedReason,
+                                       via: .keyEvent, at: Date())
+        return outcome
+    }
+
+    private func recordMailboxDoorbellSubmitted(surfaceId: UUID, attempted: [MailboxStdinBuffer.Entry], reason: String,
+                                                via route: MailboxStdinDelivery.RingReturn, at returnAt: Date) {
         // The queue stays. The inbox stays. This submit covers every envelope
         // unread now, so a later idle edge does not ring them again. A new
         // envelope rings, and that ring covers the whole unread set.
@@ -7592,18 +10093,16 @@ final class Workspace: Identifiable, ObservableObject {
         let attemptedIds = Set(attempted.map(\.id))
         let newlyCovered = queuedNow.filter { !attemptedIds.contains($0.id) && !previouslyCovered.contains($0.id) }
         let unreadNow = MailboxDoorbellSequence.unreadIds(in: queuedNow)
-        self.mailboxStdinState.doorbell.update(surfaceId: surfaceId) { ledger in
-            MailboxDoorbellSequence.coverAfterSubmit(ledger: &ledger, unread: unreadNow)
-        }
+        MailboxStdinDelivery.recordRingSubmitted(state: mailboxStdinState, surfaceId: surfaceId,
+                                                 unread: unreadNow, via: route, at: returnAt)
         // Mail arriving during the paste was held as in_flight. This same
         // invitation covers it, so its trace must record the successful handoff.
         logMailboxDoorbellEntries(
             attempted + newlyCovered,
             outcome: .doorbell,
-            reason: submittedReason,
+            reason: reason,
             bytes: MailboxDoorbell.text.utf8.count
         )
-        return outcome
     }
 
     private func detachMailboxState(surfaceId: UUID) -> MailboxPanelTransfer {
@@ -7722,21 +10221,33 @@ final class Workspace: Identifiable, ObservableObject {
         arrivingID: String? = nil
     ) -> MailboxStdinDelivery.Gate {
         let native = registeredNativeMailbox(surfaceId: surfaceId, arrivingID: arrivingID)
+        let owns = mailboxAgentOwnsTerminal(surfaceId: surfaceId)
         return MailboxStdinDelivery.Gate(
             panelPresent: true,
             nativeRoute: native != nil,
             nativeCanQueue: native?.canQueue ?? false,
             isAgentKind: AreaSizePolicy.isAgentKind(surfaceActivityTerminalKind(panelId: surfaceId)),
-            ownsTerminal: mailboxAgentOwnsTerminal(surfaceId: surfaceId),
+            ownsTerminal: owns,
+            ownershipPending: mailboxAgentOwnershipPending(surfaceId: surfaceId, owns: owns),
             lastOperatorKeyAt: terminalPanel.surface.lastOperatorKeyAt,
             inputTransactionActive: terminalPanel.surface.isInputTransactionActive,
             inputTransactionEpoch: terminalPanel.surface.inputTransactionEpoch,
             surfaceAttached: terminalPanel.surface.surface != nil,
             journalTurnOpen: MailboxStdinDelivery.journalTurnOpen(
-                JournalCoordinator.shared.snapshot(panelID: surfaceId)
+                mailboxJournalSnapshot(surfaceId)
             ),
+            remoteCoreWorking: remoteCoreWorking(surfaceId, owns: owns),
+            remoteCoreWorkingSince: hcRemoteMailboxStatusSince[surfaceId],
             now: Date()
         )
+    }
+
+    /// C11H-237: the word this remote terminal's core last reported (after
+    /// the C11H-123 stale filter) says its agent is working or blocked.
+    private func remoteCoreWorking(_ surfaceId: UUID, owns: Bool) -> Bool {
+        guard owns, hcRemoteStatusBindings[surfaceId] != nil || (panels[surfaceId] as? TerminalPanel)?.hcRemoteTarget != nil,
+              let word = hcRemoteMailboxStatus[surfaceId] else { return false }
+        return word == "working" || word == "blocked"
     }
 
     /// The turn clock's answer for this gate read.
@@ -7749,6 +10260,7 @@ final class Workspace: Identifiable, ObservableObject {
             isAgentKind: gate.isAgentKind,
             agentOwnsTerminal: gate.ownsTerminal,
             journalTurnOpen: gate.journalTurnOpen,
+            remoteCoreWorking: gate.remoteCoreWorking,
             now: gate.now
         )
     }
@@ -7760,7 +10272,10 @@ final class Workspace: Identifiable, ObservableObject {
         let covered = mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
         if let entry = mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId).first(where: { !covered.contains($0.id) }) {
             mailboxDispatcher?.logStdinRecheck(id: entry.id, recipient: entry.recipientName,
-                reason: "working_decay", nextMs: Int((delay * 1000).rounded()), recipientPanel: surfaceId)
+                reason: "working_decay", nextMs: Int((delay * 1000).rounded()), recipientPanel: surfaceId,
+                hold: "working_edge",
+                holdSince: deadline.addingTimeInterval(-MailboxStdinBuffer.unsupportedWorkingDecay))
+            onMailboxRecheckForTesting?(surfaceId, "working_decay")
         }
         scheduleMailboxDoorbellRecheck(surfaceId: surfaceId, after: delay)
     }
@@ -7768,10 +10283,34 @@ final class Workspace: Identifiable, ObservableObject {
     /// The kernel's answer to "is this tab's interactive agent the process
     /// reading its terminal right now?" (`MailboxAgentForeground`).
     private func mailboxAgentOwnsTerminal(surfaceId: UUID) -> Bool {
-        MailboxAgentForeground.agentOwnsTerminal(
+        // C11H-87: a terminal on another machine has no local tty or PID; its
+        // own core says who is in the foreground. Never local process state.
+        if hcRemoteStatusBindings[surfaceId] != nil || (panels[surfaceId] as? TerminalPanel)?.hcRemoteTarget != nil {
+            return hcRemoteAgentOwnsTerminal[surfaceId] ?? false
+        }
+        return MailboxAgentForeground.agentOwnsTerminal(
             process: mailboxStdinState.buffer.agentProcess(surfaceId: surfaceId),
-            panelTTYName: panelTTYNames[surfaceId]
+            panelTTYName: panelTTYNames[surfaceId],
+            kernel: mailboxKernel
         )
+    }
+
+    /// C11H-184: an agent hc reports but c11 has not confirmed: a local
+    /// terminal whose live record shows one in front (recovery has not
+    /// relearned it yet), or a remote terminal whose link is reconnecting.
+    /// Bounded: past `ownershipPendingWindow` it reads as a panel c11 cannot
+    /// ring again, so an agent the kernel never confirms does not wait forever.
+    static let ownershipPendingWindow: TimeInterval = 120
+
+    /// A read: the window is opened by hc's report (`notePendingOwnership`)
+    /// or by a remote link starting to reconnect, never by this check.
+    private func mailboxAgentOwnershipPending(surfaceId: UUID, owns: Bool, now: Date = Date()) -> Bool {
+        guard !owns, let panel = panels[surfaceId] as? TerminalPanel else { return false }
+        let remote = hcRemoteStatusBindings[surfaceId] != nil || panel.hcRemoteTarget != nil
+        guard let since = remote ? hcRemoteMailboxReconnecting[surfaceId] : hcLocalOwnershipPendingSince[surfaceId] else {
+            return false
+        }
+        return now.timeIntervalSince(since) < Self.ownershipPendingWindow
     }
 
     func hasLiveAttributedAgentWriter(surfaceId: UUID) -> Bool {
@@ -7779,33 +10318,114 @@ final class Workspace: Identifiable, ObservableObject {
         return mailboxAgentOwnsTerminal(surfaceId: surfaceId)
     }
 
-    /// A journal turn edge for the mailbox gate (`JournalMailboxBoundary`).
-    func noteMailboxBoundary(_ boundary: JournalMailboxBoundary, panelID: UUID) {
-        if boundary.attached {
-            noteMailboxAgentAttached(surfaceId: panelID, at: boundary.at, agentPid: boundary.pid)
+    /// The journal's live projection, as the mailbox gate takes it
+    /// (`PanelLivenessDeriver.onJournalProjection`). A coalesced start may
+    /// already have been superseded by its ask. Closing a prior prompt gate
+    /// is safe; only a live boundary opens it.
+    ///
+    /// C11H-237: an error phase is a turn that ended (Claude's StopFailure),
+    /// never a working one. When a journal turn that held the gate closes and
+    /// nothing else rang, the doorbell looks once (`journal_turn_closed`).
+    func noteJournalProjectionForMailbox(_ snapshot: JournalSnapshot?, boundary: JournalMailboxBoundary?, panelID: UUID) {
+        var idleApplied = false
+        if let boundary {
+            idleApplied = noteMailboxBoundary(boundary, panelID: panelID)
+        } else if let snapshot, [.working, .blocked].contains(snapshot.phase) {
+            noteMailboxAgentLifecycle(surfaceId: panelID, source: .reported,
+                activity: .working, at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))
+        }
+        noteMailboxJournalTurn(snapshot, panelID: panelID, idleApplied: idleApplied, endedAt: boundary?.at)
+    }
+
+    /// C11H-237: one look when the journal's open turn closes while mail
+    /// waits. A turn that stays open never looks again (each projection only
+    /// records it). A remote agent's end counts as its idle edge when the
+    /// machine's own core agrees it is no longer working
+    /// (`remoteTurnEndConfirmed`); otherwise the ring decision's own rules
+    /// (decay window, composer read) decide.
+    private func noteMailboxJournalTurn(_ snapshot: JournalSnapshot?, panelID: UUID, idleApplied: Bool,
+                                        endedAt: Date? = nil) {
+        if MailboxStdinDelivery.journalTurnOpen(snapshot), let snapshot {
+            mailboxJournalTurnOpenSince[panelID] = Date(timeIntervalSince1970: Double(snapshot.sinceMs) / 1000)
+            mailboxJournalTurnEndedAt.removeValue(forKey: panelID)
             return
         }
+        guard let openSince = mailboxJournalTurnOpenSince.removeValue(forKey: panelID), !idleApplied,
+              panels[panelID] != nil else { return }
+        let ended = endedAt ?? snapshot.map { Date(timeIntervalSince1970: Double($0.sinceMs) / 1000) } ?? Date()
+        mailboxJournalTurnEndedAt[panelID] = ended
+        if remoteTurnEndConfirmed(panelID) {
+            noteMailboxAgentLifecycle(surfaceId: panelID, source: .reported, activity: .idle, at: ended)
+            return
+        }
+        let covered = mailboxStdinState.doorbell.ledger(for: panelID).coveredIds
+        guard let entry = mailboxStdinState.buffer.queuedEntries(surfaceId: panelID)
+            .first(where: { !covered.contains($0.id) }) else { return }
+        // The gate decides: on another machine it stays closed while that
+        // machine's core says working (`MailboxStdinBuffer.promptGate`), so a
+        // relayed end from a headless run nested in a running turn opens nothing.
+        mailboxDispatcher?.logStdinRecheck(id: entry.id, recipient: entry.recipientName,
+            reason: "journal_turn_closed", nextMs: 0, recipientPanel: entry.recipientPanelId ?? panelID,
+            hold: "journal_turn", holdSince: openSince)
+        onMailboxRecheckForTesting?(panelID, "journal_turn_closed")
+        ringMailboxDoorbellIfStillBuffered(surfaceId: panelID)
+    }
+
+    /// C11H-237: an agent on another machine whose relayed hooks closed its
+    /// journal turn, while that machine's core reports it idle, done or in an
+    /// error, not working or blocked. Two independent sources agree the turn
+    /// is over. A relayed hook alone is not enough: it carries no PID, so a
+    /// headless run nested in the panel could have sent it.
+    private func remoteTurnEndConfirmed(_ panelID: UUID) -> Bool {
+        guard hcRemoteStatusBindings[panelID] != nil || (panels[panelID] as? TerminalPanel)?.hcRemoteTarget != nil,
+              hcRemoteAgentOwnsTerminal[panelID] == true,
+              let word = hcRemoteReportedStatus[panelID], ["idle", "done", "error"].contains(word),
+              let snapshot = mailboxJournalSnapshot(panelID), !snapshot.isHistorical,
+              [.idle, .error].contains(snapshot.phase) else { return false }
+        return true
+    }
+
+    /// A journal turn edge for the mailbox gate (`JournalMailboxBoundary`).
+    ///
+    /// C11H-123: a terminal on another machine has no local process, so its
+    /// edges never carry a PID. A turn edge the journal accepted for a Codex
+    /// there (its turn end, relayed under the panel's hc owner) is that
+    /// Codex's own report, not a headless run.
+    /// True when it applied an idle edge (the edge's own flush looked at the mail).
+    @discardableResult
+    func noteMailboxBoundary(_ boundary: JournalMailboxBoundary, panelID: UUID) -> Bool {
+        if boundary.attached {
+            noteMailboxAgentAttached(surfaceId: panelID, at: boundary.at, agentPid: boundary.pid)
+            return false
+        }
+        let remotePanel = hcRemoteStatusBindings[panelID] != nil || (panels[panelID] as? TerminalPanel)?.hcRemoteTarget != nil
+        let remoteCodex = remotePanel && mailboxJournalSnapshot(panelID)?.owner.agentKind == "codex"
+        // C11H-237: a relayed turn start on another machine holds the mail
+        // (holding is always safe); a relayed turn end alone opens nothing
+        // there (`remoteTurnEndConfirmed` decides).
+        let remoteStart = remotePanel && boundary.working
+        let source: AgentLifecycleSource = boundary.headless && !remoteCodex && !remoteStart ? .headless : .reported
         noteMailboxAgentLifecycle(
             surfaceId: panelID,
-            source: boundary.headless ? .headless : .reported,
+            source: source,
             activity: boundary.working ? .working : .idle,
             at: boundary.at,
             agentPid: boundary.pid
         )
+        return source == .reported && !boundary.working
     }
 
     /// C11-407: classify the composer just before a socket Return. A failed
     /// renderer read is nil; a successful but unrecognized read is `.unknown`.
-    /// Socket path only; a keystroke never reads.
+    /// Socket path; an operator's key reads only through
+    /// `noteRemoteCodexReturnKey` (a remote Codex awaiting its next turn).
     func socketReturnInputRead(surfaceId: UUID) -> MailboxNoOpReturn.Read? {
-        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
-        guard let terminalPanel = panels[surfaceId] as? TerminalPanel,
-              let native = terminalPanel.surface.surface,
-              let region = TerminalController.shared.capturePromptInputRegion(surface: native, harness: harness) else {
-            return nil
-        }
-        let state = PromptInputClassifier.classify(region, harness: harness).state
-        let probe = mailboxDeliveryIncludesStdin(surfaceId: surfaceId) && MailboxNoOpReturn.admits(state)
+        guard let read = readMailboxComposer(surfaceId) else { return nil }
+        let region = read.region, state = read.state
+        // C11H-123: a remote Codex whose next Return starts a turn is probed
+        // too, so a Return that submitted nothing can take that turn back.
+        let probes = mailboxDeliveryIncludesStdin(surfaceId: surfaceId) || remoteCodexAwaitingNextTurn(surfaceId) != nil
+        let probe = probes && MailboxNoOpReturn.admits(state)
             ? MailboxNoOpReturn.Probe(
                 region: region,
                 mark: mailboxStdinState.buffer.noOpReturnMark(surfaceId: surfaceId, at: Date())
@@ -7820,14 +10440,27 @@ final class Workspace: Identifiable, ObservableObject {
     /// Only an empty or suggestion composer can be rechecked after Return to
     /// restore the mailbox idle period when that Return started no agent turn.
     func mailboxNoOpReturnProbe(surfaceId: UUID) -> MailboxNoOpReturn.Probe? {
-        guard mailboxDeliveryIncludesStdin(surfaceId: surfaceId) else { return nil }
+        guard mailboxDeliveryIncludesStdin(surfaceId: surfaceId) || remoteCodexAwaitingNextTurn(surfaceId) != nil else { return nil }
         return socketReturnInputRead(surfaceId: surfaceId)?.probe
+    }
+
+    /// The composer as the doorbell reads it: the prompt region and its class.
+    private func readMailboxComposer(_ surfaceId: UUID) -> (region: PromptRegionSnapshot, state: PromptInputState)? {
+        if let seam = mailboxComposerReadForTesting { return seam(surfaceId) }
+        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
+        guard let terminalPanel = panels[surfaceId] as? TerminalPanel,
+              let native = terminalPanel.surface.surface,
+              let region = TerminalController.shared.capturePromptInputRegion(surface: native, harness: harness) else {
+            return nil
+        }
+        return (region, PromptInputClassifier.classify(region, harness: harness).state)
     }
 
     /// Look at the composer again `settle` after the Return. When it shows
     /// the Return started nothing, take the submit back and run the ring
     /// decision, so mail that waited behind that Return rings now.
     func checkMailboxNoOpReturn(surfaceId: UUID, probe: MailboxNoOpReturn.Probe) {
+        if let seam = mailboxNoOpReturnCheckForTesting { seam(surfaceId, probe); return }
         DispatchQueue.main.asyncAfter(deadline: .now() + MailboxNoOpReturn.settle) { [weak self] in
             MainActor.assumeIsolated {
                 self?.finishMailboxNoOpReturn(surfaceId: surfaceId, probe: probe)
@@ -7835,19 +10468,26 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
-    private func finishMailboxNoOpReturn(surfaceId: UUID, probe: MailboxNoOpReturn.Probe) {
-        guard let terminalPanel = panels[surfaceId] as? TerminalPanel,
-              let native = terminalPanel.surface.surface else { return }
-        let harness = surfaceActivityTerminalKind(panelId: surfaceId)
-        let after = TerminalController.shared.capturePromptInputRegion(surface: native, harness: harness)
+    func finishMailboxNoOpReturn(surfaceId: UUID, probe: MailboxNoOpReturn.Probe) {
+        guard let after = readMailboxComposer(surfaceId) else { return }
+        let journal = mailboxJournalSnapshot(surfaceId)
+        // C11H-123: a turn that only this Return started (a remote Codex's
+        // next turn) is not evidence against the composer; anything stronger is.
+        let returnStarted = CodexTurnAuthority.isReturnStartedTurn(journal)
         let retract = MailboxNoOpReturn.shouldRetract(
             probe: probe,
-            after: after,
-            afterState: after.map { PromptInputClassifier.classify($0, harness: harness).state },
-            journalTurnOpen: MailboxStdinDelivery.journalTurnOpen(JournalCoordinator.shared.snapshot(panelID: surfaceId))
+            after: after.region,
+            afterState: after.state,
+            journalTurnOpen: MailboxStdinDelivery.journalTurnOpen(journal) && !returnStarted
         )
-        guard retract,
-              mailboxStdinState.buffer.retractNoOpReturn(surfaceId: surfaceId, mark: probe.mark, now: Date()) else {
+        guard retract else { return }
+        // The journal's idle boundary for it (`JournalMailboxBoundary`) opens
+        // the gate, even when that turn's own working report keeps the
+        // buffer from taking the submit back below.
+        if returnStarted, let journal {
+            appendRemoteCodexJournal(CodexTurnAuthority.retractReturnStart(owner: journal.owner, workspaceID: id, at: Date()))
+        }
+        guard mailboxStdinState.buffer.retractNoOpReturn(surfaceId: surfaceId, mark: probe.mark, now: Date()) else {
             return
         }
 #if DEBUG
@@ -7880,7 +10520,29 @@ final class Workspace: Identifiable, ObservableObject {
             )
         )
         mailboxStdinState.buffer.noteAgentAttached(surfaceId: surfaceId, at: eventAt)
+        retryCarriedMailboxClaim(surfaceId: surfaceId)
         flushBufferedMailboxStdin(surfaceId: surfaceId, trigger: .agentPrompt)
+    }
+
+    /// A surviving hc terminal does not repeat the agent's SessionStart.
+    /// Detection restores only process ownership here, preserving turn and
+    /// attention state and leaving the existing composer/receipt guard intact.
+    func relearnMailboxAgentProcess(surfaceId: UUID, process: MailboxStdinBuffer.AgentProcess) {
+        guard panels[surfaceId] is TerminalPanel,
+              MailboxAgentForeground.processTerminalInfo(pid: process.pid)?.startTime == process.startTime,
+              mailboxStdinState.buffer.relearnAgentProcess(surfaceId: surfaceId, process: process) else { return }
+        hcLocalOwnershipPendingSince.removeValue(forKey: surfaceId)
+        retryCarriedMailboxClaim(surfaceId: surfaceId)
+        flushBufferedMailboxStdin(surfaceId: surfaceId, trigger: .agentPrompt)
+    }
+
+    /// Diagnostic read of the process learned from an interactive hook or
+    /// authoritative local recovery; reject a PID reused since that observation.
+    func mailboxAgentPID(surfaceId: UUID) -> pid_t? {
+        guard let process = mailboxStdinState.buffer.agentProcess(surfaceId: surfaceId),
+              let birth = process.startTime,
+              MailboxAgentForeground.processTerminalInfo(pid: process.pid)?.startTime == birth else { return nil }
+        return process.pid
     }
 
     /// An agent lifecycle edge for the mailbox gate. `reported` edges come
@@ -7916,6 +10578,7 @@ final class Workspace: Identifiable, ObservableObject {
             )
         case .submit:
             mailboxStdinState.buffer.noteSubmit(surfaceId: surfaceId, at: eventAt)
+            noteRemoteCodexTurnStart(surfaceId: surfaceId, at: eventAt)
         case .headless:
             // A headless run nested in the tab (`claude -p` from the agent's
             // own shell tool) must not unseat the interactive agent that still
@@ -8051,6 +10714,10 @@ final class Workspace: Identifiable, ObservableObject {
     private var pendingDetachedSurfaces: [TabID: DetachedPanelTransfer] = [:]
     private var activeDetachCloseTransactions: Int = 0
     private var isDetachingCloseTransaction: Bool { activeDetachCloseTransactions > 0 }
+    /// C11H-24: >0 while a close that is not an explicit end runs (shell
+    /// exit); those closes detach and never end an hc session. Session
+    /// restore is covered by `isApplyingSessionSnapshot` (3A).
+    var hcExplicitEndSuppressionDepth = 0
 
 #if DEBUG
     private func debugElapsedMs(since start: TimeInterval) -> String {
@@ -8065,6 +10732,16 @@ final class Workspace: Identifiable, ObservableObject {
 
     func markExplicitClose(bonsplitTabId: TabID) {
         explicitUserCloseBonsplitTabIds.insert(bonsplitTabId)
+    }
+
+    /// C11H-309 test seam: stands in for the key window's first-responder
+    /// terminal in `closePanel`'s drifted-mapping fallback.
+    var firstResponderPanelIdForTesting: UUID?
+
+    /// C11H-309 test seam: the Bonsplit mapping drift `closePanel` guards
+    /// against (a split-tree mutation in flight).
+    func forgetBonsplitMappingForTesting(panelId: UUID) {
+        bonsplitTabIdToTabId = bonsplitTabIdToTabId.filter { $0.value != panelId }
     }
 
     func bonsplitTabIdFromTabId(_ panelId: UUID) -> TabID? {
@@ -8411,14 +11088,17 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func setAttentionSnapshot(_ snapshot: PanelAttentionSnapshot?, forSurface surfaceId: UUID) {
-        if snapshot?.delegated != true {
+        GraphChurnMeter.note(.attentionWrite)
+        // C11H-238: removing an absent key still republishes a `@Published`
+        // dictionary, so remove only what is there.
+        if snapshot?.delegated != true, delegationOwnerTitlesByPanel[surfaceId] != nil {
             delegationOwnerTitlesByPanel.removeValue(forKey: surfaceId)
         }
         if let snapshot, snapshot.isFlagged || snapshot.suppressed {
             if attentionByPanel[surfaceId] != snapshot {
                 attentionByPanel[surfaceId] = snapshot
             }
-        } else {
+        } else if attentionByPanel[surfaceId] != nil {
             attentionByPanel.removeValue(forKey: surfaceId)
         }
         storeDelegationDepth(forSurface: surfaceId)
@@ -8502,7 +11182,8 @@ final class Workspace: Identifiable, ObservableObject {
                 lightBackground: bonsplitController.configuration.appearance.chromeColors.backgroundHex
                     .flatMap { NSColor(hex: $0) }?.isLightColor ?? false,
                 flagKind: attention.flagKind,
-                usageLimited: help?.usageLimited == true
+                usageLimited: help?.usageLimited == true,
+                states: themeStatePalette
             ),
             motion: attention.isFlagged
                 ? (activityState == .waiting ? .binaryFlash : .breathe)
@@ -8721,6 +11402,10 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         syncPanelTitleFromMetadata(panelId: panelId)
+        // C11H-103: the terminal carries its title, so it comes home named.
+        if panels[panelId] is TerminalPanel {
+            HCOwnerLabelSync.shared.note(panelID: panelId, labels: [HCOwnerLabels.title: HCOwnerLabels.titleValue(trimmed)])
+        }
         let currentResolvedTitle = resolvedPanelTitle(
             panelId: panelId,
             fallback: panelTitles[panelId] ?? panels[panelId]?.displayTitle ?? ""
@@ -9068,27 +11753,40 @@ final class Workspace: Identifiable, ObservableObject {
         return NSString(string: trimmed).standardizingPath
     }
 
-    /// Merge operator-authored entries into `metadata` (workspace-scoped).
-    /// Trimmed empty values clear their keys; trimmed non-empty values
-    /// overwrite. Mirrors the shape of `SessionWorkspaceSnapshot.metadata`
-    /// at the plan/snapshot boundary so `WorkspaceLayoutExecutor` and
-    /// Phase 1 Snapshot restore can land values through one setter.
+    /// Compatibility setter for operator UI fields. JSON callers use the store
+    /// directly; this legacy string path retains its trim-and-clear behavior.
     func setOperatorMetadata(_ entries: [String: String]) {
-        guard !entries.isEmpty else { return }
-        var next = metadata
+        var values: [String: Any] = [:]
+        var clears: [String] = []
         for (rawKey, rawValue) in entries {
             let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else { continue }
-            let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                next.removeValue(forKey: key)
-            } else {
-                next[key] = trimmed
+            let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.isEmpty { clears.append(key) } else { values[key] = value }
+        }
+        do {
+            if !values.isEmpty {
+                try WorkspaceMetadataStore.shared.setMetadata(workspaceId: id, partial: values)
             }
+            if !clears.isEmpty {
+                try WorkspaceMetadataStore.shared.clearMetadata(workspaceId: id, keys: clears)
+            }
+            refreshMetadataProjection()
+        } catch {
+            NSLog("workspace.metadata.write rejected workspace=%@ code=%@", id.uuidString,
+                  WorkspaceMetadataStore.rejectionCategory(error))
         }
-        if next != metadata {
-            metadata = next
-        }
+    }
+
+    func setMetadataValues(_ entries: [String: PersistedJSONValue]) throws {
+        try WorkspaceMetadataStore.shared.setMetadata(workspaceId: id,
+            partial: PersistedMetadataBridge.decodeValues(entries))
+        refreshMetadataProjection()
+    }
+
+    private func refreshMetadataProjection() {
+        let strings = WorkspaceMetadataStore.shared.getMetadata(workspaceId: id).metadata.compactMapValues { $0 as? String }
+        if metadata != strings { metadata = strings }
     }
 
     // MARK: - Directory Updates
@@ -9100,16 +11798,55 @@ final class Workspace: Identifiable, ObservableObject {
             panelDirectories[panelId] = trimmed
         }
         // Update current directory if this is the focused panel
-        if panelId == focusedPanelId, currentDirectory != trimmed {
-            currentDirectory = trimmed
+        if panelId == focusedPanelId {
+            if currentDirectory != trimmed { currentDirectory = trimmed }
+            noteCurrentDirectorySource(panelId: panelId)
         }
+    }
+
+    /// A terminal whose output comes from another machine: its directory
+    /// reports name paths there.
+    func isRemoteTerminalPanel(_ panelId: UUID) -> Bool {
+        hcRemoteStatusBindings[panelId] != nil || (panels[panelId] as? TerminalPanel)?.hcRemoteTarget != nil
+    }
+
+    private func noteCurrentDirectorySource(panelId: UUID) {
+        let remote = isRemoteTerminalPanel(panelId)
+        if currentDirectoryIsRemoteReport != remote { currentDirectoryIsRemoteReport = remote }
+    }
+
+    /// C11H-363: the directory c11 may offer as a folder on this Mac (the
+    /// titlebar's draggable folder icon, Open in Finder). Nil for a terminal
+    /// on another machine, and for a workspace directory last taken from one:
+    /// such a path was chosen there, and dragging it would hand over the
+    /// local file of the same name.
+    func localFolderDirectory() -> String? {
+        if let focused = focusedPanelId {
+            if isRemoteTerminalPanel(focused) { return nil }
+            if let dir = panelDirectories[focused]?.trimmingCharacters(in: .whitespacesAndNewlines), !dir.isEmpty {
+                return dir
+            }
+        }
+        guard !currentDirectoryIsRemoteReport else { return nil }
+        let dir = currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        return dir.isEmpty ? nil : dir
     }
 
     func updatePanelShellActivityState(panelId: UUID, state: PanelShellActivityState) {
         guard panels[panelId] != nil else { return }
+        // C11H-196: every idle-prompt report, changed or not (an empty Return
+        // or Ctrl-C redraws the prompt): the latest moment the prompt was empty.
+        if state == .promptIdle { panelPromptIdleReportAt[panelId] = Date() }
         let previousState = panelShellActivityStates[panelId] ?? .unknown
-        guard previousState != state else { return }
         panelShellActivityStates[panelId] = state
+        // C11H-238: a pending resume refused at typing time is retried at the
+        // next idle prompt, a repeated report included. It no longer rides on
+        // every inventory revision (`HCPanelRuntime.receiveInventory`).
+        if state == .promptIdle, let terminal = panels[panelId] as? TerminalPanel,
+           terminal.pendingHCConversationRecovery != nil {
+            persistentLifecycleChanged(terminal)
+        }
+        guard previousState != state else { return }
         // Tab sheet `active` for plain terminals: a command starting or finishing.
         panelShellEdgeAt[panelId] = Date()
 #if DEBUG
@@ -9238,7 +11975,12 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     func panelNeedsConfirmClose(panelId: UUID, fallbackNeedsConfirmClose: Bool) -> Bool {
-        Self.resolveCloseConfirmation(
+        // C11H-24 (Settled 10): closing an hc terminal always ends its session
+        // and every job it started, idle prompt or not, so it always asks. One
+        // kept after its session ended still asks (it may hold a recovery
+        // offer), with the plain close copy.
+        if closeHoldsHCSession(panelIds: [panelId]) { return true }
+        return Self.resolveCloseConfirmation(
             shellActivityState: panelShellActivityStates[panelId],
             fallbackNeedsConfirmClose: fallbackNeedsConfirmClose
         )
@@ -9596,6 +12338,42 @@ final class Workspace: Identifiable, ObservableObject {
 
     // MARK: - M7 title bar integration
 
+    /// Write a panel title through the metadata store and sync the tab only
+    /// when that write applies. Live OSC titles call this with `.osc`.
+    /// `set-title` is the same two steps with `.explicit`: the store write,
+    /// then `syncPanelTitleFromMetadata` only if the write applied. A lower
+    /// source does not replace an explicit title, and the tab stays.
+    @discardableResult
+    func applyMetadataTitle(panelId: UUID, title: String, source: MetadataSource) -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let applied: Bool
+        if trimmed.isEmpty {
+            applied = (try? PanelMetadataStore.shared.clearMetadata(
+                workspaceId: id,
+                surfaceId: panelId,
+                keys: ["title"],
+                source: source
+            ))?.applied["title"] ?? false
+        } else {
+            applied = (try? PanelMetadataStore.shared.setMetadata(
+                workspaceId: id,
+                surfaceId: panelId,
+                partial: ["title": trimmed],
+                mode: .merge,
+                source: source
+            ))?.applied["title"] ?? false
+        }
+        guard applied else { return false }
+        syncPanelTitleFromMetadata(panelId: panelId)
+        return true
+    }
+
+    /// The bonsplit tab label `syncPanelTitleFromMetadata` last wrote.
+    func displayedTabTitle(panelId: UUID) -> String? {
+        guard let bonsplitTabId = bonsplitTabIdFromTabId(panelId) else { return nil }
+        return bonsplitController.tab(bonsplitTabId)?.title
+    }
+
     /// Apply `title` from the M2 metadata blob into `panelTitles` render cache
     /// and propagate it into bonsplit + workspace title mirrors.
     /// Safe to call on main thread; expected call path: after a `set_metadata`
@@ -9665,6 +12443,235 @@ final class Workspace: Identifiable, ObservableObject {
         }
     }
 
+    /// Record the chip for one panel from a lifecycle value. Does not subscribe
+    /// to hc. Callers on the main thread publish immediately; others hop
+    /// asynchronously and never block on this store.
+    func noteSessionLifecycle(
+        panelId: UUID,
+        lifecycle: HCLifecycle,
+        persistence: HCPersistence,
+        machineName: String?,
+        isLocal: Bool = false
+    ) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.noteSessionLifecycle(
+                    panelId: panelId,
+                    lifecycle: lifecycle,
+                    persistence: persistence,
+                    machineName: machineName,
+                    isLocal: isLocal
+                )
+            }
+            return
+        }
+        let next = SessionPlacement.make(
+            lifecycle: lifecycle,
+            persistence: persistence,
+            machineName: machineName,
+            isLocal: isLocal
+        )
+        guard sessionPlacements[panelId] != next else { return }
+        if let next {
+            sessionPlacements[panelId] = next
+        } else {
+            sessionPlacements.removeValue(forKey: panelId)
+        }
+    }
+
+    /// Ticket 12: a terminal on another machine binds its remote status (the
+    /// chip, foreground and agent status) as soon as its hc lifecycle names an
+    /// exact key: live, or unresolved with a known key (a restored studio panel
+    /// whose line is down reads "Studio, Reconnecting"). Local panels never bind.
+    /// Link loss and reattach keep the binding; panel removal drops it.
+    /// Ticket 12: the machine and folder a terminal split from `sourcePanelId`
+    /// runs in: that terminal's machine and current remote folder, or nil
+    /// (this Mac) when the source is local or not a terminal.
+    func hcSplitTarget(from sourcePanelId: UUID?, explicitCwd: String? = nil) -> HCRemoteTarget? {
+        HCMachineTarget.placement(request: .inherit, explicitCwd: explicitCwd,
+            source: sourcePanelId.flatMap { (panels[$0] as? TerminalPanel)?.surface.hcRemoteSource })
+    }
+
+    /// C11H-391 (NB3): why the last terminal creation on another machine was
+    /// refused up front (read by the socket right after a nil return).
+    private(set) var lastHCRemoteRefusal: HCMachineTargetError?
+
+    /// C11H-391 (NB3): a split of a remote terminal (`.inherit`) or a named
+    /// machine (`.on`) opens through the link a new terminal there uses (usable
+    /// wins: the links session's link of the same name when there is one, as
+    /// `HCShardPool.creationTarget` routes it). When that link is unusable the
+    /// creation is refused before any panel exists, never left blank. A
+    /// restored panel (`.restored`) reattaches and is never refused here; a
+    /// workspace apply's remote leaf (`.planned`) is new, and is (C11H-396).
+    static func hcRemoteRefusal(_ request: HCMachineRequest, target: HCRemoteTarget?,
+                                unusable: Set<String>) -> HCMachineTargetError? {
+        guard let target else { return nil }
+        switch request {
+        case .inherit, .on, .planned: return unusable.contains(target.machine) ? .linkUnusable(target.machine) : nil
+        case .local, .restored: return nil
+        }
+    }
+
+    /// C11H-391: why a new terminal on `source`'s machine (a split of it, a
+    /// panel beside it) is refused up front; nil when it may open, or when
+    /// `source` runs on this Mac.
+    func hcSplitRefusal(from source: UUID?, explicitCwd: String? = nil) -> HCMachineTargetError? {
+        Self.hcRemoteRefusal(.inherit, target: hcSplitTarget(from: source, explicitCwd: explicitCwd),
+                             unusable: MachinePicker.liveUnusable())
+    }
+
+    /// C11H-396: tells the operator why their split or move made nothing
+    /// (`lastHCRemoteRefusal`): a beep, and the refusal's message over the
+    /// panel it came from, worded as the CLI and the machine picker word it.
+    /// A refusal made for a socket request (an agent's `panel.drag_to_split`,
+    /// `new-split`) is the agent's error to read: the operator's Mac stays quiet.
+    func tellOperatorWhyHCRefused(from source: UUID?) {
+        guard let refusal = lastHCRemoteRefusal, SocketCommandContext.current == nil else { return }
+        if let hcRefusalPresenterOverride { return hcRefusalPresenterOverride(refusal, source) }
+        NSSound.beep()
+        let anchorView = (source.flatMap { panels[$0] } as? TerminalPanel)?.hostedView
+        HCRefusalNotice.shared.show(refusal.message, anchor: anchorView.flatMap(C11TipCenter.hostedViewAnchor)
+            ?? C11TipCenter.windowAnchor(anchorView?.window ?? NSApp.keyWindow))
+    }
+
+    /// Tests: receives what `tellOperatorWhyHCRefused` would show, and the panel it would hang from.
+    var hcRefusalPresenterOverride: ((HCMachineTargetError, UUID?) -> Void)?
+
+    func followHCRemoteStatus(_ panel: TerminalPanel) {
+        guard let target = panel.hcRemoteTarget, let runtime = panel.surface.hcSession else { return }
+        followHCRemoteStatus(panelID: panel.id, target: target, runtime: runtime)
+    }
+
+    func followHCRemoteStatus(panelID: UUID, target: HCRemoteTarget, runtime: HCPanelSession) {
+        let bind: (HCLifecycle) -> Void = { [weak self, weak runtime] lifecycle in
+            guard let self, let runtime,
+                  let binding = HCMachineTarget.statusBinding(lifecycle, target: target) else { return }
+            self.observeHCRemoteStatus(panelID: panelID, session: runtime.session, key: binding.0, machineName: binding.1)
+        }
+        hcRemoteStatusFollowers[panelID] = runtime.$lifecycle.sink { bind($0) }
+    }
+
+    /// Called by the hc runtime after resolving an exact remote terminal key.
+    /// One inventory subscription drives the same journal/detector paths as
+    /// local agents; surface reattachment does not create another subscriber.
+    func observeHCRemoteStatus(panelID: UUID, session: any HCSession,
+                               key: HCTerminalKey, machineName: String?) {
+        guard hcRemoteStatusBindings[panelID]?.key != key else { return }
+        hcRemoteStatusBindings[panelID] = HCRemoteStatusBinding(workspace: self, panelID: panelID,
+            session: session, key: key, machineName: machineName)
+    }
+
+    /// C11H-87: a remote terminal's doorbell owner and status from its core.
+    /// A status change while the agent owns the terminal is a reported turn
+    /// edge, so mail queued during a turn rings when the agent goes idle. No
+    /// remote PID is ever passed to a local process lookup.
+    ///
+    /// C11H-123: once a Codex's own signal has ended a turn, hc's working or
+    /// blocked is a hint: with no hc time, or a time at or before that turn
+    /// end, it is not an edge, and the word is not recorded, so a report that
+    /// later carries a newer hc time is considered again.
+    func noteHCRemoteMailbox(panelID: UUID, ownsTerminal: Bool, status: String?, statusMs: Int64? = nil,
+                             reconnecting: Bool = false) {
+        guard panels[panelID] != nil else { return }
+        let wasOwned = hcRemoteAgentOwnsTerminal[panelID] == true
+        // C11H-184: an agent back in front after a reconnect rings mail held
+        // meanwhile, even when its status word did not change.
+        defer {
+            if !wasOwned, ownsTerminal, mailboxStdinState.buffer.pendingCount(surfaceId: panelID) > 0 {
+                flushBufferedMailboxStdin(surfaceId: panelID, trigger: .agentPrompt)
+            }
+        }
+        hcRemoteAgentOwnsTerminal[panelID] = ownsTerminal
+        if reconnecting {
+            if hcRemoteMailboxReconnecting[panelID] == nil {
+                let since = Date()
+                hcRemoteMailboxReconnecting[panelID] = since
+                relookAfterOwnershipWindow(surfaceId: panelID) { $0.hcRemoteMailboxReconnecting[panelID] == since }
+            }
+        } else {
+            hcRemoteMailboxReconnecting.removeValue(forKey: panelID)
+        }
+        if ownsTerminal, let status { hcRemoteReportedStatus[panelID] = status } else { hcRemoteReportedStatus.removeValue(forKey: panelID) }
+        let previous = hcRemoteMailboxStatus[panelID]
+        if ownsTerminal, let status, let atPrompt = HCRemoteMailboxForeground.turnEdge(previous: previous, current: status),
+           !atPrompt, CodexTurnAuthority.hcWordIsStale(status, hcStampMs: statusMs,
+                turnEndMs: CodexTurnAuthority.turnEndMs(mailboxJournalSnapshot(panelID))) {
+            return
+        }
+        if ownsTerminal, let status {
+            if previous != status { hcRemoteMailboxStatusSince[panelID] = Date() }
+            hcRemoteMailboxStatus[panelID] = status
+        } else {
+            hcRemoteMailboxStatus.removeValue(forKey: panelID)
+            hcRemoteMailboxStatusSince.removeValue(forKey: panelID)
+        }
+        // C11H-237: hc's `error` alone is no turn edge (C11H-87); once the
+        // agent's journal also shows its turn over, the two agree it ended.
+        if ownsTerminal, status == "error", previous != "error", remoteTurnEndConfirmed(panelID) {
+            let ended = mailboxJournalTurnEndedAt[panelID]
+                ?? mailboxJournalSnapshot(panelID).map { Date(timeIntervalSince1970: Double($0.sinceMs) / 1000) } ?? Date()
+            noteMailboxAgentLifecycle(surfaceId: panelID, source: .reported, activity: .idle, at: ended, agentPid: nil)
+            return
+        }
+        guard ownsTerminal, let atPrompt = HCRemoteMailboxForeground.turnEdge(previous: previous, current: status) else { return }
+        noteMailboxAgentLifecycle(surfaceId: panelID, source: .reported, activity: atPrompt ? .idle : .working, agentPid: nil)
+    }
+
+    /// C11H-123: a Return into a Codex on another machine starts its next
+    /// turn in the journal (`CodexTurnAuthority.submitStart`), so that turn
+    /// reads working and holds mail until the relayed turn end. Only when
+    /// Codex's own signal is in charge (it has ended a turn), the journal
+    /// shows it idle, and hc still reports the old `working` (with hc's
+    /// word at idle, Codex's next `working` dates the turn itself).
+    func noteRemoteCodexTurnStart(surfaceId: UUID, at: Date) {
+        guard let snapshot = remoteCodexAwaitingNextTurn(surfaceId) else { return }
+        appendRemoteCodexJournal(CodexTurnAuthority.submitStart(owner: snapshot.owner, workspaceID: id, at: at))
+    }
+
+    /// The journal of a remote Codex whose next Return would start its turn
+    /// (`noteRemoteCodexTurnStart`), or nil.
+    private func remoteCodexAwaitingNextTurn(_ surfaceId: UUID) -> JournalSnapshot? {
+        guard hcRemoteStatusBindings[surfaceId] != nil || (panels[surfaceId] as? TerminalPanel)?.hcRemoteTarget != nil,
+              hcRemoteReportedStatus[surfaceId] == "working",
+              let snapshot = mailboxJournalSnapshot(surfaceId), !snapshot.isHistorical, snapshot.phase == .idle,
+              snapshot.owner.sessionID.hasPrefix("hc-"), CodexTurnAuthority.turnEndMs(snapshot) != nil else { return nil }
+        return snapshot
+    }
+
+    private func appendRemoteCodexJournal(_ draft: JournalDraft) {
+        if let seam = journalAppendForTesting { seam(draft); return }
+        DispatchQueue.global(qos: .utility).async { _ = try? JournalCoordinator.shared.append(draft) }
+    }
+
+    /// C11H-123: an operator's Return into a remote Codex that the next-turn
+    /// rule would start a turn for. The composer is read before the Return
+    /// reaches the terminal, as for a socket Return (C11-407), so the check
+    /// `MailboxNoOpReturn.settle` later can take back a turn that a Return
+    /// on an empty composer started. Only for a panel on another machine, in
+    /// that state, with an empty or suggestion composer.
+    func noteRemoteCodexReturnKey(surfaceId: UUID, at: Date) {
+        guard remoteCodexAwaitingNextTurn(surfaceId) != nil, let read = readMailboxComposer(surfaceId),
+              MailboxNoOpReturn.admits(read.state) else { return }
+        checkMailboxNoOpReturn(surfaceId: surfaceId, probe: MailboxNoOpReturn.Probe(
+            region: read.region, mark: mailboxStdinState.buffer.noOpReturnMark(surfaceId: surfaceId, at: at)))
+    }
+
+    /// C11H-87: what the doorbell gate reads for one terminal panel right now
+    /// (foreground owner and turn clock). Read-only; for diagnostics and tests.
+    func mailboxDoorbellGateState(surfaceId: UUID) -> (ownsTerminal: Bool, promptGate: MailboxStdinBuffer.PromptGate)? {
+        guard let terminalPanel = panels[surfaceId] as? TerminalPanel else { return nil }
+        let gate = mailboxDeliveryGate(surfaceId: surfaceId, terminalPanel: terminalPanel)
+        return (gate.ownsTerminal, mailboxPromptGate(surfaceId: surfaceId, gate: gate))
+    }
+
+    func noteHCRemoteForeground(_ foreground: HCForeground?, panelID: UUID) {
+        if let foreground {
+            hcRemoteForeground[panelID] = foreground
+        } else {
+            hcRemoteForeground.removeValue(forKey: panelID)
+        }
+    }
+
     /// Read the current M7 title-bar state for a surface as a SwiftUI view state.
     func panelTitleBarState(panelId: UUID) -> PanelTitleBarState {
         // Sidebar-hot: called for every agent surface of every workspace on
@@ -9690,16 +12697,55 @@ final class Workspace: Identifiable, ObservableObject {
             description: description,
             titleSource: Self.extractSource(snapshot.sources[MetadataKey.title]),
             descriptionSource: Self.extractSource(snapshot.sources[MetadataKey.description]),
+            descriptionUpdatedAt: description == nil ? nil : Self.extractTimestamp(snapshot.sources[MetadataKey.description]),
             visible: titleBarVisible,
             collapsed: titleBarCollapsed[panelId] ?? true,
             mailboxAddress: (mailboxAddress?.isEmpty ?? true) ? nil : mailboxAddress,
-            showsMailbox: showsMailbox
+            showsMailbox: showsMailbox,
+            placement: SessionPlacement.shown(
+                on: panels[panelId]?.panelType,
+                stored: sessionPlacements[panelId]
+            ),
+            isTerminal: panels[panelId]?.panelType == .terminal
         )
     }
 
     private static func extractSource(_ entry: [String: Any]?) -> MetadataSource? {
         guard let name = entry?["source"] as? String else { return nil }
         return MetadataSource(rawValue: name)
+    }
+
+    /// C11H-278: every panel with a description, in sidebar order, with when
+    /// its text last changed. `sidebar.state` reports these beside the cards.
+    /// Reads the store directly: the title-bar state would also start mailbox
+    /// tracking for every panel an agent's read touches.
+    func sidebarDescriptionEntries() -> [(panelId: UUID, description: String, updatedAt: Date?)] {
+        let store = PanelMetadataStore.shared
+        return sidebarOrderedPanelIds().compactMap { panelId in
+            guard let description = store.metadataValue(
+                workspaceId: id, surfaceId: panelId, key: MetadataKey.description
+            ) as? String, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return (panelId, description, store.descriptionUpdatedAt(workspaceId: id, surfaceId: panelId))
+        }
+    }
+
+    /// C11H-278: a source record's `ts` (when the key's text last changed),
+    /// through the store's one guard.
+    private static func extractTimestamp(_ entry: [String: Any]?) -> Date? {
+        PanelMetadataStore.editTime(ts: entry?["ts"] as? Double)
+    }
+
+    /// C11H-278: the socket fields for a description's edit time, shared by
+    /// `panel.get_titlebar_state`, `system.tree` and `sidebar.state`. The time
+    /// is local with its offset (the `created_at` form); the age is whole seconds.
+    nonisolated static func descriptionAgeFields(updatedAt: Date?, now: Date = Date()) -> [String: Any] {
+        guard let updatedAt else {
+            return ["description_updated_at": NSNull(), "description_age_seconds": NSNull()]
+        }
+        return [
+            "description_updated_at": PanelLineageNode.localTimestamp(updatedAt),
+            "description_age_seconds": max(0, Int(now.timeIntervalSince(updatedAt))),
+        ]
     }
 
     /// Toggle per-surface collapse. User-initiated toggles mark the surface so
@@ -9731,6 +12777,9 @@ final class Workspace: Identifiable, ObservableObject {
                 if let ts = info["ts"] { payload["description_ts"] = ts }
             }
         }
+        payload.merge(Self.descriptionAgeFields(
+            updatedAt: descriptionString == nil ? nil : Self.extractTimestamp(snapshot.sources[MetadataKey.description])
+        )) { _, new in new }
         let collapsed = titleBarCollapsed[panelId] ?? true
         payload["collapsed"] = collapsed
         payload["effective_collapsed"] = collapsed || (descriptionString?.isEmpty ?? true)
@@ -9784,10 +12833,14 @@ final class Workspace: Identifiable, ObservableObject {
             values.removeValue(forKey: FlashState.metadataKey)
             sources.removeValue(forKey: FlashState.metadataKey)
             Self.migrateLaunchStampTiers(values: &values, sources: &sources)
-            // Persisted derived liveness is not evidence from this app instance.
-            // Exact journal replay will repaint an unresolved ask asynchronously.
-            if sources[MetadataKey.activity]?.source == .derived,
-               panelSnapshot.surfaceConversations?.active?.isEligibleCausalOwner == true {
+            // Persisted derived liveness is not evidence from this app instance,
+            // whoever owns the panel (C11H-323): a survivor's agent may have
+            // ended its turn while c11 was down. Its lifecycle comes from a real
+            // read: the journal (its drained hooks, an unresolved ask), hc's
+            // status for the terminal (`PanelLivenessDeriver.onHCStatus`), or
+            // the agent's next edge. An explicit or OSC value is the agent's own
+            // and keeps its precedence.
+            if sources[MetadataKey.activity]?.source == .derived {
                 values.removeValue(forKey: MetadataKey.activity)
                 sources.removeValue(forKey: MetadataKey.activity)
             }
@@ -9819,6 +12872,13 @@ final class Workspace: Identifiable, ObservableObject {
                 derivedActivityByPanel[panelId] = activity
             } else {
                 derivedActivityByPanel.removeValue(forKey: panelId)
+            }
+            // Metadata is back. Sync an explicit or declare title the way
+            // set-title does. Do not write a custom title: resolvedPanelTitle
+            // prefers one, and set-title writes metadata only, so a custom
+            // title would mask it. launch-agent --title is source declare.
+            if panelSnapshot.shouldSyncExplicitOrDeclareMetadataTitle {
+                syncPanelTitleFromMetadata(panelId: panelId)
             }
         }
     }
@@ -9884,8 +12944,11 @@ final class Workspace: Identifiable, ObservableObject {
         manualUnreadMarkedAt = manualUnreadMarkedAt.filter { validSurfaceIds.contains($0.key) }
         panelListeningPorts = panelListeningPorts.filter { validSurfaceIds.contains($0.key) }
         panelTTYNames = panelTTYNames.filter { validSurfaceIds.contains($0.key) }
+        hcLocalOwnership.prune(keeping: validSurfaceIds)
         panelShellActivityStates = panelShellActivityStates.filter { validSurfaceIds.contains($0.key) }
         panelShellEdgeAt = panelShellEdgeAt.filter { validSurfaceIds.contains($0.key) }
+        panelPromptIdleReportAt = panelPromptIdleReportAt.filter { validSurfaceIds.contains($0.key) }
+        panelLiveShellResumePrompt = panelLiveShellResumePrompt.filter { validSurfaceIds.contains($0.key) }
         // TEL-4: drop derived-activity for surfaces that no longer exist so the
         // @Published map doesn't leak stale liveness for pruned surfaces.
         derivedActivityByPanel = derivedActivityByPanel.filter { validSurfaceIds.contains($0.key) }
@@ -9907,6 +12970,16 @@ final class Workspace: Identifiable, ObservableObject {
         titleBarCollapsed = titleBarCollapsed.filter { validSurfaceIds.contains($0.key) }
         titleBarUserCollapsed = titleBarUserCollapsed.filter { validSurfaceIds.contains($0) }
         panelSheetStatusEntered = panelSheetStatusEntered.filter { validSurfaceIds.contains($0.key) }
+        recomputeListeningPorts()
+    }
+
+    /// C11H-238: a port scan reports every panel on every pass; republish the
+    /// workspace only when this panel's ports changed.
+    func applyScannedListeningPorts(_ ports: [Int], forPanel panelId: UUID) {
+        let next = ports.isEmpty ? nil : ports
+        guard panelListeningPorts[panelId] != next else { return }
+        GraphChurnMeter.note(.portScanWrite)
+        panelListeningPorts[panelId] = next
         recomputeListeningPorts()
     }
 
@@ -9977,8 +13050,52 @@ final class Workspace: Identifiable, ObservableObject {
         sidebarPullRequestsInDisplayOrder(orderedPanelIds: sidebarOrderedPanelIds())
     }
 
+    // MARK: Status heartbeats (C11H-238)
+
+    /// Identical status re-reports, the agent's "still here", arrive on every
+    /// tool call. Their time is kept here at once, unpublished, and written into
+    /// `statusEntries` (one publish) within this delay, so a burst of heartbeats
+    /// republishes the workspace once and the last one is never lost.
+    static var statusHeartbeatFlushDelay: TimeInterval = 5
+    private var pendingStatusHeartbeats: [String: Date] = [:]
+    private var statusHeartbeatFlushScheduled = false
+
+    func noteStatusHeartbeat(key: String, at date: Date = Date()) {
+        guard let existing = statusEntries[key], date > existing.timestamp else { return }
+        pendingStatusHeartbeats[key] = date
+        guard !statusHeartbeatFlushScheduled else { return }
+        statusHeartbeatFlushScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.statusHeartbeatFlushDelay) { [weak self] in
+            MainActor.assumeIsolated { self?.flushStatusHeartbeats() }
+        }
+    }
+
+    /// Writes every pending heartbeat time into `statusEntries` in one publish.
+    func flushStatusHeartbeats() {
+        statusHeartbeatFlushScheduled = false
+        guard !pendingStatusHeartbeats.isEmpty else { return }
+        let pending = pendingStatusHeartbeats
+        pendingStatusHeartbeats.removeAll()
+        var next = statusEntries
+        var changed = false
+        for (key, date) in pending {
+            guard let entry = next[key], date > entry.timestamp else { continue }
+            next[key] = entry.reported(at: date)
+            changed = true
+        }
+        guard changed else { return }
+        GraphChurnMeter.note(.statusWrite)
+        statusEntries = next
+    }
+
+    /// The entry with its last-reported time, including a pending heartbeat.
+    func statusEntryWithReportedTime(_ entry: SidebarStatusEntry) -> SidebarStatusEntry {
+        guard let reported = pendingStatusHeartbeats[entry.key], reported > entry.timestamp else { return entry }
+        return entry.reported(at: reported)
+    }
+
     func sidebarStatusEntriesInDisplayOrder() -> [SidebarStatusEntry] {
-        statusEntries.values.sorted { lhs, rhs in
+        statusEntries.values.map(statusEntryWithReportedTime).sorted { lhs, rhs in
             if lhs.priority != rhs.priority { return lhs.priority > rhs.priority }
             if lhs.timestamp != rhs.timestamp { return lhs.timestamp > rhs.timestamp }
             return lhs.key < rhs.key
@@ -10031,13 +13148,21 @@ final class Workspace: Identifiable, ObservableObject {
             ],
         ]
         if let endpoint = remoteProxyEndpoint {
-            payload["proxy"] = [
+            var proxy: [String: Any] = [
                 "state": "ready",
                 "host": endpoint.host,
                 "port": endpoint.port,
                 "schemes": ["socks5", "http_connect"],
                 "url": "socks5://\(endpoint.host):\(endpoint.port)",
             ]
+#if DEBUG
+            // Tagged Debug builds hand the broker's credential to the tests_v2 ssh scripts over
+            // the same-user socket. Release builds never report it.
+            if let credential = endpoint.credential {
+                proxy["auth"] = ["username": credential.username, "password": credential.password]
+            }
+#endif
+            payload["proxy"] = proxy
         } else {
             let proxyState: String
             if hasProxyOnlyRemoteSidebarError {
@@ -10380,7 +13505,7 @@ final class Workspace: Identifiable, ObservableObject {
         sourceSurface: ghostty_surface_t,
         inheritedConfig: ghostty_surface_config_s
     ) -> Float? {
-        let runtimePoints = cmuxCurrentSurfaceFontSizePoints(sourceSurface)
+        let runtimePoints = c11CurrentSurfaceFontSizePoints(sourceSurface)
         if let rooted = terminalInheritanceFontPointsByPanelId[terminalPanel.id], rooted > 0 {
             if let runtimePoints, abs(runtimePoints - rooted) > 0.05 {
                 // Runtime zoom changed after lineage was seeded (manual zoom on descendant);
@@ -10398,7 +13523,7 @@ final class Workspace: Identifiable, ObservableObject {
     private func rememberTerminalConfigInheritanceSource(_ terminalPanel: TerminalPanel) {
         lastTerminalConfigInheritancePanelId = terminalPanel.id
         if let sourceSurface = terminalPanel.surface.surface,
-           let runtimePoints = cmuxCurrentSurfaceFontSizePoints(sourceSurface) {
+           let runtimePoints = c11CurrentSurfaceFontSizePoints(sourceSurface) {
             let existing = terminalInheritanceFontPointsByPanelId[terminalPanel.id]
             if existing == nil || abs((existing ?? runtimePoints) - runtimePoints) > 0.05 {
                 terminalInheritanceFontPointsByPanelId[terminalPanel.id] = runtimePoints
@@ -10665,19 +13790,28 @@ final class Workspace: Identifiable, ObservableObject {
         insertFirst: Bool = false,
         focus: Bool = true,
         workingDirectory: String? = nil,
-        initialInput: String? = nil
+        initialInput: String? = nil,
+        startupEnvironment: [String: String] = [:],
+        machine: HCMachineRequest = .local
     ) -> TerminalPanel? {
+        lastHCRemoteRefusal = nil
         guard let paneId = paneIdForPanel(panelId) else { return nil }
         let inheritedConfig = inheritedTerminalConfig(preferredPanelId: panelId, inPane: paneId)
-        let remoteTerminalStartupCommand = remoteTerminalStartupCommand()
+        // Ticket 12: a split of a terminal on another machine runs there, in
+        // that terminal's current remote folder. Its cwd is never resolved here.
+        let remoteTarget = HCMachineTarget.placement(request: machine, explicitCwd: workingDirectory,
+            source: (panels[panelId] as? TerminalPanel)?.surface.hcRemoteSource)
+        lastHCRemoteRefusal = Self.hcRemoteRefusal(machine, target: remoteTarget, unusable: MachinePicker.liveUnusable())
+        if lastHCRemoteRefusal != nil { return nil }
+        let remoteTerminalStartupCommand = remoteTarget == nil ? remoteTerminalStartupCommand() : nil
 
         // One cwd rule for every new surface (C11-238): caller override, then
         // the workspace root, then the source panel's cwd, then home.
         let cwdResolution = newSurfaceWorkingDirectory(explicit: workingDirectory, sourcePanelId: panelId)
-        let splitWorkingDirectory = cwdResolution.path
+        let splitWorkingDirectory: String? = remoteTarget == nil ? cwdResolution.path : nil
 #if DEBUG
         dlog(
-            "split.cwd panelId=\(panelId.uuidString.prefix(5)) source=\(cwdResolution.source?.rawValue ?? "home") root=\(rootDirectory ?? "nil") resolved=\(splitWorkingDirectory)"
+            "split.cwd panelId=\(panelId.uuidString.prefix(5)) source=\(cwdResolution.source?.rawValue ?? "home") root=\(rootDirectory ?? "nil") resolved=\(splitWorkingDirectory ?? "remote")"
         )
 #endif
 
@@ -10687,12 +13821,14 @@ final class Workspace: Identifiable, ObservableObject {
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: inheritedConfig,
             workingDirectory: splitWorkingDirectory,
-            portOrdinal: portOrdinal,
             initialCommand: remoteTerminalStartupCommand,
-            initialInput: initialInput
+            initialInput: initialInput,
+            additionalEnvironment: startupEnvironment,
+            remoteTarget: remoteTarget
         )
         panels[newPanel.id] = newPanel
         panelTitles[newPanel.id] = newPanel.displayTitle
+        followHCRemoteStatus(newPanel)
         if remoteTerminalStartupCommand != nil {
             trackRemoteTerminalSurface(newPanel.id)
         }
@@ -10750,7 +13886,35 @@ final class Workspace: Identifiable, ObservableObject {
             )
         }
 
+        startRemoteTerminalNowIfNeeded(newPanel, restoring: false)
         return newPanel
+    }
+
+    /// C11H-116: a launch still pending in this workspace with the same key (workspace, machine, agent type, model,
+    /// effort, task, prompt). A retry of an unanswered `launch-agent` finds it instead of making a second agent.
+    func pendingLaunchPanel(forKey key: String) -> TerminalPanel? {
+        panels.values.compactMap { $0 as? TerminalPanel }.first { $0.isLaunchPending && $0.launchKey == key }
+    }
+
+    /// C11H-96: after a session restore, every remote terminal of this workspace asks for its
+    /// headless start, so a hidden workspace's remote panels attach without being shown.
+    func startRestoredRemoteTerminalsInBackground() {
+        for panel in panels.values.compactMap({ $0 as? TerminalPanel }) {
+            let action = HCInputReadyQueue.afterRestoreStart(isRemote: panel.hcRemoteTarget != nil,
+                                                             hasNativeSurface: panel.surface.surface != nil)
+            if action == .requestBackground { panel.surface.requestBackgroundSurfaceStartIfNeeded() }
+        }
+    }
+
+    /// C11H-96: a terminal created on another machine starts its hc terminal now,
+    /// headless, instead of waiting for a view an agent cannot show.
+    private func startRemoteTerminalNowIfNeeded(_ panel: TerminalPanel, restoring: Bool) {
+        // C11H-112: every persistent hc terminal, local or remote, starts without waiting for a surface.
+        panel.surface.requestHCHeadlessStart(restoring: restoring)
+        let action = HCInputReadyQueue.createStart(isRemote: panel.hcRemoteTarget != nil, restoring: restoring,
+                                                   hasNativeSurface: panel.surface.surface != nil)
+        guard action == .requestBackground else { return }
+        panel.surface.requestBackgroundSurfaceStartIfNeeded()
     }
 
     /// Create a new surface (nested tab) in the specified pane with a terminal panel.
@@ -10765,8 +13929,10 @@ final class Workspace: Identifiable, ObservableObject {
         initialInput: String? = nil,
         startupEnvironment: [String: String] = [:],
         panelId: UUID? = nil,
-        createdAt: Date? = Date()
+        createdAt: Date? = Date(),
+        machine: HCMachineRequest = .local
     ) -> TerminalPanel? {
+        lastHCRemoteRefusal = nil
         guard !isRetiredForWindowClose else { return nil }
 
         let shouldFocusNewPanel = focus ?? (bonsplitController.focusedPaneId == paneId)
@@ -10776,13 +13942,29 @@ final class Workspace: Identifiable, ObservableObject {
         // The pane's own terminal is the tier-3 source, matching the config
         // inheritance source. Resolve before `inheritedTerminalConfig`, which
         // records the inheritance source as a side effect.
-        let cwdSourcePanelId = terminalPanelForConfigInheritance(inPane: paneId)?.id
-        let resolvedWorkingDirectory = newSurfaceWorkingDirectory(
+        let cwdSourcePanel = terminalPanelForConfigInheritance(inPane: paneId)
+        let cwdSourcePanelId = cwdSourcePanel?.id
+        // Ticket 12: placement on another machine; its cwd is a remote path.
+        let remoteTarget = HCMachineTarget.placement(request: machine, explicitCwd: workingDirectory,
+            source: cwdSourcePanel?.surface.hcRemoteSource)
+        lastHCRemoteRefusal = Self.hcRemoteRefusal(machine, target: remoteTarget, unusable: MachinePicker.liveUnusable())
+        if lastHCRemoteRefusal != nil { return nil }
+        let resolvedWorkingDirectory: String? = remoteTarget == nil ? newSurfaceWorkingDirectory(
             explicit: workingDirectory,
             sourcePanelId: cwdSourcePanelId
-        ).path
+        ).path : nil
         let inheritedConfig = inheritedTerminalConfig(inPane: paneId)
-        let remoteTerminalStartupCommand = remoteTerminalStartupCommand()
+        let remoteTerminalStartupCommand = remoteTarget == nil ? remoteTerminalStartupCommand() : nil
+        // Pathfinder (2026-11-03): a new terminal on another machine with no
+        // folder named there (no --cwd, no same-machine source) starts in the
+        // workspace root's home-relative path on that machine, else its home.
+        var startupEnvironment = startupEnvironment
+        if let remoteTarget, remoteTarget.cwd == nil, panelId == nil,
+           let hint = HCMachineTarget.startDirectoryHint(
+               localRoot: Self.usableRootDirectory(rootDirectory),
+               localHome: FileManager.default.homeDirectoryForCurrentUser.path) {
+            startupEnvironment[HCMachineTarget.startDirectoryVariable] = hint
+        }
 
         // Create new terminal panel
         let newPanel = TerminalPanel(
@@ -10792,13 +13974,14 @@ final class Workspace: Identifiable, ObservableObject {
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: inheritedConfig,
             workingDirectory: resolvedWorkingDirectory,
-            portOrdinal: portOrdinal,
             initialCommand: remoteTerminalStartupCommand,
             initialInput: initialInput,
-            additionalEnvironment: startupEnvironment
+            additionalEnvironment: startupEnvironment,
+            remoteTarget: remoteTarget
         )
         panels[newPanel.id] = newPanel
         panelTitles[newPanel.id] = newPanel.displayTitle
+        followHCRemoteStatus(newPanel)
         if remoteTerminalStartupCommand != nil {
             trackRemoteTerminalSurface(newPanel.id)
         }
@@ -10840,6 +14023,7 @@ final class Workspace: Identifiable, ObservableObject {
                 previousHostedView: previousHostedView
             )
         }
+        startRemoteTerminalNowIfNeeded(newPanel, restoring: panelId != nil)
         return newPanel
     }
 
@@ -10930,7 +14114,8 @@ final class Workspace: Identifiable, ObservableObject {
         sticksAsPreferred: Bool = true,
         focus: Bool = true,
         bypassInsecureHTTPHostOnce: String? = nil,
-        pendingHibernate: Bool = false
+        pendingHibernate: Bool = false,
+        showViewer: ShowViewerSession? = nil
     ) -> BrowserPanel? {
         guard let paneId = paneIdForPanel(panelId) else { return nil }
 
@@ -10947,7 +14132,8 @@ final class Workspace: Identifiable, ObservableObject {
             proxyEndpoint: remoteProxyEndpoint,
             isRemoteWorkspace: isRemoteWorkspace,
             remoteWebsiteDataStoreIdentifier: isRemoteWorkspace ? id : nil,
-            pendingHibernate: pendingHibernate
+            pendingHibernate: pendingHibernate,
+            showViewer: showViewer
         )
         panels[browserPanel.id] = browserPanel
         panelTitles[browserPanel.id] = browserPanel.displayTitle
@@ -11020,7 +14206,8 @@ final class Workspace: Identifiable, ObservableObject {
         bypassInsecureHTTPHostOnce: String? = nil,
         panelId: UUID? = nil,
         pendingHibernate: Bool = false,
-        createdAt: Date? = Date()
+        createdAt: Date? = Date(),
+        showViewer: ShowViewerSession? = nil
     ) -> BrowserPanel? {
         let shouldFocusNewPanel = focus ?? (bonsplitController.focusedPaneId == paneId)
         let sourcePanelId = effectiveSelectedPanelId(inPane: paneId)
@@ -11041,7 +14228,8 @@ final class Workspace: Identifiable, ObservableObject {
             proxyEndpoint: remoteProxyEndpoint,
             isRemoteWorkspace: isRemoteWorkspace,
             remoteWebsiteDataStoreIdentifier: isRemoteWorkspace ? id : nil,
-            pendingHibernate: pendingHibernate
+            pendingHibernate: pendingHibernate,
+            showViewer: showViewer
         )
         panels[browserPanel.id] = browserPanel
         panelTitles[browserPanel.id] = browserPanel.displayTitle
@@ -11099,11 +14287,12 @@ final class Workspace: Identifiable, ObservableObject {
         insertFirst: Bool = false,
         filePath: String? = nil,
         fragment: String? = nil,
-        focus: Bool = true
+        focus: Bool = true,
+        remoteShowKey: String? = nil
     ) -> MarkdownPanel? {
         guard let paneId = paneIdForPanel(panelId) else { return nil }
 
-        let markdownPanel = MarkdownPanel(workspaceId: id, filePath: filePath, fragment: fragment)
+        let markdownPanel = MarkdownPanel(workspaceId: id, filePath: filePath, fragment: fragment, remoteShowKey: remoteShowKey)
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle
 
@@ -11156,7 +14345,8 @@ final class Workspace: Identifiable, ObservableObject {
         panelId: UUID? = nil,
         createdAt: Date? = Date(),
         initialNavigationOrigin: MarkdownNavigationOrigin = .agentCLI,
-        initialNavigationScopeRootPath: String? = nil
+        initialNavigationScopeRootPath: String? = nil,
+        remoteShowKey: String? = nil
     ) -> MarkdownPanel? {
         let shouldFocusNewPanel = focus ?? (bonsplitController.focusedPaneId == paneId)
         let previousFocusedPanelId = focusedPanelId
@@ -11169,7 +14359,8 @@ final class Workspace: Identifiable, ObservableObject {
             filePath: filePath,
             fragment: fragment,
             initialNavigationOrigin: initialNavigationOrigin,
-            initialNavigationScopeRootPath: initialNavigationScopeRootPath
+            initialNavigationScopeRootPath: initialNavigationScopeRootPath,
+            remoteShowKey: remoteShowKey
         )
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle
@@ -11220,8 +14411,20 @@ final class Workspace: Identifiable, ObservableObject {
     /// Tear down all panels in this workspace, freeing their Ghostty surfaces.
     /// Called before the workspace is removed from TabManager to ensure child
     /// processes receive SIGHUP even if ARC deallocation is delayed.
-    func teardownAllPanels(markPanelsClosedForGood: Bool = true) {
+    func teardownAllPanels(
+        markPanelsClosedForGood: Bool = true,
+        endingSessions endOrigin: HCEndOrigin? = nil
+    ) {
+        // Retired workspace instances may remain retained across restore. Stop
+        // their binding before a replacement can register the same UUID.
+        missionBinding.setRoot(nil)
+        workspaceMetadataObserver = nil
         emitWorkspaceTeardownEvents()
+        // C11H-24: only an explicit workspace/window close passes an origin.
+        // Restore retirement and every other teardown detach.
+        if let endOrigin {
+            endSessionsForExplicitClose(panelIds: Array(panels.keys), origin: endOrigin)
+        }
 
         // Drain every pending pane interaction with .dismissed FIRST so any
         // in-flight presentConfirmClose / presentTextInput / socket pane.confirm
@@ -11246,7 +14449,11 @@ final class Workspace: Identifiable, ObservableObject {
             panelSubscriptions.removeValue(forKey: panelId)
             PortScanner.shared.unregisterPanel(workspaceId: id, panelId: panelId)
             AgentDetector.shared.unregister(workspaceId: id, panelId: panelId)
-            panel.close()
+            if !markPanelsClosedForGood, let terminal = panel as? TerminalPanel {
+                terminal.detachForSessionRestore()
+            } else {
+                panel.close()
+            }
             // C11-243: workspace teardown; these panels are gone.
             PanelSeenTracker.shared.forget(panelId: panelId)
             // C11-400: and off the mailbox reconcile with them.
@@ -11260,6 +14467,7 @@ final class Workspace: Identifiable, ObservableObject {
         bonsplitTabIdToTabId.removeAll(keepingCapacity: false)
         panelSubscriptions.removeAll(keepingCapacity: false)
         pruneSurfaceMetadata(validSurfaceIds: [])
+        WorkspaceMetadataStore.shared.removeWorkspace(workspaceId: id)
         restoredTerminalScrollbackByPanelId.removeAll(keepingCapacity: false)
         terminalInheritanceFontPointsByPanelId.removeAll(keepingCapacity: false)
         lastTerminalConfigInheritancePanelId = nil
@@ -11290,7 +14498,7 @@ final class Workspace: Identifiable, ObservableObject {
         // Mapping can transiently drift during split-tree mutations. If the target panel is
         // currently focused (or is the active terminal first responder), close whichever tab
         // bonsplit marks selected in that focused pane.
-        let firstResponderPanelId = cmuxOwningGhosttyView(
+        let firstResponderPanelId = firstResponderPanelIdForTesting ?? cmuxOwningGhosttyView(
             for: NSApp.keyWindow?.firstResponder ?? NSApp.mainWindow?.firstResponder
         )?.terminalSurface?.id
         let targetIsActive = focusedPanelId == panelId || firstResponderPanelId == panelId
@@ -11572,8 +14780,13 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func stageClosedBrowserRestoreSnapshotIfNeeded(for bonsplitTab: Bonsplit.Tab, inPane pane: PaneID) {
+        // C11H-353: a `c11 show` viewer is never offered for reopen. Reopened,
+        // it would be an ordinary panel with the operator's profile, script
+        // on and no show guard; a local one would lose its scheme handler and
+        // store anyway. The agent shows it again instead.
         guard let panelId = tabIdFromBonsplitTabId(bonsplitTab.id),
               let browserPanel = browserPanel(for: panelId),
+              browserPanel.showViewer == nil,
               let bonsplitTabIndex = bonsplitController.tabs(inPane: pane).firstIndex(where: { $0.id == bonsplitTab.id }) else {
             pendingClosedBrowserRestoreSnapshots.removeValue(forKey: bonsplitTab.id)
             return
@@ -11672,6 +14885,33 @@ final class Workspace: Identifiable, ObservableObject {
 
         guard let bestPane else { return nil }
         return UUID(uuidString: bestPane.id)
+    }
+
+    /// C11H-103 (L4 amendment, condition 4): a returning orphan is a NEW panel
+    /// at the end of this workspace's last area. It never splits and never
+    /// reorders the saved layout, and it takes its title.
+    @discardableResult
+    /// C11H-363: a recovered terminal goes home on the machine it runs on.
+    func addReturningTerminal(_ recovery: HCRecoveredTerminalPlanner.Recovery, title: String?) -> TerminalPanel? {
+        addReturningTerminal(panelID: recovery.identity.panelID, title: title, machine: recovery.machineRequest)
+    }
+
+    /// C11H-363: a recovered terminal joins the Recovered workspace on the
+    /// machine it runs on.
+    func addRecoveredTerminal(_ recovery: HCRecoveredTerminalPlanner.Recovery, inPane area: PaneID) -> TerminalPanel? {
+        newTerminalSurface(inPane: area, focus: false, panelId: recovery.identity.panelID, machine: recovery.machineRequest)
+    }
+
+    func addReturningTerminal(panelID: UUID, title: String?, machine: HCMachineRequest = .local) -> TerminalPanel? {
+        guard let area = bonsplitController.allPaneIds.last,
+              let panel = newTerminalSurface(inPane: area, focus: false, panelId: panelID, machine: machine) else { return nil }
+        let count = bonsplitController.tabs(inPane: area).count
+        if let tab = bonsplitTabIdFromTabId(panelID),
+           bonsplitController.tabs(inPane: area).last?.id != tab, count > 0 {
+            _ = moveSurface(panelId: panelID, toPane: area, atIndex: count - 1, focus: false)
+        }
+        if let title { setPanelCustomTitle(panelId: panelID, title: title) }
+        return panel
     }
 
     @discardableResult
@@ -11779,6 +15019,10 @@ final class Workspace: Identifiable, ObservableObject {
         }
 
         panels[detached.panelId] = detached.panel
+        // C11H-103: a moved terminal's home is its new workspace.
+        if detached.panel is TerminalPanel {
+            HCOwnerLabelSync.shared.note(panelID: detached.panelId, labels: [HCOwnerLabels.workspace: id.uuidString])
+        }
         PanelMetadataStore.shared.restoreFromSnapshot(
             workspaceId: id,
             surfaceId: detached.panelId,
@@ -11787,6 +15031,7 @@ final class Workspace: Identifiable, ObservableObject {
         )
         if let terminalPanel = detached.panel as? TerminalPanel {
             terminalPanel.updateWorkspaceId(id)
+            followHCRemoteStatus(terminalPanel)
         } else if let browserPanel = detached.panel as? BrowserPanel {
             browserPanel.reattachToWorkspace(
                 id,
@@ -11952,11 +15197,9 @@ final class Workspace: Identifiable, ObservableObject {
         let previousPaneId = bonsplitController.focusedPaneId
         let previousPanelId = focusedPanelId
         let previousHostedView = focusedTerminalPanel?.hostedView
-        guard let newPaneId = bonsplitController.splitPane(
-            orientation: orientation,
-            movingTab: tabId,
-            insertFirst: insertFirst
-        ) else { return nil }
+        guard let newPaneId = movingTabIntoSplit(nil, orientation: orientation, tab: tabId, insertFirst: insertFirst) else {
+            return nil
+        }
 
         if previousPanelId == nil, let previousPaneId {
             bonsplitController.focusPane(previousPaneId)
@@ -12206,6 +15449,21 @@ final class Workspace: Identifiable, ObservableObject {
            let bonsplitTabId = bonsplitController.selectedTab(inPane: paneId)?.id {
             applyPanelSelection(bonsplitTabId: bonsplitTabId, inPane: paneId)
         }
+        noteOperatorPanelSelection()
+    }
+
+    /// C11H-246: keyboard panel selection (next, previous, by number, last,
+    /// by direction) is the operator naming the panel it lands on. A socket
+    /// request driving the same methods is never an open (the store checks).
+    func noteOperatorPanelSelection() {
+        TerminalNotificationStore.shared.dismissFlagNotificationForOperatorOpen(workspaceId: id, surfaceId: focusedPanelId)
+    }
+
+    /// C11H-246: a pointer tab selection in the strip, the collapsed sheet or
+    /// the rail, the tab already shown included.
+    func noteOperatorTabSelection(bonsplitTabId: TabID) {
+        guard let panelId = tabIdFromBonsplitTabId(bonsplitTabId) else { return }
+        TerminalNotificationStore.shared.dismissFlagNotificationForOperatorOpen(workspaceId: id, surfaceId: panelId)
     }
 
     // MARK: - Surface Navigation
@@ -12218,6 +15476,7 @@ final class Workspace: Identifiable, ObservableObject {
            let bonsplitTabId = bonsplitController.selectedTab(inPane: paneId)?.id {
             applyPanelSelection(bonsplitTabId: bonsplitTabId, inPane: paneId)
         }
+        noteOperatorPanelSelection()
     }
 
     /// Select the previous surface in the currently focused pane
@@ -12228,6 +15487,7 @@ final class Workspace: Identifiable, ObservableObject {
            let bonsplitTabId = bonsplitController.selectedTab(inPane: paneId)?.id {
             applyPanelSelection(bonsplitTabId: bonsplitTabId, inPane: paneId)
         }
+        noteOperatorPanelSelection()
     }
 
     /// Select a surface by index in the currently focused pane
@@ -12240,6 +15500,7 @@ final class Workspace: Identifiable, ObservableObject {
         if let bonsplitTabId = bonsplitController.selectedTab(inPane: focusedPaneId)?.id {
             applyPanelSelection(bonsplitTabId: bonsplitTabId, inPane: focusedPaneId)
         }
+        noteOperatorPanelSelection()
     }
 
     /// Select the last surface in the currently focused pane
@@ -12252,13 +15513,14 @@ final class Workspace: Identifiable, ObservableObject {
         if let bonsplitTabId = bonsplitController.selectedTab(inPane: focusedPaneId)?.id {
             applyPanelSelection(bonsplitTabId: bonsplitTabId, inPane: focusedPaneId)
         }
+        noteOperatorPanelSelection()
     }
 
     /// Create a new terminal surface in the currently focused pane
     @discardableResult
-    func newTerminalSurfaceInFocusedPane(focus: Bool? = nil) -> TerminalPanel? {
+    func newTerminalSurfaceInFocusedPane(focus: Bool? = nil, machine: HCMachineRequest = .local) -> TerminalPanel? {
         guard let focusedPaneId = bonsplitController.focusedPaneId else { return nil }
-        return newTerminalSurface(inPane: focusedPaneId, focus: focus)
+        return newTerminalSurface(inPane: focusedPaneId, focus: focus, machine: machine)
     }
 
     @discardableResult
@@ -12557,8 +15819,7 @@ final class Workspace: Identifiable, ObservableObject {
             workspaceId: id,
             context: GHOSTTY_SURFACE_CONTEXT_TAB,
             configTemplate: inheritedConfig,
-            workingDirectory: workingDirectory,
-            portOrdinal: portOrdinal
+            workingDirectory: workingDirectory
         )
         panels[newPanel.id] = newPanel
         panelTitles[newPanel.id] = newPanel.displayTitle
@@ -12649,6 +15910,7 @@ final class Workspace: Identifiable, ObservableObject {
         }
         if let dir = panelDirectories[targetPanelId] {
             currentDirectory = dir
+            noteCurrentDirectorySource(panelId: targetPanelId)
         }
         gitBranch = panelGitBranches[targetPanelId]
         pullRequest = panelPullRequests[targetPanelId]
@@ -13090,6 +16352,25 @@ final class Workspace: Identifiable, ObservableObject {
         return needsFollowUpPass
     }
 
+    /// C11H-207: a panel dragged out of this workspace into another window
+    /// leaves this window in the background while its split tree collapses.
+    /// SwiftUI can dismantle a surviving terminal's host there and send no
+    /// further update, so its portal entry stays unbound (the terminal draws at
+    /// its old frame) until something else touches the window. Once the
+    /// collapse settles, ask each surviving terminal for one representable
+    /// update (it rebinds a missing entry), then reconcile geometry.
+    func reattachTerminalsAfterExternalRemoval() {
+        for delay in [0.35, 1.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self else { return }
+                for panel in self.panels.values {
+                    (panel as? TerminalPanel)?.requestViewReattach()
+                }
+                self.scheduleTerminalGeometryReconcile()
+            }
+        }
+    }
+
     private func scheduleTerminalGeometryReconcile() {
         beginEventDrivenLayoutFollowUp(
             reason: "workspace.geometry",
@@ -13326,6 +16607,25 @@ final class Workspace: Identifiable, ObservableObject {
         runRefreshPass(0.03)
     }
 
+    /// C11H-309: the panel bar's Close Others / to the Left / to the Right ask
+    /// once for the whole batch, then close it as one batch, through the same
+    /// path as the Area menu's Close Other Panels. c11 shows Bonsplit's
+    /// simplified panel menu (`simplifiedTabContextMenu`), which omits these
+    /// three, so today only Bonsplit's full menu reaches them. A workspace with
+    /// no manager (tests only) has no card to show and keeps the per-panel gate.
+    private func closePanelsFromPanelBar(_ bonsplitTabIds: [TabID], kind: PanelBatchCloseKind) {
+        guard let manager = owningWorkspaceManager else {
+            closePanels(bonsplitTabIds)
+            return
+        }
+        manager.closePanelsWithConfirmation(
+            bonsplitTabIds.compactMap { tabIdFromBonsplitTabId($0) },
+            in: self,
+            kind: kind,
+            alwaysConfirm: false
+        )
+    }
+
     private func closePanels(_ bonsplitTabIds: [TabID], skipPinned: Bool = true) {
         PanelLineage.shared.withCloseBatch {
             for bonsplitTabId in bonsplitTabIds {
@@ -13337,6 +16637,28 @@ final class Workspace: Identifiable, ObservableObject {
                 _ = bonsplitController.closeTab(bonsplitTabId)
             }
         }
+    }
+
+    /// C11H-309: closes these panels without asking again (the caller asked
+    /// once for all of them), reported to lineage observers as one batch.
+    func forceClosePanels(_ panelIds: [UUID]) {
+        PanelLineage.shared.withCloseBatch {
+            for panelId in panelIds where panels[panelId] != nil {
+                // `closePanel` falls back to the focused area's selected tab
+                // when a panel's Bonsplit mapping has drifted; a batch closes
+                // only the panels it was given.
+                guard bonsplitTabIdFromTabId(panelId) != nil else { continue }
+                _ = closePanel(panelId, force: true)
+            }
+        }
+    }
+
+    /// C11H-309: true when closing this panel alone would ask first, the same
+    /// test the close gate (`shouldCloseTab`) applies: every hc terminal, and
+    /// an exec shell that is running a command. Other panels never ask.
+    func panelAsksBeforeClose(_ panelId: UUID) -> Bool {
+        guard let terminal = terminalPanel(for: panelId) else { return false }
+        return panelNeedsConfirmClose(panelId: panelId, fallbackNeedsConfirmClose: terminal.needsConfirmClose())
     }
 
     private func bonsplitTabIdsToLeft(of anchorBonsplitTabId: TabID, inPane paneId: PaneID) -> [TabID] {
@@ -13359,9 +16681,12 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func createTerminalToRight(of anchorBonsplitTabId: TabID, inPane paneId: PaneID) {
-        let targetIndex = insertionIndexToRight(of: anchorBonsplitTabId, inPane: paneId)
-        guard let newPanel = newTerminalSurface(inPane: paneId, focus: true) else { return }
-        _ = reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
+        MachinePicker.ask(.terminal) { [weak self] request in
+            guard let self else { return }
+            let targetIndex = self.insertionIndexToRight(of: anchorBonsplitTabId, inPane: paneId)
+            guard let newPanel = self.newTerminalSurface(inPane: paneId, focus: true, machine: request) else { return }
+            _ = self.reorderSurface(panelId: newPanel.id, toIndex: targetIndex)
+        }
     }
 
     private func createBrowserToRight(of anchorBonsplitTabId: TabID, inPane paneId: PaneID, url: URL? = nil) {
@@ -13377,8 +16702,10 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func duplicateBrowserToRight(anchorBonsplitTabId: TabID, inPane paneId: PaneID) {
+        // C11H-353: a `c11 show` viewer is not copied into an ordinary panel
+        // (the operator's profile, script on, no show guard).
         guard let panelId = tabIdFromBonsplitTabId(anchorBonsplitTabId),
-              let browser = browserPanel(for: panelId) else { return }
+              let browser = browserPanel(for: panelId), browser.showViewer == nil else { return }
         let targetIndex = insertionIndexToRight(of: anchorBonsplitTabId, inPane: paneId)
         guard let newPanel = newBrowserSurface(
             inPane: paneId,
@@ -13627,24 +16954,28 @@ extension Workspace: BonsplitDelegate {
         // rather than a window-centered NSAlert (plan §3.4, §4.3). Falls back to
         // the legacy NSAlert when the feature is disabled or no panel is
         // resolvable (defensive; the tab was already deselected).
+        let copy = Self.panelCloseCopy(
+            endsSession: tabIdFromBonsplitTabId(bonsplitTabId).map { closeEndsHCSession(panelIds: [$0]) } ?? false
+        )
         if AreaInteractionFeatureFlag.isEnabled,
            let panelId = tabIdFromBonsplitTabId(bonsplitTabId) {
             return await presentConfirmClose(
                 panelId: panelId,
-                title: String(localized: "dialog.closeTab.title", defaultValue: "Close panel?"),
-                message: String(localized: "dialog.closeTab.message", defaultValue: "This closes the panel."),
-                source: .local
+                title: copy.title,
+                message: copy.message,
+                source: .local,
+                confirmLabel: copy.confirmLabel
             )
         }
 
         // Legacy NSAlert path — kept as a rollback/fallback. Cancel is the
         // first button, so Return and Escape keep the tab; closing takes a click.
         let alert = NSAlert()
-        alert.messageText = String(localized: "dialog.closeTab.title", defaultValue: "Close panel?")
-        alert.informativeText = String(localized: "dialog.closeTab.message", defaultValue: "This closes the panel.")
+        alert.messageText = copy.title
+        alert.informativeText = copy.message
         alert.alertStyle = .warning
         alert.addButton(withTitle: String(localized: "dialog.closeTab.cancel", defaultValue: "Cancel"))
-        alert.addButton(withTitle: String(localized: "dialog.closeTab.close", defaultValue: "Close"))
+        alert.addButton(withTitle: copy.confirmLabel ?? String(localized: "dialog.closeTab.close", defaultValue: "Close"))
             .hasDestructiveAction = true
 
         if let window = NSApp.keyWindow ?? NSApp.mainWindow {
@@ -13722,13 +17053,14 @@ extension Workspace: BonsplitDelegate {
         title: String,
         message: String,
         source: InteractionSource,
-        dedupeToken: String? = nil
+        dedupeToken: String? = nil,
+        confirmLabel: String? = nil
     ) async -> Bool {
         await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             let content = ConfirmContent(
                 title: title,
                 message: message.isEmpty ? nil : message,
-                confirmLabel: String(localized: "dialog.pane.confirm.close", defaultValue: "Close"),
+                confirmLabel: confirmLabel ?? String(localized: "dialog.pane.confirm.close", defaultValue: "Close"),
                 cancelLabel: String(localized: "dialog.pane.confirm.cancel", defaultValue: "Cancel"),
                 role: .destructive,
                 defaultSelection: .confirm,
@@ -13762,14 +17094,15 @@ extension Workspace: BonsplitDelegate {
         inventory: WorkspaceCloseInventory? = nil,
         defaultsToClose: Bool = false,
         source: InteractionSource,
-        dedupeToken: String? = nil
+        dedupeToken: String? = nil,
+        confirmLabel: String? = nil
     ) async -> Bool {
         await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             let content = ConfirmContent(
                 title: title,
                 message: message.isEmpty ? nil : message,
                 workspaceInventory: inventory,
-                confirmLabel: String(
+                confirmLabel: confirmLabel ?? String(
                     localized: "dialog.closeWorkspace.confirmButton",
                     defaultValue: "Close Workspace"
                 ),
@@ -14045,6 +17378,7 @@ extension Workspace: BonsplitDelegate {
         // Update current directory if this is a terminal
         if let dir = panelDirectories[panelId] {
             currentDirectory = dir
+            noteCurrentDirectorySource(panelId: panelId)
         }
         gitBranch = panelGitBranches[panelId]
         pullRequest = panelPullRequests[panelId]
@@ -14437,7 +17771,16 @@ extension Workspace: BonsplitDelegate {
             if let closedBrowserRestoreSnapshot {
                 onClosedBrowserPanel?(closedBrowserRestoreSnapshot)
             }
-            panel?.close()
+            if isApplyingSessionSnapshot, let terminal = panel as? TerminalPanel {
+                terminal.detachForSessionRestore()
+            } else {
+                // C11H-24: a panel closed for good ends its hc session; close()
+                // itself only detaches.
+                if hcExplicitEndSuppressionDepth == 0 {
+                    (panel as? TerminalPanel)?.endSession(origin: .panelClose)
+                }
+                panel?.close()
+            }
             // C11-243: the panel is gone for good (detach keeps its id and the stamp).
             PanelSeenTracker.shared.forget(panelId: panelId)
             // C11-397: a detached panel keeps its mailbox counts and model.
@@ -14486,6 +17829,23 @@ extension Workspace: BonsplitDelegate {
         restoredTerminalScrollbackByPanelId.removeValue(forKey: panelId)
         titleBarCollapsed.removeValue(forKey: panelId)
         titleBarUserCollapsed.remove(panelId)
+        sessionPlacements.removeValue(forKey: panelId)
+        hcRemoteStatusBindings.removeValue(forKey: panelId)
+        hcRemoteStatusFollowers.removeValue(forKey: panelId)
+        hcRemoteForeground.removeValue(forKey: panelId)
+        hcRemoteAgentOwnsTerminal.removeValue(forKey: panelId)
+        hcRemoteMailboxReconnecting.removeValue(forKey: panelId)
+        hcLocalOwnershipPendingSince.removeValue(forKey: panelId)
+        hcLocalOwnership.forget(panel: panelId)
+        mailboxCarriedHolds.removeValue(forKey: panelId)
+        mailboxCarriedClaims.removeValue(forKey: panelId)
+        hcLocalMailboxStatus.removeValue(forKey: panelId)
+        hcRemoteMailboxStatus.removeValue(forKey: panelId)
+        hcRemoteMailboxStatusSince.removeValue(forKey: panelId)
+        hcRemoteReportedStatus.removeValue(forKey: panelId)
+        mailboxJournalTurnOpenSince.removeValue(forKey: panelId)
+        mailboxJournalTurnEndedAt.removeValue(forKey: panelId)
+        mailboxWaitByPanel.removeValue(forKey: panelId)
         panelSheetStatusEntered.removeValue(forKey: panelId)
         if isMoving {
             PanelAttentionService.shared.detach(workspaceId: id, surfaceId: panelId)
@@ -14551,6 +17911,7 @@ extension Workspace: BonsplitDelegate {
 
     func splitTabBar(_ controller: BonsplitController, didMoveTab bonsplitTab: Bonsplit.Tab, fromPane source: PaneID, toPane destination: PaneID) {
         reconcileClosedAreasAndRepaintDividers(controller)
+        AppDelegate.shared?.noteLayoutChanged(source: "panel.move")
 #if DEBUG
         let now = ProcessInfo.processInfo.systemUptime
         let sincePrev: String
@@ -14662,6 +18023,10 @@ extension Workspace: BonsplitDelegate {
                 // before the panel disappears. Same invariant as the
                 // single-panel close path above.
                 cancelPersistentFlash(panelId: panelId)
+                // C11H-24: an area closed for good ends its hc sessions.
+                if !isDetachingCloseTransaction, !isApplyingSessionSnapshot, hcExplicitEndSuppressionDepth == 0 {
+                    (panels[panelId] as? TerminalPanel)?.endSession(origin: .areaClose)
+                }
                 panels[panelId]?.close()
                 panels.removeValue(forKey: panelId)
                 // C11-243: pane closed for good; a detaching transaction keeps ids.
@@ -14715,6 +18080,46 @@ extension Workspace: BonsplitDelegate {
         if shouldScheduleFocusReconcile {
             scheduleFocusReconcile()
         }
+    }
+
+    /// C11H-391 (Astra 2 on #382): bonsplit's own splits open a terminal where
+    /// the split area's selected terminal runs (`didSplitPane`): the panel
+    /// bar's split buttons, and a move of an area's only panel to its own
+    /// edge, whose emptied side c11 refills. When that terminal's machine's
+    /// routed link is unusable, the split is refused here, before bonsplit
+    /// makes the area, so no blank panel is left; it beeps, as the machine
+    /// picker does, and `lastHCRemoteRefusal` says why. A move (c11's own,
+    /// `movingTabIntoSplit`, or bonsplit's drag of a panel to an area's edge,
+    /// `controller.splitMovingTab`) creates nothing unless it empties that
+    /// area, and is refused only then (C11H-396). c11's programmatic splits
+    /// decide in `newTerminalSplit`.
+    func splitTabBar(_ controller: BonsplitController, shouldSplitPane pane: PaneID, orientation: SplitOrientation) -> Bool {
+        guard !isProgrammaticSplit else { return true }
+        lastHCRemoteRefusal = nil
+        let source: UUID?
+        if let moving = splitMoveTab ?? controller.splitMovingTab {
+            let tabs = controller.tabs(inPane: pane)
+            guard tabs.count == 1, tabs.first?.id == moving else { return true }
+            source = tabIdFromBonsplitTabId(moving)
+        } else {
+            source = controller.selectedTab(inPane: pane).flatMap { tabIdFromBonsplitTabId($0.id) }
+        }
+        lastHCRemoteRefusal = hcSplitRefusal(from: source)
+        guard lastHCRemoteRefusal == nil else {
+            tellOperatorWhyHCRefused(from: source)
+            return false
+        }
+        return true
+    }
+
+    /// C11H-391: c11's own move of `tab` into a split of `pane`, marked as a
+    /// move for `shouldSplitPane`. Nil when bonsplit refused the split.
+    func movingTabIntoSplit(_ pane: PaneID?, orientation: SplitOrientation, tab: TabID, insertFirst: Bool) -> PaneID? {
+        let previous = splitMoveTab
+        lastHCRemoteRefusal = nil
+        splitMoveTab = tab
+        defer { splitMoveTab = previous }
+        return bonsplitController.splitPane(pane, orientation: orientation, movingTab: tab, insertFirst: insertFirst)
     }
 
     func splitTabBar(_ controller: BonsplitController, shouldClosePane pane: PaneID) -> Bool {
@@ -14806,6 +18211,9 @@ extension Workspace: BonsplitDelegate {
 #endif
             if !hasRealSurface {
                 let placeholderBonsplitTabs = originalBonsplitTabs.filter { tabIdFromBonsplitTabId($0.id) == nil }
+                // Ticket 12: the refilled pane runs where the moved terminal does.
+                let movedRemoteTarget = hcSplitTarget(
+                    from: controller.selectedTab(inPane: newPane).flatMap { tabIdFromBonsplitTabId($0.id) })
 #if DEBUG
                 dlog(
                     "split.placeholderRepair pane=\(originalPane.id.uuidString.prefix(5)) " +
@@ -14816,7 +18224,7 @@ extension Workspace: BonsplitDelegate {
                     // Keep the existing placeholder tab identity and replace only the panel mapping.
                     // This avoids an extra create+close tab churn that can transiently render an
                     // empty pane during drag-to-split of a single-tab pane.
-                    let workingDirectory = newSurfaceWorkingDirectory(
+                    let workingDirectory = movedRemoteTarget != nil ? nil : newSurfaceWorkingDirectory(
                         explicit: nil,
                         sourcePanelId: terminalPanelForConfigInheritance(inPane: originalPane)?.id
                     ).path
@@ -14827,10 +18235,11 @@ extension Workspace: BonsplitDelegate {
                         context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
                         configTemplate: inheritedConfig,
                         workingDirectory: workingDirectory,
-                        portOrdinal: portOrdinal
+                        remoteTarget: movedRemoteTarget
                     )
                     panels[replacementPanel.id] = replacementPanel
                     panelTitles[replacementPanel.id] = replacementPanel.displayTitle
+                    followHCRemoteStatus(replacementPanel)
                     seedTerminalInheritanceFontPoints(panelId: replacementPanel.id, configTemplate: inheritedConfig)
                     bonsplitTabIdToTabId[replacementBonsplitTab.id] = replacementPanel.id
 
@@ -14857,7 +18266,8 @@ extension Workspace: BonsplitDelegate {
                         "fallback=createTerminalAndDropPlaceholders"
                     )
 #endif
-                    _ = newTerminalSurface(inPane: originalPane, focus: false)
+                    _ = newTerminalSurface(inPane: originalPane, focus: false,
+                                           machine: movedRemoteTarget.map { .restored($0) } ?? .local)
                     for bonsplitTab in controller.tabs(inPane: originalPane) {
                         if tabIdFromBonsplitTabId(bonsplitTab.id) == nil {
                             bonsplitController.closeTab(bonsplitTab.id)
@@ -14884,7 +18294,11 @@ extension Workspace: BonsplitDelegate {
         )
 #endif
 
-        let workingDirectory = newSurfaceWorkingDirectory(explicit: nil, sourcePanelId: sourcePanelId).path
+        // Ticket 12: a panel-bar split of a terminal on another machine runs
+        // there, in that terminal's current folder (as Cmd+D does).
+        let remoteTarget = hcSplitTarget(from: sourcePanelId)
+        let workingDirectory = remoteTarget != nil ? nil
+            : newSurfaceWorkingDirectory(explicit: nil, sourcePanelId: sourcePanelId).path
         let inheritedConfig = inheritedTerminalConfig(
             preferredPanelId: sourcePanelId,
             inPane: originalPane
@@ -14895,10 +18309,11 @@ extension Workspace: BonsplitDelegate {
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
             configTemplate: inheritedConfig,
             workingDirectory: workingDirectory,
-            portOrdinal: portOrdinal
+            remoteTarget: remoteTarget
         )
         panels[newPanel.id] = newPanel
         panelTitles[newPanel.id] = newPanel.displayTitle
+        followHCRemoteStatus(newPanel)
         seedTerminalInheritanceFontPoints(panelId: newPanel.id, configTemplate: inheritedConfig)
 
         guard let newBonsplitTabId = bonsplitController.createTab(
@@ -14938,6 +18353,8 @@ extension Workspace: BonsplitDelegate {
     }
 
     func splitTabBar(_ controller: BonsplitController, didRequestNewTab kind: String, inPane pane: PaneID) {
+        let originScope = PanelLineage.shared.enterOrigin(.operator)
+        defer { PanelLineage.shared.exitOrigin(originScope) }
         // An explicit tab-bar spawn click ("A"/terminal/browser/markdown/"+") is an
         // unambiguous "open a new surface here and let me use it" gesture, so the new
         // surface must take focus immediately. Focus the clicked pane first — mirroring
@@ -14949,7 +18366,10 @@ extension Workspace: BonsplitDelegate {
         bonsplitController.focusPane(pane)
         switch kind {
         case "terminal":
-            _ = newTerminalSurface(inPane: pane)
+            // C11H-138: an operator click asks which machine when another is linked.
+            MachinePicker.ask(.terminal) { [weak self] request in
+                _ = self?.newTerminalSurface(inPane: pane, machine: request)
+            }
         case "browser":
             // Defense in depth: the spawn button is already hidden when the
             // internal browser is disabled, but no-op safely if the request
@@ -14973,7 +18393,7 @@ extension Workspace: BonsplitDelegate {
     /// gesture can end in a silent no-op — the defect class the dead A button
     /// belonged to. Modeled on `AppDelegate.SavedConfigLaunchResult`, which the
     /// editor sheet already renders honestly.
-    enum AgentLaunchDecline: Equatable {
+    enum AgentLaunchDecline: Equatable, Error {
         /// The resolved shell command was empty: a `custom` harness with no
         /// command of its own, or a harness whose Settings command was blanked.
         case emptyCommand(harness: String)
@@ -14982,6 +18402,11 @@ extension Workspace: BonsplitDelegate {
         /// An explicit recipe the overlay resolver could not materialize (an
         /// unknown harness in a hand-edited `agent-configs.json`).
         case unresolvableRecipe(harness: String)
+        /// C11H-138: the machine the launch asked for has no link up.
+        case machineUnavailable(String)
+        /// C11H-391 (NB3): the link a new terminal there would use is one c11
+        /// won't use (a c11h-era link with no usable link of the same name).
+        case machineLinkUnusable(String)
 
         /// One operator-facing sentence: what happened, and the next move.
         var message: String {
@@ -15007,6 +18432,16 @@ extension Workspace: BonsplitDelegate {
                     ),
                     harness
                 )
+            case .machineUnavailable(let machine):
+                return String(
+                    format: String(
+                        localized: "agentLaunch.decline.machineUnavailable",
+                        defaultValue: "%@ isn't connected right now, so the agent wasn't started there. Wait for its link, or launch on another machine."
+                    ),
+                    MachineRoster.shared.entry(id: machine)?.name ?? HCMachineTarget.displayName(machine)
+                )
+            case .machineLinkUnusable(let machine):
+                return HCMachineTargetError.linkUnusable(machine).message
             }
         }
     }
@@ -15036,7 +18471,11 @@ extension Workspace: BonsplitDelegate {
             explicitAgent: explicitAgent,
             explicitConfig: explicitConfig,
             workingDirectory: workingDirectory,
-            source: source
+            source: source,
+            // C11H-138: reached only from the socket (`default-agent launch`);
+            // agents go to another machine only when they ask (`--on`), never
+            // because the operator's pinned default names one.
+            machine: .local
         ).didLaunch
     }
 
@@ -15066,7 +18505,8 @@ extension Workspace: BonsplitDelegate {
         explicitAgent: AgentType? = nil,
         explicitConfig: SavedAgentConfig? = nil,
         workingDirectory: String? = nil,
-        source: AgentLaunchSource = .aButton
+        source: AgentLaunchSource = .aButton,
+        machine: HCMachineRequest? = nil
     ) -> AgentPanelLaunchOutcome {
         let launchCwd = agentLaunchWorkingDirectory(inPane: pane, explicit: workingDirectory)
         let userDefault = DefaultAgentConfigStore.shared.current
@@ -15131,10 +18571,21 @@ extension Workspace: BonsplitDelegate {
         guard !launch.command.isEmpty else {
             return .declined(.emptyCommand(harness: agent.rawValue))
         }
+        // C11H-138: the operator's choice, else the saved config's machine,
+        // else this Mac. A remote launch starts in that machine's own folder.
+        let target: HCMachineRequest
+        switch Self.agentLaunchMachine(requested: machine, saved: overlaySaved?.machine,
+                                       machines: MachinePicker.liveMachines(), unusable: MachinePicker.liveUnusable()) {
+        case .success(let request): target = request
+        case .failure(let decline): return .declined(decline)
+        }
+        let isRemote: Bool
+        if case .on = target { isRemote = true } else { isRemote = false }
         guard let panel = newTerminalSurface(
             inPane: pane,
-            workingDirectory: launchCwd,
-            startupEnvironment: launch.envOverrides
+            workingDirectory: isRemote ? nil : launchCwd,
+            startupEnvironment: launch.envOverrides,
+            machine: target
         ) else {
             return .declined(.surfaceCreationFailed)
         }
@@ -15154,6 +18605,9 @@ extension Workspace: BonsplitDelegate {
                 && self.missionRoot == missionRoot
                 && self.bonsplitController.allPaneIds.contains(pane)
         }
+        watchAgentLaunch(panel: panel, kind: agent.rawValue, launchLine: launch.command,
+                         hasPrompt: !launch.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                         localFolder: isRemote ? nil : launchCwd)
         // C11-178 rail-1: record the launch off the critical path, now with the
         // overlay-resolved axes + `config_id` + system-prompt mode (C11-179).
         recordAgentLaunchStats(
@@ -15178,6 +18632,78 @@ extension Workspace: BonsplitDelegate {
         // `refreshSplitButtonTooltips` diffs and no-ops when unchanged.
         refreshSplitButtonTooltips()
         return .launched
+    }
+
+    /// Pathfinder (2026-11-03): watch a just-launched agent panel for a start
+    /// that failed on screen, and say so on the panel (`AgentLaunchWatcher`).
+    func watchAgentLaunch(panel: TerminalPanel, kind: String, launchLine: String, hasPrompt: Bool, localFolder: String?) {
+        let remote = panel.hcRemoteTarget
+        // A remote launch names only an explicit folder; otherwise the watch asks
+        // hc where the agent is when it needs to say (the hinted folder may
+        // have fallen back to home there).
+        let folder = remote != nil
+            ? remote?.cwd
+            : localFolder.map { AgentLaunchWatch.abbreviate($0, home: FileManager.default.homeDirectoryForCurrentUser.path) }
+        AgentLaunchWatcher.shared.start(AgentLaunchWatcher.Launch(
+            workspaceId: id, panelId: panel.id, kind: kind,
+            agentName: AgentType(rawValue: kind)?.displayName ?? kind,
+            binary: AgentLaunchWatch.binary(ofLaunchLine: launchLine),
+            hasPrompt: hasPrompt, machine: remote?.machine, folder: folder))
+    }
+
+    /// C11H-138: where an agent launch goes. An explicit request wins, then a
+    /// saved config's machine (`local` is this Mac), then this Mac. A named
+    /// machine must have its link up; its name is matched to hc's, ignoring case.
+    nonisolated static func agentLaunchMachine(
+        requested: HCMachineRequest?,
+        saved: String?,
+        machines: [String: Bool],
+        unusable: Set<String> = []
+    ) -> Result<HCMachineRequest, AgentLaunchDecline> {
+        let wanted: String
+        if let requested {
+            guard case .on(let name) = requested else { return .success(requested) }
+            wanted = name
+        } else if let saved, saved != SavedAgentConfig.localMachine {
+            wanted = saved
+        } else {
+            return .success(.local)
+        }
+        let name = machines.keys.first { $0 == wanted }
+            ?? machines.keys.first { $0.caseInsensitiveCompare(wanted) == .orderedSame }
+        // C11H-391 (NB3): `machines` and `unusable` are routed (usable wins), so
+        // a saved config on a machine c11 relinked opens through c11's link.
+        if let name, unusable.contains(name) { return .failure(.machineLinkUnusable(name)) }
+        guard let name, machines[name] == true else { return .failure(.machineUnavailable(wanted)) }
+        return .success(.on(name))
+    }
+
+    /// C11H-138: an operator's agent launch (A button, agent picker, Save &
+    /// Launch). A config saved with a machine goes there; otherwise the machine
+    /// picker asks when another machine is linked. Escape launches nothing.
+    func launchAgentAskingMachine(
+        inPane pane: PaneID,
+        config: SavedAgentConfig?,
+        window: NSWindow?,
+        anchoringTo anchorScreenRect: NSRect? = nil,
+        source: AgentLaunchSource = .aButton,
+        completion: @escaping (AgentPanelLaunchOutcome) -> Void = { _ in }
+    ) {
+        let effective = config ?? AgentConfigLibraryStore.shared.effectiveDefault()
+        if effective.machine != nil {
+            // Every caller is an operator gesture (C11H-260), as with the picker.
+            let outcome = PanelLineage.shared.withOrigin(.operator) {
+                attemptAgentPanelLaunch(inPane: pane, explicitConfig: config, source: source)
+            }
+            completion(outcome)
+            return
+        }
+        let name = effective.name
+        MachinePicker.ask(.agent(name: name), in: window ?? NSApp.keyWindow ?? NSApp.mainWindow,
+                          anchoringTo: anchorScreenRect) { [weak self] request in
+            guard let self else { return }
+            completion(self.attemptAgentPanelLaunch(inPane: pane, explicitConfig: config, source: source, machine: request))
+        }
     }
 
     /// C11-178/179: emit a rail-1 launch-stats record for an A-button-lineage
@@ -15338,14 +18864,22 @@ extension Workspace: BonsplitDelegate {
     /// The New Agent shortcut (`KeyboardShortcutSettings.Action.newAgent`)
     /// takes this same path for the focused pane, passing its resolved window.
     func launchDefaultAgentFromPanelBar(inPane pane: PaneID, window: NSWindow? = nil) {
-        let outcome = attemptAgentPanelLaunch(inPane: pane)
-        guard let decline = outcome.decline else { return }
-        presentAgentPicker(
-            inPane: pane,
-            window: window ?? NSApp.currentEvent?.window,
-            anchoringTo: nil,
-            notice: decline.message
-        )
+        let anchorWindow = window ?? NSApp.currentEvent?.window
+        // The clicked A button, read while its click is still the current
+        // event: the machine picker and a decline's agent picker both drop
+        // from it. `nil` for the keyboard shortcut.
+        let buttonScreenRect = anchorWindow.flatMap { MachinePicker.clickedControlScreenRect(in: $0) }
+        launchAgentAskingMachine(inPane: pane, config: nil, window: anchorWindow,
+                                 anchoringTo: buttonScreenRect) { [weak self] outcome in
+            guard let self, let decline = outcome.decline,
+                  self.bonsplitController.allPaneIds.contains(pane) else { return }
+            self.presentAgentPicker(
+                inPane: pane,
+                window: anchorWindow,
+                anchoringTo: buttonScreenRect,
+                notice: decline.message
+            )
+        }
     }
 
     func splitTabBar(_ controller: BonsplitController, didRightClickNewTabButton kind: String, inPane pane: PaneID, buttonScreenRect: CGRect) {
@@ -15387,11 +18921,28 @@ extension Workspace: BonsplitDelegate {
             // popover-open time, so peeking at the picker from an unfocused
             // pane and pressing Esc doesn't steal the pane focus.
             self.bonsplitController.focusPane(pane)
+            // C11H-138: with another machine linked and no machine saved on the
+            // config, close this picker and ask which machine next; a decline
+            // there reopens this picker with its reason.
+            if config.machine == nil,
+               MachinePickerModel.shouldAsk(enabled: MachinePickerSettings.isEnabled(),
+                                            machines: MachinePicker.liveMachines()) {
+                DispatchQueue.main.async { [weak self, weak window] in
+                    self?.launchAgentAskingMachine(inPane: pane, config: config, window: window,
+                                                   anchoringTo: anchorScreenRect) { outcome in
+                        guard let self, let decline = outcome.decline,
+                              self.bonsplitController.allPaneIds.contains(pane) else { return }
+                        self.presentAgentPicker(inPane: pane, window: window, anchoringTo: anchorScreenRect,
+                                                notice: decline.message)
+                    }
+                }
+                return nil
+            }
             // A decline keeps the popover open and returns its reason; the
             // controller renders it in the notice bar (C11-203 A1).
-            return self.attemptAgentPanelLaunch(
-                inPane: pane, explicitConfig: config, source: .aButton
-            ).decline?.message
+            return PanelLineage.shared.withOrigin(.operator) {
+                self.attemptAgentPanelLaunch(inPane: pane, explicitConfig: config, source: .aButton)
+            }.decline?.message
         }
         controller.onPin = { [weak self] config in
             do {
@@ -15411,7 +18962,7 @@ extension Workspace: BonsplitDelegate {
         controller.onViewAll = { [weak self, weak window] in
             AgentPickerPresenter.shared.armReturnToPicker {
                 guard let self, let window else { return }
-                self.presentAgentPicker(inPane: pane, window: window, anchoringTo: nil)
+                self.presentAgentPicker(inPane: pane, window: window, anchoringTo: anchorScreenRect)
             }
             let eff = AgentConfigLibraryStore.shared.effectiveDefault()
             let focus: AgentConfigEditorFocus = eff.id.isEmpty ? .new : .config(eff.id)
@@ -15478,8 +19029,15 @@ extension Workspace: BonsplitDelegate {
 
         let panelTitles = bonsplitTabs.map { Self.paneClosePanelTitle(for: $0) }
         let title = Self.closePaneConfirmationTitle(panelCount: bonsplitTabs.count, isOnlyPane: isOnlyPane)
-        let message = Self.closePaneConfirmationMessage(panelCount: bonsplitTabs.count, isOnlyPane: isOnlyPane)
-        let confirmLabel = Self.closePaneConfirmLabel(panelCount: bonsplitTabs.count, isOnlyPane: isOnlyPane)
+        // C11H-24: an area holding an hc terminal says its close ends sessions.
+        let areaEndsSession = closeEndsHCSession(panelIds: bonsplitTabs.compactMap { tabIdFromBonsplitTabId($0.id) })
+        let message = HCCloseCopy.groupMessage(
+            Self.closePaneConfirmationMessage(panelCount: bonsplitTabs.count, isOnlyPane: isOnlyPane),
+            endsSession: areaEndsSession
+        )
+        let confirmLabel = areaEndsSession
+            ? HCCloseCopy.groupConfirmLabel
+            : Self.closePaneConfirmLabel(panelCount: bonsplitTabs.count, isOnlyPane: isOnlyPane)
         let cancelLabel = String(
             localized: "workspace.closePane.alert.cancel",
             defaultValue: "Cancel"
@@ -15635,11 +19193,15 @@ extension Workspace: BonsplitDelegate {
         case .terminal, .browser, .markdown, .none:
             // Terminal kinds, and any disabled non-terminal kind whose surface
             // is still open, fall back to a terminal so "+" stays useful.
-            _ = newTerminalSurface(inPane: pane)
+            MachinePicker.ask(.terminal) { [weak self] request in
+                _ = self?.newTerminalSurface(inPane: pane, machine: request)
+            }
         }
     }
 
     func splitTabBar(_ controller: BonsplitController, didRequestTabContextAction action: TabContextAction, for bonsplitTab: Bonsplit.Tab, inPane pane: PaneID) {
+        let originScope = PanelLineage.shared.enterOrigin(.operator)
+        defer { PanelLineage.shared.exitOrigin(originScope) }
         switch action {
         case .rename:
             promptRenamePanel(bonsplitTabId: bonsplitTab.id)
@@ -15659,11 +19221,11 @@ extension Workspace: BonsplitDelegate {
             // — the pane is reset with a fresh terminal rather than torn down.
             splitTabBar(controller, didRequestClosePane: pane)
         case .closeToLeft:
-            closePanels(bonsplitTabIdsToLeft(of: bonsplitTab.id, inPane: pane))
+            closePanelsFromPanelBar(bonsplitTabIdsToLeft(of: bonsplitTab.id, inPane: pane), kind: .toLeft)
         case .closeToRight:
-            closePanels(bonsplitTabIdsToRight(of: bonsplitTab.id, inPane: pane))
+            closePanelsFromPanelBar(bonsplitTabIdsToRight(of: bonsplitTab.id, inPane: pane), kind: .toRight)
         case .closeOthers:
-            closePanels(bonsplitTabIdsToCloseOthers(of: bonsplitTab.id, inPane: pane))
+            closePanelsFromPanelBar(bonsplitTabIdsToCloseOthers(of: bonsplitTab.id, inPane: pane), kind: .others)
         case .move:
             promptMovePanel(bonsplitTabId: bonsplitTab.id)
         case .newTerminalToRight:
@@ -15911,4 +19473,195 @@ struct WorkspaceRenameForm: Equatable {
             defaultValue: "Leave the name empty to use the automatic name."
         )
     }
+}
+
+// MARK: - Theme schema 2: state colours and the panel strip
+
+/// A schema-2 theme's `[states]` as hex. Each field is nil when the theme
+/// leaves it unset, and the view keeps c11's colour. Colours only: which
+/// state a panel is in, and the attention rules, stay c11's.
+struct ThemeStatePalette: Equatable, Sendable {
+    var waiting: String?
+    var waitingInk: String?
+    var running: String?
+    var idle: String?
+    var cold: String?
+    var flag: String?
+    var unread: String?
+    var notification: String?
+    var usageLimit: String?
+
+    static let unset = ThemeStatePalette()
+
+    /// States from one resolved snapshot (the sidebar resolves its style from one).
+    static func from(snapshot: ResolvedThemeSnapshot, context: ThemeContext) -> ThemeStatePalette {
+        func hex(_ role: ThemeStyleRole) -> String? {
+            guard let color = snapshot.resolveStyleColor(role, context: context) else { return nil }
+            return color.hexString(includeAlpha: color.alphaComponent < 0.999)
+        }
+        return ThemeStatePalette(
+            waiting: hex(.stateWaiting),
+            waitingInk: hex(.stateWaitingInk),
+            running: hex(.stateRunning),
+            idle: hex(.stateIdle),
+            cold: hex(.stateCold),
+            flag: hex(.stateFlag),
+            unread: hex(.stateUnread),
+            notification: hex(.stateNotification),
+            usageLimit: hex(.stateUsageLimit)
+        )
+    }
+
+    /// The active theme's states. Schema-1 themes define none, so they read `.unset`.
+    @MainActor
+    static func current(context: ThemeContext, manager: ThemeManager = .shared) -> ThemeStatePalette {
+        guard manager.isEnabled else { return .unset }
+        func hex(_ role: ThemeStyleRole) -> String? {
+            guard let color: NSColor = manager.style(role, context: context) else { return nil }
+            return color.hexString(includeAlpha: color.alphaComponent < 0.999)
+        }
+        return ThemeStatePalette(
+            waiting: hex(.stateWaiting),
+            waitingInk: hex(.stateWaitingInk),
+            running: hex(.stateRunning),
+            idle: hex(.stateIdle),
+            cold: hex(.stateCold),
+            flag: hex(.stateFlag),
+            unread: hex(.stateUnread),
+            notification: hex(.stateNotification),
+            usageLimit: hex(.stateUsageLimit)
+        )
+    }
+}
+
+/// The panel strip's schema-2 values (C11H-144, -145, -148), resolved once per
+/// chrome apply and handed to bonsplit. `.unset` leaves the strip as today.
+struct ThemeStripStyle: Equatable {
+    var textColors = BonsplitConfiguration.Appearance.TabTextColors()
+    var textStyle = BonsplitConfiguration.Appearance.TabTextStyle.unset
+    var selection: BonsplitTabSelectionStyle = .indicator
+    /// The selected tab's fill (`chrome.tabBar.activeFill`), only when the theme sets it.
+    var activeFillHex: String?
+    var hoverBrackets = false
+    /// `ornaments.scanlines`: overlay opacity over the strip, nil when off.
+    var scanlinesOpacity: Double?
+
+    static let unset = ThemeStripStyle()
+
+    init() {}
+
+    /// What an appearance carries now, for the no-op guard.
+    init(appearance: BonsplitConfiguration.Appearance) {
+        textColors = appearance.tabTextColors
+        textStyle = appearance.tabTextStyle
+        selection = appearance.tabSelectionStyle
+        activeFillHex = appearance.chromeColors.activeFillHex
+        hoverBrackets = appearance.tabHoverBrackets
+        scanlinesOpacity = appearance.chromeScanlinesOpacity
+    }
+
+    func apply(to appearance: inout BonsplitConfiguration.Appearance) {
+        appearance.tabTextColors = textColors
+        appearance.tabTextStyle = textStyle
+        appearance.tabSelectionStyle = selection
+        appearance.chromeColors.activeFillHex = activeFillHex
+        appearance.tabHoverBrackets = hoverBrackets
+        appearance.chromeScanlinesOpacity = scanlinesOpacity
+    }
+
+    /// The active theme's strip. `themedPathLive` is the bonsplit themed path
+    /// (its debug flag, or a schema-2 theme); off, the strip stays as today.
+    @MainActor
+    static func current(context: ThemeContext, themedPathLive: Bool, manager: ThemeManager = .shared) -> ThemeStripStyle {
+        guard manager.isEnabled, themedPathLive else { return .unset }
+        func hex(_ color: NSColor?) -> String? {
+            color.map { $0.hexString(includeAlpha: $0.alphaComponent < 0.999) }
+        }
+        var style = ThemeStripStyle()
+        style.textColors = .init(
+            textHex: hex(manager.style(.tabText, context: context)),
+            textSecondaryHex: hex(manager.style(.tabTextSecondary, context: context)),
+            activeTextHex: hex(manager.style(.tabActiveText, context: context)),
+            numberHex: hex(manager.style(.tabNumber, context: context))
+        )
+        style.textStyle = tabTextStyle(from: manager.textStyle(.tab, context: context))
+        style.selection = selection(from: manager.style(.tabSelection, context: context))
+        // activeFill is a schema-1 role every schema-1 theme writes but bonsplit
+        // never drew, so only a schema-2 theme's value replaces bonsplit's own
+        // selected fill (stage11 with the debug flag keeps today's).
+        // c11 (C11H-197): the context's theme, which is the window's override when it has one.
+        if manager.themeOwnsChrome(context: context), manager.theme(for: context).stringValue(for: .tabBar_activeFill) != nil {
+            style.activeFillHex = hex(manager.resolve(.tabBar_activeFill, context: context))
+        }
+        style.hoverBrackets = (manager.style(.ornamentHoverBrackets, context: context) as Bool?) ?? false
+        style.scanlinesOpacity = ThemeOrnaments.scanlinesOpacity(manager.style(.ornamentScanlines, context: context))
+        return style
+    }
+
+    /// `geometry.tabSelection`; unset or unknown keeps today's indicator.
+    static func selection(from raw: String?) -> BonsplitTabSelectionStyle {
+        raw.flatMap(BonsplitTabSelectionStyle.init(rawValue:)) ?? .indicator
+    }
+
+    /// `[type.tab]` for bonsplit. A family that is not installed falls back to
+    /// SF Mono when its name says mono, else the system font.
+    static func tabTextStyle(
+        from style: ThemeTextStyle,
+        isAvailable: (String) -> Bool = ThemeFontFamily.isAvailable
+    ) -> BonsplitConfiguration.Appearance.TabTextStyle {
+        guard !style.isUnset else { return .unset }
+        var family = style.familyName
+        if let name = family, !isAvailable(name) {
+            family = name.localizedCaseInsensitiveContains("mono") ? "system-mono" : nil
+        }
+        return .init(
+            familyName: family,
+            scale: style.scale.map { CGFloat($0) },
+            weight: style.weight.flatMap(BonsplitFontWeight.init(rawValue:)),
+            uppercase: style.uppercase ?? false,
+            trackingEm: style.tracking.map { CGFloat($0) }
+        )
+    }
+}
+
+/// C11H-306: one headless composer read and the hc record it was taken against. A new status, turn or status
+/// time means the agent moved since, so the read no longer steers a decision. Its age is monotonic: a clock
+/// change never makes an old read look fresh.
+struct MailboxHeadlessComposerRead {
+    static let freshnessNanoseconds: UInt64 = 1_500_000_000
+
+    let observation: HCComposerObservation
+    let atUptime: UInt64
+    let status: String?
+    let turn: Int64?
+    let statusMilliseconds: Int64?
+
+    var isFresh: Bool { HCMonotonic.now &- atUptime <= Self.freshnessNanoseconds }
+
+    init(observation: HCComposerObservation, atUptime: UInt64 = HCMonotonic.now, record: HCTerminalRecord?) {
+        self.observation = observation
+        self.atUptime = atUptime
+        status = record?.status
+        turn = record?.turn
+        statusMilliseconds = record?.statusTimestampMilliseconds
+    }
+
+    func matches(_ record: HCTerminalRecord?) -> Bool {
+        status == record?.status && turn == record?.turn && statusMilliseconds == record?.statusTimestampMilliseconds
+    }
+}
+
+/// C11H-306: what starting a headless ring charged the ledger, so an attempt that put no byte out can give it back.
+struct MailboxHeadlessAttemptCharge {
+    let at: Date
+    let priorRungEpoch: String?
+    let priorRungAt: Date?
+}
+
+/// C11H-306: one composer read handed out of an input check, to name the hold it explains.
+final class HCComposerObservationBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var observation: HCComposerObservation?
+    func set(_ value: HCComposerObservation) { lock.lock(); observation = value; lock.unlock() }
+    var value: HCComposerObservation? { lock.lock(); defer { lock.unlock() }; return observation }
 }

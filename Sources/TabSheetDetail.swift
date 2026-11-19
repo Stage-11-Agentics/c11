@@ -213,6 +213,73 @@ enum PanelSheetDetailBuilder {
         return String(localized: "panelSheet.lineage.childOf", defaultValue: "Child of \(parentTitle)")
     }
 
+    /// Where the panel came from, in the operator's words. A child names its
+    /// parent (omitted when the delegate line already does); every other
+    /// origin says who launched it, and an unrecorded one says so.
+    static func originNote(
+        origin: PanelOrigin?,
+        originDetail: String? = nil,
+        createdAt: Date? = nil,
+        parentTitle: String?,
+        parentPanelId: UUID? = nil,
+        delegateOwnerPanelId: UUID? = nil,
+        formatTime: (Date) -> String = { PanelSheetDetailBuilder.launchTime($0) }
+    ) -> String? {
+        switch origin ?? .unknown {
+        case .panel:
+            return parentLineageNote(
+                parentTitle: parentTitle,
+                parentPanelId: parentPanelId,
+                delegateOwnerPanelId: delegateOwnerPanelId
+            )
+        case .operator:
+            return String(localized: "panelSheet.lineage.operator", defaultValue: "Launched by operator")
+        case .app where originDetail == PanelOriginRequest.AppReason.launch:
+            guard let createdAt else {
+                return String(localized: "panelSheet.lineage.launch", defaultValue: "Created by c11 launch")
+            }
+            let time = formatTime(createdAt)
+            return String(localized: "panelSheet.lineage.launchAt", defaultValue: "Created by c11 launch at \(time)")
+        case .app:
+            guard let reason = appReasonText(originDetail) else {
+                return String(localized: "panelSheet.lineage.app", defaultValue: "Launched by c11")
+            }
+            return String(localized: "panelSheet.lineage.appReason", defaultValue: "Launched by c11 (\(reason))")
+        case .external:
+            return String(localized: "panelSheet.lineage.external", defaultValue: "Launched from outside c11")
+        case .unknown:
+            return String(localized: "panelSheet.lineage.unknown", defaultValue: "Origin not recorded")
+        }
+    }
+
+    /// The launch time in the operator's locale and time zone ("Nov 13, 10:57 AM"), never UTC.
+    /// Date and time are formatted apart: the combined form reads "Nov 13 at
+    /// 10:57 AM", which doubles the sentence's own "at".
+    static func launchTime(_ date: Date, locale: Locale = .current, timeZone: TimeZone = .current) -> String {
+        func part(_ template: String) -> String {
+            let formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.timeZone = timeZone
+            formatter.setLocalizedDateFormatFromTemplate(template)
+            return formatter.string(from: date)
+        }
+        return "\(part("MMMd")), \(part("jmm"))"
+    }
+
+    private static func appReasonText(_ detail: String?) -> String? {
+        guard let detail = oneLine(detail), !detail.isEmpty else { return nil }
+        switch detail {
+        case PanelOriginRequest.AppReason.restore:
+            return String(localized: "panelSheet.lineage.reason.restore", defaultValue: "restore")
+        case PanelOriginRequest.AppReason.chaos:
+            return String(localized: "panelSheet.lineage.reason.chaos", defaultValue: "chaos")
+        case PanelOriginRequest.AppReason.config:
+            return String(localized: "panelSheet.lineage.reason.config", defaultValue: "config")
+        default:
+            return detail
+        }
+    }
+
     private static func subtitleWithLineage(_ input: Inputs) -> String? {
         var detailInput = input
         detailInput.relationshipLabel = nil
@@ -227,7 +294,7 @@ enum PanelSheetDetailBuilder {
             .joined(separator: " · ")
     }
 
-    /// A waiting agent keeps its gold mark; its expired cache shows here.
+    /// A waiting agent keeps its waiting mark; its expired cache shows here.
     private static func promptCacheNote(_ input: Inputs) -> String? {
         guard input.activity == .waiting,
               let cache = input.promptCache, cache.isCold(at: input.now) else { return nil }
@@ -420,7 +487,8 @@ extension Workspace {
             panelId: panelId,
             fallback: panelTitles[panelId] ?? panel.displayTitle
         )
-        let parentPanelId = PanelLineage.shared.node(panelId: panelId)?.parentPanelId
+        let lineageNode = PanelLineage.shared.node(panelId: panelId)
+        let parentPanelId = lineageNode?.parentPanelId
         let parentTitle = parentPanelId.flatMap { PanelLineage.shared.node(panelId: $0)?.lastTitle }
         func source(_ key: String) -> MetadataSource? {
             (snapshot.sources[key]?["source"] as? String).flatMap(MetadataSource.init(rawValue:))
@@ -491,7 +559,10 @@ extension Workspace {
                 ? String(localized: "journal.evidence.unconfirmed", defaultValue: "Unconfirmed")
                 : nil,
             relationshipLabel: delegationLabel(panelId: panelId),
-            lineageNote: PanelSheetDetailBuilder.parentLineageNote(
+            lineageNote: PanelSheetDetailBuilder.originNote(
+                origin: lineageNode?.origin,
+                originDetail: lineageNode?.originDetail,
+                createdAt: lineageNode?.createdAt,
                 parentTitle: parentTitle,
                 parentPanelId: parentPanelId,
                 delegateOwnerPanelId: attention.delegatedBy

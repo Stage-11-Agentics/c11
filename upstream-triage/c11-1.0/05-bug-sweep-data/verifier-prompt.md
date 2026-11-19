@@ -3,9 +3,9 @@
 You are verifying upstream cmux bug fixes against c11, a fork of cmux. You are one of ten parallel verifiers, each with one batch.
 
 ## Context
-- c11 repo: `/Users/atin/Projects/Stage11/code/c11` (branch main). cmux is the `upstream` remote; `upstream/main` is fetched and current (2026-10-01). The fork point is `53910919` (2026-03-18). c11 has diverged a lot since (renamed cmux→c11, own sidebar/metadata/mailbox/markdown/browser work), and upstream has extracted much code into `Packages/macOS/*`.
+- c11 repo: `~/src/c11` (branch main). cmux is the `upstream` remote; `upstream/main` is fetched and current (2026-10-01). The fork point is `53910919` (2026-03-18). c11 has diverged a lot since (renamed cmux→c11, own sidebar/metadata/mailbox/markdown/browser work), and upstream has extracted much code into `Packages/macOS/*`.
 - **STRICTLY READ ONLY.** No edits to the repo, no branches, commits, builds, tests, `git fetch`, `xcodebuild`, or `swift`. You may only `git show`, `git log`, `git grep`, `git diff`, read files, and `gh` (read). Write output only to the path given below. This machine is shared; no heavy work.
-- PR → upstream commit map: `/private/tmp/claude-501/-Users-atin-Projects-Stage11-code-c11/7bddadfc-26dc-43f4-b843-51b2fe78c38d/scratchpad/sweep/pr_sha.tsv` (pr, sha, kind). For kind=squash, `git show <sha>`; for kind=merge, `git diff <sha>^1 <sha>`. If a PR is missing from the map, use `gh pr diff <N> -R manaflow-ai/cmux` and `gh pr view <N> -R manaflow-ai/cmux --json title,body`.
+- PR → upstream commit map: `/private/tmp/claude-501/-Users-demo-Projects-Stage11-code-c11/7bddadfc-26dc-43f4-b843-51b2fe78c38d/scratchpad/sweep/pr_sha.tsv` (pr, sha, kind). For kind=squash, `git show <sha>`; for kind=merge, `git diff <sha>^1 <sha>`. If a PR is missing from the map, use `gh pr diff <N> -R manaflow-ai/cmux` and `gh pr view <N> -R manaflow-ai/cmux --json title,body`.
 - Upstream code at a point in time: `git show <sha>:<path>`. c11 code: the working tree (read files directly, cite `path:line`).
 
 ## c11's own known problems (cross-reference these)
@@ -35,7 +35,7 @@ One operator running 10-40 agents (Claude Code, Codex) in parallel across many w
 3. For confirmed/probable rows give: severity (high/med/low), port difficulty (S: under a day, cherry-pick or small rewrite; M: days, needs adaptation; L: a week+, architectural), recommendation (`port` = cherry-pick-ish; `reimplement` = take the idea, write it c11's way; `watch` = real but low value now; `skip`).
 
 ## Output
-Write markdown to `/private/tmp/claude-501/-Users-atin-Projects-Stage11-code-c11/7bddadfc-26dc-43f4-b843-51b2fe78c38d/scratchpad/sweep/verdicts/<BATCH>.md` with:
+Write markdown to `/private/tmp/claude-501/-Users-demo-Projects-Stage11-code-c11/7bddadfc-26dc-43f4-b843-51b2fe78c38d/scratchpad/sweep/verdicts/<BATCH>.md` with:
 1. `## Verified` table, one row per bug (grouped PRs): `bug (plain English) | PRs | subsystem | c11 status | severity | port | rec | evidence (upstream file + c11 path:line) | notes (incl. link to c11 known problem)`. Sort high severity first.
 2. `## Top findings` : up to 5 paragraphs on the most important shared bugs, with the mechanism and why it matters for Atin.
 3. `## Triage ledger` : every row of the batch as `pr | disposition | one-line reason`.

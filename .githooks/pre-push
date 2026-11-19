@@ -26,4 +26,20 @@ case "$remote_url" in
         ;;
 esac
 
+# c11 (C11H-130): main stays shareable with a friend. The same blocking check remote-build.sh
+# runs, here so docs-only and skill-only pushes get it too. It reads the working tree, and only
+# for pushes that update a branch (not deletes or tags). scripts/shareable-gate.sh explains the
+# logged override for a known false alarm.
+updates_branch=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [[ "$remote_ref" == refs/heads/* && ! "$local_sha" =~ ^0+$ ]] && updates_branch=1
+done
+root="$(git rev-parse --show-toplevel)"
+# A missing gate blocks too.
+if [[ "$updates_branch" -eq 1 ]]; then
+    bash "$root/scripts/shareable-gate.sh" pre-push "$root" || exit 1
+    # Every agent reads the c11 card at launch; it fails past its word ceiling.
+    python3 "$root/scripts/check-skill-card-size.py" "$root" >/dev/null || exit 1
+fi
+
 exit 0

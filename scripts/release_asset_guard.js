@@ -10,6 +10,17 @@ const IMMUTABLE_RELEASE_ASSETS = [
   "c11d-remote-checksums.txt",
   "c11d-remote-manifest.json",
 ];
+// C11H-392: a release made with --remote-artifacts (scripts/release-local.sh)
+// also carries the Linux machine's hc and relay CLI, which its app names by hash
+// (scripts/c11-remote-artifacts.sh). They are immutable like the rest.
+const LINUX_MACHINE_ASSETS = [
+  "herdr-core-linux-x86_64",
+  "c11-linux-x86_64",
+  "c11-linux-checksums.txt",
+];
+function releaseAssetNames({ linux = false } = {}) {
+  return linux ? [...IMMUTABLE_RELEASE_ASSETS, ...LINUX_MACHINE_ASSETS] : [...IMMUTABLE_RELEASE_ASSETS];
+}
 const RELEASE_ASSET_GUARD_STATE = Object.freeze({
   CLEAR: "clear",
   PARTIAL: "partial",
@@ -41,6 +52,8 @@ function evaluateReleaseAssetGuard({ existingAssetNames, immutableAssetNames = I
 
 module.exports = {
   IMMUTABLE_RELEASE_ASSETS,
+  LINUX_MACHINE_ASSETS,
+  releaseAssetNames,
   RELEASE_ASSET_GUARD_STATE,
   evaluateReleaseAssetGuard,
 };

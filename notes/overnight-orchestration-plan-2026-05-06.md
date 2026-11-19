@@ -15,9 +15,9 @@ Each delegation runs the full `lattice-delegate` skill pattern: isolated git wor
 
 Skills to load before you do anything:
 - `c11`
-- `lattice-delegate` (at `/Users/atin/Projects/Stage11/.claude/skills/lattice-delegate/SKILL.md`) — primary contract
+- `lattice-delegate` (at `~/src/.claude/skills/lattice-delegate/SKILL.md`) — primary contract
 - `lattice` (general task tracker patterns)
-- Project `CLAUDE.md` at `/Users/atin/Projects/Stage11/code/c11/CLAUDE.md` — typing-latency, localization, testing, validation. Authoritative.
+- Project `CLAUDE.md` at `~/src/c11/CLAUDE.md` — typing-latency, localization, testing, validation. Authoritative.
 
 ---
 
@@ -71,10 +71,10 @@ All four wave-1 worktrees are pre-created. C11-17/30/24 were created against `or
 
 | Ticket | Worktree | Branch |
 |---|---|---|
-| C11-17 | `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-17-overnight-installer-purge` | `c11-17-overnight-installer-purge` |
-| C11-30 | `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-30-overnight-close-overlay` | `c11-30-overnight-close-overlay` |
-| C11-24 | `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-24-overnight-manifest-viewer` | `c11-24-overnight-manifest-viewer` |
-| C11-16 | `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-16-overnight-fda-detect` | `c11-16-overnight-fda-detect` |
+| C11-17 | `~/src/c11-worktrees/c11-17-overnight-installer-purge` | `c11-17-overnight-installer-purge` |
+| C11-30 | `~/src/c11-worktrees/c11-30-overnight-close-overlay` | `c11-30-overnight-close-overlay` |
+| C11-24 | `~/src/c11-worktrees/c11-24-overnight-manifest-viewer` | `c11-24-overnight-manifest-viewer` |
+| C11-16 | `~/src/c11-worktrees/c11-16-overnight-fda-detect` | `c11-16-overnight-fda-detect` |
 
 Wait-list ticket worktrees are **not yet created** — make them when you spin up that delegation. Recommended slugs:
 
@@ -87,11 +87,11 @@ Wait-list ticket worktrees are **not yet created** — make them when you spin u
 The repo has 30+ existing worktrees including stale `c11-24-*` and `c11-26-*` from previous short-ID assignments. The pre-created overnight worktrees (C11-17, C11-30, C11-24) may have been touched in earlier sessions. Apply this protocol per worktree:
 
 ```bash
-WT=/Users/atin/Projects/Stage11/code/c11-worktrees/<slug>
+WT=~/src/c11-worktrees/<slug>
 BR=<branch>
 
 # 1. Fetch fresh main from origin
-git -C /Users/atin/Projects/Stage11/code/c11 fetch origin main
+git -C ~/src/c11 fetch origin main
 
 # 2. Does the worktree directory exist?
 if [ -d "$WT" ]; then
@@ -107,17 +107,17 @@ if [ -d "$WT" ]; then
   fi
 else
   # Worktree dir missing. Branch may still exist locally — clean up and recreate.
-  git -C /Users/atin/Projects/Stage11/code/c11 worktree prune
-  git -C /Users/atin/Projects/Stage11/code/c11 branch -D "$BR" 2>/dev/null || true
-  git -C /Users/atin/Projects/Stage11/code/c11 worktree add -b "$BR" "$WT" origin/main
+  git -C ~/src/c11 worktree prune
+  git -C ~/src/c11 branch -D "$BR" 2>/dev/null || true
+  git -C ~/src/c11 worktree add -b "$BR" "$WT" origin/main
 fi
 ```
 
 For never-before-used wait-list slugs, the simpler form suffices:
 
 ```bash
-git -C /Users/atin/Projects/Stage11/code/c11 fetch origin main
-git -C /Users/atin/Projects/Stage11/code/c11 worktree add -b <slug> ../c11-worktrees/<slug> origin/main
+git -C ~/src/c11 fetch origin main
+git -C ~/src/c11 worktree add -b <slug> ../c11-worktrees/<slug> origin/main
 ```
 
 > Always use ULIDs (not short IDs) in delegator prompts and lattice commands. Short IDs renumber on rebase.
@@ -139,7 +139,7 @@ After creating the Overnight Run workspace + 5-pane layout, run a single sed-sty
 
 ```bash
 for TICKET in 17 30 24 16; do
-  WT=/Users/atin/Projects/Stage11/code/c11-worktrees/c11-${TICKET}-overnight-*
+  WT=~/src/c11-worktrees/c11-${TICKET}-overnight-*
   PROMPT="$(ls $WT/.lattice/prompts/c11-${TICKET}-delegator.md)"
   # Substitute placeholders. DELEG_PANE/DELEG_SURF differ per ticket — read state.json.
   DELEG_PANE=$(jq -r ".in_flight[\"C11-${TICKET}\"].deleg_pane // empty" $STATE)
@@ -210,11 +210,11 @@ c11 set-metadata    --surface "$CMUX_SURFACE_ID" --key role   --value "meta-orch
 c11 set-metadata    --surface "$CMUX_SURFACE_ID" --key status --value "preflight"
 c11 set-description --surface "$CMUX_SURFACE_ID" "Overnight queue: C11-17, C11-30, C11-24, C11-16 (wave 1) + C11-18, C11-19, C11-4 (wait list). C11-1 research in sibling pane. Stack PRs for operator review."
 
-mkdir -p /Users/atin/Projects/Stage11/code/c11/notes/overnight-meta
-date -u +%FT%TZ > /Users/atin/Projects/Stage11/code/c11/notes/overnight-meta/started-at.txt
+mkdir -p ~/src/c11/notes/overnight-meta
+date -u +%FT%TZ > ~/src/c11/notes/overnight-meta/started-at.txt
 ```
 
-Persistent state file across `ScheduleWakeup` ticks lives at `/Users/atin/Projects/Stage11/code/c11/notes/overnight-meta/state.json`. Schema:
+Persistent state file across `ScheduleWakeup` ticks lives at `~/src/c11/notes/overnight-meta/state.json`. Schema:
 
 ```json
 {
@@ -247,7 +247,7 @@ Auxiliary files alongside `state.json`:
 
 ULID: `task_01KPP7QBZ3NJMXS4C9NA2XW01X` ("c11mux → c11 rebrand pass").
 
-Status: `needs_human`. Task: read the audit notes (`notes/c11-audit-2026-04-21.md` and the C11-1 worktrees `c11-1-completion-audit`, `c11-1-rebrand-cleanup` — verified on disk), then write a markdown summary at `/Users/atin/Projects/Stage11/code/c11/notes/c11-1-recommendation-2026-05-06.md` containing:
+Status: `needs_human`. Task: read the audit notes (`notes/c11-audit-2026-04-21.md` and the C11-1 worktrees `c11-1-completion-audit`, `c11-1-rebrand-cleanup` — verified on disk), then write a markdown summary at `~/src/c11/notes/c11-1-recommendation-2026-05-06.md` containing:
 
 1. **Current state** — what's done, what's not, what the audit found.
 2. **Open decisions** — explicit list of operator-judgment items (anything the audit flagged as "needs human" or that requires taste).
@@ -268,14 +268,14 @@ Read the following sources, then write a markdown recommendation file:
    what's blocked, and what's flagged needs-human.)
 2. `notes/c11-audit-2026-04-21.md` — the audit notes referenced by the ticket.
 3. The two C11-1 worktrees on disk:
-   - /Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-completion-audit
-   - /Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-rebrand-cleanup
+   - ~/src/c11-worktrees/c11-1-completion-audit
+   - ~/src/c11-worktrees/c11-1-rebrand-cleanup
    Use `git -C <wt> log --oneline -50` and `git -C <wt> diff origin/main --stat`
    to see what's been attempted and what's pending.
 4. The full project CLAUDE.md and the cmux→c11 naming feedback memory at
-   /Users/atin/.claude/projects/-Users-atin-Projects-Stage11-code-c11/memory/feedback_cmux_to_c11_naming.md
+   ~/.claude/projects/-Users-demo-Projects-Stage11-code-c11/memory/feedback_cmux_to_c11_naming.md
 
-Then write `/Users/atin/Projects/Stage11/code/c11/notes/c11-1-recommendation-2026-05-06.md`
+Then write `~/src/c11/notes/c11-1-recommendation-2026-05-06.md`
 with these sections:
 
 1. Current state — what's done, what's not, what the audit found.
@@ -284,11 +284,11 @@ with these sections:
 4. Suggested next steps — sequence to land C11-1.
 
 No code changes. No Lattice writes. Do not transition the ticket's status.
-When done, write the file path to `/Users/atin/Projects/Stage11/code/c11/notes/overnight-meta/c11-1-research-done.txt`
+When done, write the file path to `~/src/c11/notes/overnight-meta/c11-1-research-done.txt`
 and stop.
 ```
 
-Launch: dedicated `claude --dangerously-skip-permissions --model opus` session in the right-bottom pane of the Overnight Run workspace, prompt = `Read /Users/atin/Projects/Stage11/code/c11/notes/overnight-meta/c11-1-research-prompt.md and follow the instructions.`
+Launch: dedicated `claude --dangerously-skip-permissions --model opus` session in the right-bottom pane of the Overnight Run workspace, prompt = `Read ~/src/c11/notes/overnight-meta/c11-1-research-prompt.md and follow the instructions.`
 
 ---
 
@@ -301,7 +301,7 @@ Always emit a **2-hour heartbeat** to `notes/overnight-meta/digest.md` regardles
 On each wake:
 
 ```bash
-REPO_ROOT=/Users/atin/Projects/Stage11/code/c11
+REPO_ROOT=~/src/c11
 STATE=$REPO_ROOT/notes/overnight-meta/state.json
 
 for ticket in $(jq -r '.in_flight | keys[]' $STATE); do
@@ -386,12 +386,12 @@ Will stop at status=review with PR open. Operator returns later for review.
 **Launch sequence:**
 
 1. Read this file in full. Confirm the operator hasn't added new instructions in the conversation since this was written.
-2. Load skills: `c11`, `lattice-delegate` (at `/Users/atin/Projects/Stage11/.claude/skills/lattice-delegate/SKILL.md`), `lattice`, project `CLAUDE.md`.
+2. Load skills: `c11`, `lattice-delegate` (at `~/src/.claude/skills/lattice-delegate/SKILL.md`), `lattice`, project `CLAUDE.md`.
 3. Verify pre-staged artifacts:
    ```bash
-   ls -d /Users/atin/Projects/Stage11/code/c11-worktrees/c11-{17,30,24,16}-overnight-*
-   ls /Users/atin/Projects/Stage11/code/c11-worktrees/c11-{17,30,24,16}-overnight-*/.lattice/prompts/c11-*-delegator.md
-   ls /Users/atin/Projects/Stage11/code/c11/notes/overnight-meta/c11-1-research-prompt.md
+   ls -d ~/src/c11-worktrees/c11-{17,30,24,16}-overnight-*
+   ls ~/src/c11-worktrees/c11-{17,30,24,16}-overnight-*/.lattice/prompts/c11-*-delegator.md
+   ls ~/src/c11/notes/overnight-meta/c11-1-research-prompt.md
    ```
 4. Apply collision-handling protocol per worktree (re-fetch origin/main, rebase if clean, log conflict if dirty/wrong-branch).
 5. Run meta-orchestrator self-setup (rename tab, set metadata, `mkdir -p notes/overnight-meta` if missing, init `started-at.txt`, write `state.json` skeleton).
@@ -405,7 +405,7 @@ Will stop at status=review with PR open. Operator returns later for review.
    Watch for the "Do you trust this folder?" prompt on first launch in each new worktree (read-screen + send-key 1 to dismiss; the lattice-delegate skill covers this).
 9. Launch the C11-1 research agent in the right-bottom pane:
    ```bash
-   c11 send --workspace $WS --surface $RESEARCH_SURF "cd /Users/atin/Projects/Stage11/code/c11 && claude --dangerously-skip-permissions --model opus \"Read /Users/atin/Projects/Stage11/code/c11/notes/overnight-meta/c11-1-research-prompt.md and follow the instructions.\""
+   c11 send --workspace $WS --surface $RESEARCH_SURF "cd ~/src/c11 && claude --dangerously-skip-permissions --model opus \"Read ~/src/c11/notes/overnight-meta/c11-1-research-prompt.md and follow the instructions.\""
    c11 send-key --workspace $WS --surface $RESEARCH_SURF enter
    ```
 10. Finalize `state.json` with all four in-flight tickets, ULIDs, worktree dirs, branches, surface refs, validation tiers, wait-list, timestamps.

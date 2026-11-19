@@ -1,11 +1,25 @@
 // Shared, event-driven native-doorbell transport. Never reads or writes config.
 import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
+import { statSync } from 'node:fs';
 
 export const doorbellText = 'c11 mail waiting: run c11 mailbox recv --ack';
 
+// Node exposes no peer credentials, so the stream connects only to a socket
+// this user owns. Every path c11 stamps sits in its 0700 per-user folder,
+// where no other account can create an entry; the owner check also covers an
+// explicit /tmp override and a legacy alias (C11H-364).
+export function socketOwnedByUser(socketPath, expectedUid = process.getuid?.()) {
+  try {
+    const info = statSync(socketPath);
+    return info.isSocket() && (expectedUid === undefined || info.uid === expectedUid);
+  } catch {
+    return false;
+  }
+}
+
 export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionID, route, canQueue = false, deliver,
-  supportsAttemptReplay = false, onDeliveryPending, onDeliverySettled, onSettled }) {
+  supportsAttemptReplay = false, onDeliveryPending, onDeliverySettled, onSettled, expectedUid = process.getuid?.() }) {
   let stopped = false;
   let socket;
   let retry;
@@ -13,6 +27,14 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
   const stop = () => { stopped = true; clearTimeout(retry); socket?.destroy(); };
   const connect = () => {
     if (stopped) return;
+    if (!socketOwnedByUser(socketPath, expectedUid)) {
+      retry = setTimeout(() => {
+        retry = undefined;
+        connect();
+      }, Math.min(10000, 250 * 2 ** Math.min(failures++, 6)));
+      retry.unref();
+      return;
+    }
     const current = createConnection(socketPath);
     socket = current;
     current.unref();
@@ -73,7 +95,7 @@ export function subscribeNativeMailbox({ socketPath, panelID, agentPID, sessionI
         if (!registered) {
           // Session restore's not_ready is transient. Other explicit refusals
           // require a new session/configuration instead of a reconnect loop.
-          if (frame.ok === false && frame.error?.code !== 'not_ready') { stop(); return; }
+          if (frame.ok === false && !['not_ready', 'hc_inventory_pending'].includes(frame.error?.code)) { stop(); return; }
           if (!frame.ok || !frame.result?.subscription_id) { current.destroy(); return; }
           registered = true; failures = 0; current.setTimeout(0);
           continue;

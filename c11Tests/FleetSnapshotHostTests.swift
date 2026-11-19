@@ -229,25 +229,101 @@ final class FleetSnapshotHostTests: XCTestCase {
     }
 
     func testFiftyWorkspacesTwoHundredPanelsStayBelowMainBudget() async throws {
+        // The fixture's panels are agent rows by declared metadata. Keep their
+        // terminals cold: a started shell reports detected=shell, which rightly
+        // drops its row from the fleet, and how many have reported by the time
+        // a sample is taken varies run to run (198, 192 of 200 in the guest).
+        // A terminal starts by two paths, so hold both: the Ghostty surface,
+        // and the headless hc start every persistent terminal asks for after a
+        // short grace (C11H-112), which reached a shell for 2 of 200 in the
+        // whole suite (C11H-314).
+        TerminalSurface.backgroundStartSink = { _, finish in finish() }
+        TerminalSurface.headlessStartSink = { _, _ in }
+        defer { TerminalSurface.backgroundStartSink = nil; TerminalSurface.headlessStartSink = nil }
+        // Check this test's own workspaces and panels: the snapshot covers every
+        // registered window, and other state in the host process (a Recovered
+        // workspace that adopts an earlier test's hc terminals, C11H-311) can
+        // land in one of this test's windows beside them.
+        var ownWindowIds: Set<String> = []
+        var ownManagers: [WorkspaceManager] = []
+        var agentWorkspaces: [UUID: Workspace] = [:]
         for _ in 0..<2 {
-            let (_, manager) = addWindow()
+            let (windowId, manager) = addWindow()
+            ownWindowIds.insert(windowId.uuidString)
+            ownManagers.append(manager)
             for index in 0..<25 {
                 let ws = index == 0 ? manager.workspaces[0] : manager.addWorkspace(select: false, autoWelcomeIfNeeded: false)
-                _ = try agent(ws)
+                let first = try agent(ws)
+                agentWorkspaces[first] = ws
                 let pane = try XCTUnwrap(ws.bonsplitController.focusedPaneId)
-                for _ in 0..<3 { _ = try agent(ws, panel: XCTUnwrap(ws.newTerminalSurface(inPane: pane, focus: false)).id) }
+                for _ in 0..<3 {
+                    let id = try agent(ws, panel: XCTUnwrap(ws.newTerminalSurface(inPane: pane, focus: false)).id)
+                    agentWorkspaces[id] = ws
+                }
             }
         }
+        XCTAssertEqual(agentWorkspaces.count, 200)
+        let expectedPanelIds = Set(agentWorkspaces.keys.map(\.uuidString))
+        let expectedWorkspaceIds = Set(agentWorkspaces.values.map(\.id.uuidString))
+        XCTAssertEqual(expectedWorkspaceIds.count, 50)
         var costs: [Double] = []
         for _ in 0..<30 {
             let doc = try await request()
-            XCTAssertEqual(doc["workspace_count"] as? Int, 50)
-            XCTAssertEqual((doc["panels"] as? [Any])?.count, 200)
+            XCTAssertGreaterThanOrEqual(doc["workspace_count"] as? Int ?? 0, 50)
+            let workspaceRows = try XCTUnwrap(doc["workspaces"] as? [[String: Any]])
+            // Rows under this test's windows match its managers' workspaces exactly,
+            // one row each (a Recovered workspace that joins a window is still listed).
+            let ownWorkspaceRows = workspaceRows.filter { ownWindowIds.contains($0["window_id"] as? String ?? "") }
+                .compactMap { $0["id"] as? String }
+            let managerWorkspaceIds = ownManagers.flatMap { $0.workspaces.map(\.id.uuidString) }
+            XCTAssertEqual(ownWorkspaceRows.count, Set(ownWorkspaceRows).count, "no duplicate workspace rows")
+            XCTAssertEqual(Set(ownWorkspaceRows), Set(managerWorkspaceIds), "workspace rows match the windows' workspaces")
+            XCTAssertTrue(expectedWorkspaceIds.isSubset(of: Set(ownWorkspaceRows)),
+                          "every workspace this test made is in the snapshot")
+            let panelRows = try XCTUnwrap(doc["panels"] as? [[String: Any]])
+            let ownRows = panelRows.filter { ownWindowIds.contains($0["window_id"] as? String ?? "") }
+            let ownPanelIds = ownRows.compactMap { $0["panel_id"] as? String }
+            let missing = expectedPanelIds.subtracting(ownPanelIds)
+            XCTAssertEqual(ownPanelIds.count, Set(ownPanelIds).count, "no duplicate agent rows")
+            XCTAssertEqual(Set(ownPanelIds), expectedPanelIds,
+                           "missing agent rows: \(missingPanelDiagnostics(missing, agentWorkspaces)); " +
+                           "unexpected: \(Set(ownPanelIds).subtracting(expectedPanelIds).sorted())")
             costs.append(try XCTUnwrap(doc["main_copy_duration_ms"] as? Double))
         }
+        // The premise, checked: no fixture terminal reached a shell by either
+        // path. The samples above span seconds, well past the headless grace.
+        let started = agentWorkspaces.keys.sorted { $0.uuidString < $1.uuidString }.compactMap { id -> String? in
+            guard let panel = agentWorkspaces[id]?.terminalPanel(for: id) else { return nil }
+            return startedDescription(panel)
+        }
+        XCTAssertEqual(started, [], "fixture terminals must stay cold")
         costs.sort()
         print("FLEET_BENCH workspaces=50 panels=200 samples=30 main_max_ms=\(costs.last!) main_p95_ms=\(costs[28])")
         XCTAssertLessThan(costs.last!, 50)
+    }
+
+    /// Why each expected agent row is missing: its detected kind, declared
+    /// kind, and whether the panel is still in its workspace.
+    private func missingPanelDiagnostics(_ missing: Set<String>, _ workspaces: [UUID: Workspace]) -> String {
+        missing.sorted().map { idString in
+            guard let id = UUID(uuidString: idString), let workspace = workspaces[id] else { return idString }
+            let declared = PanelMetadataStore.shared.getMetadata(workspaceId: workspace.id, surfaceId: id)
+                .metadata[MetadataKey.terminalType] as? String
+            let started = workspace.terminalPanel(for: id).flatMap(startedDescription) ?? "cold"
+            return "\(idString) detected=\(workspace.detectedTerminalTypesByPanel[id] ?? "nil") " +
+                "declared=\(declared ?? "nil") inWorkspace=\(workspace.panels[id] != nil) started=\(started)"
+        }.joined(separator: "; ")
+    }
+
+    /// How a fixture terminal started, or nil while it is cold: a Ghostty
+    /// surface, or an hc terminal that exists in the core.
+    private func startedDescription(_ panel: TerminalPanel) -> String? {
+        if panel.surface.surface != nil { return "\(panel.id.uuidString) native" }
+        switch panel.surface.hcSession?.lifecycle {
+        case .live?: return "\(panel.id.uuidString) hc-live"
+        case .ended?: return "\(panel.id.uuidString) hc-ended"
+        default: return nil
+        }
     }
 
     func testTimeoutReturnsWhileMainIsBusyAndAbandonsQueuedCapture() throws {

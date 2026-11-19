@@ -1,183 +1,121 @@
 import AppKit
-import SwiftUI
+import Foundation
 
-/// Per-workspace launch-time resume picker (C11-34 part A).
+/// Launch-time resume policy (C11H-38, words shared with C11-559).
 ///
-/// On launch, when a previous session snapshot exists, c11 historically
-/// restored *every* workspace from every persisted window. The operator had
-/// no agency to bring back a subset — it was all-or-nothing via
-/// `CMUX_DISABLE_SESSION_RESTORE=1`. This picker turns that into a real
-/// choice: resume all, resume a chosen subset, or skip and start fresh.
-///
-/// **Policy.** `LaunchResumePolicy.current()` reads the operator's pref
-/// from `UserDefaults.standard`. Default is `.always`: the previous session
-/// comes back with no picker. `.ask` shows the picker on every launch, and
-/// `.never` skips both the picker and the restore. The policy is stored
-/// under `c11.launch.resumePolicy` (Settings > General > On Launch) so other
-/// tools can observe / set it. Holding Option while c11 starts shows the
-/// picker for that launch only.
-///
-/// **Hook point.** `AppDelegate.attemptStartupSessionRestoreIfNeeded`
-/// calls `LaunchResumePicker.presentIfNeeded(...)` before applying the
-/// snapshot to the primary window. The completion delivers either the
-/// original snapshot (`.always`), `nil` (`.never` / Skip), or a filtered
-/// snapshot keeping only the workspaces the user kept ticked.
+/// c11 resumes the previous session by default: live hc terminals come back
+/// and ended conversations resume once (C11H-5), with no question asked.
+/// Settings > General > "On launch" has three values, stored under
+/// `c11.launch.resumePolicy` (the same key and values as c11):
+/// - `always` "Resume previous session" (default)
+/// - `ask` "Ask which workspaces to resume": restore everything, adopt every
+///   live terminal, then offer the ended sessions in an inline banner
+///   (resume all, choose, not now). It never blocks restore or the socket
+///   (C11H-39); the old pre-restore sheet is gone.
+/// - `never` "Start fresh": an empty window; no live hc terminal is ended, each
+///   still-running one goes to the Recovered workspace (the existing orphan
+///   path, `HCRecoveredTerminalController`), and ended conversations are not
+///   resumed.
+/// Holding Option while the app launches chooses (`ask`) for that launch only;
+/// Option and Shift together start fresh for that launch only. Neither asks a
+/// question before restore, which is what held the socket at `not_ready`
+/// (C11H-39). `C11_QA_LAUNCH` wins over all of it.
 
 enum LaunchResumePolicy: String, CaseIterable {
-    case ask
     case always
+    case ask
     case never
 
     static let defaultsKey = "c11.launch.resumePolicy"
 
-    /// What an operator who never chose gets: resume the previous session
-    /// silently. Launching fresh, or picking workspaces, is the explicit choice.
-    static let defaultPolicy: LaunchResumePolicy = .always
+    /// Show "Ask which workspaces to resume" in the menu, and honor a stored
+    /// `ask`. One switch so c11 can drop it if the operator says so; with it
+    /// off a stored or imported `ask` reads as `always`.
+    nonisolated static let offersAskOption = true
 
-    /// Read the current policy from `UserDefaults.standard`. Absent, empty
-    /// or unknown values fall back to `defaultPolicy`, so a typo never
-    /// throws a session away and never puts a picker in the way.
-    ///
-    /// c11 itself writes this key only from the Settings picker; no launch
-    /// path has ever stored a value on the operator's behalf.
+    /// Unset, empty, a typo and (when hidden) `ask` all resume.
     static func current(defaults: UserDefaults = .standard) -> LaunchResumePolicy {
-        parse(defaults.string(forKey: defaultsKey))
-    }
-
-    /// Parse a stored raw value. Pure, so the Settings picker and tests share it.
-    static func parse(_ raw: String?) -> LaunchResumePolicy {
-        guard let normalized = raw?
+        let raw = defaults.string(forKey: defaultsKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased(),
-              !normalized.isEmpty,
-              let parsed = LaunchResumePolicy(rawValue: normalized) else {
-            return defaultPolicy
+            .lowercased()
+        switch raw {
+        case LaunchResumePolicy.never.rawValue: return .never
+        case LaunchResumePolicy.ask.rawValue: return offersAskOption ? .ask : .always
+        default: return .always
         }
-        return parsed
+    }
+
+    func persist(defaults: UserDefaults = .standard) {
+        defaults.set(rawValue, forKey: Self.defaultsKey)
     }
 }
 
-/// Snapshot-derived row data shown in the picker. Built once at launch
-/// from `AppSessionSnapshot`; the picker view itself never reaches back
-/// into the snapshot.
-struct LaunchResumePickerEntry: Identifiable, Hashable {
-    /// Stable workspace UUID — survives across restarts. Used as the
-    /// picker's selection key and to filter the snapshot at apply time.
-    let id: UUID
-    /// Window index in the snapshot (0 = primary). Used to group rows
-    /// when more than one window's worth of state is being offered.
-    let windowIndex: Int
-    /// Resolved display title: `customTitle ?? stableDefaultTitle ?? processTitle`.
-    let title: String
-    /// Number of panels in this workspace. Drives the "3 surfaces" hint.
-    let surfaceCount: Int
-    /// Up to 3 surface titles for the row's secondary line. Truncated by
-    /// the view if it overflows; the picker is not the place for full
-    /// fidelity — it's just enough to recognise the workspace.
-    let surfaceTitles: [String]
+/// Why a launch did not resume everything automatically.
+enum LaunchFreshReason: Equatable {
+    /// Option was held while the app launched; this launch only.
+    case optionHeld
+    /// Option and Shift were held: start fresh, this launch only.
+    case optionShiftHeld
+    /// "On launch" is set in Settings.
+    case setting
+    /// `C11_QA_LAUNCH=fresh`; automation, never reported to the operator.
+    case qaLaunch
 }
 
-/// What the operator decided. Returned to `AppDelegate` via the picker's
-/// completion closure.
-enum LaunchResumePickerDecision {
-    /// Restore every workspace in the snapshot (legacy behavior).
-    case resumeAll
-    /// Restore only the workspaces with these UUIDs.
-    case resumeSelected(Set<UUID>)
-    /// Skip the restore — start with a fresh empty session.
-    case skipAll
+enum LaunchResumeDecision: Equatable {
+    /// Restore the session; live terminals return and ended conversations
+    /// resume once (C11H-5).
+    case resume
+    /// Restore everything and adopt every live terminal, but hold ended
+    /// conversations until the operator chooses in the banner.
+    case ask(LaunchFreshReason)
+    /// "Start fresh": the snapshot is not applied. Running hc terminals are
+    /// never ended; the recovered-orphans path puts them in "Recovered".
+    case startFresh(LaunchFreshReason)
+
+    var restoresSession: Bool {
+        switch self {
+        case .resume, .ask: return true
+        case .startFresh: return false
+        }
+    }
+
+    /// Whether ended conversations resume on their own.
+    var resumesConversations: Bool { self == .resume }
 }
 
 @MainActor
 enum LaunchResumePicker {
-    /// Resolve the effective resume policy for this launch.
+    /// What this launch does with the previous session.
     ///
-    /// - QA launch (`C11_QA_LAUNCH`) overrides everything: `.on(.resume)` →
-    ///   `.always` (silent restore), `.on(.fresh)` → `.never` (skip).
-    /// - Holding Option while c11 starts (`optionHeld`) shows the picker for
-    ///   this launch only, whatever the persisted policy says. It is never
-    ///   written back; the picker's Skip starts fresh.
-    /// - Otherwise the persisted policy applies (absent means `.always`),
-    ///   except that on a **local dev build** a stored `.ask` becomes
-    ///   `.always` (silent restore), so a developer rebuilding c11 isn't
-    ///   blocked by the picker modal on every relaunch. An explicit `.never`
-    ///   is always honored (a dev build never forces a restore the operator
-    ///   opted out of).
+    /// - `C11_QA_LAUNCH` wins over everything: `resume` resumes, `fresh`
+    ///   restores nothing. An automated run is never changed by a stray key
+    ///   or by the operator's setting.
+    /// - Option and Shift held: start fresh for this launch.
+    /// - Option held: offer the choice for this launch (`ask`).
+    /// - Otherwise the stored setting decides, and the default is resume.
     ///
-    /// `nonisolated` — pure value-logic with no main-actor needs, so it's
-    /// callable from the main-actor launch path and from off-main tests alike.
-    nonisolated static func resolveEffectivePolicy(
+    /// `nonisolated`: pure value logic, callable off-main by tests.
+    nonisolated static func decide(
         qa: QALaunchPolicy,
         persisted: LaunchResumePolicy,
-        isLocalDevBuild: Bool,
-        optionHeld: Bool = false
-    ) -> LaunchResumePolicy {
+        optionHeld: Bool,
+        shiftHeld: Bool = false
+    ) -> LaunchResumeDecision {
         switch qa {
-        case .on(.resume): return .always
-        case .on(.fresh): return .never
+        case .on(.resume): return .resume
+        case .on(.fresh): return .startFresh(.qaLaunch)
         case .off:
-            if optionHeld { return .ask }
-            if persisted == .ask && isLocalDevBuild { return .always }
-            return persisted
-        }
-    }
-
-    /// Present the picker as a sheet on `parentWindow` and call
-    /// `completion` once the operator picks. When the snapshot has no
-    /// workspaces (nothing to choose from), the picker is skipped and
-    /// `completion(.skipAll)` fires synchronously.
-    ///
-    /// ⎋ does nothing: a stray keystroke must not throw the session away.
-    /// Skip takes a click; Return resumes the selection. `onSheetEnded`
-    /// fires however the sheet ends, with or without a decision.
-    static func presentSheet(
-        on parentWindow: NSWindow,
-        snapshot: AppSessionSnapshot,
-        onSheetEnded: (() -> Void)? = nil,
-        completion: @escaping (LaunchResumePickerDecision) -> Void
-    ) {
-        let entries = entries(from: snapshot)
-        guard !entries.isEmpty else {
-            completion(.skipAll)
-            return
-        }
-
-        // Default: every workspace selected (matches "resume all" intent
-        // for a one-click confirm).
-        var initialSelection = Set<UUID>()
-        for entry in entries { initialSelection.insert(entry.id) }
-
-        let viewModel = LaunchResumePickerViewModel(
-            entries: entries,
-            selection: initialSelection
-        )
-
-        // Var-capture pattern so the dismissal closure can reach the
-        // sheet window after it's created. Set after `beginSheet` below.
-        var capturedSheetWindow: NSWindow?
-
-        let hosting = NSHostingController(
-            rootView: LaunchResumePickerView(model: viewModel) { decision in
-                // Tear the sheet down before invoking the caller so any
-                // window-level effects from the caller (focus, restore)
-                // observe a clean window.
-                if let sheet = capturedSheetWindow {
-                    parentWindow.endSheet(sheet)
-                }
-                completion(decision)
+            if optionHeld && shiftHeld { return .startFresh(.optionShiftHeld) }
+            if optionHeld {
+                return LaunchResumePolicy.offersAskOption ? .ask(.optionHeld) : .startFresh(.optionHeld)
             }
-        )
-
-        let sheetWindow = NSWindow(contentViewController: hosting)
-        sheetWindow.styleMask = [.titled]
-        sheetWindow.title = String(
-            localized: "launch.resume.title",
-            defaultValue: "Resume previous session?"
-        )
-        sheetWindow.setContentSize(NSSize(width: 460, height: 420))
-
-        capturedSheetWindow = sheetWindow
-        parentWindow.beginSheet(sheetWindow) { _ in onSheetEnded?() }
+            switch persisted {
+            case .always: return .resume
+            case .ask: return .ask(.setting)
+            case .never: return .startFresh(.setting)
+            }
+        }
     }
 
     /// Filter `snapshot.windows[*].tabManager.workspaces` to only those
@@ -214,7 +152,9 @@ enum LaunchResumePicker {
             newWindow.workspaceManager = SessionWorkspaceManagerSnapshot(
                 selectedWorkspaceIndex: newSelectedIndex,
                 workspaces: kept,
-                workspaceGroups: window.workspaceManager.workspaceGroups
+                workspaceGroups: window.workspaceManager.workspaceGroups,
+                workspaceGroupMetadata: window.workspaceManager.workspaceGroupMetadata,
+                workspaceRootOrder: window.workspaceManager.workspaceRootOrder
             )
             newWindows.append(newWindow)
         }
@@ -226,238 +166,5 @@ enum LaunchResumePicker {
             focusHistory: snapshot.focusHistory,
             panelLineageNodes: snapshot.panelLineageNodes
         )
-    }
-
-    /// Project the snapshot into the picker's row data. Stable order:
-    /// window-major, then snapshot-declared workspace order.
-    private static func entries(from snapshot: AppSessionSnapshot) -> [LaunchResumePickerEntry] {
-        var out: [LaunchResumePickerEntry] = []
-        for (windowIndex, window) in snapshot.windows.enumerated() {
-            for workspace in window.workspaceManager.workspaces {
-                let resolvedTitle = (workspace.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
-                    ?? workspace.stableDefaultTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    ?? workspace.processTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                let title = resolvedTitle.isEmpty ? "(untitled)" : resolvedTitle
-                let titles = workspace.panels.compactMap { panel -> String? in
-                    let raw = (panel.customTitle ?? panel.title)?
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard let raw, !raw.isEmpty else { return nil }
-                    return raw
-                }
-                out.append(LaunchResumePickerEntry(
-                    id: workspace.id,
-                    windowIndex: windowIndex,
-                    title: title,
-                    surfaceCount: workspace.panels.count,
-                    surfaceTitles: Array(titles.prefix(3))
-                ))
-            }
-        }
-        return out
-    }
-}
-
-/// Picker view-model. Holds selection state for the lifetime of the
-/// sheet.
-@MainActor
-final class LaunchResumePickerViewModel: ObservableObject {
-    @Published var selection: Set<UUID>
-    let entries: [LaunchResumePickerEntry]
-
-    init(entries: [LaunchResumePickerEntry], selection: Set<UUID>) {
-        self.entries = entries
-        self.selection = selection
-    }
-
-    func selectAll() {
-        selection = Set(entries.map { $0.id })
-    }
-
-    func selectNone() {
-        selection.removeAll()
-    }
-
-    func toggle(_ id: UUID) {
-        if selection.contains(id) {
-            selection.remove(id)
-        } else {
-            selection.insert(id)
-        }
-    }
-
-    var groupedByWindow: [(windowIndex: Int, entries: [LaunchResumePickerEntry])] {
-        let grouped = Dictionary(grouping: entries, by: { $0.windowIndex })
-        return grouped.keys.sorted().map { idx in
-            (windowIndex: idx, entries: grouped[idx] ?? [])
-        }
-    }
-}
-
-struct LaunchResumePickerView: View {
-    @ObservedObject var model: LaunchResumePickerViewModel
-    let onComplete: (LaunchResumePickerDecision) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(String(
-                    localized: "launch.resume.heading",
-                    defaultValue: "Resume previous session?"
-                ))
-                .font(.system(size: 15, weight: .semibold))
-                Text(String(
-                    localized: "launch.resume.subheading",
-                    defaultValue: "Pick which workspaces to bring back. Unticked workspaces are not opened."
-                ))
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 16)
-            .padding(.bottom, 10)
-
-            Divider()
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.groupedByWindow, id: \.windowIndex) { group in
-                        if model.groupedByWindow.count > 1 {
-                            Text(String(
-                                format: String(
-                                    localized: "launch.resume.windowHeader",
-                                    defaultValue: "Window %lld"
-                                ),
-                                group.windowIndex + 1
-                            ))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 18)
-                            .padding(.top, 10)
-                            .padding(.bottom, 4)
-                        }
-                        ForEach(group.entries) { entry in
-                            LaunchResumePickerRow(
-                                entry: entry,
-                                isSelected: model.selection.contains(entry.id),
-                                onToggle: { model.toggle(entry.id) }
-                            )
-                            Divider().padding(.leading, 18)
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-            .frame(minHeight: 200, maxHeight: 320)
-
-            Divider()
-
-            HStack(spacing: 8) {
-                Button(action: model.selectAll) {
-                    Text(String(
-                        localized: "launch.resume.selectAll",
-                        defaultValue: "Select all"
-                    ))
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
-                Button(action: model.selectNone) {
-                    Text(String(
-                        localized: "launch.resume.selectNone",
-                        defaultValue: "Select none"
-                    ))
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
-                Spacer()
-                Button(action: { onComplete(.skipAll) }) {
-                    Text(String(
-                        localized: "launch.resume.skip",
-                        defaultValue: "Skip"
-                    ))
-                    .frame(minWidth: 60)
-                }
-                Button(action: {
-                    if model.selection.isEmpty {
-                        onComplete(.skipAll)
-                    } else if model.selection.count == model.entries.count {
-                        onComplete(.resumeAll)
-                    } else {
-                        onComplete(.resumeSelected(model.selection))
-                    }
-                }) {
-                    Text(resumeButtonTitle)
-                        .frame(minWidth: 96)
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(model.entries.isEmpty)
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
-        }
-        .frame(width: 460)
-    }
-
-    private var resumeButtonTitle: String {
-        if model.selection.isEmpty {
-            return String(localized: "launch.resume.skip", defaultValue: "Skip")
-        }
-        if model.selection.count == model.entries.count {
-            return String(
-                localized: "launch.resume.resumeAll",
-                defaultValue: "Resume all"
-            )
-        }
-        let format = String(
-            localized: "launch.resume.resumeSelected",
-            defaultValue: "Resume %lld"
-        )
-        return String(format: format, model.selection.count)
-    }
-}
-
-private struct LaunchResumePickerRow: View {
-    let entry: LaunchResumePickerEntry
-    let isSelected: Bool
-    let onToggle: () -> Void
-
-    var body: some View {
-        Button(action: onToggle) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 15))
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
-                    .frame(width: 18, alignment: .center)
-                    .padding(.top, 1)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-                    Text(secondaryLine)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var secondaryLine: String {
-        let countFormat = String(
-            localized: "launch.resume.surfaceCount",
-            defaultValue: "%lld panel(s)"
-        )
-        let countText = String(format: countFormat, entry.surfaceCount)
-        if entry.surfaceTitles.isEmpty {
-            return countText
-        }
-        let titleList = entry.surfaceTitles.joined(separator: " · ")
-        return "\(countText) — \(titleList)"
     }
 }

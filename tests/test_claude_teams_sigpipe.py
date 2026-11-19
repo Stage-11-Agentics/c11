@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Executable SIGPIPE inheritance regression for `c11 claude-teams`.
 
-Run on Atlas with C11_CLI pointing at the exact built CLI. A tiny native
+Run on the build host with C11_CLI pointing at the exact built CLI. A tiny native
 sigaction observer is compiled by cc: Python itself resets SIGPIPE at startup
 and would hide the inherited disposition. All CLI state and paths are temporary;
 no production socket is contacted. This is a standalone script, not pytest.

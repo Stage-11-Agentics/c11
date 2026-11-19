@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hermetic behaviour tests for the c11 PR Swift poller. No Atlas, no network."""
+"""Hermetic behaviour tests for the c11 PR Swift poller. No build host, no network."""
 
 from __future__ import annotations
 
@@ -682,7 +682,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
             self.assertEqual(reason, "guest")
             self.assertEqual(held.wait(timeout=2), -signal.SIGTERM)
             self.assertEqual(world.posts[-1]["state"], "pending")
-            self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
+            self.assertEqual(world.posts[-1]["description"], "yielded to build-host work")
         finally:
             _kill(held.pid)
 
@@ -718,7 +718,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
         self.assertEqual(reason, "guest")
         self.assertEqual(world.sleeps[0], 5)
         self.assertEqual(world.posts[-1]["state"], "pending")
-        self.assertEqual(world.posts[-1]["description"], "yielded to Atlas work")
+        self.assertEqual(world.posts[-1]["description"], "yielded to build-host work")
         self.assertEqual(world.kill_log[0], (99999999, signal.SIGTERM))
         self.assertEqual(world.kill_log[-1], (99999999, signal.SIGKILL))
         self.assertFalse(world.group_alive(99999999))
@@ -1039,6 +1039,7 @@ class CapacityAndRecoveryTests(unittest.TestCase):
             env = dict(os.environ)
             env["C11_ATLAS_SLOTS_DIR"] = slots.name
             env["C11_ATLAS_SLOT_POLL_SECONDS"] = "0.1"
+            env["C11_ATLAS_ADMISSION_LOG"] = str(Path(slots.name) / "admission.jsonl")
             result = subprocess.run(
                 [sys.executable, str(ROOT / "atlas_build_slots.py"), "fu-371r", "--poller",
                  sys.executable, "-c", "print('slot-child')"],
@@ -1238,7 +1239,7 @@ class CacheResultGuestRevokeTests(unittest.TestCase):
         self.assertEqual(supervisor.poll_once(), "started")
         self.assertIsNone(supervisor.watch(record))
         self.assertEqual([body["description"] for body in world.posts if body["state"] == "pending"],
-                         ["yielded to Atlas work"])
+                         ["yielded to build-host work"])
 
     def test_guest_wait_clock_starts_only_for_a_waiting_feature_head(self):
         world = World(body=[pr(number=8, ref="release/1.8.0")])
@@ -1488,7 +1489,7 @@ class PollingAndCredentialTests(unittest.TestCase):
         all_skipped = dict(passed, passedTests=0, skippedTests=1, totalTestCount=1)
         self.assertEqual(poller.classify_result(15, all_skipped), ("failure", "failed 15s"))
         self.assertEqual(poller.classify_result(15, None), ("error", "result unavailable 15s"))
-        body = poller.status_body(SHA_A, "pending", "yielded to Atlas work")
+        body = poller.status_body(SHA_A, "pending", "yielded to build-host work")
         self.assertLessEqual(len(body["description"]), 140)
         self.assertEqual(body["context"], "c11/pr-swift")
 
@@ -1957,8 +1958,9 @@ class ReviewRegressionTests(unittest.TestCase):
         inventory.parent.mkdir(parents=True)
         inventory.write_text(
             "c11LogicTests/LogicBudgetTests/testAllScope\tall\tshared runner budget\n"
-            "c11Tests/HostBudgetTests/testAtlasScope\tatlas\tAtlas-only host test\n"
-            "c11LogicTests/LogicBudgetTests/testAtlasScope\tatlas\tAtlas load budget\n"
+            "c11Tests/HostBudgetTests/testRemoteScope\tremote\tremote-only host test\n"
+            "c11LogicTests/LogicBudgetTests/testRemoteScope\tremote\tbuild-host load budget\n"
+            "c11LogicTests/LogicBudgetTests/testOlderScopeName\tatlas\tan older inventory's name for remote\n"
         )
 
         argv = poller.xcodebuild_argv(worktree, self.root / "DerivedData", self.root / "test.xcresult")
@@ -1966,7 +1968,8 @@ class ReviewRegressionTests(unittest.TestCase):
 
         self.assertEqual(skips, [
             "-skip-testing:c11LogicTests/LogicBudgetTests/testAllScope",
-            "-skip-testing:c11LogicTests/LogicBudgetTests/testAtlasScope",
+            "-skip-testing:c11LogicTests/LogicBudgetTests/testRemoteScope",
+            "-skip-testing:c11LogicTests/LogicBudgetTests/testOlderScopeName",
         ])
 
     def test_queue_advances_after_success(self):
@@ -2293,7 +2296,7 @@ class ReviewRegressionTests(unittest.TestCase):
             child.wait(timeout=3)
 
     def test_missing_ghosttykit_does_not_block_the_queue(self):
-        """Live on Atlas: one head without a GhosttyKit cache entry starved the rest."""
+        """Live on the build host: one head without a GhosttyKit cache entry starved the rest."""
         missing = "e" * 40
         world = World(body=[pr(), pr(number=8, sha=SHA_B, ref="other")])
         world.tips["other"] = SHA_B
@@ -2355,7 +2358,7 @@ class ReviewRegressionTests(unittest.TestCase):
         return [Path(spawn["command"][spawn["command"].index("-derivedDataPath") + 1]) for spawn in supervisor.spawns]
 
     def test_derived_data_is_keyed_by_the_dependency_set(self):
-        """Live on Atlas: Sparkle 2.9.3 (main) and 2.8.1 (old heads) shared one DerivedData."""
+        """Live on the build host: Sparkle 2.9.3 (main) and 2.8.1 (old heads) shared one DerivedData."""
         world = World(body=[pr(), pr(number=8, sha=SHA_B, ref="other"), pr(number=9, sha="f" * 40, ref="third")])
         world.tips.update({"other": SHA_B, "third": "f" * 40})
         world.resolved = {SHA_A: "sparkle 2.9.3", SHA_B: "sparkle 2.8.1", "f" * 40: "sparkle 2.9.3"}
@@ -2428,9 +2431,9 @@ class RuntimeHarness(unittest.TestCase):
         quarantine = self.work / "scripts" / "host-test-quarantine.tsv"
         quarantine.parent.mkdir(parents=True)
         quarantine.write_text(
-            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesDeepNestedSplitsFixture\tatlas\twall-clock budget\n"
-            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesWelcomeQuadFixture\tatlas\twall-clock budget\n"
-            "c11LogicTests/WorkspaceSnapshotRoundTripAcceptanceTests/testCaptureAndRestoreMixedClaudeMailboxWithRegistry\tatlas\twall-clock budget\n"
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesDeepNestedSplitsFixture\tremote\twall-clock budget\n"
+            "c11LogicTests/WorkspaceLayoutExecutorAcceptanceTests/testAppliesWelcomeQuadFixture\tremote\twall-clock budget\n"
+            "c11LogicTests/WorkspaceSnapshotRoundTripAcceptanceTests/testCaptureAndRestoreMixedClaudeMailboxWithRegistry\tremote\twall-clock budget\n"
         )
         self.kit = self.root / "kit" / GITLINK / "GhosttyKit.xcframework"
         self.kit.mkdir(parents=True)
@@ -2574,7 +2577,7 @@ class RuntimeIntegrationTests(RuntimeHarness):
     def test_malformed_quarantine_posts_error_without_crashing(self):
         self._enable()
         (self.work / "scripts" / "host-test-quarantine.tsv").write_text(
-            "c11LogicTests/BadSelector\tatlas\tbroken inventory\n"
+            "c11LogicTests/BadSelector\tremote\tbroken inventory\n"
         )
 
         result = self._supervise()
@@ -2774,7 +2777,7 @@ class RuntimeIntegrationTests(RuntimeHarness):
         self.assertEqual(proc.returncode, 0, err)
         self.assertFalse(poller.group_alive(int(ready.read_text())))
         self.assertTrue(any(item.get("decision") == "yielded" and item.get("reason") == "guest" for item in _decisions(self.root)))
-        self.assertEqual(self.github.statuses()[-1], ("pending", "yielded to Atlas work"))
+        self.assertEqual(self.github.statuses()[-1], ("pending", "yielded to build-host work"))
 
     def test_other_slot_during_the_build_does_not_stop_the_poller(self):
         self._enable()
@@ -2958,7 +2961,7 @@ GH_TOKEN_FIXTURE = "gho_fixture0token0not0real"
 
 
 class GhModeTests(RuntimeHarness):
-    """gh mode: the Atlas gh login, read through a fake `gh` on PATH."""
+    """gh mode: the build host's gh login, read through a fake `gh` on PATH."""
 
     def setUp(self):
         super().setUp()

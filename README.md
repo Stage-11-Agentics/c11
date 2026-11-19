@@ -130,6 +130,16 @@ cmd-tab roulette, retired.
   <sub><i>a real session on a 32-inch display: many terminals with coding agents, a browser window showing a Lattice board, all visible at once.</i></sub>
 </p>
 
+## terminals that outlive the app.
+
+quit c11 and your terminals keep running. crash it, update it: the agents keep working, and when c11 opens again it reattaches to every one of them, exactly as it was left. turn off Keep Terminals After Quit in Settings if you want the old quit.
+
+and the room is no longer one machine. link another Mac or a Linux server over SSH and its terminals open in the same workspace, beside your local ones, each marked with where it runs. an agent over there names its panel, raises a flag, and sends mail as if it sat right next to you.
+
+linking gives c11 a shell on that machine as you. c11 asks first, and [the trust page](skills/c11/references/trust.md) says what linking grants and what c11 checks.
+
+shoutout to [herdr-core](https://github.com/herdrdev/herdr-core), the open terminal runtime underneath. it holds the processes. c11 turns them into a room. we ship it unmodified and build everything above it.
+
 ## in-app browser. driveable and displayable.
 
 a WKWebView next to the terminal, not a separate browser window. the agent drives it: snapshot the accessibility tree, click elements, fill forms, evaluate JS, watch the dev server it just booted. or the operator pins one: a Grafana dashboard, a Linear view, a Notion page, a task board, any web UI. terminals and live dashboards sharing a workspace. no cmd-tab to check on a build. no external window to lose. the browser is a panel.
@@ -161,7 +171,7 @@ brew install --cask c11
 
 or grab the [DMG directly](https://github.com/Stage-11-Agentics/c11/releases/latest/download/c11-macos.dmg). auto-updates via Sparkle.
 
-c11 is a native macOS app: Swift, AppKit, Ghostty under the hood. no daemon, no config scripts, no setup ceremony.
+c11 is a native macOS app: Swift, AppKit, Ghostty under the hood, and herdr-core keeping your terminals alive. no config scripts, no setup ceremony.
 
 from there, split an area (`⌘D` horizontal, `⌘⇧D` vertical), open an embedded browser panel from the menu, drop a markdown file onto an area to preview it. open a second workspace. notice that the first is exactly as it was left.
 
@@ -183,7 +193,7 @@ however, on an 8GB MacBook Air, c11 will happily let you walk yourself right off
 
 AGPL-3.0-or-later, inherited from upstream. see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-c11 rests on the work of others. [cmux](https://github.com/manaflow-ai/cmux) by [manaflow-ai](https://github.com/manaflow-ai) for the parent substrate. [Ghostty](https://ghostty.org) for the renderer. [Bonsplit](https://github.com/almonk/bonsplit) by [almonk](https://github.com/almonk) for the tab bar and split chrome. [Homebrew](https://brew.sh) for the install tab.
+c11 rests on the work of others. [cmux](https://github.com/manaflow-ai/cmux) by [manaflow-ai](https://github.com/manaflow-ai) for the parent substrate. [Ghostty](https://ghostty.org) for the renderer. [Bonsplit](https://github.com/almonk/bonsplit) by [almonk](https://github.com/almonk) for the tab bar and split chrome. [herdr-core](https://github.com/herdrdev/herdr-core) for the terminal runtime. [Homebrew](https://brew.sh) for the install tab.
 
 ---
 

@@ -74,7 +74,7 @@ What the plan doesn't mention and should:
 
 **The remote-daemon case.** `Sources/Workspace.swift` has `WorkspaceRemoteDaemonManifest` and remote-daemon machinery. If a workspace is connected to a remote host, `~/.claude/projects/` is on the remote, not on the Mac. The plan scans local `~/.claude/` only. Remote workspaces silently get no resume affordance. This is worth calling out — otherwise a user will file it as a bug.
 
-**Worktrees and git branches.** If an agent was working in a git worktree on branch `fix/foo` and cwd is `/Users/atin/Projects/foo-wt-fix`, a session resume that drops the user back into that cwd is useless if the worktree has been deleted. The plan's fallback chain ("Reopen in `<dir>`") fails silently when `<dir>` no longer exists. No mention of directory-existence checking, no fallback to the parent, no "this directory is gone, pick another" flow.
+**Worktrees and git branches.** If an agent was working in a git worktree on branch `fix/foo` and cwd is `~/src/foo-wt-fix`, a session resume that drops the user back into that cwd is useless if the worktree has been deleted. The plan's fallback chain ("Reopen in `<dir>`") fails silently when `<dir>` no longer exists. No mention of directory-existence checking, no fallback to the parent, no "this directory is gone, pick another" flow.
 
 **The `claude --resume` command is unstable.** The plan assumes `claude --resume <id>` works. It works today. The CLI surface of Claude Code is not a stable contract — there's no compatibility guarantee. Open Question 5 acknowledges this but hand-waves: "a small toast + fallback to 'Start fresh Claude session.'" No spec for how the chip detects the failure, no timeout, no test plan.
 

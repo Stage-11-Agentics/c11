@@ -304,7 +304,7 @@ The flywheel turns when the primitive is stable, the integration contract (Strat
 
 1. **Ship a "how to write a ConversationStrategy" doc as part of v1.** Not in some future docs pass — in the v1 PR. Without this, every new strategy is reverse-engineered from existing ones, which slows the contributor (whether that's the operator, an agent, or an external user).
 
-2. **Consider a "user-defined kind" path.** Mutation 1's `user/<custom-kind>` is the trigger. If the operator can `c11 conversation push --kind user/atins-custom-script --id whatever` from a one-off Python script and have c11 track it, the primitive becomes useful long before there's a built-in strategy for that kind. The operator ships their own strategy (or a no-op resume) and now c11 is tracking their custom workflow.
+2. **Consider a "user-defined kind" path.** Mutation 1's `user/<custom-kind>` is the trigger. If the operator can `c11 conversation push --kind user/my-custom-script --id whatever` from a one-off Python script and have c11 track it, the primitive becomes useful long before there's a built-in strategy for that kind. The operator ships their own strategy (or a no-op resume) and now c11 is tracking their custom workflow.
 
 3. **Build a public "conversation feed" API early.** Even a stub that emits state transitions over the socket lets external tools (Lattice dashboards, the operator's own scripts, future AI hosts) react to conversation events. This is the connective tissue that turns "conversations exist" into "conversations are how things coordinate."
 

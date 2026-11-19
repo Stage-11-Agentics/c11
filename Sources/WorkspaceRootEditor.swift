@@ -145,6 +145,7 @@ struct WorkspaceRootTitlebarLabel: View {
     }
 
     private struct Content: View {
+        @Environment(\.chromeScaleTokens) private var chromeTokens
         let foregroundColor: Color
         @StateObject private var model: WorkspaceRootLabelModel
 
@@ -156,7 +157,7 @@ struct WorkspaceRootTitlebarLabel: View {
         var body: some View {
             if let root = model.root {
                 Text(WorkspaceRootActions.displayPath(root))
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: chromeTokens.windowTitlebarAccessory, design: .monospaced))
                     .foregroundColor(foregroundColor.opacity(0.55))
                     .lineLimit(1)
                     .truncationMode(.middle)

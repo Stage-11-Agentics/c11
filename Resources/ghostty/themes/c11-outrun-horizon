@@ -1,0 +1,23 @@
+# c11 Outrun Horizon: paired with the Outrun Horizon chrome theme (design/themes/gen-terminal-themes.py)
+palette = 0=#322e3e
+palette = 1=#ff6b6b
+palette = 2=#7ff0c4
+palette = 3=#ffcf6a
+palette = 4=#7fd4ff
+palette = 5=#ff3f8e
+palette = 6=#2DE2E6
+palette = 7=#d1c8e7
+palette = 8=#7f72a6
+palette = 9=#fe9692
+palette = 10=#baffe1
+palette = 11=#ffebc5
+palette = 12=#b9e6ff
+palette = 13=#c99bff
+palette = 14=#52fafd
+palette = 15=#f5f1ff
+background = #0b0716
+foreground = #e6def7
+cursor-color = #ff3f8e
+cursor-text = #0b0716
+selection-background = #403b4c
+selection-foreground = #e6def7

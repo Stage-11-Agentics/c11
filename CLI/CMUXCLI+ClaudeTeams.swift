@@ -25,22 +25,18 @@ extension CMUXCLI {
     }
 
     func claudeTeamsResolvedSocketPath(processEnvironment: [String: String]) -> String {
-        let envSocketPath: String? = {
-            for key in ["C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
-                guard let raw = processEnvironment[key] else { continue }
-                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    return trimmed
-                }
-            }
-            return nil
-        }()
-
-        let requestedSocketPath = envSocketPath ?? CLISocketPathResolver.defaultSocketPath
+        let requestedSocketPath: String
         let source: CLISocketPathSource
-        if let envSocketPath {
-            source = CLISocketPathResolver.isImplicitDefaultPath(envSocketPath) ? .implicitDefault : .environment
-        } else {
+        switch CLISocketEnvironmentOverride.read(processEnvironment) {
+        case .own(_, let path):
+            requestedSocketPath = path
+            source = CLISocketPathResolver.isImplicitDefaultPath(path) ? .implicitDefault : .environment
+        case .foreign(_, let path):
+            // Kept as named; `SocketClient` refuses it at connect (C11H-282).
+            requestedSocketPath = path
+            source = .refusedEnvironment
+        case .none:
+            requestedSocketPath = CLISocketPathResolver.defaultSocketPath
             source = .implicitDefault
         }
 
@@ -211,6 +207,8 @@ extension CMUXCLI {
         socketPath: String,
         explicitPassword: String?
     ) throws {
+        // Refuse before launching Claude: its teammates would inherit the refused path (C11H-282).
+        try SocketClient.throwIfRefused(path: socketPath)
         let processEnvironment = ProcessInfo.processInfo.environment
         var launcherEnvironment = processEnvironment
         launcherEnvironment["CMUX_SOCKET_PATH"] = socketPath

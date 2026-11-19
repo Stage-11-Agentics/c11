@@ -495,7 +495,7 @@ jobs:
           path: /tmp/gate
 
       # Zulip is tailnet-only (see TRIAGE_POLICY.md). Join as an ephemeral,
-      # ACL-scoped node (tag:ci → pine 443/53 only); the node self-removes
+      # ACL-scoped node (tag:ci → the git server 443/53 only); the node self-removes
       # when the job ends. continue-on-error: the GitHub-native fallback in
       # notify_or_fallback carries the ping if the join fails.
       - name: Join tailnet (ephemeral, scoped to Zulip)

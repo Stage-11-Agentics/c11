@@ -21,17 +21,27 @@ struct MailboxPanelResolver {
     let metadataStore: PanelMetadataStore
     let livePanels: () -> [UUID]
     let canonicalOwner: (UUID) -> (panelID: UUID, workspaceID: UUID)?
+    /// C11H-360: the machine each of this workspace's linked-machine panels
+    /// runs on; panels on this Mac are absent.
+    let linkedMachines: () -> [UUID: String]
+    /// C11H-360: whether a panel on this Mac, in any workspace, answers to an
+    /// address. Asked only when every match here is a linked panel.
+    let localAnswersAnywhere: (MailboxAddress) -> Bool
 
     init(
         workspaceId: UUID,
         metadataStore: PanelMetadataStore = .shared,
         canonicalOwner: @escaping (UUID) -> (panelID: UUID, workspaceID: UUID)? = { _ in nil },
+        linkedMachines: @escaping () -> [UUID: String] = { [:] },
+        localAnswersAnywhere: @escaping (MailboxAddress) -> Bool = { _ in false },
         livePanels: @escaping () -> [UUID]
     ) {
         self.workspaceId = workspaceId
         self.metadataStore = metadataStore
         self.livePanels = livePanels
         self.canonicalOwner = canonicalOwner
+        self.linkedMachines = linkedMachines
+        self.localAnswersAnywhere = localAnswersAnywhere
     }
 
     // MARK: - Name → surface
@@ -70,8 +80,10 @@ struct MailboxPanelResolver {
     ///     v1 metadata values are strings; non-string entries are dropped).
     ///
     func panelsWithMailboxMetadata() -> [PanelMetadata] {
-        livePanels().compactMap { panelId in
-            let (metadata, _) = metadataStore.getMetadata(
+        let panels = livePanels()
+        let linked = linkedMachines()
+        return panels.compactMap { panelId in
+            let (metadata, sources) = metadataStore.getMetadata(
                 workspaceId: workspaceId,
                 surfaceId: panelId
             )
@@ -82,12 +94,24 @@ struct MailboxPanelResolver {
                     mailboxKeys[key] = stringValue
                 }
             }
-            return PanelMetadata(
+            var record = PanelMetadata(
                 surfaceId: panelId,
                 name: title,
                 mailboxKeys: mailboxKeys
             )
+            record.linkedMachine = linked[panelId]
+            record.titleFromOSC = Self.isOSCSource(sources[MetadataKey.title])
+            return record
         }
+    }
+
+    /// Whether a metadata source record says `osc`.
+    static func isOSCSource(_ source: Any?) -> Bool {
+        if let text = source as? String { return text == MetadataSource.osc.rawValue }
+        if let record = source as? [String: Any], let text = record["source"] as? String {
+            return text == MetadataSource.osc.rawValue
+        }
+        return false
     }
 
     func canonicalRecipient(_ requested: PanelMetadata) -> PanelMetadata {
@@ -144,6 +168,10 @@ struct MailboxPanelResolver {
         /// the type so callers don't re-implement the alignment-doc contract.
         let mailboxKeys: [String: String]
         var inboxWorkspaceId: UUID? = nil
+        /// C11H-360: the linked machine this panel's terminal runs on, nil here.
+        var linkedMachine: String? = nil
+        /// C11H-360: the title came from the terminal's own OSC 0/2 output.
+        var titleFromOSC = false
 
         var delivery: [String] {
             splitCommaSeparated(mailboxKeys["mailbox.delivery"])
@@ -179,7 +207,8 @@ struct MailboxPanelResolver {
         /// The address-precedence view (`title`/`address`/`role`) used by
         /// `MailboxMatcher`.
         var identity: MailboxIdentity {
-            MailboxIdentity(title: name, address: address, role: role, panelId: surfaceId)
+            MailboxIdentity.panel(title: name, address: address, role: role, panelId: surfaceId,
+                                  linkedMachine: linkedMachine, titleFromOSC: titleFromOSC)
         }
 
         private func splitCommaSeparated(_ value: String?) -> [String] {
@@ -234,23 +263,32 @@ struct MailboxGlobalResolver {
         let name: String
         let address: String?
         let role: String?
+        /// C11H-360: the linked machine this panel's terminal runs on, nil here.
+        let linkedMachine: String?
+        /// C11H-360: the title came from the terminal's own OSC 0/2 output.
+        let titleFromOSC: Bool
 
         init(
             workspaceId: UUID,
             surfaceId: UUID,
             name: String,
             address: String? = nil,
-            role: String? = nil
+            role: String? = nil,
+            linkedMachine: String? = nil,
+            titleFromOSC: Bool = false
         ) {
             self.workspaceId = workspaceId
             self.surfaceId = surfaceId
             self.name = name
             self.address = MailboxIdentity.nonEmpty(address)
             self.role = MailboxIdentity.nonEmpty(role)
+            self.linkedMachine = linkedMachine
+            self.titleFromOSC = titleFromOSC
         }
 
         var identity: MailboxIdentity {
-            MailboxIdentity(title: name, address: address, role: role, panelId: surfaceId)
+            MailboxIdentity.panel(title: name, address: address, role: role, panelId: surfaceId,
+                                  linkedMachine: linkedMachine, titleFromOSC: titleFromOSC)
         }
     }
 

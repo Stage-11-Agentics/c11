@@ -1992,7 +1992,7 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
         )
     }
 
-    func testSearchOverlaySurvivesPortalVisibilityToggleDuringWorkspaceSwitchLikeChurn() {
+    func testSearchOverlaySurvivesPortalVisibilityToggleDuringWorkspaceSwitchLikeChurn() async {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
             styleMask: [.titled, .closable],
@@ -2016,10 +2016,14 @@ final class GhosttySurfaceOverlayTests: XCTestCase {
             configTemplate: nil,
             workingDirectory: nil
         )
+        defer { withExtendedLifetime(surface) {} }
         let hostedView = surface.hostedView
         hostedView.setSearchOverlay(searchState: TerminalSurface.SearchState(needle: "workspace"))
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        XCTAssertTrue(hostedView.debugHasSearchOverlay())
+        // The mount is enqueued on main. Wait for it rather than assuming a
+        // nested 50 ms run loop services that pending work (it did not in the
+        // host-test guest).
+        let mounted = await waitForC11HostCondition(timeout: 2) { hostedView.debugHasSearchOverlay() }
+        XCTAssertTrue(mounted)
 
         portal.bind(hostedView: hostedView, to: anchor, visibleInUI: true)
         XCTAssertTrue(hostedView.debugHasSearchOverlay())
@@ -2499,7 +2503,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         XCTAssertFalse(hosted.isHidden, "Portal should unhide after geometry is usable")
     }
 
-    func testScheduledExternalGeometrySyncRefreshesAncestorLayoutShift() {
+    func testScheduledExternalGeometrySyncRefreshesAncestorLayoutShift() async {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 420),
             styleMask: [.titled, .closable],
@@ -2528,6 +2532,7 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
             configTemplate: nil,
             workingDirectory: nil
         )
+        defer { withExtendedLifetime(surface) {} }
         let hosted = surface.hostedView
         TerminalWindowPortalRegistry.bind(
             hostedView: hosted,
@@ -2561,7 +2566,14 @@ final class TerminalWindowPortalLifecycleTests: XCTestCase {
         )
 
         TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronizeForAllWindows(trigger: "test")
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        // The all-windows sync runs two main-queue turns later. Wait for it
+        // rather than for a fixed 50 ms nested run loop, which a loaded host
+        // (the host-test guest) does not reliably drain in time.
+        let synced = await waitForC11HostCondition(timeout: 2) {
+            TerminalWindowPortalRegistry.terminalViewAtWindowPoint(originalWindowPoint, in: window) == nil &&
+                TerminalWindowPortalRegistry.terminalViewAtWindowPoint(shiftedWindowPoint, in: window) != nil
+        }
+        XCTAssertTrue(synced, "The scheduled external geometry sync should run within 2 s")
 
         XCTAssertNil(
             TerminalWindowPortalRegistry.terminalViewAtWindowPoint(originalWindowPoint, in: window),
@@ -3216,14 +3228,22 @@ final class TerminalControllerSocketListenerHealthTests: XCTestCase {
 /// can undo its inbox claim instead of marking undelivered mail delivered.
 @MainActor
 final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
+    /// The local queue, attach flush and recipient re-check below are the exec
+    /// shell's path; an hc terminal holds the same input in hc's pending queue.
+    private func makeExecSurface() -> TerminalSurface {
+        let surface = TerminalSurface(
+            workspaceId: UUID(),
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            configTemplate: nil,
+            workingDirectory: nil
+        )
+        surface.useExecShellForTesting()
+        return surface
+    }
+
     func testRawQueuedSubmitKeepsLeadingAndTrailingNewlines() {
         for text in ["\nline1\nline2\r\n", "\n", "\r\n"] {
-            let surface = TerminalSurface(
-                workspaceId: UUID(),
-                context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
-                configTemplate: nil,
-                workingDirectory: nil
-            )
+            let surface = makeExecSurface()
             XCTAssertNil(surface.surface)
             surface.sendQueuedSocketText(text, submit: true, preserveNewlines: true)
             XCTAssertEqual(surface.pendingInitialInputForTests, text)
@@ -3232,12 +3252,7 @@ final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
     }
 
     func testRawQueuedNoSubmitKeepsNewlineOnlyInputWithoutArmingReturn() {
-        let surface = TerminalSurface(
-            workspaceId: UUID(),
-            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
-            configTemplate: nil,
-            workingDirectory: nil
-        )
+        let surface = makeExecSurface()
         surface.sendQueuedSocketText("\n\r\n", submit: false, preserveNewlines: true)
         XCTAssertEqual(surface.pendingInitialInputForTests, "\n\r\n")
         XCTAssertFalse(surface.pendingSubmitOnFlushForTests)
@@ -3245,12 +3260,7 @@ final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
     }
 
     func testDeferredSocketSendQueuesAfterTheSurfaceDetaches() {
-        let surface = TerminalSurface(
-            workspaceId: UUID(),
-            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
-            configTemplate: nil,
-            workingDirectory: nil
-        )
+        let surface = makeExecSurface()
         XCTAssertNil(surface.surface)
         XCTAssertTrue(surface.queueSocketSendIfDetached("\nline\n", submit: true, preserveNewlines: true))
         XCTAssertEqual(surface.pendingInitialInputForTests, "\nline\n")
@@ -3353,12 +3363,7 @@ final class TerminalSurfaceMailboxSubmitTests: XCTestCase {
         guard let contentView = window.contentView else {
             return XCTFail("Expected content view")
         }
-        let surface = TerminalSurface(
-            workspaceId: UUID(),
-            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
-            configTemplate: nil,
-            workingDirectory: nil
-        )
+        let surface = makeExecSurface()
         let hostedView = surface.hostedView
         hostedView.frame = contentView.bounds
         contentView.addSubview(hostedView)
@@ -3565,6 +3570,9 @@ final class TerminalSurfaceInputTransactionTests: XCTestCase {
     /// is not.
     func testProgrammaticTextWithoutNewlineMarksADraft() {
         let surface = makeSurface()
+        // The exec shell stamps the draft at write time; an hc terminal stamps
+        // it once hc reports the bytes delivered (HCHeadlessStartTests covers that).
+        surface.useExecShellForTesting()
         XCTAssertNil(surface.lastOperatorKeyAt)
         surface.sendText("ls\n")
         XCTAssertNil(surface.lastOperatorKeyAt)
@@ -3645,6 +3653,9 @@ final class ColdTerminalReadTests: XCTestCase {
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let terminal = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false))
         XCTAssertNil(terminal.surface.surface)
+        // An exec shell posts ready at native create, inside the read's cold
+        // start; an hc terminal posts it only at hc attach, after the read.
+        terminal.surface.useExecShellForTesting()
         // The notification fires after target resolution and before the final
         // read hop. Keep the runtime alive to catch a stale-object read too.
         let observer = NotificationCenter.default.addObserver(
@@ -3673,11 +3684,18 @@ final class ColdTerminalReadTests: XCTestCase {
 }
 
 /// C11-295: these fixtures exercise production attachment, native creation, and
-/// ready observers. Run in the isolated host on Atlas, never the operator app.
+/// ready observers. Run in the isolated host on the build host, never the operator app.
 @MainActor
 final class TerminalSurfaceColdLifecycleTests: XCTestCase {
-    private func makeSurface(config: ghostty_surface_config_s? = nil) -> TerminalSurface {
-        TerminalSurface(workspaceId: UUID(), context: GHOSTTY_SURFACE_CONTEXT_SPLIT, configTemplate: config)
+    /// Surfaces default to the test host's persistent hc terminal, the one
+    /// people use. `exec: true` pins the exec shell's native lifecycle (a local
+    /// child, the local pre-attach queue, ready at native create) for the
+    /// fixtures that prove it: an hc terminal has no local child and posts
+    /// ready at hc attach.
+    private func makeSurface(config: ghostty_surface_config_s? = nil, exec: Bool = false) -> TerminalSurface {
+        let surface = TerminalSurface(workspaceId: UUID(), context: GHOSTTY_SURFACE_CONTEXT_SPLIT, configTemplate: config)
+        if exec { surface.useExecShellForTesting() }
+        return surface
     }
 
     private func nextMainTurn() async {
@@ -3736,7 +3754,7 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
 
     func testReadyObserverSeesQueuedBytesFlushedAndLatestColdFocusApplied() async throws {
         for desiredFocus in [false, true] {
-            let surface = makeSurface()
+            let surface = makeSurface(exec: true)
             defer { surface.teardownSurface() }
             surface.setFocus(!desiredFocus)
             surface.setFocus(desiredFocus)
@@ -3762,7 +3780,7 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
     }
 
     func testReadyObserverCanCloseWithoutRecreatingRuntime() async {
-        let surface = makeSurface()
+        let surface = makeSurface(exec: true)
         let observer = NotificationCenter.default.addObserver(
             forName: .terminalSurfaceDidBecomeReady, object: surface, queue: .main
         ) { _ in
@@ -3837,7 +3855,7 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
     }
 
     func testSnapshotEligibilityUsesProcessLivenessAndPreservesCloseConfirmation() async throws {
-        let surface = makeSurface()
+        let surface = makeSurface(exec: true)
         let panel = TerminalPanel(workspaceId: surface.workspaceId, surface: surface)
         defer { surface.teardownSurface() }
         XCTAssertFalse(panel.shouldPersistScrollbackForSessionSnapshot(), "Cold terminals have no live output")
@@ -3849,8 +3867,31 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
             XCTAssertTrue(panel.shouldPersistScrollbackForSessionSnapshot(), "Live shells and running commands both qualify")
             XCTAssertEqual(panel.needsConfirmClose(), needsConfirmation, "Operator close policy remains independent")
         }
+
+        // C11H-4: hc restores a persistent terminal itself, so c11 never replays
+        // its scrollback. The same live surface, whose liveness alone qualifies,
+        // is given a persistent identity for this one check, then handed back
+        // its exec session before teardown. (The shared helpers pin only cold
+        // surfaces, so this swaps the session directly.)
+        XCTAssertTrue(surface.hasLiveProcess(), "Precondition: liveness alone would qualify")
+        let execSession = try XCTUnwrap(surface.hcSession)
+        let persistentTwin = HCPanelSession(
+            identity: HCPanelIdentity(panelID: surface.id,
+                                      key: HCTerminalKey(owningCoreID: "core-test", localAddress: surface.id.uuidString),
+                                      persistence: .persistent, origin: .restored),
+            session: HCUnavailableRuntime(), registrar: { _, _ in })
+        surface.installHCSessionForTesting(persistentTwin)
+        XCTAssertFalse(panel.shouldPersistScrollbackForSessionSnapshot(), "A persistent hc terminal never persists scrollback")
+        // The twin claimed the panel's restore-state owner entry; disposing it
+        // releases that claim before the exec session is handed back.
+        persistentTwin.detachSurface()
+        surface.installHCSessionForTesting(execSession)
+
         surface.teardownSurface()
         XCTAssertFalse(panel.shouldPersistScrollbackForSessionSnapshot())
+        // Nothing of the twin is left in the restore registry for this panel.
+        XCTAssertNil(HCPanelRestoreState.shared.entry(for: surface.id))
+        XCTAssertFalse(HCPanelRestoreState.shared.identities().contains { $0.panelID == surface.id })
     }
 
     func testExitedChildIsIneligibleForScrollbackReplay() async throws {
@@ -3858,7 +3899,7 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         config.wait_after_command = true
         let surface = "/usr/bin/true".withCString { command -> TerminalSurface in
             config.command = command
-            return makeSurface(config: config)
+            return makeSurface(config: config, exec: true)
         }
         defer { surface.teardownSurface() }
         surface.requestBackgroundSurfaceStartIfNeeded()
@@ -3935,19 +3976,17 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         let observedDirectory = try XCTUnwrap(observed.count == 2 ? String(observed[1]) : nil)
         XCTAssertEqual(URL(fileURLWithPath: observedDirectory).resolvingSymlinksInPath().path,
                        directory.resolvingSymlinksInPath().path)
+        // This runs on the test host's persistent hc terminal, the real path:
+        // the env and cwd above reached the command through hc. hc restores a
+        // persistent terminal itself, so c11 never replays its scrollback (C11H-4).
         let panel = TerminalPanel(workspaceId: surface.workspaceId, surface: surface)
-        XCTAssertTrue(panel.shouldPersistScrollbackForSessionSnapshot(), "The live sleep command is eligible")
-        // Native setFontSize updates the core scalar immediately but delivers the
-        // font grid to the renderer asynchronously. quicklook_font (the accessor
-        // behind cmuxCurrentSurfaceFontSizePoints) reads that renderer-owned grid.
-        // Ready guarantees focus/input flush, not completion of a render turn.
-        let fontDeadline = ProcessInfo.processInfo.systemUptime + 2
-        var observedFontPoints = cmuxCurrentSurfaceFontSizePoints(native)
-        while observedFontPoints.map({ abs($0 - 19) > 0.1 }) ?? true,
-              ProcessInfo.processInfo.systemUptime < fontDeadline {
-            try await Task.sleep(nanoseconds: 10_000_000)
-            observedFontPoints = cmuxCurrentSurfaceFontSizePoints(native)
-        }
+        XCTAssertEqual(surface.hcSession?.identity.persistence, .persistent, "Precondition: an hc terminal")
+        XCTAssertTrue(surface.hasLiveProcess(), "Precondition: liveness alone would qualify")
+        XCTAssertFalse(panel.shouldPersistScrollbackForSessionSnapshot(),
+                       "A persistent hc terminal never persists scrollback, even while its command runs")
+        // Inheritance reads the main-owned scalar immediately, without waiting
+        // for the asynchronous renderer font-grid update.
+        let observedFontPoints = c11CurrentSurfaceFontSizePoints(native)
         XCTAssertEqual(try XCTUnwrap(observedFontPoints), 19, accuracy: 0.1)
 
         // Appearance changes reload config after creation. The synchronous core
@@ -3964,12 +4003,25 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
 
 @MainActor
 final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
+    /// Waits for a follow-up episode to end by itself, bounded under its two-second
+    /// timeout so an expiry can never stand in for convergence. A fixed short sleep
+    /// is not enough in the whole suite: any terminal's structural notification
+    /// (they are observed with `object: nil`) requeues the pending attempt behind
+    /// the test's own continuation while main is busy (C11H-314: a 100 ms sleep
+    /// resumed about 450 ms late and read the count before the attempt ran).
+    private func waitForEpisodeToEnd(_ workspace: Workspace, within seconds: TimeInterval = 1.5) async throws {
+        let deadline = Date().addingTimeInterval(seconds)
+        while workspace.debugLayoutFollowUpSnapshotForTesting.active, Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
     func testDefaultLayoutFollowUpTimeoutIsTwoSeconds() {
         XCTAssertEqual(Workspace.defaultLayoutFollowUpTimeout, 2)
     }
 
     func testDeferredLayoutCountsTheImmediatelyConvergedFlush() async throws {
-        let workspace = Workspace(title: "Deferred flush fixture", workingDirectory: nil, portOrdinal: 0)
+        let workspace = Workspace(title: "Deferred flush fixture", workingDirectory: nil)
         workspace.teardownAllPanels()
         let before = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
         // Model a structural begin inside the current layout callback. Its
@@ -3977,13 +4029,13 @@ final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
         workspace.debugBeginDeferredLayoutFollowUpForTesting()
         XCTAssertEqual(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, before)
         XCTAssertTrue(workspace.debugLayoutFollowUpSnapshotForTesting.active)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitForEpisodeToEnd(workspace)
         XCTAssertGreaterThan(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, before)
         XCTAssertFalse(workspace.debugLayoutFollowUpSnapshotForTesting.active)
     }
 
     func testDetachedGeometryRetriesExpireWithoutWindowUpdates() async throws {
-        let workspace = Workspace(title: "Unavailable bounds fixture", workingDirectory: nil, portOrdinal: 0)
+        let workspace = Workspace(title: "Unavailable bounds fixture", workingDirectory: nil)
         defer { workspace.teardownAllPanels() }
         let terminal = try XCTUnwrap(workspace.focusedTerminalPanel)
         terminal.hostedView.removeFromSuperview()
@@ -4002,13 +4054,13 @@ final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
     }
 
     func testClearedDeferredAttemptCannotFlushAfterRearmConverges() async throws {
-        let workspace = Workspace(title: "Rearm fixture", workingDirectory: nil, portOrdinal: 0)
+        let workspace = Workspace(title: "Rearm fixture", workingDirectory: nil)
         workspace.teardownAllPanels()
         workspace.debugBeginDeferredLayoutFollowUpForTesting()
         workspace.debugClearLayoutFollowUpForTesting()
         let before = workspace.debugLayoutFollowUpSnapshotForTesting.flushCount
         workspace.debugBeginDeferredLayoutFollowUpForTesting()
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await waitForEpisodeToEnd(workspace)
         XCTAssertEqual(workspace.debugLayoutFollowUpSnapshotForTesting.flushCount, before + 1,
                        "Only the rearmed episode may execute an all-window flush")
         XCTAssertFalse(workspace.debugLayoutFollowUpSnapshotForTesting.active)
@@ -4017,7 +4069,7 @@ final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
     }
 
     func testDelayedUsableGeometryConvergesBeforeEpisodeExpires() async throws {
-        let workspace = Workspace(title: "Delayed attach fixture", workingDirectory: nil, portOrdinal: 0)
+        let workspace = Workspace(title: "Delayed attach fixture", workingDirectory: nil)
         defer { workspace.teardownAllPanels() }
         let terminal = try XCTUnwrap(workspace.focusedTerminalPanel)
         terminal.hostedView.removeFromSuperview()
@@ -4111,7 +4163,7 @@ final class WorkspaceBackgroundLayoutFocusTests: XCTestCase {
     }
 
     func testOwnerlessWorkspaceCannotReactivatePortalFromDelayedLayout() throws {
-        let workspace = Workspace(title: "Detached layout fixture", workingDirectory: nil, portOrdinal: 0)
+        let workspace = Workspace(title: "Detached layout fixture", workingDirectory: nil)
         defer { workspace.teardownAllPanels() }
         let terminal = try XCTUnwrap(workspace.focusedTerminalPanel)
         terminal.hostedView.setActive(true)

@@ -24,7 +24,15 @@ public final class ResolvedThemeSnapshot {
     private var numberCache: [ResolvedNumberKey: Double?] = [:]
     private var boolCache: [ResolvedBoolKey: Bool?] = [:]
     private var astCache: [String: ThemedValueAST] = [:]
+    private var styleColorCache: [StyleKey: NSColor?] = [:]
+    private var styleGradientCache: [StyleKey: ThemeGradient?] = [:]
+    private var textStyleCache: [ThemeTextStyleName: ThemeTextStyle] = [:]
     private let lock = NSLock()
+
+    private struct StyleKey: Hashable {
+        let path: String
+        let context: ThemeContext
+    }
 
     init(theme: C11Theme) {
         self.theme = theme
@@ -113,8 +121,119 @@ public final class ResolvedThemeSnapshot {
         return resolved
     }
 
+    // MARK: Schema-2 roles (unset by default: nil keeps today's look)
+
+    func resolveStyleColor(_ role: ThemeStyleRole, context: ThemeContext) -> NSColor? {
+        guard role.definition?.kind == .color, let expression = theme.styleValue(role)?.string else {
+            return nil
+        }
+        let key = StyleKey(path: role.path, context: context)
+        lock.lock()
+        if let cached = styleColorCache[key] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+
+        var variableStack: [String] = []
+        let resolved = evaluateColorExpression(expression, warningKey: role.path, context: context, variableStack: &variableStack)
+        lock.lock()
+        styleColorCache[key] = resolved
+        lock.unlock()
+        return resolved
+    }
+
+    func resolveStyleGradient(_ role: ThemeStyleRole, context: ThemeContext) -> ThemeGradient? {
+        guard role.definition?.kind == .gradient, let source = theme.styleValue(role)?.string else {
+            return nil
+        }
+        let key = StyleKey(path: role.path, context: context)
+        lock.lock()
+        if let cached = styleGradientCache[key] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+
+        var resolved: ThemeGradient?
+        if case let .success(raw) = ThemeGradientSyntax.parse(source) {
+            var stops: [ThemeGradient.Stop] = []
+            for (index, stop) in raw.enumerated() {
+                var variableStack: [String] = []
+                guard let color = evaluateColorExpression(stop.expression, warningKey: "\(role.path)[\(index)]", context: context, variableStack: &variableStack) else {
+                    stops = []
+                    break
+                }
+                stops.append(.init(color: color, location: stop.location ?? 0))
+            }
+            resolved = stops.isEmpty ? nil : ThemeGradient(stops: stops)
+        }
+        lock.lock()
+        styleGradientCache[key] = resolved
+        lock.unlock()
+        return resolved
+    }
+
+    func resolveStyleNumber(_ role: ThemeStyleRole) -> Double? {
+        guard let definition = role.definition, definition.kind == .number,
+              let value = theme.styleValue(role)?.number else { return nil }
+        guard let range = definition.range else { return value }
+        return min(max(value, range.lowerBound), range.upperBound)
+    }
+
+    func resolveStyleBool(_ role: ThemeStyleRole) -> Bool? {
+        guard role.definition?.kind == .boolean else { return nil }
+        return theme.styleValue(role)?.bool
+    }
+
+    /// Strings and choices.
+    func resolveStyleString(_ role: ThemeStyleRole) -> String? {
+        switch role.definition?.kind {
+        case .string?, .choice?:
+            return theme.styleValue(role)?.string
+        default:
+            return nil
+        }
+    }
+
+    func resolveTextStyle(_ style: ThemeTextStyleName) -> ThemeTextStyle {
+        lock.lock()
+        if let cached = textStyleCache[style] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+
+        var result = ThemeTextStyle()
+        if let family = resolveStyleString(.text(style, .family)) {
+            let familyRole: ThemeStyleRole
+            switch family {
+            case "display": familyRole = .typeDisplay
+            case "mono": familyRole = .typeMono
+            default: familyRole = .typeUI
+            }
+            result.familyName = resolveStyleString(familyRole) ?? (family == "mono" ? "system-mono" : "system")
+        } else if let ui = resolveStyleString(.typeUI) {
+            // `[type] ui` is the theme's chrome face: a style that names no family uses it.
+            result.familyName = ui
+        }
+        result.scale = resolveStyleNumber(.text(style, .scale))
+        result.weight = resolveStyleString(.text(style, .weight))
+        if let textCase = resolveStyleString(.text(style, .case)) {
+            result.uppercase = textCase == "upper"
+        }
+        result.tracking = resolveStyleNumber(.text(style, .tracking))
+        lock.lock()
+        textStyleCache[style] = result
+        lock.unlock()
+        return result
+    }
+
     func invalidateCaches() {
         lock.lock()
+        styleColorCache.removeAll()
+        styleGradientCache.removeAll()
+        textStyleCache.removeAll()
         colorCache.removeAll()
         numberCache.removeAll()
         boolCache.removeAll()

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 
 /// Source precedence for metadata writes.
 ///
@@ -13,6 +14,10 @@ public enum MetadataKey {
     public static let parentPanelId = "parent_panel_id"
     public static let parentPanelRef = "parent_panel_ref"
     public static let parentPanelTitle = "parent_panel_title"
+    /// Read-only projection of the panel's lineage origin (`operator`, `panel`,
+    /// `app`, `external`, `unknown`) and its app reason.
+    public static let panelOrigin = "panel_origin"
+    public static let panelOriginDetail = "panel_origin_detail"
     public static let role = "role"
     public static let status = "status"
     public static let task = "task"
@@ -129,6 +134,70 @@ public enum MetadataSource: String, CaseIterable, Codable, Sendable {
 /// `Workspace.pruneSurfaceMetadata`).
 final class PanelMetadataStore: @unchecked Sendable {
     static let shared = PanelMetadataStore()
+    /// Identity changes alone invalidate the workspace captain projection.
+    /// Activity/progress updates must never cause a global topology scan.
+    static let identityDidChangeNotification = Notification.Name("c11.panelMetadataIdentityDidChange")
+
+    /// Called at every change of a surface's stored values, under the store's
+    /// queue: notes identity and card-context changes.
+    private func notifyIdentityChange(workspaceId: UUID, from prior: [String: Any], to current: [String: Any]) {
+        noteCardContextChange(workspaceId: workspaceId, from: prior, to: current)
+        let addressChanged = (prior[MetadataKey.mailboxAddress] as? String) != (current[MetadataKey.mailboxAddress] as? String)
+        let titleChanged = (prior[MetadataKey.title] as? String) != (current[MetadataKey.title] as? String)
+        guard addressChanged || titleChanged else { return }
+        var changedKeys: [String] = []
+        if addressChanged { changedKeys.append(MetadataKey.mailboxAddress) }
+        if titleChanged { changedKeys.append(MetadataKey.title) }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.identityDidChangeNotification, object: self,
+                                            userInfo: ["changedKeys": changedKeys])
+        }
+    }
+
+    // MARK: - Card context (C11H-296)
+
+    /// Per workspace, a revision that moves only when one of its panels' card
+    /// context actually changes. Values come from one monotonic counter, so a
+    /// removed workspace's later revisions never repeat one a reader holds.
+    /// Behind its own lock, not the store's queue: the sidebar coordinator
+    /// reads it on main for every workspace that publishes.
+    private struct CardContextRevisions {
+        var last: UInt64 = 0
+        var byWorkspace: [UUID: UInt64] = [:]
+    }
+    private let cardContextRevisions = OSAllocatedUnfairLock(initialState: CardContextRevisions())
+
+    /// 0 until one of the workspace's panels first changes its title or description.
+    func cardContextRevision(workspaceId: UUID) -> UInt64 {
+        cardContextRevisions.withLock { $0.byWorkspace[workspaceId] ?? 0 }
+    }
+
+    /// Whether what a sidebar card's agent row shows from this store changed:
+    /// a panel's description (its age moves only with its text), or its title
+    /// while the panel is an agent. Rows list agent panels only, so a shell's
+    /// or a TUI's title churn moves nothing.
+    static func cardContextChanged(_ prior: [String: Any], _ current: [String: Any]) -> Bool {
+        if (prior[MetadataKey.description] as? String) != (current[MetadataKey.description] as? String) {
+            return true
+        }
+        guard (prior[MetadataKey.title] as? String) != (current[MetadataKey.title] as? String) else { return false }
+        return AgentIdentityPolicy.isAgentKind(prior[MetadataKey.terminalType] as? String)
+            || AgentIdentityPolicy.isAgentKind(current[MetadataKey.terminalType] as? String)
+    }
+
+    private func noteCardContextChange(workspaceId: UUID, from prior: [String: Any], to current: [String: Any]) {
+        guard Self.cardContextChanged(prior, current) else { return }
+        cardContextRevisions.withLock { state in
+            state.last &+= 1
+            state.byWorkspace[workspaceId] = state.last
+        }
+    }
+
+    /// A closed workspace keeps no entry. Revisions come from one counter, so
+    /// a reader holding this workspace's last value never sees it again.
+    private func dropCardContextRevision(workspaceId: UUID) {
+        cardContextRevisions.withLock { _ = $0.byWorkspace.removeValue(forKey: workspaceId) }
+    }
 
     // MARK: - Constants
 
@@ -231,6 +300,8 @@ final class PanelMetadataStore: @unchecked Sendable {
         "parent_panel_id",
         "parent_panel_ref",
         "parent_panel_title",
+        "panel_origin",
+        "panel_origin_detail",
         "journal",
         "role",
         "status",
@@ -263,7 +334,7 @@ final class PanelMetadataStore: @unchecked Sendable {
     static func validateReservedKey(_ key: String, _ value: Any) -> WriteError? {
         switch key {
         case "journal": return .reservedKeyInvalidType(key, "read-only journal projection")
-        case "parent_panel_id", "parent_panel_ref", "parent_panel_title":
+        case "parent_panel_id", "parent_panel_ref", "parent_panel_title", "panel_origin", "panel_origin_detail":
             return .reservedKeyInvalidType(key, "read-only lineage projection")
         case "role":
             return validateKebab(key: key, value: value, maxLen: 64)
@@ -711,7 +782,11 @@ final class PanelMetadataStore: @unchecked Sendable {
             switch flag {
             case .unchanged:
                 break
-            case .raise(let reason, let kind):
+            case .raise(let reason, let requestedKind):
+                // C11H-330: a flag carries display fields only. Evaporation is
+                // read live from the registry, and comparing a registry kind
+                // with its stored copy would turn every re-raise into a change.
+                let kind = requestedKind?.displaySnapshot
                 if let error = Self.validateReservedKey(MetadataKey.flag, reason) {
                     throw error
                 }
@@ -966,6 +1041,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                 let existing = metadata[workspaceId]?[surfaceId] ?? [:]
                 let existingSrc = sources[workspaceId]?[surfaceId] ?? [:]
                 result.removedKeys = Set(existing.keys).union(existingSrc.keys)
+                notifyIdentityChange(workspaceId: workspaceId, from: existing, to: [:])
                 metadata[workspaceId]?[surfaceId] = [:]
                 sources[workspaceId]?[surfaceId] = [:]
                 result.metadata = [:]
@@ -999,6 +1075,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                 result.applied[key] = true
             }
 
+            notifyIdentityChange(workspaceId: workspaceId, from: metadata[workspaceId]?[surfaceId] ?? [:], to: blob)
             metadata[workspaceId, default: [:]][surfaceId] = blob
             sources[workspaceId, default: [:]][surfaceId] = sblob
             result.metadata = blob
@@ -1016,9 +1093,8 @@ final class PanelMetadataStore: @unchecked Sendable {
     /// the newly-initialized surface has already written a `.declare`
     /// value to the same key: the snapshot wins.
     ///
-    /// Silent by design. The store has no observer infrastructure today;
-    /// any consumer wanting post-restore data queries it on demand.
-    /// Adding a notification pipeline is Phase 3 scope.
+    /// Restores do not replay metadata events. Address/title differences only
+    /// invalidate the derived captain projection, after the transaction.
     func restoreFromSnapshot(
         workspaceId: UUID,
         surfaceId: UUID,
@@ -1031,6 +1107,7 @@ final class PanelMetadataStore: @unchecked Sendable {
                 sources: sources,
                 now: Date()
             )
+            notifyIdentityChange(workspaceId: workspaceId, from: metadata[workspaceId]?[surfaceId] ?? [:], to: canonical.values)
             metadata[workspaceId, default: [:]][surfaceId] = canonical.values
             self.sources[workspaceId, default: [:]][surfaceId] = canonical.sources
             // Bump the revision so a post-restore autosave tick sees the
@@ -1061,7 +1138,9 @@ final class PanelMetadataStore: @unchecked Sendable {
     /// when a surface closes. Bypasses precedence (the surface is gone).
     func removeSurface(workspaceId: UUID, surfaceId: UUID) {
         queue.sync {
-            let removedMetadata = metadata[workspaceId]?.removeValue(forKey: surfaceId) != nil
+            let removed = metadata[workspaceId]?.removeValue(forKey: surfaceId)
+            notifyIdentityChange(workspaceId: workspaceId, from: removed ?? [:], to: [:])
+            let removedMetadata = removed != nil
             let removedSources = sources[workspaceId]?.removeValue(forKey: surfaceId) != nil
             if removedMetadata || removedSources {
                 metadataStoreRevision &+= 1
@@ -1076,6 +1155,9 @@ final class PanelMetadataStore: @unchecked Sendable {
             var removedAny = false
             if var wsMetadata = metadata[workspaceId] {
                 let priorCount = wsMetadata.count
+                for (panelID, values) in wsMetadata where !validSurfaceIds.contains(panelID) {
+                    notifyIdentityChange(workspaceId: workspaceId, from: values, to: [:])
+                }
                 wsMetadata = wsMetadata.filter { validSurfaceIds.contains($0.key) }
                 metadata[workspaceId] = wsMetadata
                 removedAny = removedAny || wsMetadata.count != priorCount
@@ -1086,6 +1168,8 @@ final class PanelMetadataStore: @unchecked Sendable {
                 sources[workspaceId] = wsSources
                 removedAny = removedAny || wsSources.count != priorCount
             }
+            // A closing workspace prunes every panel (`teardownAllPanels`).
+            if validSurfaceIds.isEmpty { dropCardContextRevision(workspaceId: workspaceId) }
             if removedAny {
                 metadataStoreRevision &+= 1
             }
@@ -1095,7 +1179,10 @@ final class PanelMetadataStore: @unchecked Sendable {
     /// Remove all metadata for a workspace.
     func removeWorkspace(workspaceId: UUID) {
         queue.sync {
-            let removedMetadata = metadata.removeValue(forKey: workspaceId) != nil
+            let removed = metadata.removeValue(forKey: workspaceId)
+            for values in (removed ?? [:]).values { notifyIdentityChange(workspaceId: workspaceId, from: values, to: [:]) }
+            dropCardContextRevision(workspaceId: workspaceId)
+            let removedMetadata = removed != nil
             let removedSources = sources.removeValue(forKey: workspaceId) != nil
             if removedMetadata || removedSources {
                 metadataStoreRevision &+= 1
@@ -1240,13 +1327,18 @@ final class PanelMetadataStore: @unchecked Sendable {
             // C11-163: capture prior before overwrite (amendment E).
             let priorValue = blob[key]
             blob[key] = value
-            sblob[key] = SourceRecord(source: source, ts: Date().timeIntervalSince1970)
+            sblob[key] = SourceRecord(
+                source: source,
+                ts: Self.recordTimestamp(key: key, newValue: value, priorValue: priorValue,
+                                         priorRecord: sblob[key], now: Date().timeIntervalSince1970)
+            )
 
             if let encoded = try? JSONSerialization.data(withJSONObject: blob, options: []),
                encoded.count > PanelMetadataStore.payloadCapBytes {
                 return false
             }
 
+            notifyIdentityChange(workspaceId: workspaceId, from: metadata[workspaceId]?[surfaceId] ?? [:], to: blob)
             metadata[workspaceId, default: [:]][surfaceId] = blob
             sources[workspaceId, default: [:]][surfaceId] = sblob
             metadataStoreRevision &+= 1
@@ -1318,6 +1410,8 @@ final class PanelMetadataStore: @unchecked Sendable {
         }
 
         let ts = Date().timeIntervalSince1970
+        let storedBlob = metadata[workspaceId]?[surfaceId] ?? [:]
+        let storedSources = sources[workspaceId]?[surfaceId] ?? [:]
         var mutated = false
         // C11-163: canonical metadata changes to publish to the events stream
         // AFTER the write commits (the size guard below can still abort).
@@ -1371,7 +1465,13 @@ final class PanelMetadataStore: @unchecked Sendable {
                 canonicalEventChanges.append((key: k, value: v, prior: existing))
             }
             blob[k] = v
-            sblob[k] = SourceRecord(source: source, ts: ts)
+            sblob[k] = SourceRecord(
+                source: source,
+                // The stored entry, not the working blob: a replace starts
+                // from an empty blob but rewrites the same description.
+                ts: Self.recordTimestamp(key: k, newValue: v, priorValue: storedBlob[k],
+                                         priorRecord: storedSources[k], now: ts)
+            )
             result.applied[k] = true
             mutated = true
         }
@@ -1384,6 +1484,7 @@ final class PanelMetadataStore: @unchecked Sendable {
             throw WriteError.payloadTooLarge
         }
 
+        notifyIdentityChange(workspaceId: workspaceId, from: metadata[workspaceId]?[surfaceId] ?? [:], to: blob)
         metadata[workspaceId, default: [:]][surfaceId] = blob
         sources[workspaceId, default: [:]][surfaceId] = sblob
 
@@ -1408,9 +1509,49 @@ final class PanelMetadataStore: @unchecked Sendable {
         return result
     }
 
+    // MARK: - Edit time
+
+    /// C11H-278: keys whose source record `ts` means "when the text last
+    /// changed". A write that leaves the text as it was keeps the old time even
+    /// when its source differs (the source still moves), so re-declaring a
+    /// description does not make a stale one look fresh.
+    static let editTimeKeys: Set<String> = [MetadataKey.description]
+
+    static func recordTimestamp(
+        key: String,
+        newValue: Any,
+        priorValue: Any?,
+        priorRecord: SourceRecord?,
+        now: Double
+    ) -> Double {
+        guard editTimeKeys.contains(key), let priorRecord, let priorValue,
+              sameJSONValueStatic(priorValue, newValue) else { return now }
+        return priorRecord.ts
+    }
+
+    /// A source record's `ts` as an edit time. Every reader goes through this
+    /// one guard: a record without a real time (a persisted 0) has none.
+    static func editTime(ts: Double?) -> Date? {
+        guard let ts, ts > 0 else { return nil }
+        return Date(timeIntervalSince1970: ts)
+    }
+
+    /// When the panel's description text last changed, or nil without one.
+    /// Persisted with the session as the description's source record.
+    func descriptionUpdatedAt(workspaceId: UUID, surfaceId: UUID) -> Date? {
+        queue.sync {
+            guard metadata[workspaceId]?[surfaceId]?[MetadataKey.description] != nil else { return nil }
+            return Self.editTime(ts: sources[workspaceId]?[surfaceId]?[MetadataKey.description]?.ts)
+        }
+    }
+
     // MARK: - Value equality for dedupe
 
     private func sameJSONValue(_ a: Any, _ b: Any) -> Bool {
+        Self.sameJSONValueStatic(a, b)
+    }
+
+    static func sameJSONValueStatic(_ a: Any, _ b: Any) -> Bool {
         if let sa = a as? String, let sb = b as? String { return sa == sb }
         if let na = a as? NSNumber, let nb = b as? NSNumber { return na == nb }
         if let ba = a as? Bool, let bb = b as? Bool { return ba == bb }

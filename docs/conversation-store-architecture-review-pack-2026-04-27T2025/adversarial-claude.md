@@ -1,6 +1,6 @@
 # Adversarial Plan Review — conversation-store-architecture (Claude)
 
-**Plan:** `/Users/atin/Projects/Stage11/code/c11/docs/conversation-store-architecture.md`
+**Plan:** `~/src/c11/docs/conversation-store-architecture.md`
 **Reviewer model:** Claude (Opus 4.7)
 **Mode:** Adversarial — designated opposition. The Standard review handles balance.
 **Date:** 2026-04-27 20:25

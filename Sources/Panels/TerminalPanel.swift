@@ -7,6 +7,73 @@ import Bonsplit
 /// This allows TerminalSurface to be used within the bonsplit-based layout system.
 @MainActor
 final class TerminalPanel: Panel, ObservableObject {
+    var pendingHCConversationRecovery: HCPendingConversationRecovery? {
+        didSet {
+            // C11H-203: a launch resume that no longer stands (ended on
+            // purpose, typed over, kept, closed) leaves the Ask question.
+            if oldValue?.launchScoped == true, pendingHCConversationRecovery?.launchScoped != true {
+                LaunchResumeGate.shared.forget(id)
+            }
+        }
+    }
+    var retainsAfterEndAllSessions = false
+    /// C11H-46: set when an explicit close asked hc to end this panel's
+    /// terminal, so the end backstop does not count this panel as a holder.
+    var hcClosingForEnd = false
+    /// Ended terminals whose conversation recovery was already planned. A
+    /// retained replacement record must not plan the same end twice.
+    var plannedHCEndedKeys: Set<HCTerminalKey> = []
+    /// C11H-196: the host end this panel is recovering from (one per ended
+    /// key), for its banner, its Resume conversation action and diagnostics.
+    @Published var hcHostEnd: HCHostEndStatus? {
+        didSet {
+            guard hcHostEnd != oldValue else { return }
+            // A record now explains the end: a live replacement needs no notice.
+            if hcHostEnd != nil, hcRestoreNotice == .holderLost || hcRestoreNotice == .previousSessionEnded,
+               let runtime = hcSession, case .live = runtime.lifecycle { hcRestoreNotice = nil }
+            reportRecoveryDiagnostics()
+            HCRestoreProgress.shared.update(panelID: id, workspaceID: workspaceId, status: hcHostEnd,
+                                            carried: restoringCarriedHostEnd)
+        }
+    }
+    /// The operator closed the host-end banner for this ended key.
+    @Published private(set) var hcHostEndDismissedKey: HCTerminalKey?
+
+    func dismissHCHostEnd() { hcHostEndDismissedKey = hcHostEnd?.endedKey }
+    func resetHCHostEndDismissal() { hcHostEndDismissedKey = nil }
+
+    /// C11H-209: ends the previous session found on this panel and never
+    /// planned a resume for. A launch offers them instead of resuming them.
+    var hcEndsFoundByPreviousSession: Set<HCTerminalKey> = []
+    /// Set while a record carried over from the previous session is restored,
+    /// so the restore strip does not count it as this launch's.
+    private var restoringCarriedHostEnd = false
+
+    /// C11H-209: a restored panel takes back its settled decisions, so its
+    /// ended terminal is not decided again, and a record still waiting on the
+    /// operator shows (and offers Resume) as it did before the relaunch.
+    func restoreSavedHostEnd(_ saved: HCSavedHostEnd) {
+        plannedHCEndedKeys.formUnion(saved.decidedKeys)
+        hcEndsFoundByPreviousSession.formUnion(saved.foundEndedKeys)
+        guard let record = saved.record, record.isSettled, record.needsOperator else { return }
+        plannedHCEndedKeys.insert(record.endedKey)
+        restoringCarriedHostEnd = true
+        defer { restoringCarriedHostEnd = false }
+        hcHostEnd = record
+    }
+
+    /// The banner shows while recovery is underway or has failed, until the
+    /// operator closes it; a resumed panel or a fresh plain shell shows none.
+    var visibleHCHostEnd: HCHostEndStatus? {
+        guard let status = hcHostEnd, status.endedKey != hcHostEndDismissedKey else { return nil }
+        switch status.phase {
+        case .resumed: return nil
+        case .noConversation:
+            if let runtime = hcSession, case .live = runtime.lifecycle { return nil }
+            return status
+        default: return status
+        }
+    }
     let id: UUID
     /// Ownership is tied to this object, independent of a restored/reused tab UUID.
     let launchPromptOwner = UUID()
@@ -15,6 +82,61 @@ final class TerminalPanel: Panel, ObservableObject {
 
     /// The underlying terminal surface
     let surface: TerminalSurface
+    /// Persistent identity remains available even while the backend is unresolved.
+    var hcIdentity: HCPanelIdentity? {
+        guard let identity = surface.hcSession?.identity, identity.persistence == .persistent else { return nil }
+        return identity
+    }
+    var hcSession: HCPanelSession? { surface.hcSession }
+    /// Ticket 12: the machine this terminal runs on when it is not this Mac.
+    var hcRemoteTarget: HCRemoteTarget? { surface.hcRemoteTarget }
+    @Published private(set) var hcRestoreNotice: HCRestoreLifecycleProjection.Notice? {
+        didSet { if hcRestoreNotice != oldValue { reportRecoveryDiagnostics() } }
+    }
+
+    /// C11H-196: `hc-diagnostics --json` reports what the banner shows.
+    private func reportRecoveryDiagnostics() {
+        let notice: String?
+        switch hcRestoreNotice {
+        case .holderLost: notice = "holder_lost"
+        case .resourceExhausted: notice = "resource_exhausted"
+        case .previousSessionEnded: notice = "previous_session_ended"
+        case nil: notice = nil
+        }
+        var hostEnd: [String: Any]?
+        if let status = hcHostEnd {
+            let formatter = ISO8601DateFormatter()
+            formatter.timeZone = .current
+            hostEnd = [
+                "state": status.stateToken,
+                "record": status.recordState,
+                "reason": status.reasonToken as Any? ?? NSNull(),
+                "cause": status.causeToken,
+                "signal": status.signal.map { Int($0) } as Any? ?? NSNull(),
+                "ended_at": formatter.string(from: status.endedAt),
+                "conversation_id": status.conversation?.id as Any? ?? NSNull(),
+                "offers_resume": status.offersResume,
+            ]
+        }
+        HCDiagnosticRecorder.shared.recordPanelRecovery(panelID: id, notice: notice, hostEnd: hostEnd)
+    }
+    private var hcDismissedRestoreNotice: HCRestoreLifecycleProjection.Notice?
+    private struct RecoveryClaim: Equatable {
+        let key: HCTerminalKey?
+        let creationID: UUID?
+        let unresolved: Bool
+    }
+    private var hcRecoveryClaim: RecoveryClaim?
+
+    func dismissHCRestoreNotice() {
+        hcDismissedRestoreNotice = hcRestoreNotice
+        hcRestoreNotice = nil
+    }
+
+    var permitsConversationResume: Bool {
+        guard let hcSession, hcIdentity?.persistence == .persistent else { return true }
+        return HCRestoreLifecycleStore.shared.permitsResume(hcSession)
+    }
 
     /// The workspace ID this panel belongs to
     private(set) var workspaceId: UUID
@@ -102,38 +224,139 @@ final class TerminalPanel: Panel, ObservableObject {
     func submitLaunchPlan(_ plan: LaunchPromptDelivery.Plan,
                           isLive: @escaping @MainActor () -> Bool,
                           requestBackgroundStart: Bool = true) {
+        isLaunchPending = true
         guard let prompt = plan.delayedPrompt else {
-            if isLive() { surface.sendSubmitFormText(plan.launchLine) }
+            // Pending until the launcher's Return is actually written (queued before the terminal attaches), so a
+            // retry meanwhile finds this panel instead of making a second agent.
+            if isLive() {
+                surface.sendLaunchLine(plan.launchLine) { [weak self] _ in self?.isLaunchPending = false }
+            } else {
+                isLaunchPending = false
+            }
             return
         }
         if requestBackgroundStart, surface.surface == nil {
             surface.requestBackgroundSurfaceStartIfNeeded()
         }
+        // Bind when the launcher becomes ready, then preserve that generation
+        // across the launcher completion and post-boot prompt delay.
+        let binding = LaunchGenerationBinding<TerminalSurface.InputGenerationStamp>()
         let sequence = LaunchPostBootSequence(
             launcher: plan.launchLine, prompt: prompt, isLive: isLive,
             isReady: { [weak self] in
                 guard let self else { return false }
-                return self.surface.surface != nil && !self.surface.isInputTransactionActive
+                // C11H-112: a terminal running headless takes the prompt through hc like a shown one.
+                let hasTerminal = self.surface.surface != nil || MainActor.assumeIsolated { self.surface.hcHeadlessBridge != nil }
+                return hasTerminal && self.surface.isHCInputReady && !self.surface.isInputTransactionActive
             },
             submit: { [weak self] text, completion in
                 guard let self else { completion(false); return }
+                binding.bindIfNeeded { self.surface.captureInputGeneration() }
                 self.surface.sendSubmitFormText(text, shouldSubmit: { [weak self] in
                     guard let self else { return false }
-                    return isLive() && self.surface.surface != nil
+                    return binding.admitsSubmit(isLive: isLive(), isCurrent: { self.surface.isInputGenerationCurrent($0) })
                 }, completion: completion)
-            }
+            },
+            generationIsCurrent: { [weak self] in
+                guard let self else { return false }
+                return binding.isCurrent { self.surface.isInputGenerationCurrent($0) }
+            },
+            isBlockedByDialog: { [weak self] in
+                // An unreadable screen does not hold the prompt (today's behavior).
+                guard let self, let live = self.surface.surface,
+                      let region = TerminalController.shared.capturePromptInputRegion(surface: live, harness: nil) else {
+                    return false
+                }
+                return PromptInputClassifier.classify(region, harness: nil).state == .dialog
+            },
+            headlessReadiness: { [weak self] in
+                // No Ghostty surface: hc's own agent status is the gate (C11H-116). nil keeps the screen path.
+                guard let self else { return nil }
+                return MainActor.assumeIsolated {
+                    guard self.surface.surface == nil, self.surface.hcHeadlessBridge != nil else { return nil }
+                    return HCHeadless.promptReadiness(self.surface.hcLiveRecord)
+                }
+            },
+            onFailure: { [weak self] reason in self?.reportLaunchPromptNotDelivered(reason: reason) },
+            onFinished: { [weak self] in self?.isLaunchPending = false }
         )
         sequence.start()
     }
 
+    /// Ticket 12 (T12.1): launch an agent with a prompt in a terminal on
+    /// another machine. Once that terminal is live the staged prompt is sent
+    /// there, the launch is composed with the remote path, and only then
+    /// submitted, once. If the prompt cannot be sent, nothing is launched and
+    /// the operator is told.
+    func submitRemoteLaunch(promptURL: URL, isLive: @escaping @MainActor () -> Bool,
+                            compose: @escaping @MainActor (String) -> LaunchPromptDelivery.Plan?) {
+        isLaunchPending = true
+        let machine = hcRemoteTarget.map { HCMachineTarget.displayName($0.machine) } ?? ""
+        guard let runtime = surface.hcSession, let transfer = runtime.session as? any HCFileTransfer else {
+            reportRemoteLaunchFailure(machine: machine, reason: "no hc session"); return
+        }
+        if surface.surface == nil { surface.requestBackgroundSurfaceStartIfNeeded() }
+        Task { @MainActor [weak self] in
+            guard let record = await runtime.liveRecord(within: HCLimits.creationResolutionSeconds) else {
+                self?.reportRemoteLaunchFailure(machine: machine, reason: "terminal not live"); return
+            }
+            let sent = await HCRemoteLaunchPrompt.send(prompt: promptURL, to: record.key, via: transfer)
+            guard let self, isLive() else { return }
+            switch sent {
+            case .success(let path):
+                guard let plan = compose(path) else {
+                    self.reportRemoteLaunchFailure(machine: machine, reason: "compose"); return
+                }
+                self.submitLaunchPlan(plan, isLive: isLive)
+            case .failure(let failure):
+                self.reportRemoteLaunchFailure(machine: machine, reason: String(describing: failure))
+            }
+        }
+    }
+
+    /// C11H-116: set while a launch's command or prompt has not been delivered; a retry of the same launch finds
+    /// this panel instead of making a second agent.
+    var launchKey: String?
+    var isLaunchPending = false
+
+    /// The agent started but its prompt was not delivered: shown to the operator with the reason, never typed
+    /// into a dialog.
+    /// Test seam: observes a launch whose prompt was not delivered. Nil in production.
+    nonisolated(unsafe) static var launchFailureSink: ((TerminalPanel, String) -> Void)?
+
+    func reportLaunchPromptNotDelivered(reason: String) {
+        isLaunchPending = false
+        Self.launchFailureSink?(self, reason)
+        NSLog("hc.launch.prompt_not_delivered panel=%@ reason=%@", id.uuidString, reason)
+        let why = reason == "blocked"
+            ? String(localized: "agentLaunch.promptBlocked", defaultValue: "the agent is waiting on a question or dialog")
+            : String(localized: "agentLaunch.promptNeverReady", defaultValue: "the agent never reached its prompt")
+        AppDelegate.shared?.notificationStore?.addNotification(
+            workspaceId: workspaceId, surfaceId: id, title: displayTitle, subtitle: "",
+            body: String(format: String(localized: "agentLaunch.promptNotDelivered",
+                defaultValue: "The agent's prompt was not delivered: %@. The agent was not given its task."), why))
+    }
+
+    private func reportRemoteLaunchFailure(machine: String, reason: String) {
+        isLaunchPending = false
+        NSLog("hc.launch.prompt_not_sent panel=%@ reason=%@", id.uuidString, reason)
+        AppDelegate.shared?.notificationStore?.addNotification(
+            workspaceId: workspaceId, surfaceId: id, title: displayTitle, subtitle: "",
+            body: String(format: String(localized: "agentLaunch.remotePromptFailed",
+                defaultValue: "Couldn't send the agent prompt to %@. The agent was not started."), machine))
+    }
+
+    /// The Settings and New Workspace rails share asynchronous staging and
+    /// revalidate their actual target before binding ownership and submitting.
     /// Mission reads and prompt staging share the worker path. The callback
     /// revalidates the captured workspace root as well as the actual panel.
     func submitConfiguredAgentLaunch(agent: AgentType, launch: ResolvedAgentLaunch,
                                      missionRoot: String? = nil,
                                      isLive: @escaping @MainActor () -> Bool) {
         let delivery = AgentRegistry.shared.manifest(for: agent)?.launch.promptDelivery ?? .postBoot
+        let isRemote = hcRemoteTarget != nil
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let context = WorkspaceMissionLaunchContext(mission: WorkspaceMissionFile.read(root: missionRoot))
+            let context = WorkspaceMissionLaunchContext.forLaunch(isRemote: isRemote, missionRoot: missionRoot)
             let prompt = launch.initialPrompt
             let staged: LaunchPromptStore.StagedPrompt?
             do {
@@ -153,8 +376,9 @@ final class TerminalPanel: Panel, ObservableObject {
                 }
                 return
             }
+            let command = context.command(launch.command)
             let plan = LaunchPromptDelivery.compose(
-                command: context.command(launch.command), delivery: delivery, promptFilePath: staged?.url.path
+                command: command, delivery: delivery, promptFilePath: staged?.url.path
             )
             DispatchQueue.main.async {
                 guard let self, isLive() else {
@@ -163,7 +387,16 @@ final class TerminalPanel: Panel, ObservableObject {
                 }
                 do {
                     if let staged { try LaunchPromptStore.shared.retain(staged, owner: self.launchPromptOwner) }
-                    self.submitLaunchPlan(plan, isLive: isLive)
+                    if isRemote, let staged {
+                        // C11H-138: an operator launch on another machine sends
+                        // the prompt file there first and composes with the path
+                        // it lands at, as `launch-agent --on` does.
+                        self.submitRemoteLaunch(promptURL: staged.url, isLive: isLive) { remotePath in
+                            LaunchPromptDelivery.compose(command: command, delivery: delivery, promptFilePath: remotePath)
+                        }
+                    } else {
+                        self.submitLaunchPlan(plan, isLive: isLive)
+                    }
                 } catch {
                     if let staged { DispatchQueue.global(qos: .utility).async { LaunchPromptStore.shared.discard(staged) } }
                 }
@@ -176,6 +409,7 @@ final class TerminalPanel: Panel, ObservableObject {
         self.createdAt = createdAt
         self.workspaceId = workspaceId
         self.surface = surface
+        surface.configureHCSessionIfNeeded()
         self.lifecycle = PanelLifecycleController(
             workspaceId: workspaceId,
             surfaceId: surface.id,
@@ -186,6 +420,45 @@ final class TerminalPanel: Panel, ObservableObject {
             // renderer is throttled. Called on workspace-selection edge
             // events; never on the typing-latency hot path.
             surface?.setOcclusion(target == .active)
+        }
+
+        if let hcSession = surface.hcSession {
+            HCRestoreLifecycleStore.shared.observe(hcSession)
+            hcSession.$lifecycle.sink { [weak self] lifecycle in
+                guard let self else { return }
+                // Repeated inventory updates describe the same interruption.
+                // Recovery permits a later interruption to show a new notice.
+                if case .live = lifecycle { self.hcDismissedRestoreNotice = nil }
+                let notice = HCRestoreLifecycleProjection.notice(for: lifecycle,
+                    retaining: self.hcRestoreNotice, hostEndCovered: self.hcHostEnd != nil)
+                let visibleNotice = notice == self.hcDismissedRestoreNotice ? nil : notice
+                if self.hcRestoreNotice != visibleNotice { self.hcRestoreNotice = visibleNotice }
+                let claim: RecoveryClaim
+                switch lifecycle {
+                case .live(let record):
+                    claim = RecoveryClaim(key: record.key, creationID: hcSession.identity.creationID, unresolved: false)
+                case .unresolved(let identity, _):
+                    claim = RecoveryClaim(key: identity.key, creationID: identity.creationID, unresolved: true)
+                case .new, .ended:
+                    claim = RecoveryClaim(key: hcSession.identity.key, creationID: hcSession.identity.creationID, unresolved: false)
+                }
+                if self.hcRecoveryClaim != claim {
+                    self.hcRecoveryClaim = claim
+                    // @Published emits before identity is updated. Reconcile
+                    // after the claim completes, only when the claim changes;
+                    // title/status inventory updates do not enqueue more work.
+                    DispatchQueue.main.async { AppDelegate.shared?.hcPanelClaimsChanged() }
+                }
+            }.store(in: &cancellables)
+            // Gap 6: the chip for a local terminal (remote terminals are fed
+            // by HCRemoteStatusBinding).
+            LocalSessionPlacementFeed.follow(
+                lifecycle: hcSession.$lifecycle,
+                persistence: { [weak hcSession] in hcSession?.identity.persistence ?? .persistent },
+                isRemote: surface.hcRemoteTarget != nil
+            ) { [weak self] lifecycle, persistence, machineName in
+                self?.noteLocalPlacement(lifecycle, persistence, machineName)
+            }?.store(in: &cancellables)
         }
 
         // C11-25 commit 6: register with the per-surface CPU/RSS sampler.
@@ -208,6 +481,20 @@ final class TerminalPanel: Panel, ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        // C11H-127: the first new terminal on another machine teaches its label.
+        if let remote = surface.hcRemoteTarget, let hcSession = surface.hcSession,
+           hcSession.identity.origin == .fresh {
+            hcSession.$lifecycle
+                .first { if case .live = $0 { return true } else { return false } }
+                .sink { [weak self] _ in
+                    guard let self else { return }
+                    C11TipCenter.shared.offer(.remoteLabel, machine: WhatsDifferentPlaces.look(remote.machine).name) {
+                        [weak self] in self.flatMap { C11TipCenter.hostedViewAnchor($0.hostedView) }
+                    }
+                }
+                .store(in: &cancellables)
+        }
     }
 
     /// Create a new terminal panel with a fresh surface.
@@ -222,11 +509,11 @@ final class TerminalPanel: Panel, ObservableObject {
         context: ghostty_surface_context_e = GHOSTTY_SURFACE_CONTEXT_SPLIT,
         configTemplate: ghostty_surface_config_s? = nil,
         workingDirectory: String? = nil,
-        portOrdinal: Int = 0,
         initialCommand: String? = nil,
         initialInput: String? = nil,
         initialEnvironmentOverrides: [String: String] = [:],
-        additionalEnvironment: [String: String] = [:]
+        additionalEnvironment: [String: String] = [:],
+        remoteTarget: HCRemoteTarget? = nil
     ) {
         let surface = TerminalSurface(
             id: id,
@@ -237,9 +524,9 @@ final class TerminalPanel: Panel, ObservableObject {
             initialCommand: initialCommand,
             initialInput: initialInput,
             initialEnvironmentOverrides: initialEnvironmentOverrides,
-            additionalEnvironment: additionalEnvironment
+            additionalEnvironment: additionalEnvironment,
+            remoteTarget: remoteTarget
         )
-        surface.portOrdinal = portOrdinal
         self.init(workspaceId: workspaceId, surface: surface, createdAt: createdAt)
     }
 
@@ -261,6 +548,27 @@ final class TerminalPanel: Panel, ObservableObject {
         workspaceId = newWorkspaceId
         surface.updateWorkspaceId(newWorkspaceId)
         lifecycle.updateWorkspaceId(newWorkspaceId)
+        deliverLocalPlacement()
+    }
+
+    /// Last local chip inputs. The sink can fire during init, before the panel
+    /// is registered in its workspace, so delivery hops to the next main turn.
+    private var lastLocalPlacement: (lifecycle: HCLifecycle, persistence: HCPersistence, machineName: String?)?
+
+    private func noteLocalPlacement(_ lifecycle: HCLifecycle, _ persistence: HCPersistence,
+                                    _ machineName: String?) {
+        lastLocalPlacement = (lifecycle, persistence, machineName)
+        deliverLocalPlacement()
+    }
+
+    private func deliverLocalPlacement() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let last = self.lastLocalPlacement,
+                  let located = AppDelegate.shared?.workspaceContainingPanel(
+                    panelId: self.id, preferredWorkspaceId: self.workspaceId) else { return }
+            located.workspace.noteSessionLifecycle(panelId: self.id, lifecycle: last.lifecycle,
+                persistence: last.persistence, machineName: last.machineName, isLocal: true)
+        }
     }
 
     // MARK: - Lifecycle dispatch
@@ -321,11 +629,22 @@ final class TerminalPanel: Panel, ObservableObject {
     }
 
     func close() {
+        disposeSurface(reason: "panel.close")
+    }
+
+    /// Replacing a restored UI graph is not an operator request to end the
+    /// terminal. Keep this path separate when explicit close gains HC end.
+    func detachForSessionRestore() {
+        disposeSurface(reason: "panel.restore_retire")
+    }
+
+    private func disposeSurface(reason: String) {
+        if let hcSession { HCRestoreLifecycleStore.shared.forget(hcSession) }
         LaunchPromptStore.shared.release(owner: launchPromptOwner)
         // The surface will be cleaned up by its deinit
         // Detach from the window portal on real close so stale hosted views
         // cannot remain above browser panes after split close.
-        surface.beginPortalCloseLifecycle(reason: "panel.close")
+        surface.beginPortalCloseLifecycle(reason: reason)
 #if DEBUG
         let frame = String(format: "%.1fx%.1f", hostedView.frame.width, hostedView.frame.height)
         let bounds = String(format: "%.1fx%.1f", hostedView.bounds.width, hostedView.bounds.height)
@@ -373,9 +692,10 @@ final class TerminalPanel: Panel, ObservableObject {
     }
 
     func shouldPersistScrollbackForSessionSnapshot() -> Bool {
+        guard hcIdentity?.persistence != .persistent else { return false }
         // Autosave asks only whether the child is live. Operator close confirmation
         // is a separate prompt-state query and may acquire the renderer lock.
-        surface.hasLiveProcess()
+        return surface.hasLiveProcess()
     }
 
     func triggerFlash() {

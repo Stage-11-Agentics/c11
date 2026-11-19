@@ -588,7 +588,7 @@ final class GhosttyConfigTests: XCTestCase {
         XCTAssertFalse(ClaudeCodeIntegrationSettings.hooksEnabled(defaults: defaults))
     }
 
-    func testTelemetryDefaultsToEnabledWhenUnset() {
+    func testTelemetryIsOffWhenUnset() {
         let suiteName = "cmux.tests.telemetry.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated user defaults suite")
@@ -599,10 +599,11 @@ final class GhosttyConfigTests: XCTestCase {
         }
 
         defaults.removeObject(forKey: TelemetrySettings.sendAnonymousTelemetryKey)
-        XCTAssertTrue(TelemetrySettings.isEnabled(defaults: defaults))
+        XCTAssertFalse(TelemetrySettings.isEnabled(defaults: defaults))
+        XCTAssertFalse(TelemetrySettings.defaultSendAnonymousTelemetry)
     }
 
-    func testTelemetryRespectsStoredPreference() {
+    func testTelemetryIsOffWhateverTheStoredPreferenceSays() {
         let suiteName = "cmux.tests.telemetry.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             XCTFail("Failed to create isolated user defaults suite")
@@ -613,7 +614,7 @@ final class GhosttyConfigTests: XCTestCase {
         }
 
         defaults.set(true, forKey: TelemetrySettings.sendAnonymousTelemetryKey)
-        XCTAssertTrue(TelemetrySettings.isEnabled(defaults: defaults))
+        XCTAssertFalse(TelemetrySettings.isEnabled(defaults: defaults))
 
         defaults.set(false, forKey: TelemetrySettings.sendAnonymousTelemetryKey)
         XCTAssertFalse(TelemetrySettings.isEnabled(defaults: defaults))
@@ -1844,7 +1845,7 @@ final class SocketControlSettingsTests: XCTestCase {
             probeStableDefaultPathEntry: { _ in .missing }
         )
 
-        XCTAssertEqual(path, "/tmp/c11-nightly.sock")
+        XCTAssertEqual(path, C11Identity.nightlySocketPath)
     }
 
     func testDebugBundleHonorsSocketOverrideWithoutOptInFlag() {
@@ -1856,7 +1857,8 @@ final class SocketControlSettingsTests: XCTestCase {
             isDebugBuild: false
         )
 
-        XCTAssertEqual(path, "/tmp/c11-debug-my-tag.sock")
+        // A tagged Debug build binds its own per-user name (C11H-364).
+        XCTAssertEqual(path, C11Identity.taggedDebugSocketPath(slug: "my-tag"))
     }
 
     func testStagingBundleHonorsSocketOverrideWithoutOptInFlag() {
@@ -1882,7 +1884,7 @@ final class SocketControlSettingsTests: XCTestCase {
             probeStableDefaultPathEntry: { _ in .missing }
         )
 
-        XCTAssertEqual(path, "/tmp/cmux-debug-forced.sock")
+        XCTAssertEqual(path, SocketControlSettings.stableDefaultSocketPath)
     }
 
     func testDefaultSocketPathByChannel() {
@@ -1900,7 +1902,7 @@ final class SocketControlSettingsTests: XCTestCase {
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
-            "/tmp/c11-nightly.sock"
+            C11Identity.nightlySocketPath
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
@@ -1908,7 +1910,7 @@ final class SocketControlSettingsTests: XCTestCase {
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
-            "/tmp/c11-debug.sock"
+            C11Identity.debugSocketPath
         )
         XCTAssertEqual(
             SocketControlSettings.defaultSocketPath(
@@ -1916,7 +1918,7 @@ final class SocketControlSettingsTests: XCTestCase {
                 isDebugBuild: false,
                 probeStableDefaultPathEntry: { _ in .missing }
             ),
-            "/tmp/c11-staging.sock"
+            C11Identity.stagingSocketPath
         )
     }
 

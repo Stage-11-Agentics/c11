@@ -9,6 +9,22 @@ enum PromptInputState: String, Equatable, Sendable {
     case unavailable
 }
 
+/// Which Claude chooser is up. Only `PromptInputClassifier.chooserKind` reports
+/// it; the classification stays `.dialog` and its `dialogKind` (the supervisor's
+/// permission and choice labels) is untouched.
+enum PromptChooserKind: String, Equatable, Sendable {
+    /// Claude Code's folder-trust check. Its highlighted option is `No, exit`.
+    case trust
+    /// Claude Code's "make this plan?" chooser.
+    case plan
+    /// Claude Code's `Resume this conversation?` dialog after a long-idle
+    /// session is resumed (C11H-320).
+    case resume
+    /// Claude Code's rate-limit options menu, `What do you want to do?`
+    /// under `You've hit your … limit` (C11H-320).
+    case usageLimit = "usage_limit"
+}
+
 struct PromptInputClassification: Equatable, Sendable {
     let state: PromptInputState
     let draftLength: Int?
@@ -16,13 +32,22 @@ struct PromptInputClassification: Equatable, Sendable {
 
     static let unknown = Self(state: .unknown, draftLength: nil)
 
-    func responseFields(source: String?, observedAtMs: Int64?) -> [String: Any] {
+    func responseFields(source: String?, observedAtMs: Int64?, chooser: PromptChooserKind? = nil) -> [String: Any] {
         [
             "input_state": state.rawValue,
             "draft_length": draftLength.map { $0 as Any } ?? NSNull(),
+            "dialog_kind": publicDialogKind(chooser: chooser).map { $0 as Any } ?? NSNull(),
             "source": source.map { $0 as Any } ?? NSNull(),
             "observed_at_ms": observedAtMs.map { $0 as Any } ?? NSNull(),
         ]
+    }
+
+    /// The dialog's name as `input-state` and `fleet` print it (C11H-320):
+    /// `permission`, `choice`, `trust`, `plan`, `resume`, `usage_limit`, or
+    /// null when the state is not `dialog` or the dialog is not recognized.
+    func publicDialogKind(chooser: PromptChooserKind? = nil) -> String? {
+        guard state == .dialog else { return nil }
+        return dialogKind ?? chooser?.rawValue
     }
 }
 
@@ -38,16 +63,22 @@ struct PromptInputObservation: Sendable {
         observedAtMs: nil
     )
 
+    /// Which chooser a `dialog` is when the classification carries no kind.
+    var chooser: PromptChooserKind? = nil
+
     static func activeScreen(_ region: PromptRegionSnapshot, harness: String?) -> Self {
-        Self(
-            classification: PromptInputClassifier.classify(region, harness: harness),
+        let classification = PromptInputClassifier.classify(region, harness: harness)
+        return Self(
+            classification: classification,
             source: "active_screen",
-            observedAtMs: Int64((Date().timeIntervalSince1970 * 1000).rounded())
+            observedAtMs: Int64((Date().timeIntervalSince1970 * 1000).rounded()),
+            chooser: classification.state == .dialog && classification.dialogKind == nil
+                ? PromptInputClassifier.chooserKind(region, harness: harness) : nil
         )
     }
 
     var responseFields: [String: Any] {
-        classification.responseFields(source: source, observedAtMs: observedAtMs)
+        classification.responseFields(source: source, observedAtMs: observedAtMs, chooser: chooser)
     }
 }
 
@@ -83,6 +114,9 @@ struct PromptRegionSnapshot: Equatable, Sendable {
     /// The last rows of the screen, read only for a harness whose composer is
     /// pinned to the bottom (Grok and Pi choosers). Nil when not read or the read was busy.
     var screenBottom: PromptRegionRows? = nil
+    /// Whether rows carry the terminal's soft-wrap flags. A surface's do; hc's
+    /// paint (C11H-306) has none, so there a full-width row may be a wrap.
+    var wrapFlags: Bool = true
 }
 
 /// A bounded window of screen rows without its own cursor.
@@ -91,6 +125,8 @@ struct PromptRegionRows: Equatable, Sendable {
     let rows: [PromptRegionRow]
     let cells: [PromptRegionCell]
     let text: Data
+    /// As `PromptRegionSnapshot.wrapFlags`.
+    var wrapFlags: Bool = true
 }
 
 enum PromptInputClassifier {
@@ -161,6 +197,54 @@ enum PromptInputClassifier {
         composerReader(for: harness) == .grok || (forSupervisor && composerReader(for: harness) == .pi)
     }
 
+    /// C11H-280: Claude Code, Codex, OpenCode and Pi pin their composer near
+    /// the bottom of the screen, and the cursor window (16 rows of every
+    /// column) passes the native 4096-cell budget once a panel is wider than
+    /// about 315 columns. That read comes back incomplete, so a wide panel's
+    /// box was always `unknown`: the doorbell held mail and `send` could not
+    /// check it. The bottom window drops whole rows from its top instead and
+    /// stays complete. Read it only after a clipped cursor read, so narrow
+    /// panels read once. Grok reads the bottom window already, with its own
+    /// rules for a parked cursor, and keeps them.
+    static func readsScreenBottom(harness: String?, afterCursorRead cursor: PromptRegionSnapshot) -> Bool {
+        guard !cursor.complete else { return false }
+        switch composerReader(for: harness) {
+        case .prefix, .openCode, .pi:
+            return true
+        case .grok, nil:
+            return false
+        }
+    }
+
+    /// C11H-320: Claude Code's resume dialog, rate-limit menu and
+    /// auto-continue wait hide the cursor, so the cursor window of a narrow
+    /// panel can miss them. A Claude panel always reads the bottom rows too,
+    /// where those are drawn: one more bounded native copy, and nothing is
+    /// classified on main to decide it.
+    static func readsClaudeDialogBottom(harness: String?) -> Bool {
+        isClaude(harness)
+    }
+
+    /// The window a clipped cursor read is classified from: the bottom rows,
+    /// when that read is complete. Nil keeps the cursor read, which an
+    /// incomplete capture leaves `unknown`. A bottom window without the cursor
+    /// row is `unknown` too: the analysis needs the cursor's row.
+    private static func bottomWindow(for region: PromptRegionSnapshot, harness: String?) -> PromptRegionSnapshot? {
+        guard readsScreenBottom(harness: harness, afterCursorRead: region),
+              let bottom = region.screenBottom, bottom.complete else { return nil }
+        return PromptRegionSnapshot(
+            cursorX: region.cursorX,
+            cursorY: region.cursorY,
+            cursorPendingWrap: region.cursorPendingWrap,
+            complete: true,
+            rows: bottom.rows,
+            cells: bottom.cells,
+            text: bottom.text,
+            screenBottom: bottom,
+            wrapFlags: bottom.wrapFlags
+        )
+    }
+
     static func supportsComposer(harness: String?) -> Bool {
         composerReader(for: harness) != nil
     }
@@ -180,7 +264,14 @@ enum PromptInputClassifier {
         }
     }
 
-    private static func analyze(_ region: PromptRegionSnapshot, harness: String?, forSupervisor: Bool = false) -> Analysis {
+    private static func analyze(_ captured: PromptRegionSnapshot, harness: String?, forSupervisor: Bool = false) -> Analysis {
+        // Claude Code draws its resume dialog and its rate-limit menu at the
+        // bottom of the screen with the cursor hidden, so they are read from
+        // the bottom window alone, before any cursor-anchored reader.
+        if isClaude(harness), let bottom = captured.screenBottom, let kind = claudeBlockingDialog(bottom) {
+            return Analysis(classification: .init(state: .dialog, draftLength: nil, dialogKind: kind.rawValue), composerText: nil)
+        }
+        let region = bottomWindow(for: captured, harness: harness) ?? captured
         guard region.complete,
               !region.rows.isEmpty,
               region.rows.count <= maxRows,
@@ -246,9 +337,12 @@ enum PromptInputClassifier {
             // Refusal only. `c11 send` still refuses a Claude-style draft or
             // dialog on an untyped panel. Empty and suggestion stay unknown,
             // so the doorbell does not admit the panel.
+            let window = isShell(harness)
+                ? cursorLogicalLine(lines, cursorIndex: cursorIndex)
+                : (lines: lines, cursorIndex: cursorIndex)
             let scanned = prefixComposer(
-                lines,
-                cursorIndex: cursorIndex,
+                window.lines,
+                cursorIndex: window.cursorIndex,
                 cursorX: region.cursorX,
                 cursorY: region.cursorY,
                 boxed: false
@@ -718,12 +812,201 @@ enum PromptInputClassifier {
         return false
     }
 
-    private static let chooserOptionPairs: [(String, String)] = [
-        ("no, exit", "yes, i trust this folder"),
-        ("yes, implement this plan", "no, keep planning"),
+    private static let chooserOptionPairs: [(first: String, second: String, kind: PromptChooserKind)] = [
+        ("no, exit", "yes, i trust this folder", .trust),
+        ("yes, implement this plan", "no, keep planning", .plan),
+        ("resume", "start a new conversation", .resume),
     ]
 
+    static func isClaude(_ harness: String?) -> Bool {
+        harness?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "claude-code"
+    }
+
+    /// The detector saw the shell itself in front (`terminal_type` `shell`).
+    static func isShell(_ harness: String?) -> Bool {
+        harness?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "shell"
+    }
+
+    /// C11H-272: with the shell in front no agent draws a composer, so a dead
+    /// agent's composer or dialog left above the shell's prompt is history,
+    /// not a draft. Only the cursor's own line, joined across soft wraps, may
+    /// hold one (a `❯ git st` typed at a starship prompt still refuses).
+    private static func cursorLogicalLine(_ lines: [Line], cursorIndex: Int) -> (lines: [Line], cursorIndex: Int) {
+        func joined(_ upper: Int, _ lower: Int) -> Bool {
+            lines[upper].softWrap && lines[lower].wrapContinuation && lines[upper].y + 1 == lines[lower].y
+        }
+        var start = cursorIndex
+        while start > lines.startIndex, joined(start - 1, start) { start -= 1 }
+        var end = cursorIndex
+        while end + 1 < lines.endIndex, joined(end, end + 1) { end += 1 }
+        return (Array(lines[start...end]), cursorIndex - start)
+    }
+
+    /// Option labels of Claude Code 2.1.325's rate-limit options menu
+    /// (`tengu_rate_limit_options_menu`), lowercased. The menu shares its
+    /// `What do you want to do?` title with the trial-expired and spend-limit
+    /// menus, so an option, not the title, names it.
+    private static let usageLimitOptions = [
+        "stop and wait for limit to reset",
+        "don\u{2019}t continue automatically",
+        "don't continue automatically",
+        "add funds to continue with usage credits",
+        "wait for limit to reset",
+    ]
+
+    /// C11H-320: a Claude dialog that holds the session until someone answers
+    /// it, read from the screen's bottom rows: `resume` or `usage_limit`.
+    /// The dialog must be live: its footer (`Enter to confirm · Esc to …`) is
+    /// the last non-blank row and a `❯ N.` option sits within the 14 rows
+    /// above it. A quoted copy in the transcript, with a composer below it,
+    /// never matches. Nil for anything else, including an incomplete read.
+    static func claudeBlockingDialog(_ bottom: PromptRegionRows) -> PromptChooserKind? {
+        guard let physical = boundedLines(bottom) else { return nil }
+        if autoContinueBanner(physical) != nil { return .usageLimit }
+        // A narrow panel wraps the dialog footers and options; read logical lines.
+        let lines = logicalLines(physical, paintFull: bottom.wrapFlags ? nil : fullRows(bottom))
+        guard let footerIndex = lines.indices.last(where: { !isBlank(lines[$0]) }) else { return nil }
+        guard isBlockingDialogFooter(lines[footerIndex]) else { return nil }
+        let window = lines[max(0, footerIndex - 14)..<footerIndex]
+        let options = window.filter { isClaudeOption($0) || isClaudeOptionRow($0) }
+        guard window.contains(where: isClaudeOption), !options.isEmpty else { return nil }
+        let optionText = collapsedLowercased(options.map(\.text).joined(separator: " "))
+        let windowText = collapsedLowercased(window.map(\.text).joined(separator: " "))
+        if windowText.contains("resume this conversation?")
+            || (optionText.contains("resume") && optionText.contains("start a new conversation")) {
+            return .resume
+        }
+        if usageLimitOptions.contains(where: { optionText.contains($0) }) {
+            return .usageLimit
+        }
+        return nil
+    }
+
+    /// Which rows reach the window's last column with a printed character.
+    /// hc's paint, and a surface fed from it, carry no soft-wrap flags; such a
+    /// row followed by text is how a wrap looks there.
+    private static func fullRows(_ bottom: PromptRegionRows) -> [Bool] {
+        let width = bottom.rows.map(\.cellRange.count).max() ?? 0
+        let bytes = Array(bottom.text)
+        return bottom.rows.map { row in
+            guard width > 0, row.cellRange.count == width, let last = row.cellRange.last,
+                  bottom.cells.indices.contains(last) else { return false }
+            let cell = bottom.cells[last]
+            guard cell.textLength > 0, cell.textOffset + cell.textLength <= bytes.count,
+                  let text = String(bytes: bytes[cell.textOffset..<(cell.textOffset + cell.textLength)], encoding: .utf8)
+            else { return false }
+            return !text.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+    }
+
+    /// Wrapped rows joined into the logical lines they were printed as. A
+    /// surface's soft-wrap flags decide alone: an unflagged row ends its line
+    /// even when it fills the width. hc's paint has no flags (`paintFull` holds
+    /// which rows fill the width): there a full row that is not a rule
+    /// continues onto the next row, unless that row is blank, a rule, or opens
+    /// a line of its own (`opensClaudeLine`). The window is bounded, so this is
+    /// too; a first row whose start lies above the window stays as captured.
+    private static func logicalLines(_ rows: [Line], paintFull: [Bool]? = nil) -> [Line] {
+        var joined: [Line] = []
+        var previousFull = false
+        for (index, row) in rows.enumerated() {
+            let unflagged = previousFull && !isBlank(row) && !isRule(row) && !opensClaudeLine(row)
+            previousFull = paintFull.map { $0.count == rows.count && $0[index] && !isRule(row) } ?? false
+            if let last = joined.last, row.y == last.y + 1,
+               (last.softWrap && row.wrapContinuation) || unflagged {
+                joined[joined.count - 1] = Line(y: row.y, softWrap: row.softWrap, wrapContinuation: last.wrapContinuation,
+                                                scalars: last.scalars + row.scalars)
+            } else {
+                joined.append(row)
+            }
+        }
+        return joined
+    }
+
+    private static func boundedLines(_ bottom: PromptRegionRows) -> [Line]? {
+        guard bottom.complete, !bottom.rows.isEmpty, bottom.rows.count <= maxRows,
+              bottom.cells.count <= maxCells, bottom.text.count <= maxTextBytes else { return nil }
+        return makeLines(rows: bottom.rows, cells: bottom.cells, bytes: Array(bottom.text))
+    }
+
+    /// The reset time a Claude limit screen prints, read from the same bottom
+    /// rows as `claudeBlockingDialog`. The text is used here and dropped.
+    /// The logical text first, where a transcript line may name the zone; then
+    /// the recognised banner's rows run together (a wrapped row is a split
+    /// word), which holds the time on a source that kept no wrap flags.
+    static func claudeLimitResetsAt(_ bottom: PromptRegionRows, now: Date) -> Date? {
+        guard let lines = boundedLines(bottom) else { return nil }
+        let text = logicalLines(lines, paintFull: bottom.wrapFlags ? nil : fullRows(bottom)).map(\.text).joined(separator: "\n")
+        if let resets = ClaudeAgentReport.resetsAt(text, now: now, defaultZone: .current) { return resets }
+        guard let banner = autoContinueBanner(lines) else { return nil }
+        return ClaudeAgentReport.resetsAt(lines[banner].map(\.text).joined(), now: now, defaultZone: .current)
+    }
+
+    /// Claude's auto-continue wait (recorded at a real 5-hour limit): the
+    /// composer gives way to `⚠ Usage limit reached · limit resets 8:10am`, then
+    /// `Continuing automatically at 8:10am · Esc to cancel · …`. Recognised on
+    /// physical rows, whatever wrapped them and whether the source keeps wrap
+    /// flags (a surface, hc's paint, a surface fed from hc's paint): the last
+    /// non-blank row closes a footer that opens `Continuing automatically` at
+    /// most three rows above it, continues only through plain rows and holds
+    /// `Esc to cancel`; the warning opens at most four rows above the footer,
+    /// with nothing between but its own wrapped tail or blank rows. A composer,
+    /// rule or other line below means the wait is over, and the transcript's
+    /// quoted copy (`⏺ Usage limit reached · continuing …`) opens no footer.
+    /// Returns the block, warning through last row.
+    private static func autoContinueBanner(_ rows: [Line]) -> ClosedRange<Int>? {
+        guard let last = rows.indices.last(where: { !isBlank(rows[$0]) }) else { return nil }
+        var footer: Int?
+        for index in stride(from: last, through: max(0, last - 3), by: -1) {
+            let row = rows[index]
+            if collapsedLowercased(row.text).hasPrefix("continuing automatically") { footer = index; break }
+            if isBlank(row) || isRule(row) || opensClaudeLine(row) { return nil }
+        }
+        guard let footer, footer > 0,
+              collapsedLowercased(rows[footer...last].map(\.text).joined()).contains("esc to cancel") else { return nil }
+        for index in stride(from: footer - 1, through: max(0, footer - 4), by: -1) {
+            let row = rows[index]
+            if collapsedLowercased(row.text).hasPrefix("\u{26A0} usage limit reached") { return index...last }
+            if isRule(row) || opensClaudeLine(row) { return nil }
+        }
+        return nil
+    }
+
+    /// A row that starts a line of Claude's own on these screens, so it never
+    /// continues the row above it in hc's paint: the limit banner, a dialog
+    /// footer, the composer, a transcript bullet or a numbered option.
+    private static func opensClaudeLine(_ line: Line) -> Bool {
+        let text = collapsedLowercased(line.text)
+        let openers = ["\u{26A0}", "continuing automatically", "enter to confirm", "enter to select",
+                       "\u{276F}", "\u{23FA}", "\u{23BF}"]
+        return openers.contains { text.hasPrefix($0) } || isClaudeOptionRow(line)
+    }
+
+    private static func isBlockingDialogFooter(_ line: Line) -> Bool {
+        let text = collapsedLowercased(line.text)
+        return text.hasPrefix("enter to confirm") || text.hasPrefix("enter to select")
+    }
+
+    /// An unselected numbered option: leading spaces, then `N.`.
+    private static func isClaudeOptionRow(_ line: Line) -> Bool {
+        let text = line.text.trimmingCharacters(in: .whitespaces)
+        guard let dot = text.firstIndex(of: "."), dot > text.startIndex else { return false }
+        return text[..<dot].allSatisfy(\.isNumber) && text[..<dot].count <= 2
+    }
+
+    /// The chooser at the live cursor, or nil. A dialog is supported when it
+    /// is one of `chooserOptionPairs`.
+    static func chooserKind(_ region: PromptRegionSnapshot, harness: String?) -> PromptChooserKind? {
+        guard analyze(region, harness: harness).classification.state == .dialog,
+              let lines = makeLines(region, bytes: Array(region.text)) else { return nil }
+        return supportedChooserKind(lines, cursorY: region.cursorY)
+    }
+
     private static func isSupportedDialog(_ lines: [Line], cursorY: Int) -> Bool {
+        supportedChooserKind(lines, cursorY: cursorY) != nil
+    }
+
+    private static func supportedChooserKind(_ lines: [Line], cursorY: Int) -> PromptChooserKind? {
         for optionIndex in lines.indices where isClaudeOption(lines[optionIndex]) {
             let following = lines.dropFirst(optionIndex + 1).prefix(6)
             guard let footer = following.first(where: hasDialogFooter) else { continue }
@@ -736,19 +1019,19 @@ enum PromptInputClassifier {
             let selected = collapsedLowercased(lines[optionIndex].text)
             let before = lines[..<optionIndex].suffix(6)
             let siblings = collapsedLowercased((before + following).map(\.text).joined(separator: " "))
-            let isChooser = chooserOptionPairs.contains { first, second in
-                (selected.contains(first) && siblings.contains(second))
-                    || (selected.contains(second) && siblings.contains(first))
+            let matched = chooserOptionPairs.first { pair in
+                (selected.contains(pair.first) && siblings.contains(pair.second))
+                    || (selected.contains(pair.second) && siblings.contains(pair.first))
             }
 
             // These layouts render the selection and its footer at the live
             // cursor. A stale chooser above a later composer must not block it.
             let cursorIsInChooser = lines[optionIndex].y <= cursorY && cursorY <= footer.y
-            if cursorIsInChooser && isChooser {
-                return true
+            if cursorIsInChooser, let matched {
+                return matched.kind
             }
         }
-        return false
+        return nil
     }
 
     private static func collapsedLowercased(_ text: String) -> String {
@@ -822,6 +1105,12 @@ enum PromptInputClassifier {
             rows.append(composerRow(content))
         }
         let joined = joinedComposer(rows)
+        // A box that reaches the top of the capture (but not of the screen)
+        // may hold typed rows above it: a multiline draft whose cursor sits on
+        // a blank last row. Only a draft can be told from that fragment.
+        if start == 0, lines[0].y > 0 {
+            return joined.classification.state == .draft ? joined : nil
+        }
         // Live OpenCode 1.18.30 draws its placeholder in a normal-weight gray,
         // so the prompt capture does not mark those cells faint. The idle
         // hint is exactly `Ask anything…` plus an optional quoted hint, even

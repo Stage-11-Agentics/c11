@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Prove the release signing path works on Atlas from a non-GUI ssh session,
+# Prove the release signing path works on the signing host (C11_SIGNING_HOST,
+# from the environment or ~/.config/c11/dev-hosts) from a non-GUI ssh session,
 # without touching a real key or publishing anything (C11-542). Agent-safe.
 #
 #   scripts/atlas-signing-check.sh            # from any Mac on the tailnet
@@ -8,7 +9,7 @@
 #                                             # the real c11mux Sparkle key checked
 #                                             # against the key installed c11 trusts
 #
-# On Atlas, under one launchd unlock lease of the dedicated signing keychain:
+# On the signing host, under one launchd unlock lease of the dedicated signing keychain:
 #   1. codesign a scratch binary with the Developer ID identity (hardened
 #      runtime, secure timestamp) and verify the signature;
 #   2. notarytool history with the notary profile stored in that keychain;
@@ -19,7 +20,9 @@
 # Prints one line per check; prints no key, password or certificate hash.
 set -euo pipefail
 
-HOST="${C11_SIGNING_HOST:-atlas}"
+# shellcheck source=dev-hosts.sh
+source "$(dirname "$0")/dev-hosts.sh"
+HOST="$(c11_dev_host C11_SIGNING_HOST)" || exit 2
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # shellcheck disable=SC2016
@@ -129,8 +132,8 @@ if [[ -z "$others" && "$state" != "locked" ]]; then
 fi
 '
 
-# Sparkle tools on Atlas, from the same checksum-pinned tarball as releases.
+# Sparkle tools on the signing host, from the same checksum-pinned tarball as releases.
 ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" 'mkdir -p ~/.cache/c11/scripts'
 scp -q -o BatchMode=yes "$ROOT/scripts/fetch-sparkle-tools.sh" "$HOST:.cache/c11/scripts/fetch-sparkle-tools.sh"
 BIN_DIR="$(ssh -o BatchMode=yes "$HOST" 'bash ~/.cache/c11/scripts/fetch-sparkle-tools.sh')"
-ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" "$(printf '%q ' bash -c "$REMOTE" atlas-signing-check "$BIN_DIR" "${1:-}")"
+ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" "$(printf '%q ' bash -c "$REMOTE" signing-check "$BIN_DIR" "${1:-}")"

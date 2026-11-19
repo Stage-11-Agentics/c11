@@ -7,6 +7,9 @@ final class JournalCoordinator: @unchecked Sendable {
     private let lock = NSLock()
     private let startupQueue = DispatchQueue(label: "com.stage11.c11.journal-startup", qos: .utility)
     private var owners: [UUID: JournalOwner] = [:]
+    /// Terminal-scoped observation identity for remote OSC facts. These never
+    /// enter ConversationStore and can never authorize provider resume.
+    private var hcStatusOwners: [UUID: JournalOwner] = [:]
     private var targets: [UUID: UUID] = [:]
     private var snapshots: [UUID: JournalSnapshot] = [:]
     private var turnStartedMs: [UUID: Int64] = [:]
@@ -21,6 +24,13 @@ final class JournalCoordinator: @unchecked Sendable {
     private var seedReady = false
     private var panelsReady = false
     private var drainStarted = false
+    private var initialDrainFinished = false
+    private struct RuntimeConnection {
+        let owner: JournalOwner
+        let identity: JournalRuntimeIdentity
+        let subscriptionID: UUID
+    }
+    private var runtimeConnections: [UUID: RuntimeConnection] = [:]
     private var sink: (@Sendable (UUID, JournalSnapshot?, JournalMailboxBoundary?, UUID?) -> Void)?
 
     init(store: JournalStore? = nil) {
@@ -28,6 +38,13 @@ final class JournalCoordinator: @unchecked Sendable {
     }
 
     #if DEBUG
+    /// Drain a fixture's startup batch and the refresh it enqueues. No sleeps
+    /// or wall-clock assumptions in negative continuity/replacement tests.
+    func synchronizeRuntimeForTesting() {
+        startupQueue.sync {}
+        startupQueue.sync {}
+    }
+
     /// Replaces the backing store for a test that exercises the socket append
     /// route. Return the previous store so the caller can restore it afterward.
     @discardableResult
@@ -51,6 +68,8 @@ final class JournalCoordinator: @unchecked Sendable {
         SupervisorMonitor.shared.remove(panel: panelID)
         lock.lock()
         targets.removeValue(forKey: panelID)
+        runtimeConnections.removeValue(forKey: panelID)
+        hcStatusOwners.removeValue(forKey: panelID)
         let hadProjection = snapshots.removeValue(forKey: panelID) != nil
         turnStartedMs.removeValue(forKey: panelID)
         lastTurnEnds.removeValue(forKey: panelID)
@@ -67,8 +86,11 @@ final class JournalCoordinator: @unchecked Sendable {
     func setOwner(panelID: UUID, owner: JournalOwner?) {
         lock.lock()
         guard owners[panelID] != owner else { lock.unlock(); return }
-        SupervisorMonitor.shared.remove(panel: panelID, reason: "owner_changed")
+        let previous = owners[panelID] ?? hcStatusOwners[panelID]
         owners[panelID] = owner
+        if runtimeConnections[panelID]?.owner != owner { runtimeConnections.removeValue(forKey: panelID) }
+        guard previous != (owner ?? hcStatusOwners[panelID]) else { lock.unlock(); return }
+        SupervisorMonitor.shared.remove(panel: panelID, reason: "owner_changed")
         let hadProjection = snapshots.removeValue(forKey: panelID) != nil
         turnStartedMs.removeValue(forKey: panelID)
         lastTurnEnds.removeValue(forKey: panelID)
@@ -80,6 +102,25 @@ final class JournalCoordinator: @unchecked Sendable {
         if let owner, owner.agentKind == "codex" {
             registerCodexHookGap(owner)
         }
+        refreshOwners([panelID])
+    }
+
+    func setHCStatusOwner(panelID: UUID, owner: JournalOwner?) {
+        lock.lock()
+        guard targets[panelID] != nil else { lock.unlock(); return }
+        let previous = owners[panelID] ?? hcStatusOwners[panelID]
+        hcStatusOwners[panelID] = owner
+        let current = owners[panelID] ?? owner
+        guard previous != current else { lock.unlock(); return }
+        SupervisorMonitor.shared.remove(panel: panelID, reason: "owner_changed")
+        let hadProjection = snapshots.removeValue(forKey: panelID) != nil
+        turnStartedMs.removeValue(forKey: panelID)
+        lastTurnEnds.removeValue(forKey: panelID)
+        openAsks.removeValue(forKey: panelID)
+        responseGate.clear(panel: panelID)
+        let callback = sink
+        lock.unlock()
+        if hadProjection { callback?(panelID, nil, nil, nil) }
         refreshOwners([panelID])
     }
 
@@ -140,6 +181,41 @@ final class JournalCoordinator: @unchecked Sendable {
     func snapshot(panelID: UUID) -> JournalSnapshot? {
         lock.lock(); defer { lock.unlock() }; return snapshots[panelID]
     }
+
+    /// A native bridge proves that the exact process behind an earlier hook
+    /// still exists. It proves no new turn: only the stored phase is projected,
+    /// after the existing offline drain has had its chance to record Stop.
+    func runtimeConnected(owner: JournalOwner, identity: JournalRuntimeIdentity, subscriptionID: UUID,
+                          isCurrent: () -> Bool = { true }) {
+        lock.lock()
+        guard isCurrent() else { lock.unlock(); return }
+        runtimeConnections[owner.panelID] = RuntimeConnection(owner: owner, identity: identity, subscriptionID: subscriptionID)
+        lock.unlock()
+        refreshOwners([owner.panelID])
+    }
+
+    func runtimeDisconnected(panelID: UUID, subscriptionID: UUID) {
+        lock.lock()
+        guard runtimeConnections[panelID]?.subscriptionID == subscriptionID else { lock.unlock(); return }
+        runtimeConnections.removeValue(forKey: panelID)
+        lock.unlock()
+        refreshOwners([panelID])
+    }
+
+    /// Called under the coordinator lock. No disk, process probing or new
+    /// journal watermark: offline events must remain eligible after reconnect.
+    private func projectRuntimeContinuity(_ snapshot: JournalSnapshot) -> JournalSnapshot {
+        guard initialDrainFinished,
+              let connection = runtimeConnections[snapshot.owner.panelID],
+              connection.owner == snapshot.owner,
+              snapshot.owner.agentKind == "claude-code",
+              snapshot.runtimeIdentity == connection.identity,
+              snapshot.phase != .unknown else { return snapshot }
+        var copy = snapshot
+        copy.connection = .live
+        copy.confirmation = .confirmed
+        return copy
+    }
     func target(panelID: UUID) -> UUID? {
         lock.lock(); defer { lock.unlock() }; return targets[panelID]
     }
@@ -164,6 +240,7 @@ final class JournalCoordinator: @unchecked Sendable {
         lock.lock()
         let panelIDs = Array(snapshots.keys)
         snapshots.removeAll()
+        runtimeConnections.removeAll()
         lastTurnEnds.removeAll()
         storageError = nil
         let callback = sink
@@ -242,24 +319,36 @@ final class JournalCoordinator: @unchecked Sendable {
     func isEligible(_ owner: JournalOwner) -> Bool { exactOwner(panelID: owner.panelID) == owner }
     func exactOwner(panelID: UUID) -> JournalOwner? {
         lock.lock(); defer { lock.unlock() }
-        return targets[panelID] == nil ? nil : owners[panelID]
+        return targets[panelID] == nil ? nil : (owners[panelID] ?? hcStatusOwners[panelID])
     }
 
-    func append(_ draft: JournalDraft, historical: Bool = false, interactivePID: Int32? = nil) throws -> JournalAppendResult {
-        try append(draft, historical: historical, interactivePID: interactivePID, transcriptClockEvidence: false)
+    func append(_ draft: JournalDraft, historical: Bool = false, interactivePID: Int32? = nil,
+                verifiedRuntimeIdentity: JournalRuntimeIdentity? = nil,
+                sessionEndRootExit: JournalRootExitWitness? = nil) throws -> JournalAppendResult {
+        try append(draft, historical: historical, interactivePID: interactivePID, transcriptClockEvidence: false,
+                   verifiedRuntimeIdentity: verifiedRuntimeIdentity, sessionEndRootExit: sessionEndRootExit)
     }
 
     /// Transcript observations arrive only from the bounded in-process reader,
     /// which assigns the registered adapter version after parsing native time.
     func appendTranscript(_ draft: JournalDraft) throws -> JournalAppendResult {
-        try append(draft, historical: false, interactivePID: nil, transcriptClockEvidence: true)
+        try append(draft, historical: false, interactivePID: nil, transcriptClockEvidence: true, verifiedRuntimeIdentity: nil)
+    }
+
+    /// Called by the verified inventory consumer, never by socket/spool input.
+    func appendHCStatus(_ draft: JournalDraft) throws -> JournalAppendResult {
+        try append(draft, historical: false, interactivePID: nil,
+                   transcriptClockEvidence: false, hcStatusEvidence: true)
     }
 
     private func append(
         _ draft: JournalDraft,
         historical: Bool,
         interactivePID: Int32?,
-        transcriptClockEvidence: Bool
+        transcriptClockEvidence: Bool,
+        verifiedRuntimeIdentity: JournalRuntimeIdentity? = nil,
+        hcStatusEvidence: Bool = false,
+        sessionEndRootExit: JournalRootExitWitness? = nil
     ) throws -> JournalAppendResult {
         var draft = draft
         // C11-499: the panel is the identity. A hook from a panel that moved
@@ -279,11 +368,14 @@ final class JournalCoordinator: @unchecked Sendable {
                     (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 58, 95].contains($0)
                 } ? value : nil
             }
-            let context = transcriptClockEvidence
+            var context = transcriptClockEvidence
                 ? JournalContext.forTranscriptAppend(draft: draft, eligible: eligible,
                                                      historical: historical, modelID: model)
                 : JournalContext.forAppend(draft: draft, eligible: eligible,
                                            historical: historical, modelID: model)
+            if !historical { context.verifiedRuntimeIdentity = verifiedRuntimeIdentity }
+            if !historical { context.sessionEndRootExit = sessionEndRootExit }
+            context.hcStatusEvidence = hcStatusEvidence && draft.adapter == .hcStatus
             let result = try storage().append(
                 draft: draft,
                 context: context
@@ -312,7 +404,9 @@ final class JournalCoordinator: @unchecked Sendable {
 
     private func publish(_ value: JournalSnapshot, boundary: JournalMailboxBoundary? = nil, eventID: UUID? = nil) {
         lock.lock()
-        guard targets[value.owner.panelID] != nil, owners[value.owner.panelID] == value.owner else { lock.unlock(); return }
+        guard targets[value.owner.panelID] != nil,
+              (owners[value.owner.panelID] ?? hcStatusOwners[value.owner.panelID]) == value.owner else { lock.unlock(); return }
+        let value = projectRuntimeContinuity(value)
         let old = snapshots[value.owner.panelID]
         guard old?.owner != value.owner || (old?.lastSequence ?? -1) <= value.lastSequence else { lock.unlock(); return }
         snapshots[value.owner.panelID] = value
@@ -331,6 +425,12 @@ final class JournalCoordinator: @unchecked Sendable {
         }
         if counts.remaining {
             startupQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [self] in drain(store: store, first: false) }
+        } else {
+            lock.lock()
+            initialDrainFinished = true
+            let ids = Array(runtimeConnections.keys)
+            lock.unlock()
+            refreshOwners(ids)
         }
     }
     func cachedTurnStartedMs(panelID: UUID) -> Int64? {
@@ -375,7 +475,9 @@ final class JournalCoordinator: @unchecked Sendable {
         do {
             let store = try storage()
             let currents = try store.listCurrent().map { row in
-                row.appInstanceID == store.instanceID ? row : JournalReplayPolicy.restored(row)
+                let attached = row.appInstanceID == store.instanceID ? row : JournalReplayPolicy.restored(row)
+                lock.lock(); defer { lock.unlock() }
+                return projectRuntimeContinuity(attached)
             }
             let unattributed = try store.unattributedCount()
             let coverage = try store.coverage()
@@ -469,7 +571,7 @@ final class JournalCoordinator: @unchecked Sendable {
         let restored = AgentRoster.restoredAsk(snapshot: snap, eventsNewestFirst: page.events)
         lock.lock()
         defer { lock.unlock() }
-        guard owners[panel] == snap.owner, targets[panel] == snap.workspaceID,
+        guard (owners[panel] ?? hcStatusOwners[panel]) == snap.owner, targets[panel] == snap.workspaceID,
               snapshots[panel]?.owner == snap.owner,
               (snapshots[panel]?.lastSequence ?? Int64.max) <= snap.lastSequence else { return }
         if turnStartedMs[panel] == nil, let turn { turnStartedMs[panel] = turn }
@@ -544,9 +646,10 @@ struct JournalOpenAsk: Sendable {
 /// cannot reopen it over a newer turn. A transcript turn start is not a
 /// boundary: the Return that started the turn already closed the gate.
 ///
-/// A live session start that leaves the session `unknown` (a fresh launch, or
-/// a resumed session re-attaching) is an `attached` edge: it names the
-/// interactive process and says nothing about the turn (C11-398).
+/// A live session start (a fresh launch, or a resumed session re-attaching) is
+/// an `attached` edge: it names the interactive process, and the gate rings
+/// it only through the screen read (C11-398), whether the start left the
+/// session `unknown` or, from a verified interactive Claude, `idle` (C11H-322).
 /// Whether a hook may recover its panel's lost owner (C11-580). A positive
 /// interactive PID is not provenance: a hook request can be processed after
 /// its Claude exited and the next one started in the same panel.
@@ -605,16 +708,34 @@ struct JournalMailboxBoundary: Sendable {
         let committedAtMs = result.receipt.committedAtMs
         switch draft.source {
         case .hook, .plugin:
-            if draft.kind == .sessionStarted, state.phase == .unknown {
+            // C11H-322: a verified start lands at the prompt (idle), still an
+            // attach: the gate rings it through the screen read, as C11-398.
+            if draft.kind == .sessionStarted, [.unknown, .idle].contains(state.phase) {
                 return Self(working: false, pid: pid,
                             at: Date(timeIntervalSince1970: Double(committedAtMs) / 1000),
                             headless: pid == nil, attached: true)
             }
+            // C11H-237: a turn that ended in an error (Claude's StopFailure)
+            // is over too: the agent is back at its prompt.
             guard (draft.kind == .turnStarted && state.phase == .working)
-                    || (draft.kind == .turnCompleted && state.phase == .idle) else { return nil }
+                    || (draft.kind == .turnCompleted && state.phase == .idle)
+                    || (draft.kind == .errorReported && state.phase == .error) else { return nil }
+            // The error edge carries the hook's own time (never later than the
+            // commit), so a StopFailure emitted before a newer submit is stale
+            // at the gate and cannot reopen the prompt into the next turn.
+            let atMs = draft.kind == .errorReported ? min(draft.emittedAtMs, committedAtMs) : committedAtMs
             return Self(working: state.phase == .working, pid: pid,
-                        at: Date(timeIntervalSince1970: Double(committedAtMs) / 1000),
+                        at: Date(timeIntervalSince1970: Double(atMs) / 1000),
                         headless: pid == nil)
+        case .keypress:
+            // C11H-123: the composer showed that the Return which started a
+            // remote Codex's turn submitted nothing. The reducer applies that
+            // only to a turn a Return alone started (`return_started_nothing`),
+            // so the agent is back at its prompt and the mailbox opens.
+            guard draft.kind == .idleObserved, state.phase == .idle else { return nil }
+            return Self(working: false, pid: nil,
+                        at: Date(timeIntervalSince1970: Double(committedAtMs) / 1000),
+                        headless: false)
         case .transcript:
             // An interrupted turn is over too (Codex `turn_aborted`, Claude's
             // Esc marker): the agent is back at its prompt.
@@ -633,10 +754,13 @@ struct JournalMailboxBoundary: Sendable {
     /// Whether this boundary still describes the panel after a newer snapshot
     /// replaced its own: same owner, and the current phase agrees with the
     /// edge. Appends for one panel finish on several threads, so an older edge
-    /// can arrive after a newer state; one that disagrees is dropped.
+    /// can arrive after a newer state; one that disagrees is dropped. An
+    /// attach also holds over a later turn end's `idle` (C11H-322): harmless,
+    /// because the gate drops an attach older than the turns it already knows
+    /// (`MailboxStdinBuffer.noteAgentAttached`).
     func stillHolds(projected: JournalSnapshot?, current: JournalSnapshot?) -> Bool {
         guard let projected, let current, current.owner == projected.owner else { return false }
-        if attached { return current.phase == .unknown }
-        return working ? [.working, .blocked, .error].contains(current.phase) : current.phase == .idle
+        if attached { return [.unknown, .idle].contains(current.phase) }
+        return working ? [.working, .blocked].contains(current.phase) : [.idle, .error].contains(current.phase)
     }
 }

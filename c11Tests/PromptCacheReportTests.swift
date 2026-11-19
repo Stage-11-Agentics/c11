@@ -15,7 +15,7 @@ final class PromptCacheReportTests: XCTestCase {
 
     private func ms(_ date: Date) -> Double { date.timeIntervalSince1970 * 1000 }
 
-    private func parse(_ params: [String: Any]) -> Result<(panelId: UUID, report: PromptCacheReport), PromptCacheReportParser.Failure> {
+    private func parse(_ params: [String: Any]) -> Result<(panelId: UUID, report: PromptCacheReport, contextWindow: PromptCacheReportParser.ContextWindow?), PromptCacheReportParser.Failure> {
         PromptCacheReportParser.parse(params, now: now)
     }
 
@@ -36,6 +36,57 @@ final class PromptCacheReportTests: XCTestCase {
     }
 
     // MARK: - Validation
+
+    /// C11H-320 PR 3: Claude's statusline `context_window` rides beside a
+    /// report; its size arrives through `JSONSerialization`, so 0 and 1 are
+    /// numbers that also cast to Bool.
+    func testAContextWindowRidesBesideAReportAsAWholeNumber() throws {
+        func wire(_ json: String) throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        }
+        let body = #""prompt_cache":{"warm":true,"ttl":"5m"}"#
+        for (raw, window) in [("1", 1), ("2", 2), ("200000", 200_000)] {
+            let parsed = try parse(try wire(#"{"panel_id":"\#(panel.uuidString)",\#(body),"context_window":{"context_window_size":\#(raw),"used_percentage":12.5}}"#)).get()
+            XCTAssertEqual(parsed.contextWindow?.tokens, window, raw)
+        }
+        for raw in ["0", "true", "false", "2.5", "-1", #""200000""#, "1e12"] {
+            XCTAssertNotNil(failure(try wire(#"{"panel_id":"\#(panel.uuidString)",\#(body),"context_window":{"context_window_size":\#(raw)}}"#)), raw)
+        }
+        XCTAssertNotNil(failure(try wire(#"{"panel_id":"\#(panel.uuidString)",\#(body),"context_window":200000}"#)))
+        XCTAssertNotNil(failure(try wire(#"{"panel_id":"\#(panel.uuidString)","context_window":{"context_window_size":200000}}"#)),
+                        "a window alone is not a report")
+        XCTAssertNil(try parse(try wire(#"{"panel_id":"\#(panel.uuidString)",\#(body)}"#)).get().contextWindow)
+        let store = PromptCacheReportStore()
+        let first = try parse(try wire(#"{"panel_id":"\#(panel.uuidString)",\#(body),"context_window":{"context_window_size":200000}}"#)).get()
+        store.record(first.report, panelId: panel, receivedAt: now, contextWindow: first.contextWindow)
+        store.record(.unknown, panelId: panel, receivedAt: now.addingTimeInterval(1))
+        XCTAssertEqual(store.slot(forPanel: panel)?.harnessWindow?.tokens, 200_000, "a later report without one keeps it")
+        XCTAssertNotNil(failure(try wire(#"{"panel_id":"\#(panel.uuidString)",\#(body),"context_window":{"context_window_size":200000,"model":7}}"#)))
+    }
+
+    /// A reported window belongs to one model: a model switch, or a request
+    /// for another model, ends it; the same model keeps it.
+    func testAReportedContextWindowEndsWithItsModel() throws {
+        let store = PromptCacheReportStore()
+        let window = PromptCacheReportParser.ContextWindow(tokens: 200_000, model: "claude-opus-5-5[1m]")
+        store.record(request(now, model: "claude-opus-5-5"), panelId: panel, receivedAt: now, contextWindow: window)
+        XCTAssertEqual(store.slot(forPanel: panel)?.harnessWindow?.model, "claude-opus-5-5[1m]")
+        store.record(request(now.addingTimeInterval(10), model: "Claude-Opus-5-5"), panelId: panel, receivedAt: now.addingTimeInterval(10))
+        XCTAssertEqual(store.slot(forPanel: panel)?.harnessWindow?.tokens, 200_000, "the same model keeps it")
+        store.record(request(now.addingTimeInterval(20), model: "claude-sonnet-5-5"), panelId: panel, receivedAt: now.addingTimeInterval(20))
+        XCTAssertNil(store.slot(forPanel: panel)?.harnessWindow, "a request for another model ends it")
+
+        // A window without a model takes the request's; a model switch ends it.
+        store.record(request(now.addingTimeInterval(30), model: "gpt-5.6-sol"), panelId: panel, receivedAt: now.addingTimeInterval(30),
+                     contextWindow: .init(tokens: 272_000, model: nil))
+        XCTAssertEqual(store.slot(forPanel: panel)?.harnessWindow?.model, "gpt-5.6-sol")
+        store.record(.reset(.modelSwitch, at: now.addingTimeInterval(40)), panelId: panel, receivedAt: now.addingTimeInterval(40))
+        XCTAssertNil(store.slot(forPanel: panel)?.harnessWindow, "a model switch ends it")
+        // The same report may install the next model's window.
+        store.record(.reset(.modelSwitch, at: now.addingTimeInterval(50)), panelId: panel, receivedAt: now.addingTimeInterval(50),
+                     contextWindow: .init(tokens: 1_000_000, model: "gpt-5.6-terra"))
+        XCTAssertEqual(store.slot(forPanel: panel)?.harnessWindow?.tokens, 1_000_000)
+    }
 
     func testARequestReportParsesWithItsPanelAndEveryField() throws {
         let at = now.addingTimeInterval(-30)

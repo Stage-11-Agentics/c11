@@ -1,3 +1,5 @@
+import AppKit
+import Combine
 import XCTest
 
 #if canImport(c11_DEV)
@@ -369,5 +371,104 @@ final class WorkspacePulseDividerColorResolverTests: XCTestCase {
             ).hexString(),
             BrandColors.goldHex.uppercased()
         )
+    }
+}
+
+/// C11H-278: the description's age, its buckets and the label's update gate.
+final class DescriptionAgeTests: XCTestCase {
+    private let edited = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func age(_ seconds: TimeInterval) -> DescriptionAge {
+        DescriptionAge(updatedAt: edited, now: edited.addingTimeInterval(seconds))
+    }
+
+    func testBuckets() {
+        XCTAssertEqual(age(-30), .justNow, "a clock behind the edit reads just now")
+        XCTAssertEqual(age(0), .justNow)
+        XCTAssertEqual(age(59.9), .justNow)
+        XCTAssertEqual(age(60), .minutes(1))
+        XCTAssertEqual(age(12 * 60 + 59), .minutes(12))
+        XCTAssertEqual(age(3599), .minutes(59))
+        XCTAssertEqual(age(3600), .hours(1))
+        XCTAssertEqual(age(3 * 3600 + 1800), .hours(3))
+        XCTAssertEqual(age(86_399), .hours(23))
+        XCTAssertEqual(age(86_400), .days(1))
+        XCTAssertEqual(age(99 * 86_400 + 1), .days(99))
+        XCTAssertEqual(age(100 * 86_400), .overNinetyNineDays, "past 99 days the age is bounded")
+        XCTAssertEqual(age(400 * 86_400), .overNinetyNineDays)
+    }
+
+    func testTextCarriesTheCountInBothStyles() {
+        for style in [DescriptionAge.Style.full, .compact] {
+            XCTAssertTrue(DescriptionAge.minutes(12).text(style).contains("12"))
+            XCTAssertTrue(DescriptionAge.hours(3).text(style).contains("3"))
+            XCTAssertTrue(DescriptionAge.days(2).text(style).contains("2"))
+            XCTAssertFalse(DescriptionAge.justNow.text(style).isEmpty)
+        }
+    }
+
+    /// The fixed slot holds every sample, so no age is wider than its slot.
+    func testSlotHoldsEveryAge() {
+        for style in [DescriptionAge.Style.full, .compact] {
+            let slot = DescriptionAgeMetrics.slotWidth(style: style, fontSize: 11)
+            let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+            let longLived = DescriptionAge(updatedAt: edited, now: edited.addingTimeInterval(400 * 86_400))
+            for sample in [DescriptionAge.justNow, .minutes(1), .minutes(47), .hours(9), .days(30), longLived] {
+                let width = (sample.text(style) as NSString).size(withAttributes: [.font: font]).width
+                XCTAssertLessThanOrEqual(width, slot + 0.5, "\(sample) overflows the \(style) slot")
+            }
+        }
+    }
+
+    /// A tick re-renders the label only when its text would change: a minute
+    /// of 30 s ticks moves "just now" once, and an hour-old age not at all.
+    func testLabelAdvancesOnlyWhenItsTextChanges() {
+        let shown = edited
+        XCTAssertFalse(DescriptionAgeLabel.shouldAdvance(updatedAt: edited, shown: shown, tick: edited.addingTimeInterval(30)))
+        XCTAssertTrue(DescriptionAgeLabel.shouldAdvance(updatedAt: edited, shown: shown, tick: edited.addingTimeInterval(60)))
+        let hourOld = edited.addingTimeInterval(-3 * 3600 - 60)
+        XCTAssertFalse(DescriptionAgeLabel.shouldAdvance(updatedAt: hourOld, shown: shown, tick: edited.addingTimeInterval(30)))
+        XCTAssertFalse(DescriptionAgeLabel.shouldAdvance(updatedAt: nil, shown: shown, tick: edited.addingTimeInterval(600)))
+        XCTAssertFalse(DescriptionAgeLabel.shouldAdvance(updatedAt: edited, shown: edited.addingTimeInterval(20),
+                                                         tick: edited.addingTimeInterval(5)),
+                       "a backward tick that reads the same moves nothing")
+    }
+
+    /// A clock set back moves the label at once ("12 min" to "2 min"), and
+    /// later ticks age it from there, as the socket's age does.
+    func testAClockSetBackMovesTheLabelAndAgingResumes() {
+        var shown = edited.addingTimeInterval(12 * 60 + 5)
+        XCTAssertEqual(DescriptionAge(updatedAt: edited, now: shown), .minutes(12))
+        let corrected = edited.addingTimeInterval(2 * 60 + 5)
+        XCTAssertTrue(DescriptionAgeLabel.shouldAdvance(updatedAt: edited, shown: shown, tick: corrected))
+        shown = corrected
+        XCTAssertEqual(DescriptionAge(updatedAt: edited, now: shown), .minutes(2))
+        XCTAssertFalse(DescriptionAgeLabel.shouldAdvance(updatedAt: edited, shown: shown, tick: corrected.addingTimeInterval(30)))
+        XCTAssertTrue(DescriptionAgeLabel.shouldAdvance(updatedAt: edited, shown: shown, tick: corrected.addingTimeInterval(60)),
+                      "after the correction the label ages again")
+    }
+
+    /// The label's ticks skip the clock's replayed current value (up to a
+    /// tick stale) and deliver every fresh one.
+    func testLabelTicksSkipTheReplayedValue() {
+        let clock = SidebarDecayClock(interval: 3600)
+        var received: [Date] = []
+        let subscription = DescriptionAgeLabel.ticks(of: clock).sink { received.append($0) }
+        defer { subscription.cancel() }
+        XCTAssertTrue(received.isEmpty, "subscribing replays nothing")
+        clock.isPaused = true
+        clock.isPaused = false
+        XCTAssertEqual(received.count, 1, "a resume publishes one fresh time")
+    }
+
+    /// The edit time rides the sidebar context only while the description shows.
+    func testPulseContextCarriesTheEditTimeOnlyWithTheDescription() {
+        let shown = WorkspacePulseAgentContextProjector.project(title: "Owner", subtitle: "Building", descriptionUpdatedAt: edited)
+        XCTAssertEqual(shown?.descriptionUpdatedAt, edited)
+        let standIn = WorkspacePulseAgentContextProjector.project(title: nil, subtitle: "Building", descriptionUpdatedAt: edited)
+        XCTAssertEqual(standIn?.title, "Building")
+        XCTAssertEqual(standIn?.descriptionUpdatedAt, edited, "a description standing in for the title keeps its age")
+        let hidden = WorkspacePulseAgentContextProjector.project(title: "Owner", subtitle: nil, descriptionUpdatedAt: edited)
+        XCTAssertNil(hidden?.descriptionUpdatedAt, "no description shown, no age")
     }
 }

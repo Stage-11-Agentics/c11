@@ -5,6 +5,7 @@ import Bonsplit
 import CoreVideo
 import Combine
 import os
+import WebKit
 
 
 /// Always-on signpost facade for workspace-switch perf instrumentation.
@@ -36,6 +37,235 @@ enum WorkspaceSwitchSignpost {
 
     static func event(_ id: OSSignpostID, _ name: StaticString, _ message: String) {
         os_signpost(.event, log: log, name: name, signpostID: id, "%{public}s", message)
+    }
+}
+
+/// C11H-293: one completed workspace switch, as the switch log records it. These are the values
+/// captured on main; build metadata and formatting are added on the log's queue.
+/// - `holdMs` runs from the selection (the top of `storedSelectedWorkspaceId.didSet`) to the start of
+///   the switch's queued main-thread block: the time main was held, including the layout pass that
+///   mounts the shown workspace.
+/// - `dtMs` is the `workspace.switch.complete` breadcrumb's duration, unchanged: it starts later in
+///   `didSet` (after the selection's notifications and breadcrumb) and ends after that block's focus,
+///   title and mark-read work.
+struct WorkspaceSwitchTiming: Equatable {
+    /// A hidden terminal keeps its last frame for 30 s (C11H-255); a switch back within it is warm.
+    static let warmSeconds: TimeInterval = 30
+
+    let at: Date
+    let holdMs: Int
+    let dtMs: Int
+    /// Panels in the workspace shown.
+    let panels: Int
+    let workspaces: Int
+    /// Awake seconds (the clock pauses while the Mac sleeps) since this window last deselected the
+    /// shown workspace; nil when this window had not shown it before in this launch.
+    let hiddenSeconds: TimeInterval?
+    let cause: String
+
+    var warmth: String {
+        guard let hiddenSeconds else { return "first" }
+        return hiddenSeconds < Self.warmSeconds ? "warm" : "cold"
+    }
+
+    /// One JSON object and a newline; keys sorted, local time with its offset.
+    func jsonLine(metadata: WorkspaceSwitchMetadata) -> String {
+        let clock = ISO8601DateFormatter()
+        clock.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        clock.timeZone = .current
+        let object: [String: Any] = [
+            "at": clock.string(from: at),
+            "hold_ms": holdMs,
+            "dt_ms": dtMs,
+            "panels": panels,
+            "workspaces": workspaces,
+            "hidden_s": hiddenSeconds.map { ($0 * 10).rounded() / 10 } as Any? ?? NSNull(),
+            "warmth": warmth,
+            "cause": cause,
+            "build": metadata.build,
+            "version": metadata.version,
+            "bundle_id": metadata.bundleId,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+              let text = String(data: data, encoding: .utf8) else { return "" }
+        return text + "\n"
+    }
+}
+
+/// C11H-293: which build wrote a switch line. Read once, on the switch log's queue.
+struct WorkspaceSwitchMetadata: Equatable, Sendable {
+    let build: String
+    let version: String
+    let bundleId: String
+
+    static func current() -> WorkspaceSwitchMetadata {
+#if DEBUG
+        let build = "debug"
+#else
+        let build = "release"
+#endif
+        let info = Bundle.main.infoDictionary ?? [:]
+        let short = info["CFBundleShortVersionString"] as? String ?? "?"
+        let number = info["CFBundleVersion"] as? String ?? "?"
+        return WorkspaceSwitchMetadata(build: build, version: "\(short) (\(number))",
+                                       bundleId: Bundle.main.bundleIdentifier ?? "")
+    }
+}
+
+/// C11H-293: the switch log's view of one window's selection changes, kept out of `WorkspaceManager`
+/// so a logic test can drive it. `begin` runs at the selection and notes when the old workspace was
+/// hidden; `finish` runs in the switch's queued main-thread block and hands one record to the sink,
+/// unless a newer switch superseded this one or the selection went to no workspace.
+struct WorkspaceSwitchRecorder {
+    struct Switch: Equatable {
+        let generation: UInt64
+        let target: UUID?
+        let startedAt: CFTimeInterval
+        let hiddenSeconds: TimeInterval?
+        let panels: Int
+        let cause: String
+    }
+
+    /// Deselect times are pruned to live workspaces only once they outnumber the live workspaces by
+    /// this many, so pruning (which builds the live-id set and filters) runs about once per this many
+    /// closed workspaces, never on every switch however many workspaces are open.
+    static let pruneSlack = 32
+
+    private(set) var deselectedAt: [UUID: CFTimeInterval] = [:]
+    private var generation: UInt64 = 0
+    let sink: (WorkspaceSwitchTiming) -> Void
+
+    init(sink: @escaping (WorkspaceSwitchTiming) -> Void = { WorkspaceSwitchTimingLog.shared.record($0) }) {
+        self.sink = sink
+    }
+
+    /// `liveWorkspaceCount` is a plain count; `liveWorkspaceIds` is called only when a prune is due.
+    mutating func begin(from previous: UUID?, to target: UUID?, panels: Int, cause: String,
+                        liveWorkspaceCount: Int, liveWorkspaceIds: () -> Set<UUID>,
+                        now: CFTimeInterval) -> Switch {
+        generation &+= 1
+        let hidden = target.flatMap { deselectedAt[$0] }.map { now - $0 }
+        if let previous { deselectedAt[previous] = now }
+        if deselectedAt.count > liveWorkspaceCount + Self.pruneSlack {
+            let live = liveWorkspaceIds()
+            deselectedAt = deselectedAt.filter { live.contains($0.key) }
+        }
+        return Switch(generation: generation, target: target, startedAt: now, hiddenSeconds: hidden,
+                      panels: panels, cause: cause)
+    }
+
+    /// `blockStartedAt` is when the switch's queued block began. Returns whether a record went to the sink.
+    @discardableResult
+    func finish(_ pending: Switch, workspaces: Int, blockStartedAt: CFTimeInterval, dtMs: Int,
+                at: Date = Date()) -> Bool {
+        guard pending.generation == generation, pending.target != nil else { return false }
+        sink(WorkspaceSwitchTiming(
+            at: at, holdMs: Int(((blockStartedAt - pending.startedAt) * 1000).rounded()), dtMs: dtMs,
+            panels: pending.panels, workspaces: workspaces, hiddenSeconds: pending.hiddenSeconds,
+            cause: pending.cause
+        ))
+        return true
+    }
+}
+
+/// C11H-293: the operator's real switch times, readable by an agent. Each completed workspace
+/// switch appends one JSON line (`WorkspaceSwitchTiming`) to `workspace-switch.jsonl` in c11's own
+/// logs folder (`~/Library/Logs/c11/`; a dev build launched with `C11_TAG` writes
+/// `c11-workspace-switch-<tag>.jsonl` in c11's per-user folder; `C11_SWITCH_LOG` overrides both). Local only; nothing
+/// leaves the machine.
+///
+/// Only the captured switch values cross from main. The destination, the build metadata, the
+/// formatting and the write all happen on a utility queue, the first two once, on first use.
+/// Writes take an `flock` on `<log>.lock`, so two c11 processes sharing the file append whole lines
+/// and rotate one at a time; the log is opened `O_APPEND | O_NOFOLLOW`. Past `capBytes` the file
+/// moves to `.1` and a new one starts, so the pair stays under about twice the cap.
+final class WorkspaceSwitchTimingLog: @unchecked Sendable {
+    static let shared = WorkspaceSwitchTimingLog()
+    static let defaultCapBytes = 2 * 1024 * 1024
+
+    let capBytes: Int
+    private let queue = DispatchQueue(label: "com.stage11.c11.workspace-switch-log", qos: .utility)
+    private let resolveDestination: @Sendable () -> URL
+    private let resolveMetadata: @Sendable () -> WorkspaceSwitchMetadata
+    /// Queue-confined: resolved on the first record.
+    private var destination: URL?
+    private var metadata: WorkspaceSwitchMetadata?
+
+    init(capBytes: Int = WorkspaceSwitchTimingLog.defaultCapBytes,
+         destination: @escaping @Sendable () -> URL = { WorkspaceSwitchTimingLog.resolveURL() },
+         metadata: @escaping @Sendable () -> WorkspaceSwitchMetadata = { WorkspaceSwitchMetadata.current() }) {
+        self.capBytes = capBytes
+        self.resolveDestination = destination
+        self.resolveMetadata = metadata
+    }
+
+    convenience init(url: URL, capBytes: Int = WorkspaceSwitchTimingLog.defaultCapBytes,
+                     metadata: @escaping @Sendable () -> WorkspaceSwitchMetadata = { WorkspaceSwitchMetadata.current() }) {
+        self.init(capBytes: capBytes, destination: { url }, metadata: metadata)
+    }
+
+    func record(_ timing: WorkspaceSwitchTiming) {
+        queue.async { [self] in
+            let url = destination ?? resolveDestination()
+            destination = url
+            let info = metadata ?? resolveMetadata()
+            metadata = info
+            let line = timing.jsonLine(metadata: info)
+            guard !line.isEmpty else { return }
+            Self.append(line, to: url, capBytes: capBytes)
+        }
+    }
+
+#if DEBUG
+    /// Tests only: returns once every queued line is written. Never call it on main in the app.
+    func drain() { queue.sync {} }
+#endif
+
+    private static func append(_ line: String, to url: URL, capBytes: Int) {
+        let bytes = Array(line.utf8)
+        let path = url.path
+        var lock = open(path + ".lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o644)
+        if lock < 0 {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                     withIntermediateDirectories: true)
+            lock = open(path + ".lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o644)
+        }
+        guard lock >= 0 else { return }
+        defer { close(lock) }
+        guard flock(lock, LOCK_EX) == 0 else { return }
+        defer { flock(lock, LOCK_UN) }
+
+        // A hard link, or a file another account owns, is never written to
+        // (C11H-364 L21); O_NOFOLLOW already refuses a symlink.
+        guard var fd = C11UserRuntime.openLogForAppend(path) else { return }
+        var info = stat()
+        let size = fstat(fd, &info) == 0 ? Int(info.st_size) : 0
+        if capBytes > 0, size > 0, size + bytes.count > capBytes {
+            close(fd)
+            let archive = path + ".1"
+            unlink(archive)
+            if rename(path, archive) != 0, errno != ENOENT { unlink(path) }
+            guard let reopened = C11UserRuntime.openLogForAppend(path) else { return }
+            fd = reopened
+        }
+        _ = bytes.withUnsafeBufferPointer { write(fd, $0.baseAddress, $0.count) }
+        close(fd)
+    }
+
+    static func resolveURL(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        if let explicit = environment["C11_SWITCH_LOG"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !explicit.isEmpty {
+            return URL(fileURLWithPath: explicit)
+        }
+        if let tag = c11Env("C11_TAG", in: environment)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !tag.isEmpty {
+            let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+            let slug = String(tag.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })
+            return URL(fileURLWithPath: C11UserRuntime.logPath("c11-workspace-switch-\(slug).jsonl"))
+        }
+        return FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Logs/\(C11Identity.logsDirectoryName)", isDirectory: true)
+            .appendingPathComponent("workspace-switch.jsonl")
     }
 }
 
@@ -101,6 +331,24 @@ enum LastPanelCloseShortcutSettings {
             return defaultValue
         }
         return defaults.bool(forKey: key)
+    }
+}
+
+/// C11H-309: which panels of an area one batch close takes, for its card title.
+enum PanelBatchCloseKind {
+    case others
+    case toLeft
+    case toRight
+
+    var confirmTitle: String {
+        switch self {
+        case .others:
+            return String(localized: "dialog.closeOtherTabs.title", defaultValue: "Close other panels?")
+        case .toLeft:
+            return String(localized: "dialog.closePanelsToLeft.title", defaultValue: "Close panels to the left?")
+        case .toRight:
+            return String(localized: "dialog.closePanelsToRight.title", defaultValue: "Close panels to the right?")
+        }
     }
 }
 
@@ -821,11 +1069,48 @@ class WorkspaceManager: ObservableObject {
     /// Used to apply title updates to the correct window instead of NSApp.keyWindow.
     weak var window: NSWindow?
 
-    @Published var workspaces: [Workspace] = []
+    @Published var workspaces: [Workspace] = [] {
+        // C11H-101: a workspace created, closed or reordered is a layout change.
+        didSet {
+            if oldValue.count != workspaces.count || zip(oldValue, workspaces).contains(where: { $0.id != $1.id }) {
+                AppDelegate.shared?.noteLayoutChanged(source: "workspaces")
+                WorkspaceCaptainCoordinator.shared.invalidate()
+                syncWorkspaceRootOrder(previous: oldValue)
+            }
+        }
+    }
     private(set) var isRetiredForWindowClose = false
     var qaLaunchPolicyProvider: () -> QALaunchPolicy = { QALaunchPolicy.current() }
     var firstRunWelcomeRequestForTesting: ((Workspace) -> Void)?
-    @Published var workspaceGroups: [WorkspaceGroup] = []
+    /// C11H-317: workspace creation requests neither the first-run Welcome
+    /// quad nor the default grid. True by default only in a process hosting
+    /// XCTest, so the init's own first workspace is covered; a real launch
+    /// never sets it. A test of those flows sets it false.
+    var suppressesFirstRunLayout: Bool = QALaunchPolicy.currentProcessIsHostedTest
+    /// How often creation requested the Welcome quad and the default grid,
+    /// counted at the request, before any terminal is ready. Read by tests.
+    private(set) var welcomeQuadRequestCount = 0
+    private(set) var defaultGridRequestCount = 0
+    /// A read seam for tests (C11H-302): where workspace creation reads the
+    /// welcome-shown and default-grid settings. Every product construction
+    /// uses `.standard`; the welcome flow still marks itself shown there.
+    var welcomeDefaults: UserDefaults = .standard
+    @Published var workspaceGroups: [WorkspaceGroup] = [] {
+        didSet {
+            if oldValue.map(\.id) != workspaceGroups.map(\.id) { WorkspaceCaptainCoordinator.shared.invalidate() }
+        }
+    }
+    /// C11H-342: where each group sits among the ungrouped workspaces of its
+    /// pin segment (`WorkspaceRootOrder`). Nil draws groups first, as before.
+    @Published var workspaceRootOrder: [UUID]?
+    /// The workspaces a reorder of `workspaces` moves, when its caller knows,
+    /// for mirroring it into the root order; and a root plan being applied,
+    /// whose own root order must not be mirrored over.
+    fileprivate var workspaceRootMoveHint: Set<UUID>?
+    fileprivate var isApplyingWorkspaceRootPlan = false
+    /// Each group's Captain summary, for its sidebar header. Its own object, so a
+    /// change (a holder's title, say) redraws headers, not every manager observer.
+    let workspaceGroupCaptainBoard = WorkspaceGroupCaptainBoard()
     private var workspaceRefsCancellable: AnyCancellable?
     private var knownWorkspaceRefIds: Set<UUID> = []
     @Published private(set) var isWorkspaceCycleHot: Bool = false
@@ -986,9 +1271,6 @@ class WorkspaceManager: ObservableObject {
         return false
     }
 
-    /// Global monotonically increasing counter for CMUX_PORT ordinal assignment.
-    /// Static so port ranges don't overlap across multiple windows (each window has its own TabManager).
-    private static var nextPortOrdinal: Int = 0
     private static let initialWorkspaceGitProbeDelays: [TimeInterval] = [0, 0.5, 1.5, 3.0, 6.0, 10.0]
     private nonisolated static let workspacePullRequestProbeTimeout: TimeInterval = 5.0
     /// The only workspace-selection gate. Denials happen before @Published or
@@ -1025,11 +1307,16 @@ class WorkspaceManager: ObservableObject {
             FocusHistoryStore.shared.withExplicitJump {
                 _ = AppDelegate.shared?.focusMainWindow(windowId: windowId)
                 self?.focusWorkspace(workspaceId, surfaceId: surfaceId, suppressFlash: true, cause: "palette")
+                // A palette result the operator chose (not the palette's own
+                // focus restoration on Escape, which never comes here).
+                self?.acknowledgeOperatorOpen(workspaceId: workspaceId, panelId: surfaceId)
             }
         }
     }
 
     private var workspaceSelectionCause = "menu"
+    /// C11H-293: this window's switches, for the switch log.
+    private var switchRecorder = WorkspaceSwitchRecorder()
     /// A nil cause keeps the enclosing one, so a caller's "sidebar" or "palette"
     /// survives routes that select through shared helpers.
     func withWorkspaceSelectionCause<T>(_ cause: String?, _ body: () throws -> T) rethrows -> T {
@@ -1040,6 +1327,47 @@ class WorkspaceManager: ObservableObject {
             return try body()
         }
         return try FocusHistoryStore.shared.withExplicitJump { try body() }
+    }
+
+    /// A sidebar card click (`WorkspaceRowView.updateSelection`), after its
+    /// multiselection bookkeeping: select the workspace and, C11H-246, open
+    /// the panel it shows when the click is a plain click or brings another
+    /// workspace into view (Cmd and Shift included).
+    func selectWorkspaceFromSidebarCard(_ workspace: Workspace, isCommand: Bool, isShift: Bool) {
+        let wasSelected = selectedWorkspaceId == workspace.id
+        SocketCommandContext.withContext(nil) { selectWorkspace(workspace, cause: "sidebar") }
+        if wasSelected, !isCommand, !isShift {
+            dismissNotificationOnDirectInteraction(
+                workspaceId: workspace.id,
+                surfaceId: focusedSurfaceId(for: workspace.id)
+            )
+        }
+        if !wasSelected || (!isCommand && !isShift) {
+            acknowledgeOperatorOpen(workspaceId: workspace.id)
+        }
+    }
+
+    /// C11H-246: an operator input opened something; acknowledge it once,
+    /// after the selection settles. A panel the input named is acknowledged
+    /// itself. A workspace-only input (a sidebar card, a workspace shortcut)
+    /// acknowledges the panel the workspace shows once its own selection
+    /// work has run (the next main-queue turn). Called only from operator
+    /// entry points; restoration and requests never call it.
+    func acknowledgeOperatorOpen(workspaceId: UUID?, panelId: UUID? = nil) {
+        guard let workspaceId, SocketCommandContext.current == nil else { return }
+        if let panelId {
+            guard selectedWorkspaceId == workspaceId,
+                  workspaces.first(where: { $0.id == workspaceId })?.panels[panelId] != nil else { return }
+            TerminalNotificationStore.shared.dismissFlagNotificationForOperatorOpen(workspaceId: workspaceId, surfaceId: panelId)
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.selectedWorkspaceId == workspaceId else { return }
+            TerminalNotificationStore.shared.dismissFlagNotificationForOperatorOpen(
+                workspaceId: workspaceId,
+                surfaceId: self.focusedSurfaceId(for: workspaceId)
+            )
+        }
     }
 
     @Published private(set) var storedSelectedWorkspaceId: UUID? {
@@ -1072,6 +1400,17 @@ class WorkspaceManager: ObservableObject {
         }
         didSet {
             guard selectedWorkspaceId != oldValue else { return }
+            // C11H-293 switch log: what this switch showed, captured at the selection.
+            let pendingSwitch = switchRecorder.begin(
+                from: oldValue, to: selectedWorkspaceId,
+                panels: selectedWorkspaceId.flatMap { id in workspaces.first { $0.id == id } }?.panels.count ?? 0,
+                cause: SocketCommandContext.current == nil ? workspaceSelectionCause : "socket",
+                liveWorkspaceCount: workspaces.count, liveWorkspaceIds: { Set(self.workspaces.map(\.id)) },
+                now: CACurrentMediaTime()
+            )
+#if DEBUG
+            if let selected = selectedWorkspaceId { DebugFrameWatch.shared.recordSelection(selected) }
+#endif
             // C11-527: the visible split tree changed wholesale; no divider the
             // portal overlays painted for the previous workspace may survive.
             PortalOverlayRepaint.requestAllWindows(reason: "workspace.selected")
@@ -1131,13 +1470,14 @@ class WorkspaceManager: ObservableObject {
 #endif
             selectionSideEffectsGeneration &+= 1
             let generation = selectionSideEffectsGeneration
-            DispatchQueue.main.async { [weak self, switchSignpostID, switchStartTime] in
+            DispatchQueue.main.async { [weak self, switchSignpostID, switchStartTime, pendingSwitch] in
                 guard let self, self.selectionSideEffectsGeneration == generation else {
                     // Block was superseded by a newer switch. Close the signpost
                     // so Instruments doesn't render an unbounded interval.
                     WorkspaceSwitchSignpost.end(switchSignpostID, "superseded")
                     return
                 }
+                let switchBlockStartedAt = CACurrentMediaTime()
 #if DEBUG
                 let asyncBlockStart = CACurrentMediaTime()
                 let switchDtAtAsyncEnter = self.debugWorkspaceSwitchStartTime > 0
@@ -1185,6 +1525,8 @@ class WorkspaceManager: ObservableObject {
                     "dt_ms": dtMsRounded,
                     "tabs": self.workspaces.count
                 ])
+                self.switchRecorder.finish(pendingSwitch, workspaces: self.workspaces.count,
+                                           blockStartedAt: switchBlockStartedAt, dtMs: dtMsRounded)
                 if self.currentSwitchSignpostID == switchSignpostID {
                     self.currentSwitchSignpostID = nil
                 }
@@ -1282,7 +1624,8 @@ class WorkspaceManager: ObservableObject {
     private var uiTestCancellables = Set<AnyCancellable>()
 #endif
 
-    init(initialWorkingDirectory: String? = nil) {
+    init(initialWorkingDirectory: String? = nil, welcomeDefaults: UserDefaults = .standard) {
+        self.welcomeDefaults = welcomeDefaults
         // @Published emits during willSet. Use the supplied collection rather
         // than walking AppDelegate's still-partially-mutated window graph.
         workspaceRefsCancellable = $workspaces.sink { [weak self] newWorkspaces in
@@ -1548,6 +1891,13 @@ class WorkspaceManager: ObservableObject {
     }
 
     @discardableResult
+    /// C11H-363: the Recovered workspace, created around its first recovered
+    /// terminal on the machine that terminal runs on. Never selected.
+    func addRecoveredWorkspace(_ recovery: HCRecoveredTerminalPlanner.Recovery) -> Workspace {
+        addWorkspace(initialPanelID: recovery.identity.panelID, initialRemoteTarget: recovery.remoteTarget,
+                     select: false, autoWelcomeIfNeeded: false)
+    }
+
     func addWorkspace(
         workingDirectory overrideWorkingDirectory: String? = nil,
         rootDirectory overrideRootDirectory: String? = nil,
@@ -1555,6 +1905,8 @@ class WorkspaceManager: ObservableObject {
         initialTerminalCommand: String? = nil,
         initialTerminalInput: String? = nil,
         initialTerminalEnvironment: [String: String] = [:],
+        initialPanelID: UUID? = nil,
+        initialRemoteTarget: HCRemoteTarget? = nil,
         select: Bool = true,
         eagerLoadTerminal: Bool = false,
         placementOverride: NewWorkspacePlacement? = nil,
@@ -1579,19 +1931,18 @@ class WorkspaceManager: ObservableObject {
         let rootDirectory = explicitRootDirectory
             ?? (establishRootFromWorkingDirectory ? explicitWorkingDirectory : nil)
         let inheritedConfig = inheritedTerminalConfigForNewWorkspace(snapshot: snapshot)
-        let ordinal = Self.nextPortOrdinal
-        Self.nextPortOrdinal += 1
         let newWorkspace = Workspace(
             id: workspaceId,
             title: defaultTitle,
             stableDefaultTitle: defaultTitle,
             workingDirectory: workingDirectory,
             rootDirectory: rootDirectory,
-            portOrdinal: ordinal,
             configTemplate: inheritedConfig,
             initialTerminalCommand: initialTerminalCommand,
             initialTerminalInput: initialTerminalInput,
-            initialTerminalEnvironment: initialTerminalEnvironment
+            initialTerminalEnvironment: initialTerminalEnvironment,
+            initialPanelID: initialPanelID,
+            initialRemoteTarget: initialRemoteTarget
         )
         newWorkspace.owningWorkspaceManager = self
         wireClosedBrowserTracking(for: newWorkspace)
@@ -1638,10 +1989,12 @@ class WorkspaceManager: ObservableObject {
             "selectedTabId": select ? newWorkspace.id.uuidString : (snapshot.selectedWorkspaceId?.uuidString ?? "")
         ])
 #endif
-        if autoWelcomeIfNeeded && select && WelcomeSettings.shouldAutoPresentFirstRunWelcome(
+        let requestsFirstRunLayout = autoWelcomeIfNeeded && select && !suppressesFirstRunLayout
+        if requestsFirstRunLayout && WelcomeSettings.shouldAutoPresentFirstRunWelcome(
             qa: qaLaunchPolicyProvider(),
-            hasShown: UserDefaults.standard.bool(forKey: WelcomeSettings.shownKey)
+            hasShown: welcomeDefaults.bool(forKey: WelcomeSettings.shownKey)
         ) {
+            welcomeQuadRequestCount += 1
             if let firstRunWelcomeRequestForTesting {
                 firstRunWelcomeRequestForTesting(newWorkspace)
             } else if let appDelegate = AppDelegate.shared {
@@ -1649,9 +2002,10 @@ class WorkspaceManager: ObservableObject {
             } else {
                 sendWelcomeWhenReady(to: newWorkspace)
             }
-        } else if autoWelcomeIfNeeded && select && DefaultGridSettings.isEnabled() {
+        } else if requestsFirstRunLayout && DefaultGridSettings.isEnabled(defaults: welcomeDefaults) {
             // Welcome already ran (or is disabled): every subsequent new
             // workspace gets the monitor-classed default grid when enabled.
+            defaultGridRequestCount += 1
             if let appDelegate = AppDelegate.shared {
                 appDelegate.spawnDefaultGridWhenReady(to: newWorkspace)
             } else {
@@ -2574,10 +2928,12 @@ class WorkspaceManager: ObservableObject {
     func moveWorkspaceToTop(_ workspaceId: UUID) {
         guard let index = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return }
         guard index != 0 else { return }
-        let workspace = workspaces.remove(at: index)
-        let pinnedCount = workspaces.filter { $0.isPinned }.count
+        var final = workspaces
+        let workspace = final.remove(at: index)
+        let pinnedCount = final.filter { $0.isPinned }.count
         let insertIndex = workspace.isPinned ? 0 : pinnedCount
-        workspaces.insert(workspace, at: insertIndex)
+        final.insert(workspace, at: insertIndex)
+        withWorkspaceRootMoveHint([workspaceId]) { workspaces = final }
     }
 
     func moveWorkspacesToTop(_ workspaceIds: Set<UUID>) {
@@ -2589,7 +2945,9 @@ class WorkspaceManager: ObservableObject {
         let selectedUnpinned = selectedTabs.filter { !$0.isPinned }
         let remainingPinned = remainingTabs.filter { $0.isPinned }
         let remainingUnpinned = remainingTabs.filter { !$0.isPinned }
-        workspaces = selectedPinned + remainingPinned + selectedUnpinned + remainingUnpinned
+        withWorkspaceRootMoveHint(workspaceIds) {
+            workspaces = selectedPinned + remainingPinned + selectedUnpinned + remainingUnpinned
+        }
     }
 
     func moveWorkspaceToTopForNotification(_ workspaceId: UUID) {
@@ -2598,8 +2956,10 @@ class WorkspaceManager: ObservableObject {
         guard index != pinnedCount else { return }
         let workspace = workspaces[index]
         guard !workspace.isPinned else { return }
-        workspaces.remove(at: index)
-        workspaces.insert(workspace, at: pinnedCount)
+        var final = workspaces
+        final.remove(at: index)
+        final.insert(workspace, at: pinnedCount)
+        withWorkspaceRootMoveHint([workspaceId]) { workspaces = final }
     }
 
     @discardableResult
@@ -2647,6 +3007,10 @@ class WorkspaceManager: ObservableObject {
         guard workspace.isPinned != pinned else { return }
         workspace.isPinned = pinned
         reorderTabForPinnedState(workspace)
+        // C11H-342: an ungrouped workspace lands at the boundary between the
+        // segments, as a group does; a member's place is inside its group.
+        storeWorkspaceRoot(WorkspaceRootOrder.placing(workspace.id, atPinBoundary: true, groups: workspaceGroups,
+                                                      workspaces: workspaceOrderEntries, stored: workspaceRootOrder))
     }
 
     private func reorderTabForPinnedState(_ workspace: Workspace) {
@@ -2857,7 +3221,14 @@ class WorkspaceManager: ObservableObject {
         sidebarSelectedWorkspaceIds.remove(workspace.id)
 
         AppDelegate.shared?.notificationStore?.clearNotifications(forWorkspaceId: workspace.id)
-        workspace.teardownAllPanels()
+        // C11H-24: closing a workspace ends every hc session in it.
+        workspace.teardownAllPanels(endingSessions: .workspaceClose)
+        PanelAllocationRegistry.shared.releaseWorkspacesClosedForGood(
+            [workspace.id],
+            isTerminatingApp: AppDelegate.shared?.isTerminatingApp ?? false
+        )
+        HCShardPlacement.shared.workspacesClosedForGood(
+            [workspace.id], isTerminatingApp: AppDelegate.shared?.isTerminatingApp ?? false)
         workspace.teardownRemoteConnection()
         unwireClosedBrowserTracking(for: workspace)
         workspace.owningWorkspaceManager = nil
@@ -2868,23 +3239,41 @@ class WorkspaceManager: ObservableObject {
     /// Permanently stop late callbacks from creating terminals after this
     /// manager has lost its last registered main window. Existing panels stay
     /// alive on their current close paths.
-    func retireForWindowClose() {
+    ///
+    /// `endingSessions` is true for an operator or CLI window close, which ends
+    /// every hc session in the window. App Quit passes false: it detaches.
+    func retireForWindowClose(endingSessions: Bool = false) {
         guard !isRetiredForWindowClose else { return }
         isRetiredForWindowClose = true
         var closedPanelIds: Set<UUID> = []
         for workspace in workspaces {
+            if endingSessions {
+                workspace.endSessionsForExplicitClose(panelIds: Array(workspace.panels.keys), origin: .windowClose)
+            }
             let workspacePanelIds = Set(workspace.panels.keys)
             PanelLineage.shared.captureFinalIdentity(workspacePanelIds, in: workspace)
             closedPanelIds.formUnion(workspacePanelIds)
             workspace.retireForWindowClose()
         }
         PanelLineage.shared.panelsClosedForGood(closedPanelIds)
+        PanelAllocationRegistry.shared.releaseWorkspacesClosedForGood(
+            Set(workspaces.map(\.id)),
+            isTerminatingApp: AppDelegate.shared?.isTerminatingApp ?? false
+        )
+        HCShardPlacement.shared.workspacesClosedForGood(
+            Set(workspaces.map(\.id)), isTerminatingApp: AppDelegate.shared?.isTerminatingApp ?? false)
+        // Groups are window-local: they close with their window.
+        for group in workspaceGroups { WorkspaceMetadataStore.groups.removeWorkspace(workspaceId: group.id) }
     }
 
     /// Detach a workspace from this window without closing its panels.
     /// Used by the socket API for cross-window moves.
+    /// `replaceWhenEmpty: false` is for a caller that closes this window right
+    /// after (C11H-207, the last workspace dragged into another window): the
+    /// window is left with no workspace instead of a fresh terminal it would
+    /// only end again. The caller must close the window in the same turn.
     @discardableResult
-    func detachWorkspace(workspaceId: UUID) -> Workspace? {
+    func detachWorkspace(workspaceId: UUID, replaceWhenEmpty: Bool = true) -> Workspace? {
         guard let index = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return nil }
         if selectedWorkspaceId == workspaceId, SocketCommandContext.current != nil {
             // A socket move cannot remove the visible workspace and force a switch.
@@ -2901,6 +3290,10 @@ class WorkspaceManager: ObservableObject {
         lastFocusedPanelByWorkspace.removeValue(forKey: removed.id)
 
         if workspaces.isEmpty {
+            guard replaceWhenEmpty else {
+                selectedWorkspaceId = nil
+                return removed
+            }
             // The UI assumes each window always has at least one workspace.
             _ = addWorkspace()
             return removed
@@ -2951,15 +3344,66 @@ class WorkspaceManager: ObservableObject {
         closePanelWithConfirmation(workspace: workspace, panelId: focusedPanelId)
     }
 
+    /// The Area menu's enable check, read by the app body on every evaluation.
+    /// C11H-238: it reads tab IDs, pinned tab IDs and the selection, never the
+    /// tabs' contents, so a tab's title or activity mark changing does not re-render
+    /// the app body and every window. Same condition as
+    /// `closeOtherPanelsInFocusedAreaPlan() != nil`.
     func canCloseOtherPanelsInFocusedPane() -> Bool {
-        closeOtherPanelsInFocusedAreaPlan() != nil
+        guard let workspace = selectedWorkspace else { return false }
+        let controller = workspace.bonsplitController
+        guard let paneId = controller.focusedPaneId ?? controller.allPaneIds.first else { return false }
+        let tabIds = controller.tabIds(inPane: paneId)
+        // Observed so a pin or unpin that keeps the order still updates the menu;
+        // the workspace's own pin set below stays the answer.
+        _ = controller.pinnedTabIds(inPane: paneId)
+        guard let selected = controller.selectedTabId(inPane: paneId) ?? tabIds.first else { return false }
+        return tabIds.contains { tabId in
+            guard tabId != selected, let panelId = workspace.tabIdFromBonsplitTabId(tabId) else { return false }
+            return !workspace.isPanelPinned(panelId)
+        }
     }
 
     func closeOtherPanelsInFocusedPaneWithConfirmation() {
         guard let plan = closeOtherPanelsInFocusedAreaPlan() else { return }
+        closePanelsWithConfirmation(plan.panelIds, in: plan.workspace, kind: .others, alwaysConfirm: true)
+    }
 
-        let count = plan.panelIds.count
-        let titleLines = plan.titles.map { "• \($0)" }.joined(separator: "\n")
+    /// C11H-309: several panels of one area closed by one operator action (the
+    /// Area menu's Close Other Panels, the panel bar's Close Others, Close to
+    /// the Left and Close to the Right). One card asks for the whole batch,
+    /// naming how many terminal sessions end, then the panels close as one
+    /// lineage batch. Without `alwaysConfirm` it asks only when some panel in
+    /// the batch would have asked on its own (every hc terminal does), so a
+    /// batch of browsers or idle exec shells closes at once. Pinned panels are
+    /// never closed.
+    func closePanelsWithConfirmation(
+        _ panelIds: [UUID],
+        in workspace: Workspace,
+        kind: PanelBatchCloseKind,
+        alwaysConfirm: Bool
+    ) {
+        let targets = panelIds.filter { workspace.panels[$0] != nil && !workspace.isPanelPinned($0) }
+        guard !targets.isEmpty else { return }
+
+        if alwaysConfirm || targets.contains(where: { workspace.panelAsksBeforeClose($0) }) {
+            let sessionCount = workspace.closeEndsHCSessionCount(panelIds: targets)
+            guard confirmClose(
+                title: kind.confirmTitle,
+                message: panelBatchCloseMessage(targets, in: workspace, sessionCount: sessionCount),
+                acceptCmdD: false,
+                confirmLabel: HCCloseCopy.batchConfirmLabel(sessionCount: sessionCount)
+            ) else { return }
+        }
+
+        workspace.forceClosePanels(targets)
+    }
+
+    private func panelBatchCloseMessage(_ panelIds: [UUID], in workspace: Workspace, sessionCount: Int) -> String {
+        let count = panelIds.count
+        let titleLines = panelIds
+            .map { "• \(closeOtherPanelsDisplayTitle(workspace.panelTitle(panelId: $0)))" }
+            .joined(separator: "\n")
         let message = count == 1
             ? String(
                 format: String(localized: "dialog.closeOtherTabs.message.one", defaultValue: "This closes 1 panel in this area:\n%@"),
@@ -2970,15 +3414,7 @@ class WorkspaceManager: ObservableObject {
                 count,
                 titleLines
             )
-        guard confirmClose(
-            title: String(localized: "dialog.closeOtherTabs.title", defaultValue: "Close other panels?"),
-            message: message,
-            acceptCmdD: false
-        ) else { return }
-
-        for panelId in plan.panelIds {
-            _ = plan.workspace.closePanel(panelId, force: true)
-        }
+        return HCCloseCopy.batchMessage(message, sessionCount: sessionCount)
     }
 
     func closeCurrentWorkspaceWithConfirmation() {
@@ -3061,7 +3497,8 @@ class WorkspaceManager: ObservableObject {
                 title: plan.title,
                 message: plan.cardMessage,
                 inventory: WorkspaceCloseInventory(workspaces: plan.workspaces),
-                source: .local
+                source: .local,
+                confirmLabel: plan.endsSession ? HCCloseCopy.groupConfirmLabel : nil
             )
             guard accepted, let self else { return }
             for workspace in plan.workspaces where self.workspaces.contains(where: { $0.id == workspace.id }) {
@@ -3088,7 +3525,7 @@ class WorkspaceManager: ObservableObject {
     }
 
 
-    private func confirmClose(title: String, message: String, acceptCmdD: Bool) -> Bool {
+    private func confirmClose(title: String, message: String, acceptCmdD: Bool, confirmLabel: String? = nil) -> Bool {
         if let confirmCloseHandler {
             return confirmCloseHandler(title, message, acceptCmdD)
         }
@@ -3101,7 +3538,7 @@ class WorkspaceManager: ObservableObject {
         alert.informativeText = message
         alert.alertStyle = .warning
         alert.addButton(withTitle: String(localized: "dialog.closeTab.cancel", defaultValue: "Cancel"))
-        alert.addButton(withTitle: String(localized: "dialog.closeTab.close", defaultValue: "Close"))
+        alert.addButton(withTitle: confirmLabel ?? String(localized: "dialog.closeTab.close", defaultValue: "Close"))
             .hasDestructiveAction = true
 
         // C11-196: `NSApp.activationPolicy()` is a synchronous LaunchServices XPC
@@ -3122,7 +3559,6 @@ class WorkspaceManager: ObservableObject {
     private struct CloseOtherPanelsInFocusedAreaPlan {
         let workspace: Workspace
         let panelIds: [UUID]
-        let titles: [String]
     }
 
     private struct CloseWorkspacesPlan {
@@ -3133,6 +3569,8 @@ class WorkspaceManager: ObservableObject {
         /// The overlay card's text. The card lists every workspace and its
         /// panels below it, so this omits the workspace list.
         let cardMessage: String
+        /// C11H-24: any of these workspaces holds an hc terminal.
+        let endsSession: Bool
     }
 
     private func closeOtherPanelsInFocusedAreaPlan() -> CloseOtherPanelsInFocusedAreaPlan? {
@@ -3148,22 +3586,16 @@ class WorkspaceManager: ObservableObject {
         }
 
         var targetPanelIds: [UUID] = []
-        var targetTitles: [String] = []
         for bonsplitTab in bonsplitTabsInPane where bonsplitTab.id != selectedBonsplitTabId {
             guard let panelId = workspace.tabIdFromBonsplitTabId(bonsplitTab.id) else { continue }
             if workspace.isPanelPinned(panelId) {
                 continue
             }
             targetPanelIds.append(panelId)
-            targetTitles.append(closeOtherPanelsDisplayTitle(workspace.panelTitle(panelId: panelId)))
         }
 
         guard !targetPanelIds.isEmpty else { return nil }
-        return CloseOtherPanelsInFocusedAreaPlan(
-            workspace: workspace,
-            panelIds: targetPanelIds,
-            titles: targetTitles
-        )
+        return CloseOtherPanelsInFocusedAreaPlan(workspace: workspace, panelIds: targetPanelIds)
     }
 
     private func closeOtherPanelsDisplayTitle(_ title: String?) -> String {
@@ -3209,7 +3641,11 @@ class WorkspaceManager: ObservableObject {
                 localized: "dialog.closeWorkspaces.message",
                 defaultValue: "This will close %1$lld workspaces and all of their areas:\n%2$@"
             )
-        let message = String(format: format, locale: .current, Int64(workspaces.count), titleLines)
+        let endsSession = workspaces.contains { $0.closeEndsHCSession(panelIds: Array($0.panels.keys)) }
+        let message = HCCloseCopy.groupMessage(
+            String(format: format, locale: .current, Int64(workspaces.count), titleLines),
+            endsSession: endsSession
+        )
         let cardFormat = willCloseWindow
             ? String(
                 localized: "dialog.closeWorkspacesWindow.cardMessage",
@@ -3219,12 +3655,16 @@ class WorkspaceManager: ObservableObject {
                 localized: "dialog.closeWorkspaces.cardMessage",
                 defaultValue: "This will close %lld workspaces and every panel in them."
             )
-        let cardMessage = String(format: cardFormat, locale: .current, Int64(workspaces.count))
+        let cardMessage = HCCloseCopy.groupMessage(
+            String(format: cardFormat, locale: .current, Int64(workspaces.count)),
+            endsSession: endsSession
+        )
         return CloseWorkspacesPlan(
             workspaces: workspaces,
             title: title,
             message: message,
-            cardMessage: cardMessage
+            cardMessage: cardMessage,
+            endsSession: endsSession
         )
     }
 
@@ -3264,7 +3704,12 @@ class WorkspaceManager: ObservableObject {
                 localized: "dialog.closeWorkspace.messageNamed",
                 defaultValue: "This will close the workspace \u{201C}%@\u{201D} and all of its areas."
             )
-            let message = String(format: format, locale: .current, displayName)
+            // C11H-24: a workspace holding hc terminals says its close ends them.
+            let endsSession = workspace.closeEndsHCSession(panelIds: Array(workspace.panels.keys))
+            let message = HCCloseCopy.groupMessage(
+                String(format: format, locale: .current, displayName),
+                endsSession: endsSession
+            )
             // Off-screen workspaces are isHidden=true (perf #127), so their anchor
             // view doesn't report a window-coord frame and the overlay would bail
             // on `guard let anchor`. When the operator clicks the X on a background
@@ -3292,7 +3737,8 @@ class WorkspaceManager: ObservableObject {
                     message: message,
                     inventory: WorkspaceCloseInventory(workspaces: [workspace]),
                     defaultsToClose: WorkspaceManager.workspaceCloseTakesOnePanel(workspace),
-                    source: .local
+                    source: .local,
+                    confirmLabel: endsSession ? HCCloseCopy.groupConfirmLabel : nil
                 )
                 guard accepted else { return }
                 // Acceptance-time revalidation — workspace may have closed or
@@ -3408,11 +3854,12 @@ class WorkspaceManager: ObservableObject {
             return
         }
 
+        let copy = Workspace.panelCloseCopy(endsSession: workspace.closeEndsHCSession(panelIds: [surfaceId]))
         guard AreaInteractionFeatureFlag.isEnabled else {
             // Legacy NSAlert path — kept as a rollback/fallback.
             guard confirmClose(
-                title: String(localized: "dialog.closeTab.title", defaultValue: "Close panel?"),
-                message: String(localized: "dialog.closeTab.message", defaultValue: "This closes the panel."),
+                title: copy.title,
+                message: copy.message,
                 acceptCmdD: false
             ) else { return }
             performCloseRuntimeSurface(workspace: workspace, surfaceId: surfaceId)
@@ -3430,10 +3877,11 @@ class WorkspaceManager: ObservableObject {
             }
             let accepted = await workspace.presentConfirmClose(
                 panelId: surfaceId,
-                title: String(localized: "dialog.closeTab.title", defaultValue: "Close panel?"),
-                message: String(localized: "dialog.closeTab.message", defaultValue: "This closes the panel."),
+                title: copy.title,
+                message: copy.message,
                 source: .local,
-                dedupeToken: "ghostty.close_surface_cb.\(surfaceId.uuidString)"
+                dedupeToken: "ghostty.close_surface_cb.\(surfaceId.uuidString)",
+                confirmLabel: copy.confirmLabel
             )
             watchdog.cancel()
             guard accepted, let self else { return }
@@ -3483,9 +3931,15 @@ class WorkspaceManager: ObservableObject {
     ///
     /// This should never prompt: the process is already gone, and Ghostty emits the
     /// `SHOW_CHILD_EXITED` action specifically so the host app can decide what to do.
-    func closePanelAfterChildExited(workspaceId: UUID, surfaceId: UUID) {
+    ///
+    /// `terminalWasLiveThisRun` is false for an hc terminal this app run never
+    /// saw running: its end was found when a launch restored it (C11H-288).
+    func closePanelAfterChildExited(workspaceId: UUID, surfaceId: UUID, terminalWasLiveThisRun: Bool = true) {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return }
         guard workspace.panels[surfaceId] != nil else { return }
+        // End All leaves the ended lifecycle notice visible. Closing the last
+        // panel through the ordinary path could create a fresh terminal.
+        guard !workspace.retainsEndedPanelAfterEndAll(surfaceId) else { return }
 
 #if DEBUG
         dlog(
@@ -3494,24 +3948,39 @@ class WorkspaceManager: ObservableObject {
         )
 #endif
 
+        // C11H-24: a shell that exits is not an operator close. Its hc session
+        // detaches, so nohup and background jobs outlive it, through every path
+        // below (panel, workspace, or the window when it was the last shell).
+        // Released on a later main turn, after any window-close notification.
+        workspace.hcExplicitEndSuppressionDepth += 1
+        DispatchQueue.main.async { MainActor.assumeIsolated { workspace.hcExplicitEndSuppressionDepth -= 1 } }
+
         // Child-exit on the last panel should collapse the workspace, matching explicit close
         // semantics (and close the window when it was the last workspace).
-        if workspace.panels.count <= 1 {
-            if workspaces.count <= 1 {
-                if let app = AppDelegate.shared {
-                    app.notificationStore?.clearNotifications(forWorkspaceId: workspaceId)
-                    app.closeMainWindowContainingWorkspaceId(workspaceId)
-                } else {
-                    // Headless/test fallback when no AppDelegate window context exists.
-                    closeRuntimeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
-                }
+        let app = AppDelegate.shared
+        switch ChildExitClosePolicy.scope(
+            panelCount: workspace.panels.count, workspaceCount: workspaces.count,
+            isLastMainWindow: (app?.mainTerminalWindowCount ?? 1) <= 1,
+            terminalWasLiveThisRun: terminalWasLiveThisRun) {
+        case .panel:
+            closeRuntimeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
+        case .workspace:
+            closeWorkspace(workspace)
+        case .window:
+            if let app {
+                app.notificationStore?.clearNotifications(forWorkspaceId: workspaceId)
+                app.closeMainWindowContainingWorkspaceId(workspaceId)
             } else {
-                closeWorkspace(workspace)
+                // Headless/test fallback when no AppDelegate window context exists.
+                closeRuntimeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
             }
-            return
+        case .freshWorkspace:
+            // C11H-288: the window stays, with a fresh workspace in place of
+            // the ended one, so the launch still shows a window.
+            NSLog("surface.close.childExited kept_window=1 reason=ended_before_launch")
+            _ = addWorkspace(select: false, autoWelcomeIfNeeded: false)
+            closeWorkspace(workspace)
         }
-
-        closeRuntimeSurface(workspaceId: workspaceId, surfaceId: surfaceId)
     }
 
     private func workspaceNeedsConfirmClose(_ workspace: Workspace) -> Bool {
@@ -3764,8 +4233,10 @@ class WorkspaceManager: ObservableObject {
         guard !suppressFocusFlash else { return }
         guard AppFocusState.isAppActive() else { return }
         guard let notificationStore = AppDelegate.shared?.notificationStore else { return }
-        guard notificationStore.hasUnreadNotification(forWorkspaceId: workspaceId, surfaceId: panelId) else { return }
-        if let workspace = workspaces.first(where: { $0.id == workspaceId }) {
+        // C11H-261: a done turn end is marked read on a visit too (no flash).
+        guard notificationStore.hasPendingNotification(forWorkspaceId: workspaceId, surfaceId: panelId) else { return }
+        if notificationStore.hasUnreadNotification(forWorkspaceId: workspaceId, surfaceId: panelId),
+           let workspace = workspaces.first(where: { $0.id == workspaceId }) {
             workspace.triggerNotificationFocusFlash(panelId: panelId, requiresSplit: false, shouldFocus: false)
         }
         notificationStore.markRead(forWorkspaceId: workspaceId, surfaceId: panelId)
@@ -3776,8 +4247,10 @@ class WorkspaceManager: ObservableObject {
         guard selectedWorkspaceId == workspaceId else { return false }
         guard AppFocusState.isAppActive() else { return false }
         guard let notificationStore = AppDelegate.shared?.notificationStore else { return false }
-        guard notificationStore.hasUnreadNotification(forWorkspaceId: workspaceId, surfaceId: surfaceId) else { return false }
+        // C11H-261: typing into a done panel marks its turn end read too (no flash).
+        guard notificationStore.hasPendingNotification(forWorkspaceId: workspaceId, surfaceId: surfaceId) else { return false }
         if let panelId = surfaceId,
+           notificationStore.hasUnreadNotification(forWorkspaceId: workspaceId, surfaceId: surfaceId),
            let workspace = workspaces.first(where: { $0.id == workspaceId }) {
             workspace.triggerNotificationFocusFlash(panelId: panelId, requiresSplit: false, shouldFocus: false)
         }
@@ -3806,39 +4279,8 @@ class WorkspaceManager: ObservableObject {
 
     private func updatePanelTitle(workspaceId: UUID, panelId: UUID, title: String) {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return }
-
-        // M7: route OSC title through M2 metadata store with source: .osc.
-        // The store's precedence gate drops the write if title is held by declare/explicit.
-        var applied = false
-        if title.isEmpty {
-            do {
-                let outcome = try PanelMetadataStore.shared.clearMetadata(
-                    workspaceId: workspace.id,
-                    surfaceId: panelId,
-                    keys: ["title"],
-                    source: .osc
-                )
-                applied = outcome.applied["title"] ?? false
-            } catch {
-                applied = false
-            }
-        } else {
-            do {
-                let outcome = try PanelMetadataStore.shared.setMetadata(
-                    workspaceId: workspace.id,
-                    surfaceId: panelId,
-                    partial: ["title": title],
-                    mode: .merge,
-                    source: .osc
-                )
-                applied = outcome.applied["title"] ?? false
-            } catch {
-                applied = false
-            }
-        }
-        guard applied else { return }
-
-        workspace.syncPanelTitleFromMetadata(panelId: panelId)
+        // OSC titles go through the metadata store. Explicit and declare win.
+        guard workspace.applyMetadataTitle(panelId: panelId, title: title, source: .osc) else { return }
 
         if selectedWorkspaceId == workspaceId && workspace.focusedPanelId == panelId {
             updateWindowTitle(for: workspace)
@@ -3880,13 +4322,18 @@ class WorkspaceManager: ObservableObject {
         return trimmedDirectory.isEmpty ? "cmux" : trimmedDirectory
     }
 
-    func focusWorkspace(_ workspaceId: UUID, surfaceId: UUID? = nil, suppressFlash: Bool = false, cause: String? = nil) {
+    /// - Parameter activatesApp: false when the caller has already presented
+    ///   the window (C11H-349's operator jumps), so no second activation is queued.
+    func focusWorkspace(_ workspaceId: UUID, surfaceId: UUID? = nil, suppressFlash: Bool = false, cause: String? = nil,
+                        activatesApp: Bool = true) {
         FocusHistoryStore.shared.withExplicitJump {
-            focusWorkspaceWithoutHistory(workspaceId, surfaceId: surfaceId, suppressFlash: suppressFlash, cause: cause)
+            focusWorkspaceWithoutHistory(workspaceId, surfaceId: surfaceId, suppressFlash: suppressFlash, cause: cause,
+                                         activatesApp: activatesApp)
         }
     }
 
-    private func focusWorkspaceWithoutHistory(_ workspaceId: UUID, surfaceId: UUID?, suppressFlash: Bool, cause: String?) {
+    private func focusWorkspaceWithoutHistory(_ workspaceId: UUID, surfaceId: UUID?, suppressFlash: Bool, cause: String?,
+                                              activatesApp: Bool) {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return }
         if let surfaceId, workspace.panels[surfaceId] != nil {
             // Keep selected-surface intent stable across selectedTabId didSet async restore.
@@ -3904,7 +4351,7 @@ class WorkspaceManager: ObservableObject {
             userInfo: [GhosttyNotificationKey.workspaceId: workspaceId]
         )
 
-        if SocketCommandContext.current == nil {
+        if activatesApp, SocketCommandContext.current == nil {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 NSApp.activate(ignoringOtherApps: true)
@@ -3958,6 +4405,7 @@ class WorkspaceManager: ObservableObject {
         suppressFocusFlash = true
         focusWorkspace(workspaceId, surfaceId: desiredPanelId, suppressFlash: true, cause: "notification")
         guard selectedWorkspaceId == workspaceId else { suppressFocusFlash = false; return false }
+        acknowledgeOperatorOpen(workspaceId: workspaceId, panelId: desiredPanelId)
         if wasSelected {
             suppressFocusFlash = false
         }
@@ -3969,8 +4417,11 @@ class WorkspaceManager: ObservableObject {
             guard let targetPanelId,
                   workspace.panels[targetPanelId] != nil else { return }
             guard let notificationStore = AppDelegate.shared?.notificationStore else { return }
-            guard notificationStore.hasUnreadNotification(forWorkspaceId: workspaceId, surfaceId: targetPanelId) else { return }
-            workspace.triggerNotificationFocusFlash(panelId: targetPanelId, requiresSplit: false, shouldFocus: true)
+            // C11H-261: opening a done turn end (the Done button) marks it read.
+            guard notificationStore.hasPendingNotification(forWorkspaceId: workspaceId, surfaceId: targetPanelId) else { return }
+            if notificationStore.hasUnreadNotification(forWorkspaceId: workspaceId, surfaceId: targetPanelId) {
+                workspace.triggerNotificationFocusFlash(panelId: targetPanelId, requiresSplit: false, shouldFocus: true)
+            }
             notificationStore.markRead(forWorkspaceId: workspaceId, surfaceId: targetPanelId)
         }
         requestSidebarReveal(workspaceId: workspaceId)
@@ -4170,6 +4621,39 @@ class WorkspaceManager: ObservableObject {
         selectedWorkspace?.newTerminalSurfaceInFocusedPane(focus: true)
     }
 
+    /// C11H-138: the operator's New Terminal (Cmd-T, the menu, the palette).
+    /// Asks which machine when another one is linked, else opens here at once.
+    func newSurfaceAskingMachine() {
+        // The workspace and area are the ones the operator asked from; a
+        // workspace switch while the picker is open does not move the panel.
+        guard let workspace = selectedWorkspace,
+              let pane = workspace.bonsplitController.focusedPaneId else { return }
+        let window = AppDelegate.shared?.mainWindow(for: self)
+        MachinePicker.ask(.terminal, in: window ?? NSApp.keyWindow ?? NSApp.mainWindow) { [weak workspace] request in
+            guard let workspace, workspace.bonsplitController.allPaneIds.contains(pane) else { return }
+            workspace.clearSplitZoom()
+            workspace.newTerminalSurface(inPane: pane, focus: true, machine: request)
+        }
+    }
+
+    /// Ticket 12: File > New Terminal on <Machine>. The menu offers only
+    /// machines whose link is up; the panel's creation still goes through hc.
+    func newSurface(onMachine machine: String) {
+        selectedWorkspace?.clearSplitZoom()
+        selectedWorkspace?.newTerminalSurfaceInFocusedPane(focus: true, machine: .on(machine))
+    }
+
+    /// Window ▸ hc Core (C11H-37): `c11-core watch` in a new terminal of the
+    /// focused area. An operator menu action, so the new panel takes focus.
+    func openCoreUtility() {
+        guard let tool = Bundle.main.resourceURL?.appendingPathComponent("bin/c11-core").path,
+              let workspace = selectedWorkspace,
+              let pane = workspace.bonsplitController.focusedPaneId else { return }
+        let quoted = "'" + tool.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        workspace.clearSplitZoom()
+        workspace.newTerminalSurface(inPane: pane, focus: true, initialInput: quoted + " watch\r")
+    }
+
     // MARK: - Split Creation
 
     /// Create a new split in the current tab
@@ -4190,7 +4674,12 @@ class WorkspaceManager: ObservableObject {
         var splitCrumbData = surfaceShapeSummary(tabCount: workspaces.count)
         splitCrumbData["direction"] = String(describing: direction)
         sentryBreadcrumb("split.create", data: splitCrumbData)
-        return newSplit(workspaceId: workspaceId, surfaceId: surfaceId, direction: direction, focus: focus)
+        // Ticket 12: an operator's split of a terminal on another machine stays there.
+        let created = newSplit(workspaceId: workspaceId, surfaceId: surfaceId, direction: direction, focus: focus, machine: .inherit)
+        // C11H-391, C11H-396: refused up front because that machine's link is
+        // one c11 won't use: say why, over the panel the split came from.
+        if created == nil { workspace.tellOperatorWhyHCRefused(from: surfaceId) }
+        return created
     }
 
     /// Create a new browser split from the currently focused panel.
@@ -4320,7 +4809,9 @@ class WorkspaceManager: ObservableObject {
 
     /// Create a new split in the specified direction
     /// Returns the new panel's ID (which is also the surface ID for terminals)
-    func newSplit(workspaceId: UUID, surfaceId: UUID, direction: SplitDirection, focus: Bool = true, workingDirectory: String? = nil, initialInput: String? = nil) -> UUID? {
+    /// A split runs on its source terminal's machine (ticket 12): every caller
+    /// (v1 `new_split`, AppleScript, `panel.split`, the keyboard) inherits.
+    func newSplit(workspaceId: UUID, surfaceId: UUID, direction: SplitDirection, focus: Bool = true, workingDirectory: String? = nil, initialInput: String? = nil, machine: HCMachineRequest = .inherit) -> UUID? {
         guard let workspace = workspaces.first(where: { $0.id == workspaceId }) else { return nil }
         return workspace.newTerminalSplit(
             from: surfaceId,
@@ -4328,7 +4819,8 @@ class WorkspaceManager: ObservableObject {
             insertFirst: direction.insertFirst,
             focus: focus,
             workingDirectory: workingDirectory,
-            initialInput: initialInput
+            initialInput: initialInput,
+            machine: machine
         )?.id
     }
 
@@ -5935,6 +6427,7 @@ extension WorkspaceManager {
         hasher.combine(selectedWorkspaceId)
         hasher.combine(workspaces.count)
         hasher.combine(workspaceGroups.count)
+        hasher.combine(workspaceRootOrder)
         for group in workspaceGroups {
             hasher.combine(group.id)
             hasher.combine(group.name)
@@ -5948,6 +6441,8 @@ extension WorkspaceManager {
         // touch workspace/panel counts or titles) still flip the fingerprint
         // and trigger an autosave at the next 8s tick.
         hasher.combine(PanelMetadataStore.shared.currentRevision())
+        hasher.combine(WorkspaceMetadataStore.shared.currentRevision())
+        hasher.combine(WorkspaceMetadataStore.groups.currentRevision())
         // CMUX-11 Phase 3: same trick for the pane store. Pane-only metadata
         // mutations (`pane.set_metadata`, --title seed on new-split) bump the
         // pane revision; including it here ensures those writes hit disk on
@@ -6038,7 +6533,9 @@ extension WorkspaceManager {
         return SessionWorkspaceManagerSnapshot(
             selectedWorkspaceIndex: selectedWorkspaceIndex,
             workspaces: workspaceSnapshots,
-            workspaceGroups: workspaceGroups
+            workspaceGroups: workspaceGroups,
+            workspaceGroupMetadata: WorkspaceGroupMetadataPersistence.capture(groups: workspaceGroups),
+            workspaceRootOrder: workspaceRootEntries.map(\.id)
         )
     }
 
@@ -6057,6 +6554,13 @@ extension WorkspaceManager {
         // Retire before registering replacements: workspace/tab UUIDs are
         // stable, and ID-keyed cleanup after installation would erase new state.
         // Keep the old array until the single publication below (#399).
+        // C11H-23: displaced local shells (the launch placeholder) die here;
+        // give back their allocations unless the snapshot restores the same
+        // panel. Terminals that outlive the app keep theirs for Recovered.
+        let restoredPanelIds = Set(snapshot.workspaces.flatMap { $0.panels.map(\.id) })
+        PanelAllocationRegistry.shared.releaseDisplacedPanels(
+            Set(displacedWorkspaces.flatMap { $0.panels.keys }).subtracting(restoredPanelIds)
+        )
         for workspace in displacedWorkspaces {
             workspace.retireForSessionRestore()
         }
@@ -6095,8 +6599,6 @@ extension WorkspaceManager {
             _ = TerminalController.shared.workspaceOrdinal(forWorkspaceUUID: workspaceSnapshot.id)
         }
         for workspaceSnapshot in workspaceSnapshots {
-            let ordinal = Self.nextPortOrdinal
-            Self.nextPortOrdinal += 1
             // Tier 1 persistence, Phase 1.5: thread the snapshot's workspace
             // UUID into the restored workspace so `(workspaceId, surfaceId)`
             // tuples cached by external consumers (Lattice, CLI, scripted
@@ -6107,7 +6609,6 @@ extension WorkspaceManager {
                 stableDefaultTitle: workspaceSnapshot.stableDefaultTitle,
                 workingDirectory: workspaceSnapshot.currentDirectory,
                 rootDirectory: workspaceSnapshot.rootDirectory,
-                portOrdinal: ordinal,
                 restoringSession: true
             )
             workspace.owningWorkspaceManager = self
@@ -6122,13 +6623,11 @@ extension WorkspaceManager {
         }
 
         if newTabs.isEmpty {
-            let ordinal = Self.nextPortOrdinal
-            Self.nextPortOrdinal += 1
             let fallbackId = UUID()
             let defaultTitle = Workspace.numberedDefaultTitle(
                 ordinal: TerminalController.shared.workspaceOrdinal(forWorkspaceUUID: fallbackId)
             )
-            let fallback = Workspace(id: fallbackId, title: defaultTitle, stableDefaultTitle: defaultTitle, portOrdinal: ordinal)
+            let fallback = Workspace(id: fallbackId, title: defaultTitle, stableDefaultTitle: defaultTitle)
             fallback.owningWorkspaceManager = self
             wireClosedBrowserTracking(for: fallback)
             fallback.startMailboxDispatcher()
@@ -6149,13 +6648,23 @@ extension WorkspaceManager {
         if orphanMembershipCount > 0 {
             NSLog("c11 session restore: cleared %d orphan workspace group memberships", orphanMembershipCount)
         }
+        WorkspaceGroupMetadataPersistence.restore(groups: restoredGroups, saved: snapshot.workspaceGroupMetadata,
+                                                  displaced: workspaceGroups.map(\.id))
         workspaceGroups = restoredGroups
+        // C11H-342: an older snapshot has no root order and draws groups first.
+        // The restored order is installed as saved, never mirrored over.
+        workspaceRootOrder = snapshot.workspaceRootOrder
+        isApplyingWorkspaceRootPlan = true
         // Single workspace-array publication; folder records precede membership visibility.
         workspaces = newTabs
+        isApplyingWorkspaceRootPlan = false
         let installedIds = Set(newTabs.map(\.id))
         pruneBackgroundWorkspaceLoads(existingIds: installedIds)
         sidebarSelectedWorkspaceIds.formIntersection(installedIds)
         withWorkspaceSelectionCause("restore") { selectedWorkspaceId = newSelectedId }
+        // C11H-96: a restored workspace that is not on screen starts its remote
+        // terminals anyway (the start waits for the restore gate, not for a view).
+        for workspace in newTabs { workspace.startRestoredRemoteTerminalsInBackground() }
         for workspace in newTabs {
             let terminalPanels = workspace.panels.values.compactMap { $0 as? TerminalPanel }
             for terminalPanel in terminalPanels {
@@ -6234,6 +6743,8 @@ extension Notification.Name {
     static let sidebarRevealWorkspaceRequested = Notification.Name("c11.sidebarRevealWorkspaceRequested")
 }
 
+extension WorkspaceManager: WorkspaceSidebarStepModel {}
+
 // MARK: - Window-local workspace folders
 extension WorkspaceManager {
     var workspaceOrderEntries: [WorkspaceOrderEntry] {
@@ -6241,7 +6752,71 @@ extension WorkspaceManager {
     }
 
     var workspaceSidebarProjection: [WorkspaceSidebarItem] {
-        WorkspaceGroupProjection.items(groups: workspaceGroups, workspaces: workspaceOrderEntries)
+        WorkspaceGroupProjection.items(groups: workspaceGroups, workspaces: workspaceOrderEntries,
+                                       rootOrder: workspaceRootOrder)
+    }
+
+    /// The sidebar's root items in draw order: pinned segment, then unpinned.
+    var workspaceRootEntries: [WorkspaceRootEntry] {
+        WorkspaceRootOrder.resolve(stored: workspaceRootOrder, groups: workspaceGroups,
+                                   workspaces: workspaceOrderEntries)
+    }
+
+    /// Store the drawn root order after a change to membership, pins or
+    /// groups, so an id that leaves the root never comes back as a group's
+    /// anchor. Draw-neutral: resolving the stored list gives the same order.
+    func storeCanonicalWorkspaceRootOrder() {
+        storeWorkspaceRoot(workspaceRootEntries)
+    }
+
+    /// `previous` holds the same `Workspace` objects, so it already carries
+    /// their new pin and membership: a path that changes either must end with
+    /// its own root store (`placing`, a plan, or a canonical store), as every
+    /// current one does, rather than rely on this mirror.
+    /// Keeps the root order with `workspaces`: a reorder that no root plan made
+    /// is mirrored so only the moved workspaces move (never a group riding
+    /// along); ids that leave (closed, or moved to another window) are dropped,
+    /// so one that returns later anchors nothing. Neither changes the draw of
+    /// anything the change did not move.
+    fileprivate func syncWorkspaceRootOrder(previous: [Workspace]) {
+        guard !isApplyingWorkspaceRootPlan, let stored = workspaceRootOrder else { return }
+        let live = Set(workspaces.map(\.id))
+        let gone = Set(previous.lazy.map(\.id).filter { !live.contains($0) })
+        if !gone.isEmpty {
+            if stored.contains(where: gone.contains) { workspaceRootOrder = stored.filter { !gone.contains($0) } }
+            return
+        }
+        let old = previous.map { WorkspaceOrderEntry(id: $0.id, isPinned: $0.isPinned, groupId: $0.groupId) }
+        if let mirrored = WorkspaceRootOrder.mirrorFlatReorder(stored: stored, groups: workspaceGroups, old: old,
+                                                               new: workspaceOrderEntries, moved: workspaceRootMoveHint) {
+            storeWorkspaceRoot(mirrored)
+        }
+    }
+
+    private func applyWorkspaceRootPlan(_ plan: WorkspaceRootOrder.Plan) {
+        let membership = Dictionary(uniqueKeysWithValues: plan.finalWorkspaces.map { ($0.id, $0.groupId) })
+        for workspace in workspaces {
+            if let groupId = membership[workspace.id], workspace.groupId != groupId { workspace.groupId = groupId }
+        }
+        isApplyingWorkspaceRootPlan = true
+        defer { isApplyingWorkspaceRootPlan = false }
+        if workspaces.map(\.id) != plan.finalWorkspaces.map(\.id) {
+            let byId = Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0) })
+            workspaces = plan.finalWorkspaces.compactMap { byId[$0.id] }
+        }
+        if workspaceGroups.map(\.id) != plan.finalGroups.map(\.id) {
+            let byId = Dictionary(uniqueKeysWithValues: workspaceGroups.map { ($0.id, $0) })
+            workspaceGroups = plan.finalGroups.compactMap { byId[$0.id] }
+        }
+        storeWorkspaceRoot(plan.finalRoot)
+    }
+
+    /// The root order and the group list in its draw order, published only on change.
+    private func storeWorkspaceRoot(_ root: [WorkspaceRootEntry]) {
+        let groups = WorkspaceRootOrder.ordered(workspaceGroups, by: root)
+        if groups.map(\.id) != workspaceGroups.map(\.id) { workspaceGroups = groups }
+        let ids = root.map(\.id)
+        if workspaceRootOrder != ids { workspaceRootOrder = ids }
     }
 
     func batchWorkspaceReorderPlan(orderedWorkspaceIds: [UUID]) throws -> WorkspaceReorderPlan {
@@ -6259,14 +6834,50 @@ extension WorkspaceManager {
         guard plan.changed else { return }
         let byId = Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0) })
         // Plans are produced and applied synchronously on MainActor; no stale-plan API.
-        workspaces = plan.finalWorkspaceIds.compactMap { byId[$0] }
+        withWorkspaceRootMoveHint(Set(plan.moves.map(\.workspaceId))) {
+            workspaces = plan.finalWorkspaceIds.compactMap { byId[$0] }
+        }
+    }
+
+    fileprivate func withWorkspaceRootMoveHint(_ moved: Set<UUID>, _ body: () -> Void) {
+        workspaceRootMoveHint = moved
+        defer { workspaceRootMoveHint = nil }
+        body()
+    }
+
+    /// C11H-342: one step up or down in the sidebar, the one source for Move
+    /// Up/Down in the menu, the command palette, the row and the socket. An
+    /// ungrouped workspace steps one root item (past a group too); a member
+    /// steps inside its group. `canStep` is the same rule, for enablement.
+    @discardableResult
+    func stepWorkspaceInSidebar(_ workspaceId: UUID, by delta: Int) -> Bool {
+        guard let workspace = workspaces.first(where: { $0.id == workspaceId }),
+              let target = sidebarStepTarget(workspaceId, by: delta) else { return false }
+        let groupId = workspace.groupId.flatMap { id in workspaceGroups.contains { $0.id == id } ? id : nil }
+        do {
+            try moveWorkspaceToGroup(workspaceId: workspaceId, groupId: groupId,
+                                     before: delta < 0 ? target : nil, after: delta > 0 ? target : nil)
+        } catch { return false }
+        return true
+    }
+
+    func canStepWorkspaceInSidebar(_ workspaceId: UUID, by delta: Int) -> Bool {
+        sidebarStepTarget(workspaceId, by: delta) != nil
+    }
+
+    private func sidebarStepTarget(_ workspaceId: UUID, by delta: Int) -> UUID? {
+        WorkspaceRootOrder.stepTarget(workspaceId: workspaceId, by: delta, groups: workspaceGroups,
+                                      workspaces: workspaceOrderEntries, stored: workspaceRootOrder)
     }
 
     @discardableResult
     func createWorkspaceGroup(name: String, color: String? = nil, icon: String? = nil) throws -> WorkspaceGroup {
         let group = WorkspaceGroup(name: try normalizedGroupName(name), color: try normalizedGroupColor(color),
                                    icon: try validatedGroupIcon(icon))
+        WorkspaceMetadataStore.groups.register(workspaceId: group.id)
         workspaceGroups.append(group)
+        storeWorkspaceRoot(WorkspaceRootOrder.placing(group.id, atPinBoundary: false, groups: workspaceGroups,
+                                                      workspaces: workspaceOrderEntries, stored: workspaceRootOrder))
         return group
     }
 
@@ -6296,17 +6907,24 @@ extension WorkspaceManager {
         let index = try workspaceGroupIndex(id)
         guard workspaceGroups[index].isPinned != pinned else { return }
         var final = workspaceGroups
-        var group = final.remove(at: index)
-        group.isPinned = pinned
-        final.insert(group, at: final.filter(\.isPinned).count)
-        workspaceGroups = final
+        final[index].isPinned = pinned
+        let root = WorkspaceRootOrder.placing(id, atPinBoundary: true, groups: final,
+                                              workspaces: workspaceOrderEntries, stored: workspaceRootOrder)
+        let byId = Dictionary(uniqueKeysWithValues: final.map { ($0.id, $0) })
+        workspaceGroups = root.filter(\.isGroup).compactMap { byId[$0.id] }
+        storeWorkspaceRoot(root)
     }
 
     /// Both delete and ungroup detach live members; neither closes a workspace.
+    /// The group's JSON object (its Captain included) goes with it; members
+    /// fall back to their own keys.
+    /// C11H-342: the members take the group's place in the root order.
     func deleteWorkspaceGroup(id: UUID) throws {
-        let index = try workspaceGroupIndex(id)
-        for workspace in workspaces where workspace.groupId == id { workspace.groupId = nil }
-        workspaceGroups.remove(at: index)
+        _ = try workspaceGroupIndex(id)
+        let plan = try WorkspaceRootOrder.dissolveGroup(groups: workspaceGroups, workspaces: workspaceOrderEntries,
+                                                        stored: workspaceRootOrder, groupId: id)
+        applyWorkspaceRootPlan(plan)
+        WorkspaceMetadataStore.groups.removeWorkspace(workspaceId: id)
     }
 
     func addWorkspacesToGroup(id: UUID, workspaceIds: [UUID]) throws {
@@ -6314,6 +6932,7 @@ extension WorkspaceManager {
         let members = try validatedGroupWorkspaces(workspaceIds)
         guard members.allSatisfy({ $0.groupId == nil }) else { throw WorkspaceGroupOperationError.alreadyGrouped }
         for workspace in members { workspace.groupId = id }
+        storeCanonicalWorkspaceRootOrder()
     }
 
     func removeWorkspacesFromGroup(id: UUID, workspaceIds: [UUID]) throws {
@@ -6321,26 +6940,34 @@ extension WorkspaceManager {
         let members = try validatedGroupWorkspaces(workspaceIds)
         guard members.allSatisfy({ $0.groupId == id }) else { throw WorkspaceGroupOperationError.notMember }
         for workspace in members { workspace.groupId = nil }
+        storeCanonicalWorkspaceRootOrder()
     }
 
+    /// With a group, `before`/`after` name members of it. With none (the
+    /// root), they name a root item: a group or an ungrouped workspace.
     func moveWorkspaceToGroup(workspaceId: UUID, groupId: UUID?, before: UUID? = nil, after: UUID? = nil) throws {
-        if let groupId { _ = try workspaceGroupIndex(groupId) }
+        guard let groupId else {
+            try applyWorkspaceRootPlan(WorkspaceRootOrder.moveWorkspaceToRoot(
+                groups: workspaceGroups, workspaces: workspaceOrderEntries, stored: workspaceRootOrder,
+                workspaceId: workspaceId, before: before, after: after))
+            return
+        }
+        _ = try workspaceGroupIndex(groupId)
         let plan = try WorkspaceReorderPlanner.transfer(workspaces: workspaceOrderEntries,
                                                        workspaceId: workspaceId, groupId: groupId,
                                                        before: before, after: after)
         workspaces.first { $0.id == workspaceId }?.groupId = groupId
         applyWorkspaceReorderPlan(plan)
+        storeCanonicalWorkspaceRootOrder()
     }
 
+    /// `before`/`after` name a root item (a group or an ungrouped workspace);
+    /// `toIndex` counts groups only.
     func reorderWorkspaceGroup(id: UUID, toIndex: Int? = nil, before: UUID? = nil, after: UUID? = nil) throws {
         _ = try workspaceGroupIndex(id)
-        if let relative = before ?? after { _ = try workspaceGroupIndex(relative) }
-        let plan = try WorkspaceReorderPlanner.move(
-            workspaces: workspaceGroups.map { WorkspaceOrderEntry(id: $0.id, isPinned: $0.isPinned) },
-            workspaceId: id, toIndex: toIndex, before: before, after: after)
-        guard plan.changed else { return }
-        let byId = Dictionary(uniqueKeysWithValues: workspaceGroups.map { ($0.id, $0) })
-        workspaceGroups = plan.finalWorkspaceIds.compactMap { byId[$0] }
+        try applyWorkspaceRootPlan(WorkspaceRootOrder.moveGroup(
+            groups: workspaceGroups, workspaces: workspaceOrderEntries, stored: workspaceRootOrder,
+            groupId: id, toIndex: toIndex, before: before, after: after))
     }
 
     @discardableResult
@@ -6384,11 +7011,128 @@ extension WorkspaceManager {
         return value
     }
 
+    /// One emoji, or an SF Symbol name (bare or `sf:`, stored bare).
     private func validatedGroupIcon(_ icon: String?) throws -> String? {
         guard let icon else { return nil }
-        guard NSImage(systemSymbolName: icon, accessibilityDescription: nil) != nil else {
-            throw WorkspaceGroupOperationError(code: "invalid_params", message: String(localized: "workspaceGroup.error.invalidIcon", defaultValue: "Provide a valid SF Symbol name."))
+        guard let value = SidebarIconGlyph.normalizedGroupIcon(icon) else {
+            throw WorkspaceGroupOperationError(code: "invalid_params", message: String(localized: "workspaceGroup.error.invalidIconOrEmoji", defaultValue: "Provide one emoji or a valid SF Symbol name."))
         }
-        return icon
+        return value
+    }
+}
+
+// MARK: - History navigation
+
+/// One "go back" or "go forward" intent. ⌘[ and ⌘], a mouse's side buttons,
+/// and a remapper that turns one into the other (Karabiner, Logi Options+)
+/// all arrive here, so which panel moves never depends on the device.
+enum PanelHistoryDirection {
+    case back, forward
+
+    /// ⌘[ or ⌘] with no other modifier, by the character the layout types.
+    static func commandBracket(_ event: NSEvent) -> PanelHistoryDirection? {
+        guard event.type == .keyDown,
+              event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command else { return nil }
+        switch event.charactersIgnoringModifiers {
+        case "[": return .back
+        case "]": return .forward
+        default: return nil
+        }
+    }
+
+    /// A mouse's side buttons: button 3 is back, button 4 is forward.
+    static func mouseButton(_ event: NSEvent) -> PanelHistoryDirection? {
+        guard event.type == .otherMouseDown else { return nil }
+        switch event.buttonNumber {
+        case 3: return .back
+        case 4: return .forward
+        default: return nil
+        }
+    }
+}
+
+/// What lies under the pointer for a history intent.
+enum PanelHistoryPointer {
+    case webView(WKWebView)
+    /// A browser a companion veil covers: nothing navigates.
+    case veiled
+    case none
+}
+
+extension WorkspaceManager {
+    /// Moves a browser or markdown panel of the selected workspace through its
+    /// history. A pointer intent (a side button) prefers the panel under the
+    /// pointer and a keyboard intent prefers the focused one; each falls back
+    /// to the other, so a side button over a terminal still moves the focused
+    /// browser and ⌘[ typed in a terminal moves the browser the pointer rests
+    /// on. A veiled browser never moves, and a web view under the pointer that
+    /// is no panel of this workspace stops the search. Returns false when
+    /// nothing moved; the event then goes on as before.
+    @discardableResult
+    func navigatePanelHistory(
+        _ direction: PanelHistoryDirection,
+        pointer: PanelHistoryPointer,
+        preferPointer: Bool
+    ) -> Bool {
+        guard let workspace = selectedWorkspace else { return false }
+        let focused = workspace.focusedPanelId.flatMap { workspace.panels[$0] }
+        let pointed: (any Panel)?
+        switch pointer {
+        case .veiled:
+            return false
+        case .none:
+            pointed = nil
+        case .webView(let webView):
+            pointed = workspace.panels.values.first { panel in
+                if let browser = panel as? BrowserPanel { return browser.webView === webView }
+                if let markdown = panel as? MarkdownPanel { return markdown.renderer?.webView === webView }
+                return false
+            }
+            if pointed == nil { return false }
+        }
+        for case let panel? in preferPointer ? [pointed, focused] : [focused, pointed] {
+            if let browser = panel as? BrowserPanel {
+                if BrowserWindowPortalRegistry.isVeiled(webView: browser.webView) { return false }
+                switch direction {
+                case .back: browser.goBack()
+                case .forward: browser.goForward()
+                }
+                return true
+            }
+            if let markdown = panel as? MarkdownPanel {
+                Task { @MainActor [weak markdown] in
+                    switch direction {
+                    case .back: _ = await markdown?.navigateBack()
+                    case .forward: _ = await markdown?.navigateForward()
+                    }
+                }
+                return true
+            }
+        }
+        return false
+    }
+}
+
+/// C11H-288: what one terminal's end closes. An end the operator watched
+/// happen (a shell's `exit`) closes up to the window, as it always has. An
+/// end this app run never saw running was found when a launch restored it,
+/// for example after a quit with Keep Terminals After Quit off ended every
+/// terminal and a later TERM quit saved those ended panels again. Closing the
+/// last window for it would leave the launch with no window at all, so the
+/// window stays with a fresh workspace instead.
+enum ChildExitClosePolicy {
+    enum Scope: Equatable {
+        case panel
+        case workspace
+        case window
+        case freshWorkspace
+    }
+
+    static func scope(panelCount: Int, workspaceCount: Int, isLastMainWindow: Bool,
+                      terminalWasLiveThisRun: Bool) -> Scope {
+        if panelCount > 1 { return .panel }
+        if workspaceCount > 1 { return .workspace }
+        if !isLastMainWindow || terminalWasLiveThisRun { return .window }
+        return .freshWorkspace
     }
 }

@@ -39,8 +39,14 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
         var template = ghostty_surface_config_new()
         template.command = UnsafePointer(shellCommand)
         let workspaceId = UUID()
+        // A terminal with creation input starts natively inside its init, so the
+        // exec shell must be chosen before construction: Ghostty's own
+        // initial_input on a local PTY is the path this fixture proves. An hc
+        // terminal types creation input at hc attach instead.
+        let panelID = execShellPanelID()
+        defer { HCPanelRestoreState.shared.remove(panelID: panelID) }
         let panel = TerminalPanel(
-            workspaceId: workspaceId, configTemplate: template,
+            id: panelID, workspaceId: workspaceId, configTemplate: template,
             workingDirectory: root.path, initialInput: command + "\r",
             initialEnvironmentOverrides: ["HOME": root.path, "ZDOTDIR": root.path, "SHELL": "/bin/zsh"]
         )
@@ -57,7 +63,7 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
         mount(panel.hostedView, in: firstWindow)
         let terminalView = try XCTUnwrap(findTerminalView(in: panel.hostedView))
         panel.surface.attachToView(terminalView)
-        _ = try XCTUnwrap(panel.surface.surface, "requires an unlocked Atlas GUI session and current Ghostty ABI header")
+        _ = try XCTUnwrap(panel.surface.surface, "requires an unlocked GUI session on the build host and current Ghostty ABI header")
 
         let deadline = Date().addingTimeInterval(18)
         let firstEvents = try await waitForEvents(receipt, deadline: deadline) { $0.contains(where: { $0.hasPrefix("initial:") }) }
@@ -88,8 +94,10 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
         panel.close()
         panel.hostedView.removeFromSuperview()
         XCTAssertNil(panel.surface.surface)
+        let rebuiltPanelID = execShellPanelID()
+        defer { HCPanelRestoreState.shared.remove(panelID: rebuiltPanelID) }
         let rebuiltPanel = TerminalPanel(
-            workspaceId: workspaceId, configTemplate: template,
+            id: rebuiltPanelID, workspaceId: workspaceId, configTemplate: template,
             workingDirectory: root.path, initialInput: nil,
             initialEnvironmentOverrides: ["HOME": root.path, "ZDOTDIR": root.path, "SHELL": "/bin/zsh"]
         )
@@ -114,6 +122,14 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
         XCTAssertFalse(firstWindow.isVisible)
         XCTAssertFalse(secondWindow.isVisible)
         print("INITIAL_INPUT_RUNTIME slow-rc=2.1s initial-count=1 original-pid=\(firstPID) reconstructed-pid=\(secondPID) events=\(completed)")
+    }
+
+    /// A panel id seeded as non-persistent, so the terminal built with it never
+    /// takes an hc identity and runs Ghostty's exec PTY.
+    private func execShellPanelID() -> UUID {
+        let id = UUID()
+        HCPanelRestoreState.shared.seed(HCPanelIdentity(panelID: id, persistence: .nonpersistent, origin: .fresh))
+        return id
     }
 
     private func makeWindow() -> NSWindow {
@@ -145,12 +161,13 @@ final class CreateInitialInputRuntimeTests: XCTestCase {
 
     private func waitForEvents(_ url: URL, deadline: Date,
                                until predicate: ([String]) -> Bool) async throws -> [String] {
+        var events: [String] = []
         while Date() < deadline {
-            let events = (try? String(contentsOf: url, encoding: .utf8))?.split(separator: "\n").map(String.init) ?? []
+            events = (try? String(contentsOf: url, encoding: .utf8))?.split(separator: "\n").map(String.init) ?? []
             if predicate(events) { return events }
             try await Task.sleep(nanoseconds: 25_000_000)
         }
-        XCTFail("real Ghostty initial-input fixture timed out")
+        XCTFail("real Ghostty initial-input fixture timed out; events so far: \(events)")
         throw NSError(domain: "CreateInitialInputRuntimeTests", code: 1)
     }
 }

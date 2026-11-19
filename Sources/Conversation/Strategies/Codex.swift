@@ -122,6 +122,7 @@ struct CodexStrategy: ConversationStrategy {
         guard isValidConversationUUID(ref.id) else {
             return .skip(reason: "invalid id grammar")
         }
+        if let refusal = conversationResumeCwdRefusal(ref.cwd) { return refusal }
         let quoted = conversationShellQuote(ref.id)
         // Specific id, not `--last`. The plan motivates this directly.
         // `--yolo` mirrors the launch posture (`AgentAutoApprove`): a resumed

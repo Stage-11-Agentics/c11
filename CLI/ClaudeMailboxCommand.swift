@@ -1,9 +1,9 @@
 import Darwin
 import Foundation
 
-/// Runs only as an async SessionStart hook. All failures are advisory: closing
-/// the subscription restores the app's ordinary typed doorbell decision. Mail
-/// text passes through memory only; the app, never this bridge, claims it.
+/// Runs only as an async SessionStart hook. The original hook retains its
+/// session binding across app restarts; no token or hook input is persisted.
+/// Mail text passes through memory only; the app, never this bridge, claims it.
 enum ClaudeMailboxCommand {
     struct Binding {
         let panelID: String
@@ -13,6 +13,9 @@ enum ClaudeMailboxCommand {
         let transcript: String
         let inbox: String
         let token: String
+        // A reconnect is the same listener. A new SessionStart hook (including
+        // resume with the same Claude session UUID) has a different identity.
+        let registrationID = UUID().uuidString
 
         init?(environment: [String: String], input: Data) {
             guard input.count <= 64 * 1024,
@@ -41,63 +44,160 @@ enum ClaudeMailboxCommand {
     }
 
     private static func birth(of pid: pid_t) -> UInt64? {
+        #if os(macOS)
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
         guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
               info.pbi_status != UInt32(SZOMB) else { return nil }
         return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
+        #else
+        guard let stat = LinuxProc.stat(pid), stat.state != "Z" else { return nil }
+        return LinuxProc.epochMicroseconds(stat)
+        #endif
     }
 
-    static func run(binding: Binding, descriptor: Int32) throws {
-        let stream = try ClaudeMailboxStream(descriptor: descriptor)
+    /// Connection/authentication attempts must be bounded by the caller. The
+    /// CLI uses one second so an absent app cannot outlive the harness watchdog.
+    /// Only explicit refusals retire; disappearance/EOF never proves agent death.
+    static func run(binding: Binding, connect: () throws -> Int32) {
+        var failures = 0
+        let carry = Carry()
+        while binding.isAlive {
+            let retry = autoreleasepool { () -> Bool in
+                do {
+                    let descriptor = try connect()
+                    return try runConnection(binding: binding, descriptor: descriptor, carry: carry,
+                                             registered: { failures = 0 })
+                } catch ConnectionFailure.retired {
+                    return false
+                } catch Failure.invalidFrame {
+                    return false
+                } catch {
+                    return true
+                }
+            }
+            guard retry, binding.isAlive else { return }
+            let until = uptime + min(2, 0.25 * pow(2, Double(min(failures, 3))))
+            failures = min(failures + 1, 3)
+            while binding.isAlive, uptime < until {
+                Thread.sleep(forTimeInterval: min(0.1, max(0, until - uptime)))
+            }
+        }
+    }
+
+    enum ConnectionFailure: Error { case retired }
+
+    /// C11H-184: an unconfirmed or queued inline delivery outlives its
+    /// connection. A c11 relaunch replaces the app while Claude still holds
+    /// the text; the new app never sent that delivery. On each new connection
+    /// the bridge says which envelopes it holds (`holding`), so the app does
+    /// not offer them again, and the acceptance names them (`carried`), so
+    /// the app claims them. Without this the same mail reaches Claude twice.
+    /// Carried watches are kept apart from the current connection's watch,
+    /// so a new delivery never discards them, and a second reconnect keeps
+    /// the older ones until each confirms or ends.
+    private final class Carry {
+        var late: LateWatch?
+        var carried: [LateWatch] = []
+    }
+
+    /// True means transport/readiness retry; false is definitive retirement.
+    private static func runConnection(binding: Binding, descriptor: Int32, carry: Carry,
+                                      registered: () -> Void) throws -> Bool {
+        let stream = try ClaudeMailboxStream(descriptor: descriptor, isAlive: { binding.isAlive })
+        defer { stream.close() }
         let requestID = UUID().uuidString
-        // A resume can retain Claude's session UUID. The registration itself
-        // is always fresh, so replacement retires the previous hook connection.
         try stream.write([
             "id": requestID, "method": "mailbox.native.subscribe",
             "params": ["panel_id": binding.panelID, "agent_pid": Int(binding.agentPID),
-                       "route": "claude_inbox", "session_id": UUID().uuidString,
+                       "route": "claude_inbox", "session_id": binding.registrationID,
                        "claude_session_id": binding.sessionID,
                        "can_queue": false, "supports_inline_mail": true]
         ], deadline: uptime + 1)
-        guard let reply = try stream.read(deadline: uptime + 1),
-              reply["id"] as? String == requestID, reply["ok"] as? Bool == true else { return }
-
-        var late: LateWatch?
-        while binding.isAlive {
-            let shouldContinue = try autoreleasepool { () throws -> Bool in
-                // No idle transcript or mailbox polling. The timeout only checks
-                // the harness lifetime, including PID reuse and orphaned hooks.
-                // An unconfirmed offer is watched briefly between frame reads.
-                let readDeadline = late.map { min(uptime + 0.05, $0.until) } ?? uptime + 1
-                guard let frame = try stream.read(deadline: readDeadline) else {
-                    if let watch = late {
-                        if (try? watch.observer.observe()) == true {
-                            late = nil
-                            try stream.write(["type": "accepted", "delivery_id": watch.deliveryID], deadline: uptime + 0.2)
-                        } else if uptime >= watch.until {
-                            late = nil
-                        }
-                    }
-                    return true
-                }
-                if frame["type"] as? String == "replaced" { return false }
-                guard frame["type"] as? String == "deliver" else { return true }
-                guard let deliveryID = frame["delivery_id"] as? String,
-                      UUID(uuidString: deliveryID) != nil else { throw Failure.invalidFrame }
-                // A newer offer carries the same invitation text, so an older
-                // watch could not tell whose record it saw.
-                late = nil
-                guard let text = frame["text"] as? String, !text.isEmpty,
-                      frame["inline"] as? Bool == true || text == ClaudeMailboxAcceptance.invitation else {
-                    try reject(stream, deliveryID, "unsupported_invitation")
-                    return true
-                }
-                late = try deliver(binding: binding, stream: stream, deliveryID: deliveryID, text: text)
-                return true
-            }
-            if !shouldContinue { return }
+        guard let reply = try stream.read(deadline: uptime + 3) else { return true }
+        guard reply["id"] as? String == requestID else { throw Failure.invalidFrame }
+        guard reply["ok"] as? Bool == true else {
+            // Ownership admission can wait two seconds for the first HC
+            // inventory. A pending inventory is not a definitive rejection.
+            guard reply["ok"] as? Bool == false,
+                  let error = reply["error"] as? [String: Any] else { return false }
+            if error["code"] as? String == "not_ready" { return true }
+            let data = error["data"] as? [String: Any]
+            return error["code"] as? String == "hc_inventory_pending"
+                && data?["retryable"] as? Bool == true
+                && data?["pre_dispatch"] as? Bool == true
         }
+        registered()
+
+        // A watch from an earlier connection is one this app never sent. Only
+        // inline mail can be claimed by its envelope ids; anything else ends.
+        if var previous = carry.late {
+            carry.late = nil
+            if !previous.ids.isEmpty, uptime < previous.until {
+                previous.carried = true
+                carry.carried.append(previous)
+            }
+        }
+        carry.carried.removeAll { uptime >= $0.until }
+        for held in carry.carried {
+            try stream.write(["type": "holding", "delivery_id": held.deliveryID, "ids": held.ids], deadline: uptime + 1)
+        }
+        while binding.isAlive {
+            let shouldContinue: Bool
+            do {
+                shouldContinue = try autoreleasepool { () throws -> Bool in
+                    // No idle transcript or mailbox polling. The timeout only checks
+                    // the harness lifetime, including PID reuse and orphaned hooks.
+                    // An unconfirmed offer is watched briefly between frame reads.
+                    let watches = carry.carried + [carry.late].compactMap { $0 }
+                    let readDeadline = watches.map { min(uptime + 0.05, $0.until) }.min() ?? uptime + 1
+                    guard let frame = try stream.read(deadline: readDeadline) else {
+                        // Cleared only once the acceptance is written: a write
+                        // lost to a closing connection is carried to the next.
+                        for watch in carry.carried {
+                            if (try? watch.observer.observe()) == true {
+                                try stream.write(watch.acceptance, deadline: uptime + 0.2)
+                                carry.carried.removeAll { $0.deliveryID == watch.deliveryID }
+                            } else if uptime >= watch.until {
+                                carry.carried.removeAll { $0.deliveryID == watch.deliveryID }
+                            }
+                        }
+                        if let watch = carry.late {
+                            if (try? watch.observer.observe()) == true {
+                                try stream.write(watch.acceptance, deadline: uptime + 0.2)
+                                carry.late = nil
+                            } else if uptime >= watch.until {
+                                carry.late = nil
+                            }
+                        }
+                        return true
+                    }
+                    if frame["type"] as? String == "replaced" { return false }
+                    guard frame["type"] as? String == "deliver" else { return true }
+                    guard let deliveryID = frame["delivery_id"] as? String,
+                          UUID(uuidString: deliveryID) != nil else { throw Failure.invalidFrame }
+                    // A newer offer carries the same invitation text, so an older
+                    // watch could not tell whose record it saw.
+                    carry.late = nil
+                    guard let text = frame["text"] as? String, !text.isEmpty,
+                          frame["inline"] as? Bool == true || text == ClaudeMailboxAcceptance.invitation else {
+                        try reject(stream, deliveryID, "unsupported_invitation")
+                        return true
+                    }
+                    carry.late = try deliver(binding: binding, stream: stream, deliveryID: deliveryID, text: text,
+                                             ids: frame["inline"] as? Bool == true ? inlineIDs(frame["ids"]) : [])
+                    return true
+                }
+            } catch {
+                // Replacement is written immediately before the app shuts down
+                // the old stream. A concurrent acknowledgement can fail before
+                // we read that final frame; consume it before deciding to retry.
+                if stream.receivedReplacementBeforeClose() { return false }
+                throw error
+            }
+            if !shouldContinue { return false }
+        }
+        return false
     }
 
     /// The app's own bound is two seconds from dispatch. Reporting first lets it
@@ -113,6 +213,23 @@ enum ClaudeMailboxCommand {
         let deliveryID: String
         let observer: ClaudeMailboxAcceptance
         let until: TimeInterval
+        /// The envelopes an inline delivery carried, as the app named them.
+        var ids: [String] = []
+        /// Set when the watch began on an earlier connection.
+        var carried = false
+
+        var acceptance: [String: Any] {
+            var frame: [String: Any] = ["type": "accepted", "delivery_id": deliveryID]
+            if carried { frame["carried"] = true; frame["ids"] = ids }
+            return frame
+        }
+    }
+
+    /// Envelope ids are ULIDs; at most one inline batch's worth is kept.
+    static func inlineIDs(_ value: Any?) -> [String] {
+        guard let values = value as? [String], values.count <= 1_024 else { return [] }
+        let ids = values.filter { $0.utf8.count == 26 && $0.utf8.allSatisfy { (48...57).contains($0) || (65...90).contains($0) } }
+        return ids.count == values.count ? ids : []
     }
 
     private static func reject(_ stream: ClaudeMailboxStream, _ deliveryID: String, _ reason: String) throws {
@@ -120,7 +237,7 @@ enum ClaudeMailboxCommand {
     }
 
     private static func deliver(binding: Binding, stream: ClaudeMailboxStream, deliveryID: String,
-                                text: String) throws -> LateWatch? {
+                                text: String, ids: [String] = []) throws -> LateWatch? {
         let deadline = uptime + confirmWindow
         guard binding.isAlive else { throw Failure.closed }
         // Until the inbox write starts, nothing has been sent, so these
@@ -130,7 +247,8 @@ enum ClaudeMailboxCommand {
             try reject(stream, deliveryID, "transcript_unavailable")
             return nil
         }
-        guard let inbox = try? ClaudeMailboxStream(path: binding.inbox, deadline: min(deadline, uptime + 0.3)) else {
+        guard let inbox = try? ClaudeMailboxStream(path: binding.inbox, deadline: min(deadline, uptime + 0.3),
+                                                  isAlive: { binding.isAlive }) else {
             try reject(stream, deliveryID, "inbox_unavailable")
             return nil
         }
@@ -143,7 +261,7 @@ enum ClaudeMailboxCommand {
             // A partial write may still arrive, so keep watching for it.
             inbox.close()
             try reject(stream, deliveryID, "inbox_write_failed")
-            return LateWatch(deliveryID: deliveryID, observer: observer, until: uptime + lateWindow)
+            return LateWatch(deliveryID: deliveryID, observer: observer, until: uptime + lateWindow, ids: ids)
         }
         while uptime < deadline, binding.isAlive, stream.isConnected {
             if try observer.observe() {
@@ -157,13 +275,13 @@ enum ClaudeMailboxCommand {
             // Not delivered yet, and not failed: the typed doorbell would only
             // add a second copy. The mail stays unread until the agent has it.
             try stream.write(["type": "queued", "delivery_id": deliveryID], deadline: uptime + 0.2)
-            return LateWatch(deliveryID: deliveryID, observer: observer, until: uptime + queuedWindow)
+            return LateWatch(deliveryID: deliveryID, observer: observer, until: uptime + queuedWindow, ids: ids)
         }
         // Explicit inbound policy (crossSessionInbound refuse or hold) accepts
         // the write and answers nothing, so it is indistinguishable here from a
         // slow harness or a changed acceptance marker. Silence is not acceptance.
         try reject(stream, deliveryID, "unconfirmed")
-        return LateWatch(deliveryID: deliveryID, observer: observer, until: uptime + lateWindow)
+        return LateWatch(deliveryID: deliveryID, observer: observer, until: uptime + lateWindow, ids: ids)
     }
 
     fileprivate enum Failure: Error { case closed, invalidFrame, unavailable, timeout }
@@ -175,11 +293,15 @@ enum ClaudeMailboxCommand {
 private final class ClaudeMailboxStream {
     private var fd: Int32
     private var pending = Data()
+    private let isAlive: () -> Bool
 
-    init(descriptor: Int32) throws {
+    init(descriptor: Int32, isAlive: @escaping () -> Bool) throws {
         fd = descriptor
+        self.isAlive = isAlive
+        #if os(macOS)
         var noSignal: Int32 = 1
         _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
+        #endif   // Linux has no SO_NOSIGPIPE; the CLI ignores SIGPIPE at start (c11.swift).
         let flags = fcntl(fd, F_GETFL)
         guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 else {
             close()
@@ -187,7 +309,7 @@ private final class ClaudeMailboxStream {
         }
     }
 
-    convenience init(path: String, deadline: TimeInterval) throws {
+    convenience init(path: String, deadline: TimeInterval, isAlive: @escaping () -> Bool) throws {
         var address = sockaddr_un()
         guard path.utf8.count < MemoryLayout.size(ofValue: address.sun_path) else {
             throw ClaudeMailboxCommand.Failure.unavailable
@@ -197,9 +319,11 @@ private final class ClaudeMailboxStream {
               metadata.st_mode & S_IFMT == S_IFSOCK else { throw ClaudeMailboxCommand.Failure.unavailable }
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { throw ClaudeMailboxCommand.Failure.unavailable }
-        try self.init(descriptor: descriptor)
+        try self.init(descriptor: descriptor, isAlive: isAlive)
         address.sun_family = sa_family_t(AF_UNIX)
+        #if os(macOS)
         address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+        #endif
         path.withCString { source in
             withUnsafeMutablePointer(to: &address.sun_path) { target in
                 _ = strcpy(UnsafeMutableRawPointer(target).assumingMemoryBound(to: CChar.self), source)
@@ -220,6 +344,10 @@ private final class ClaudeMailboxStream {
                 throw ClaudeMailboxCommand.Failure.unavailable
             }
         }
+        // The listener must run as this user before any byte is sent (C11H-364).
+        guard C11UserRuntime.peerIsUser(fd, expected: SocketClient.expectedPeerUserID) else {
+            throw ClaudeMailboxCommand.Failure.unavailable
+        }
     }
 
     deinit { close() }
@@ -234,12 +362,21 @@ private final class ClaudeMailboxStream {
         return descriptor.revents & Int16(POLLHUP | POLLERR | POLLNVAL) == 0
     }
 
+    func receivedReplacementBeforeClose() -> Bool {
+        let deadline = ClaudeMailboxCommand.uptime + 0.05
+        while ClaudeMailboxCommand.uptime < deadline, let frame = try? read(deadline: deadline) {
+            if frame["type"] as? String == "replaced" { return true }
+        }
+        return false
+    }
+
     private func ready(events: Int16, deadline: TimeInterval) throws -> Bool {
         while true {
+            guard isAlive() else { throw ClaudeMailboxCommand.Failure.closed }
             let remaining = deadline - ClaudeMailboxCommand.uptime
             if remaining <= 0 { return false }
             var descriptor = pollfd(fd: fd, events: events, revents: 0)
-            let result = poll(&descriptor, 1, Int32(min(remaining * 1000, 1_000).rounded(.up)))
+            let result = poll(&descriptor, 1, Int32(min(remaining * 1000, 100).rounded(.up)))
             if result < 0, errno == EINTR { continue }
             guard result >= 0 else { throw ClaudeMailboxCommand.Failure.closed }
             if descriptor.revents & events != 0 { return true }
@@ -271,9 +408,10 @@ private final class ClaudeMailboxStream {
     func read(deadline: TimeInterval) throws -> [String: Any]? {
         while true {
             if let newline = pending.firstIndex(of: 0x0A) {
+                guard newline <= 512 * 1024 else { throw ClaudeMailboxCommand.Failure.invalidFrame }
                 let frame = Data(pending[..<newline])
                 pending.removeSubrange(...newline)
-                guard let object = try JSONSerialization.jsonObject(with: frame) as? [String: Any] else {
+                guard let object = (try? JSONSerialization.jsonObject(with: frame)) as? [String: Any] else {
                     throw ClaudeMailboxCommand.Failure.invalidFrame
                 }
                 return object
@@ -360,7 +498,7 @@ enum GrokMailboxCommand {
         var client = readyClient(binding)
         defer { client?.terminate() }
         guard client != nil else { return .clientFailed }
-        let stream = try ClaudeMailboxStream(descriptor: descriptor)
+        let stream = try ClaudeMailboxStream(descriptor: descriptor, isAlive: { binding.isAlive })
         let requestID = UUID().uuidString
         try stream.write([
             "id": requestID, "method": "mailbox.native.subscribe",
@@ -451,11 +589,16 @@ enum GrokMailboxCommand {
     }
 
     static func birth(of pid: pid_t) -> UInt64? {
+        #if os(macOS)
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
         guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
               info.pbi_status != UInt32(SZOMB) else { return nil }
         return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
+        #else
+        guard let stat = LinuxProc.stat(pid), stat.state != "Z" else { return nil }
+        return LinuxProc.epochMicroseconds(stat)
+        #endif
     }
 
     fileprivate static var uptime: TimeInterval { ProcessInfo.processInfo.systemUptime }

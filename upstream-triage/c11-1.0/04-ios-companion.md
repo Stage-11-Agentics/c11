@@ -116,7 +116,7 @@ Cited from c11 `main` (read only).
 - **Read, reply and launch** all exist and run off-main without stealing focus: `read-screen`, `send` (it requires an explicit surface), and `launch-agent` with `--flag` and `--suppressed` (`CLI/c11.swift:2238, 2765-2832`; `Sources/SocketHandlers/SocketDispatch.swift:63-72`). One catch: only a real keystroke auto-lowers a flag (`Sources/GhosttyTerminalView.swift:5620-5626`), so a remote `send` would also need to call `lower-flag`.
 - **Fleet data.** `tree --json` lacks agent fields. Type, model, lifecycle and description are per-surface metadata (`Sources/SurfaceMetadataStore.swift:12-23`), and `tree --report` already joins them in (`CLI/c11.swift:13383-13480`).
 - **Prior design.** `docs/c11v-design.md` puts phone and web viewers in step 6, as clients of the same `c11d` protocol that c11 uses ("Steer the fleet from a phone"). Its prerequisite is a `c11d` on every host (steps 1 and 2). `ROADMAP.md:9` lists "Remote and cloud fleets". No Lattice ticket mentions iOS or mobile.
-- **Stage 11 already runs a push server.** `ntfy.stage11.ai` on pine (`code/platform/infrastructure-summary.md:35`; config in `code/pine-server/pine.py:1322-1331`). Gatus already alerts through it. The server config sets no `upstream-base-url` (see the rung 1 caveat).
+- **Stage 11 already runs a push server.** `ntfy.example.com` on the git server (`code/platform/infrastructure-summary.md:35`; config in `code/gitserver/gitserver.py:1322-1331`). Gatus already alerts through it. The server config sets no `upstream-base-url` (see the rung 1 caveat).
 
 ## The gap
 
@@ -127,7 +127,7 @@ Cited from c11 `main` (read only).
 | Read a tab | Live terminal stream | `read-screen` over the local socket only | Same server, read-only text |
 | Reply or approve | Composer, Feed, reply from push | `send` over the local socket only | An authenticated write path, plus `lower-flag` |
 | Launch a task | Task Composer | `launch-agent` over the local socket only | Same write path, constrained |
-| Works when the Mac is asleep | No (presence shows offline) | No | Agents on Atlas (topic 02), not a phone app |
+| Works when the Mac is asleep | No (presence shows offline) | No | Agents on the build host (topic 02), not a phone app |
 
 The real gap is not the iOS app. It is that **c11 has no authenticated way in from off the Mac.** Topic 02 (agents on SSH hosts) and the `c11d` design both hit the same wall. Whatever answers it there also answers the phone.
 
@@ -137,8 +137,8 @@ The real gap is not the iOS app. It is that **c11 has no authenticated way in fr
 
 - **Tailscale removes most of what cmux built.** Every machine, the iPhone included, is on one tailnet. Identity, NAT traversal, encryption and device ACLs come free, so there is no need for accounts, relays, a device registry or presence. cmux even added a Tailscale route itself (`CmxNetworkByteTransport.swift`).
 - **One user.** No teams or account ownership, which removes most of `workers/iroh-v2`.
-- **Atlas is always on and Hyperion roams.** The phone matters most for agents on Atlas while Atin is away from both Macs. A sleeping Hyperion is unreachable from any phone design, so agent placement (topic 02) matters more than the client.
-- **Push already exists.** `ntfy.stage11.ai` is running.
+- **The build host is always on and the laptop roams.** The phone matters most for agents on the build host while Atin is away from both Macs. A sleeping the laptop is unreachable from any phone design, so agent placement (topic 02) matters more than the client.
+- **Push already exists.** `ntfy.example.com` is running.
 - **c11 is a public product.** Anything that ships *in c11* must work for other users too. Those users don't have Atin's tailnet or ntfy, and c11 cannot hold an APNs key for them without running a push broker, which is exactly cmux's platform turn.
 
 ### The ladder (cheapest first)
@@ -146,7 +146,7 @@ The real gap is not the iOS app. It is that **c11 has no authenticated way in fr
 | Rung | What | Cost | Value | Stops being enough when |
 |---|---|---|---|---|
 | **1. Notification Command → ntfy** | Paste one `curl` into Settings > Notification Command, then subscribe in the ntfy iOS app | 10 minutes, zero code | Phone buzzes on every c11 notification, flags included | You want only flags, a deep link, or IDs in the message. You want to *act* without walking to a Mac. |
-| **2. Event forwarder → ntfy** | A ~100-line script (or an Overwatch job) that runs `c11 events tail -f --filter type=flag.raised` on each Mac, adds names from `get-metadata`, and posts to ntfy with priority, tags and a click URL. Optionally gate on `last_seen_at` / screen lock for "only when away" | S. Lives outside c11. | Flag-only, named, prioritized pushes from Atlas and Hyperion. ntfy action buttons can call an HTTP endpoint (for rung 3). | You want to read the screen or reply |
+| **2. Event forwarder → ntfy** | A ~100-line script (or an Overwatch job) that runs `c11 events tail -f --filter type=flag.raised` on each Mac, adds names from `get-metadata`, and posts to ntfy with priority, tags and a click URL. Optionally gate on `last_seen_at` / screen lock for "only when away" | S. Lives outside c11. | Flag-only, named, prioritized pushes from the build host and the laptop. ntfy action buttons can call an HTTP endpoint (for rung 3). | You want to read the screen or reply |
 | **3. Tailnet web view** | A small HTTP service on each Mac, bound to the tailnet with `tailscale serve`. It shells out to `c11 tree --report`, `flag.list`, `read-screen`, `send` and `lower-flag`, and serves one mobile page. Add to Home Screen as a PWA. | M | Read and reply from the phone. Covers about 80% of cmux's app for one operator. | You need live terminal streaming, background push without ntfy, or Live Activities |
 | **3b. Shortcuts** | iOS Shortcuts that call rung 3's endpoints ("Get contents of URL"): "What's flagged?" through Siri, "Reply to flagged" with dictation | S on top of 3 | Voice: fits how Atin already works | Needs rung 3 underneath. A home-screen *widget* needs either an app or a third-party widget host (Scriptable-style). **Not verified.** |
 | **4. Native iOS app** | SwiftUI client against rung 3's API, with its own APNs push, widgets and Live Activities | L to XL | Polish, lock-screen glanceability, reliable background push | Never, for one operator |
@@ -154,27 +154,27 @@ The real gap is not the iOS app. It is that **c11 has no authenticated way in fr
 Two side notes:
 
 - **Claude sessions may already be covered.** Claude Code's own Remote Control lets the Claude app drive a running Claude Code session. That partly covers reply for Claude sessions, but not for Codex, Grok or Kimi, and not with c11's flags. It is worth a look before building rung 3. **Not verified here** for Atin's setup.
-- **The rung 1 and 2 caveat: background push.** From ntfy's docs, not verified here: the ntfy iOS app gets instant background delivery from a self-hosted server only if the server sets `upstream-base-url: https://ntfy.sh`. With it, ntfy.sh receives a poll request carrying only a message ID and wakes the phone through APNs; the phone then fetches the content from `ntfy.stage11.ai` over the tailnet. Without it, iOS delivery is delayed. pine's config has no such line (`pine-server/pine.py:1325-1329`). Adding it is a one-line change, and the message content stays on pine. The phone also needs Tailscale connected to reach `ntfy.stage11.ai`, because that name resolves only through split DNS.
+- **The rung 1 and 2 caveat: background push.** From ntfy's docs, not verified here: the ntfy iOS app gets instant background delivery from a self-hosted server only if the server sets `upstream-base-url: https://ntfy.sh`. With it, ntfy.sh receives a poll request carrying only a message ID and wakes the phone through APNs; the phone then fetches the content from `ntfy.example.com` over the tailnet. Without it, iOS delivery is delayed. the git server's config has no such line (`gitserver/gitserver.py:1325-1329`). Adding it is a one-line change, and the message content stays on the git server. The phone also needs Tailscale connected to reach `ntfy.example.com`, because that name resolves only through split DNS.
 
 ### If it ever became an app: the sketch
 
 Atin asked what it would look like, so here are the five screens. Each one is a view of an existing c11 primitive.
 
-**1. Fleet at a glance** (`tree --report` across Atlas and Hyperion)
+**1. Fleet at a glance** (`tree --report` across the build host and the laptop)
 
 ```
 ┌──────────────────────────────┐
-│ c11              ● Atlas     │
-│                  ○ Hyperion  │  ← Hyperion asleep, last seen 14m
+│ c11              ● the build host     │
+│                  ○ the laptop  │  ← the laptop asleep, last seen 14m
 ├──────────────────────────────┤
 │ ⚑ 2 flagged   ◐ 5 waiting    │
 │ ● 9 working   ○ 3 idle       │
 ├──────────────────────────────┤
-│ Atlas · Lattice Hosted       │
+│ the build host · Lattice Hosted       │
 │  ⚑ Merge Captain   Opus  6m  │
 │  ● C11-241 Impl    Sonnet 2m │
 │  ◐ Reviewer        Codex 11m │
-│ Atlas · Overtone             │
+│ the build host · Overtone             │
 │  ● Eval sweep      Sonnet 1m │
 └──────────────────────────────┘
 ```
@@ -230,7 +230,7 @@ Atin asked what it would look like, so here are the five screens. Each one is a 
 
 ```
 ┌──────────────────────────────┐
-│ New task on  [Atlas ▾]       │
+│ New task on  [the build host ▾]       │
 │ Workspace    [Overtone ▾]    │
 │ Agent        [Opus planner▾] │  ← saved c11 config presets only
 │ ┌──────────────────────────┐ │
@@ -259,7 +259,7 @@ The doctrine pressure point is rung 3 living *inside* c11, because that would ma
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A. In Overwatch** (recommended) | Overwatch is already the fleet view, a Lattice extension shown as a browser tab (memory: Overwatch = Lattice substrate). It already spans Atlas and boxes, so it can show Atlas and Hyperion side by side. c11 stays socket-only. | Ties phone reach to Stage 11's stack, so public c11 users get nothing |
+| **A. In Overwatch** (recommended) | Overwatch is already the fleet view, a Lattice extension shown as a browser tab (memory: Overwatch = Lattice substrate). It already spans the build host and boxes, so it can show the build host and the laptop side by side. c11 stays socket-only. | Ties phone reach to Stage 11's stack, so public c11 users get nothing |
 | **B. A separate script in the c11 repo** (`scripts/` or `tools/`) | Ships with c11, so other users can run it. No in-app listener. | Unowned tooling rots. Each user has to set up their own tailnet or proxy. |
 | **C. In-app listener** (`c11 serve --tailnet`, built on the token relay at `Workspace.swift:2950`) | Best for public users; one switch in Settings | c11's first network-reachable surface, with a real security review and a new attack surface. Overlaps the `c11d` P1 work and should wait for it. |
 
@@ -276,15 +276,15 @@ The doctrine pressure point is rung 3 living *inside* c11, because that would ma
 ## Recommendation
 
 - **Not in 1.0.** A native app does not belong in this release or on the roadmap. cmux needed accounts, five hosted services and about half a million lines to do it. Tailscale plus ntfy gives one operator most of the value for almost nothing.
-- **Now, outside 1.0:** rung 1 today (you can do it yourself; the command is below), plus `upstream-base-url` on pine's ntfy.
+- **Now, outside 1.0:** rung 1 today (you can do it yourself; the command is below), plus `upstream-base-url` on the git server's ntfy.
 - **In 1.0, optional:** the small flag-notification fix (question 3), because it makes every later rung better and corrects the skill.
-- **Later:** rung 2, then rung 3 in Overwatch, once topic 02 decides where agents live. A phone view is most useful for Atlas-hosted agents.
+- **Later:** rung 2, then rung 3 in Overwatch, once topic 02 decides where agents live. A phone view is most useful for build-host-hosted agents.
 - **Never:** rung 4, unless c11 decides to become an account-backed platform. That would be a different product.
 
 Rung 1, ready to paste into Settings > Notification Command (topic name is a suggestion):
 
 ```sh
-curl -s -H "Title: $CMUX_NOTIFICATION_TITLE" -H "Tags: c11" -d "$CMUX_NOTIFICATION_SUBTITLE $CMUX_NOTIFICATION_BODY" https://ntfy.stage11.ai/c11-hyperion
+curl -s -H "Title: $CMUX_NOTIFICATION_TITLE" -H "Tags: c11" -d "$CMUX_NOTIFICATION_SUBTITLE $CMUX_NOTIFICATION_BODY" https://ntfy.example.com/c11-laptop
 ```
 
 ## Open questions

@@ -20,6 +20,8 @@ extension CMUXCLI {
         explicitPassword: String?,
         launchIfNeeded: Bool
     ) throws -> SocketClient {
+        // A refused socket variable is an error, never a reason to launch (C11H-282).
+        try SocketClient.throwIfRefused(path: socketPath)
         let client = SocketClient(path: socketPath)
         if launchIfNeeded && (try? client.connect()) == nil {
             client.close()
@@ -47,6 +49,8 @@ extension CMUXCLI {
         explicitPassword: String?,
         socketPath: String
     ) throws {
+        // The relay is admitted by c11 on the far side, not by a socket password.
+        guard !client.isRelayed else { return }
         if let socketPassword = SocketPasswordResolver.resolve(
             explicit: explicitPassword,
             socketPath: socketPath,
@@ -61,6 +65,7 @@ extension CMUXCLI {
     }
 
     func launchApp() throws {
+        if Self.recordLaunchForTest("launch") { return }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = ["-a", "c11"]
@@ -68,7 +73,26 @@ extension CMUXCLI {
         process.waitUntilExit()
     }
 
+    /// Test seam: with `C11_CLI_TEST_LAUNCH_LOG` set, launching or activating
+    /// c11 appends a line to that file instead of running `open`, so a host
+    /// test can prove nothing was launched without launching anything.
+    static func recordLaunchForTest(_ action: String) -> Bool {
+        guard let log = ProcessInfo.processInfo.environment["C11_CLI_TEST_LAUNCH_LOG"], !log.isEmpty else {
+            return false
+        }
+        if !FileManager.default.fileExists(atPath: log) {
+            FileManager.default.createFile(atPath: log, contents: nil)
+        }
+        if let handle = FileHandle(forWritingAtPath: log) {
+            handle.seekToEndOfFile()
+            handle.write(Data((action + "\n").utf8))
+            handle.closeFile()
+        }
+        return true
+    }
+
     func activateApp() throws {
+        if Self.recordLaunchForTest("activate") { return }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = ["-a", "c11"]
@@ -234,6 +258,20 @@ extension CMUXCLI {
                let handle = id ?? ref {
                 return handle
             }
+        }
+        // c11 (C11H-197): a window's name is a ref too. Names are unique,
+        // ignoring case, and never look like a UUID, ref or index.
+        let fold: (String) -> String = {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        }
+        let wanted = fold(token)
+        let named = windows.filter { ($0["name"] as? String).map(fold) == wanted }
+        if !wanted.isEmpty, named.count == 1, let handle = (named[0]["id"] as? String) ?? (named[0]["ref"] as? String) {
+            return handle
+        }
+        if named.count > 1 {
+            throw CLIError(message: "ambiguous: more than one window is named '\(raw)'")
         }
         throw CLIError(message: "not_found: " + String(format:
             String(localized: "cli.window.unknown", defaultValue: "Unknown window '%@'."), raw))
@@ -552,6 +590,17 @@ extension CMUXCLI {
                 index += 1
                 continue
             }
+            // Workspace metadata keeps legacy --json '{...}' input, while a
+            // bare --json is the ordinary output flag. --json-input is always
+            // an input and supports every placement without ambiguity.
+            if command == "set-workspace-metadata", argument == "--json" {
+                let next = index + 1 < args.count ? args[index + 1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                if !next.hasPrefix("{") && !next.hasPrefix("[") {
+                    requestsJSON = true
+                    index += 1
+                    continue
+                }
+            }
             if spec.flags.contains(argument), !spec.valueOptions.contains(argument) {
                 // A boolean, including literal `--name=value` spellings a
                 // parser compares whole (`--auto-expand=true`).
@@ -648,10 +697,10 @@ extension CMUXCLI {
              "undelegate", "suppress", "unsuppress", "new-panel", "close-panel", "area-confirm", "refresh-panels",
              "panel-health", "debug-terminals", "trigger-flash", "cancel-flash", "list-panels", "focus-panel",
              "close-workspace", "select-workspace", "get-workspace-root", "current-workspace", "read-selection",
-             "input-state", "read-screen", "notify", "list-notifications", "clear-notifications", "list-status",
+             "input-state", "retry-input", "read-screen", "notify", "list-notifications", "clear-notifications", "list-status",
              "clear-progress", "clear-log", "list-log", "sidebar-state", "set-agent", "set-metadata",
              "get-metadata", "clear-metadata", "simulate-app-active", "markdown-content", "usage", "report",
-             "remote-daemon-status", "health", "doctor", "feedback", "agents", "capture-pane",
+             "remote-daemon-status", "health", "doctor", "hc-diagnostics", "feedback", "agents", "capture-pane",
              "swap-pane", "break-pane", "join-pane", "last-window", "next-window", "previous-window", "last-pane",
              "clear-history", "paste-buffer", "list-buffers", "browser-back", "browser-forward",
              "browser-reload", "get-url", "focus-webview", "is-webview-focused":
@@ -659,9 +708,9 @@ extension CMUXCLI {
         case "move-panel", "reorder-panel", "reorder-workspace", "set-panel-icon", "set-panel-color", "restore",
              "new-split", "new-area", "focus-area", "raise-flag", "drag-panel-to-split", "set-workspace-root",
              "send-key", "send-key-panel", "set-app-focus", "guide", "wait-for", "agent-event", "history",
-             "agent-hook", "codex-hook", "resize-pane":
+             "agent-hook", "codex-hook", "resize-pane", "notify-level":
             return .atMost(1)
-        case "rpc", "resize-window":
+        case "rpc", "resize-window", "notify-sound":
             return .atMost(2)
         case "workspace":
             if first == "recents" {
@@ -691,12 +740,27 @@ extension CMUXCLI {
                         "stop-failure": 1, "subagent-start": 1, "subagent-stop": 1, "pre-compact": 1,
                         "permission-request": 1, "help": 1])
         case "messages": return sub(["view": 1, "help": 1])
+        case "show":
+            return firstCommandWord(args, valueOptions: ["--dir", "--wait"]) == "close" ? .atMost(2) : .atMost(1)
         case "journal": return sub(["query": 1, "export": 1, "clear": 1])
         case "skill":
-            return sub(["path": 1, "status": 1, "list": 1, "install": 1, "remove": 1, "uninstall": 1, "help": 1])
+            // install and remove take any number of package names (C11H-269).
+            if let first, ["install", "remove", "uninstall"].contains(first) { return .any }
+            return sub(["path": 1, "status": 1, "list": 1, "help": 1])
         case "terminal-theme": return sub(["list": 1, "clear": 1])
         case "model-costs": return sub(["list": 1, "help": 1])
         case "flag-kind": return sub(["list": 1, "set": 1, "rm": 1, "help": 1])
+        case "machine": return sub(["list": 1, "set": 1, "rm": 1, "link": 1, "unlink": 1, "audit": 1, "help": 1])
+        case "chaos": return sub(["draw": 1, "cast": 1, "help": 1])
+        // c11 (C11H-197): a window name may be several words.
+        case "window":
+            guard let first else { return .atMost(0) }
+            switch first {
+            case "list", "ls", "move": return .atMost(1)
+            case "name", "rename": return .any
+            default: return .any
+            }
+        case "display": return sub(["list": 1, "ls": 1])
         case "events": return sub(["tail": 1, "help": 1])
         case "config": return sub(["list": 1, "recent": 1, "stats": 1])
         case "themes":
@@ -929,8 +993,12 @@ extension CMUXCLI {
             return journalFlagPreflightSpec(args)
         case "agent-event":
             return CLIFlagPreflightSpec(flags: ["--stdin"])
-        case "brand", "list-workspaces", "capabilities", "fleet":
+        case "brand", "list-workspaces", "capabilities":
             return CLIFlagPreflightSpec(flags: ["--json"])
+        case "fleet":
+            // C11H-320: server-side filters and the delta cursor.
+            return CLIFlagPreflightSpec(flags: ["--json", "--flagged", "--blocked", "--stalled"],
+                                        valueOptions: ["--workspace", "--group", "--lifecycle", "--parent", "--since"])
         case "app":
             if firstCommandWord(args, valueOptions: []) == "restart" {
                 return CLIFlagPreflightSpec(flags: ["--no-resume", "--json"])
@@ -945,6 +1013,10 @@ extension CMUXCLI {
         case "claude-teams":
             // This command forwards its remaining argv verbatim to Claude Code.
             // Those flags belong to the child CLI, not c11's parser.
+            return nil
+        case "hc":
+            // `hc run --cwd <dir> --env K=V -- <program> --help`: the words are
+            // hc's grammar, parsed by `HCManagedCommandParser`.
             return nil
         case "terminal-theme":
             return terminalThemeFlagPreflightSpec(args)
@@ -964,6 +1036,8 @@ extension CMUXCLI {
             return stateFlagPreflightSpec(args)
         case "events":
             return eventsFlagPreflightSpec(args)
+        case "show":
+            return CLIFlagPreflightSpec(valueOptions: ["--dir", "--wait"], honorsEndOfOptions: true)
         case "messages":
             return CLIFlagPreflightSpec(valueOptions: ["--workspace"])
         case "mailbox":
@@ -980,7 +1054,7 @@ extension CMUXCLI {
                 valueOptions: ["--key", "--panel", "--area", "--workspace"]
             )
         case "get-workspace-metadata":
-            return CLIFlagPreflightSpec(valueOptions: ["--workspace", "--key"])
+            return CLIFlagPreflightSpec(flags: ["--sources", "--include-sources"], valueOptions: ["--workspace", "--group", "--window", "--key"])
         case "set-workspace-description", "set-workspace-icon":
             return CLIFlagPreflightSpec(valueOptions: ["--workspace", "--value"])
         case "clear-notifications":
@@ -992,11 +1066,27 @@ extension CMUXCLI {
                 flags: ["--json"],
                 valueOptions: values
             )
+        case "chaos":
+            return CLIFlagPreflightSpec(flags: ["--json", "--dry-run", "--prompts"], valueOptions: ["--mode", "--seed"])
+        case "machine":
+            switch args.first?.lowercased() {
+            case "list": return CLIFlagPreflightSpec(flags: ["--json"])
+            case "set": return CLIFlagPreflightSpec(
+                flags: ["--json", "--clear-name", "--clear-color"], valueOptions: ["--id", "--name", "--color"]
+            )
+            case "rm": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--id"])
+            case "link": return CLIFlagPreflightSpec(flags: ["--json", "--yes", "--update"], valueOptions: ["--host", "--name", "--artifacts"])
+            case "unlink": return CLIFlagPreflightSpec(flags: ["--json", "--yes", "--dry-run"], valueOptions: ["--id", "--session"])
+            case "audit": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--limit", "--machine", "--kind"])
+            default: return CLIFlagPreflightSpec(flags: ["--json"])
+            }
+        case "notify-level", "notify-sound":
+            return CLIFlagPreflightSpec(flags: ["--json"])
         case "flag-kind":
             switch args.first?.lowercased() {
             case "list": return CLIFlagPreflightSpec(flags: ["--json"])
             case "set": return CLIFlagPreflightSpec(
-                flags: ["--json"], valueOptions: ["--id", "--name", "--color", "--emoji"]
+                flags: ["--json"], valueOptions: ["--id", "--name", "--color", "--emoji", "--evaporate-seconds", "--sound"]
             )
             case "rm": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--id"])
             default: return CLIFlagPreflightSpec(flags: ["--json"])
@@ -1064,17 +1154,17 @@ extension CMUXCLI {
         case "new-area":
             return CLIFlagPreflightSpec(
                 flags: ["--allow-undersized", "--force", "--json"],
-                valueOptions: ["--type", "--command", "--direction", "--workspace", "--url", "--file", "--title", "--cwd", "--profile"]
+                valueOptions: ["--type", "--command", "--direction", "--workspace", "--url", "--file", "--title", "--cwd", "--profile", "--on"]
             )
         case "new-panel":
             return CLIFlagPreflightSpec(
                 flags: ["--no-focus", "--json"],
-                valueOptions: ["--type", "--command", "--area", "--workspace", "--url", "--file", "--cwd", "--title", "--profile"]
+                valueOptions: ["--type", "--command", "--area", "--workspace", "--url", "--file", "--cwd", "--title", "--profile", "--on"]
             )
         case "launch-agent":
             return CLIFlagPreflightSpec(
                 flags: ["--new-workspace", "--delegated", "--suppressed", "--no-focus", "--json"],
-                valueOptions: ["--type", "--model", "--effort", "--system-prompt-mode", "--system-prompt", "--system-prompt-file", "--task", "--area", "--workspace", "--cwd", "--prompt", "--prompt-file", "--title", "--flag", "--by", "--env"]
+                valueOptions: ["--type", "--model", "--effort", "--system-prompt-mode", "--system-prompt", "--system-prompt-file", "--task", "--area", "--workspace", "--cwd", "--prompt", "--prompt-file", "--title", "--flag", "--by", "--env", "--on", "--wait-ready", "--split"]
             )
         case "break-pane":
             return CLIFlagPreflightSpec(
@@ -1113,6 +1203,22 @@ extension CMUXCLI {
             return CLIFlagPreflightSpec(valueOptions: ["--os", "--arch"])
         case "focus-window", "close-window", "resize-window":
             return CLIFlagPreflightSpec(valueOptions: ["--window"])
+        // c11 (C11H-197)
+        // A trailing --json / --id-format stays global: preflight strips it.
+        case "window":
+            switch args.first?.lowercased() {
+            case "name", "rename":
+                return CLIFlagPreflightSpec(flags: ["--clear"], valueOptions: ["--window"])
+            case "move":
+                return CLIFlagPreflightSpec(
+                    flags: ["--fill", "--left-half", "--right-half"],
+                    valueOptions: ["--window", "--display", "--frame"]
+                )
+            default:
+                return CLIFlagPreflightSpec()
+            }
+        case "display":
+            return CLIFlagPreflightSpec()
         case "move-workspace-to-window":
             return CLIFlagPreflightSpec(valueOptions: ["--workspace", "--window"])
         case "move-panel":
@@ -1166,7 +1272,14 @@ extension CMUXCLI {
         case "snapshot":
             return CLIFlagPreflightSpec(flags: ["--all"], valueOptions: ["--workspace", "--out"])
         case "restore":
-            return CLIFlagPreflightSpec(flags: ["--in-place", "--replace"])
+            // C11H-196: `restore status|run` is the host-end restore; any other
+            // first word is a snapshot id or path (ULIDs and paths are never
+            // these words).
+            switch args.first?.lowercased() {
+            case "status": return CLIFlagPreflightSpec(flags: ["--json"])
+            case "run": return CLIFlagPreflightSpec(flags: ["--all", "--dry-run", "--json"], valueOptions: ["--panel"])
+            default: return CLIFlagPreflightSpec(flags: ["--in-place", "--replace"])
+            }
         case "list-snapshots":
             return CLIFlagPreflightSpec(flags: ["--sets", "--all"])
         case "new-workspace":
@@ -1185,7 +1298,7 @@ extension CMUXCLI {
         case "focus-area":
             return CLIFlagPreflightSpec(valueOptions: ["--area", "--workspace"])
         case "close-panel":
-            return CLIFlagPreflightSpec(valueOptions: panelAndWorkspace)
+            return CLIFlagPreflightSpec(valueOptions: panelAndWorkspace.union(["--expect-title"]))
         case "area-confirm":
             return CLIFlagPreflightSpec(
                 flags: ["--destructive"],
@@ -1203,6 +1316,10 @@ extension CMUXCLI {
             return CLIFlagPreflightSpec(valueOptions: ["--workspace"])
         case "health":
             return CLIFlagPreflightSpec(flags: ["--since-boot"], valueOptions: ["--since", "--rail"])
+        case "hc-diagnostics":
+            return CLIFlagPreflightSpec()
+        case "core":
+            return CLIFlagPreflightSpec(valueOptions: ["--workspace"])
         case "trigger-flash":
             return CLIFlagPreflightSpec(flags: ["--persistent"], valueOptions: panelAndWorkspace.union(["--color"]))
         case "cancel-flash":
@@ -1266,7 +1383,7 @@ extension CMUXCLI {
             return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: panelAndWorkspace)
         case "markdown-content":
             return CLIFlagPreflightSpec(valueOptions: ["--panel"])
-        case "input-state":
+        case "input-state", "retry-input":
             return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: panelAndWorkspace)
         case "read-screen":
             return CLIFlagPreflightSpec(flags: ["--scrollback"], valueOptions: ["--workspace", "--panel", "--lines"])
@@ -1279,17 +1396,20 @@ extension CMUXCLI {
         case "send-key", "send-key-panel":
             return CLIFlagPreflightSpec(valueOptions: panelAndWorkspace, honorsEndOfOptions: true)
         case "notify":
-            return CLIFlagPreflightSpec(valueOptions: ["--title", "--subtitle", "--body", "--workspace", "--panel"])
+            return CLIFlagPreflightSpec(
+                flags: ["--needs-you"],
+                valueOptions: ["--title", "--subtitle", "--body", "--workspace", "--panel"]
+            )
         case "list-notifications":
             return CLIFlagPreflightSpec()
         case "set-agent":
             return CLIFlagPreflightSpec(valueOptions: ["--type", "--model", "--task", "--role", "--panel", "--workspace"])
         case "set-workspace-metadata":
-            return CLIFlagPreflightSpec(valueOptions: ["--workspace", "--key", "--value", "--json"])
+            return CLIFlagPreflightSpec(valueOptions: ["--workspace", "--group", "--window", "--key", "--value", "--json", "--json-input", "--body", "--type", "--mode", "--source"])
         case "clear-metadata":
             return CLIFlagPreflightSpec(valueOptions: ["--key", "--source", "--panel", "--area", "--workspace"])
         case "clear-workspace-metadata":
-            return CLIFlagPreflightSpec(valueOptions: ["--key", "--workspace"])
+            return CLIFlagPreflightSpec(valueOptions: ["--key", "--workspace", "--group", "--window", "--source"])
         case "claude-hook":
             return CLIFlagPreflightSpec(valueOptions: ["--workspace", "--panel"])
         case "set-app-focus":
@@ -1344,8 +1464,10 @@ extension CMUXCLI {
 
     func themesFlagPreflightSpec(_ args: [String], allowInherit: Bool) -> CLIFlagPreflightSpec {
         switch args.first?.lowercased() {
-        case "get": return CLIFlagPreflightSpec(valueOptions: ["--slot"])
-        case "set": return CLIFlagPreflightSpec(valueOptions: ["--slot"])
+        // c11 (C11H-197): --window targets one window's own theme.
+        case "get": return CLIFlagPreflightSpec(valueOptions: ["--slot", "--window"])
+        case "set": return CLIFlagPreflightSpec(flags: ["--with-terminal"], valueOptions: ["--slot", "--window"])
+        case "clear": return CLIFlagPreflightSpec(valueOptions: ["--window"])
         case "dump": return CLIFlagPreflightSpec(flags: ["--json"], valueOptions: ["--color-scheme"])
         case "inherit" where allowInherit:
             return CLIFlagPreflightSpec(valueOptions: ["--as"])
@@ -1612,15 +1734,15 @@ extension CMUXCLI {
         case "save", "edit":
             return CLIFlagPreflightSpec(
                 flags: json,
-                valueOptions: ["--harness", "--model", "--effort", "--system-prompt", "--system-prompt-file", "--system-prompt-mode", "--command", "--initial-prompt", "--env"]
+                valueOptions: ["--harness", "--model", "--effort", "--system-prompt", "--system-prompt-file", "--system-prompt-mode", "--command", "--initial-prompt", "--env", "--machine"]
             )
         case "rm": return CLIFlagPreflightSpec(flags: json)
         case "reorder": return CLIFlagPreflightSpec(flags: json, valueOptions: ["--to"])
         case "default": return CLIFlagPreflightSpec(flags: json.union(["--pin-current"]))
         case "launch":
             return CLIFlagPreflightSpec(
-                flags: json.union(["--new-workspace"]),
-                valueOptions: ["--prompt", "--prompt-file", "--area", "--pane", "--workspace", "--cwd"]
+                flags: json.union(["--new-workspace", "--delegated", "--suppressed"]),
+                valueOptions: ["--prompt", "--prompt-file", "--area", "--pane", "--workspace", "--cwd", "--title"]
             )
         default: return CLIFlagPreflightSpec()
         }
@@ -1670,7 +1792,7 @@ extension CMUXCLI {
         switch args.first?.lowercased() {
         case "send":
             return CLIFlagPreflightSpec(
-                flags: ["--urgent", "--json", "--to-parent"],
+                flags: ["--urgent", "--json", "--to-parent", "--to-captain"],
                 valueOptions: MailboxSendArguments.valueFlags,
                 honorsEndOfOptions: true
             )
@@ -1936,7 +2058,7 @@ extension CMUXCLI {
                 valueOptionsRejectingLongFlags: ["--command"],
                 honorsEndOfOptions: true
             )
-        case "read-selection", "input-state":
+        case "read-selection", "input-state", "retry-input":
             return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: true)
         case "get-metadata":
             // These values are extracted by optionValue/collectRepeatedOption.
@@ -1969,6 +2091,9 @@ extension CMUXCLI {
             return browserPanelTargetPreflightSpec(args)
         case "get-url", "is-webview-focused":
             return PanelTargetPreflightSpec(valueOptions: ["--id-format"], honorsEndOfOptions: true)
+        case "restore":
+            return args.first?.lowercased() == "run"
+                ? PanelTargetPreflightSpec(valueOptions: [], honorsEndOfOptions: false) : nil
         case "conversation":
             switch args.first?.lowercased() {
             case "list": return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: false)
@@ -1986,7 +2111,7 @@ extension CMUXCLI {
             default: return nil
             }
         case "close-panel":
-            return PanelTargetPreflightSpec(valueOptions: ["--workspace"], honorsEndOfOptions: false)
+            return PanelTargetPreflightSpec(valueOptions: ["--workspace", "--expect-title"], honorsEndOfOptions: false)
         default:
             return nil
         }
@@ -2151,9 +2276,13 @@ extension CMUXCLI {
     /// Say so when the target had no PTY yet and the payload is waiting to flush
     /// on attach — that is the one case where the send has *not* reached anyone.
     func sendTextSummary(_ payload: [String: Any], idFormat: CLIIDFormat) -> String {
+        // C11H-298: the printed state says whether the Return went out (`return_written`, when the server
+        // reports it) and whether the agent took the line (`confirmed`); `submitted` alone means the latter
+        // for an agent.
         let status = SendTextDelivery.summary(
             queued: (payload["queued"] as? Bool) ?? false,
-            submitted: (payload["submitted"] as? Bool) ?? false
+            submitted: (payload["return_written"] as? Bool) ?? (payload["submitted"] as? Bool) ?? false,
+            confirmed: (payload["confirmed"] as? Bool) ?? false
         )
         let inputGuard = payload["input_guard"] as? String ?? "unguarded"
         return v2OKSummary(payload, idFormat: idFormat) + " " + status
@@ -2350,5 +2479,30 @@ extension CMUXCLI {
     func printSizeWarning(_ payload: [String: Any]) {
         guard let warning = payload["size_warning"] as? String, !warning.isEmpty else { return }
         FileHandle.standardError.c11SafeWrite(Data(("note: " + warning + "\n").utf8))
+    }
+}
+
+extension CMUXCLI {
+    /// C11H-24: ask the app how explicit closes ended these hc panels. The app
+    /// waits up to 5 s for hc's evidence, under the socket deadline.
+    func hcSessionEndRows(panelIds: [String], client: SocketClient) throws -> [[String: Any]] {
+        guard !panelIds.isEmpty else { return [] }
+        let payload = try client.sendV2(
+            method: "panel.end_status",
+            params: ["panel_ids": panelIds, "timeout_ms": 5000]
+        )
+        return (payload["session_end"] as? [[String: Any]]) ?? []
+    }
+
+    /// The OK line, then one line per ended panel: `<handle>  <message>`.
+    func hcSessionEndText(_ summary: String, rows: [[String: Any]], idFormat: CLIIDFormat) -> String {
+        var lines = [summary]
+        for row in rows {
+            let handle = formatHandle(row, kind: "panel", idFormat: idFormat)
+                ?? (row["panel_id"] as? String) ?? "?"
+            let message = (row["message"] as? String) ?? ((row["outcome"] as? String) ?? "")
+            lines.append("\(handle)  \(message)")
+        }
+        return lines.joined(separator: "\n")
     }
 }

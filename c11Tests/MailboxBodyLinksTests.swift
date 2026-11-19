@@ -20,6 +20,14 @@ final class MailboxBodyLinksTests: XCTestCase {
         String(MailboxBodyLinks.attributed(text).characters)
     }
 
+    func testC11hPanelLinkIsALink() throws {
+        let body = "Jump to [Core](c11://panel/\(panelID)) or c11://panel/\(panelID)."
+        let found = links(body)
+        XCTAssertEqual(found.map(\.text), ["Core", "c11://panel/\(panelID)"])
+        let url = try XCTUnwrap(found.first?.url)
+        XCTAssertEqual(PanelLinkTarget(url.absoluteString), .panel(UUID(uuidString: panelID)!))
+    }
+
     func testTitledPanelLinkShowsItsTitle() throws {
         let body = "Review is in [Review Seat](c11://panel/\(panelID)), take a look."
         let found = links(body)

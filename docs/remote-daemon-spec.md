@@ -37,6 +37,8 @@ This is a **living implementation spec** (also called an **execution spec**): a 
 - `DONE` daemon now exposes session resize-coordinator RPC (`session.open`, `session.attach`, `session.resize`, `session.detach`, `session.status`, `session.close`).
 - `DONE` transport-level proxy failures now escalate from broker retry to full daemon re-bootstrap/reconnect in the session controller.
 - `DONE` SOCKS handshake parsing now preserves pipelined post-connect payload bytes instead of dropping request-prefix bytes.
+- `DONE` the local broker requires a credential drawn fresh on every broker start (workspaces with the same transport key share one broker, so they share its credential): SOCKS5 username/password (RFC 1929; no-auth is refused) and HTTP CONNECT Basic `Proxy-Authorization` (407 otherwise). WebKit and the favicon session receive it with the proxy configuration, so no other local client, including another account on the Mac, can use the tunnel. `workspace.remote.status` reports it only in Debug builds, for the `tests_v2` ssh scripts.
+- `DONE` a remote workspace's browser fails closed while its broker is down or not yet up: both proxies point at a refusing loopback listener c11 holds for its life (no failover), the favicon fetch is skipped rather than sent direct, and the panel shows the stored remote status. WebKit always bypasses proxies for literal `localhost` and `127.0.0.1`, which is why c11 rewrites loopback URLs to `c11-loopback.localtest.me`. (C11H-386 found the bypass is wider: WebKit sends a load to any of this Mac's own addresses around the proxy, link-local, every interface address and IPv4-mapped forms included, so a guarded show viewer carries its own list for all of them, `ShowViewerLoopbackBlocker`.) In c11 ssh workspaces a content rule list therefore blocks every WebKit load whose URL host is a literal loopback (`localhost`, `*.localhost`, 127.0.0.0/8, `0.0.0.0`, `::1` and its mapped forms), and c11's own favicon fetch neither requests such a host nor follows a redirect to one.
 - `DONE` `workspace.remote.configure.local_proxy_port` exists as an internal deterministic test hook for bind-conflict regression coverage.
 - `DONE` bootstrap/probe failures surface actionable details.
 - `DONE` interactive bootstrap installs session-scoped `c11` and `cmux` stubs that report remote commands unavailable.
@@ -201,7 +203,7 @@ Before declaring browser proxying complete:
 
 ### 10.2 SSH Option Precedence
 1. `StrictHostKeyChecking` default (`accept-new`) is only injected when no user override is present.
-2. Control-socket defaults (`ControlMaster`, `ControlPersist`, `ControlPath`) are only injected when missing.
+2. Control-socket defaults (`ControlMaster`, `ControlPersist`, `ControlPath`) are only injected when missing. The default `ControlPath` is `<per-user temp folder>/c11-ssh/<relay port>-<random token>`: a 0700 folder the CLI creates and checks (a real directory, owned by the user, no group or other bits), which the terminal's startup script recreates and checks again before ssh binds there. It is never shared `/tmp`, and it leaves room for OpenSSH's 17-byte bind suffix inside the 104-byte socket path limit.
 3. SSH option key matching is case-insensitive for precedence checks in both CLI-built commands and remote configure payloads.
 
 ### 10.3 SSH Docker E2E Harness Knobs

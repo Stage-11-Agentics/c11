@@ -265,6 +265,21 @@ final class SessionFinderTests: XCTestCase {
         XCTAssertNil(SessionFinder.resumeCommand(kind: "claude-code", sessionID: "not-a-uuid", cwd: cwd))
     }
 
+    /// C11H-365 (N12): `find --open` never types a transcript's folder that
+    /// holds a control byte; the resume runs without its `cd`. Fails with the
+    /// control-byte check in `usableCwd` removed.
+    func testResumeDropsAFolderHoldingAControlByte() throws {
+        for cwd in ["/tmp/a\u{15}b", "/tmp/a\u{7F}b", "/tmp/a\u{1B}[2Kb"] {
+            let command = try XCTUnwrap(SessionFinder.resumeCommand(kind: "claude-code", sessionID: claudeID, cwd: cwd))
+            XCTAssertFalse(command.contains("cd "), command.debugDescription)
+            XCTAssertFalse(containsTerminalControlByte(command), command.debugDescription)
+            let call = SessionFinder.resumeCall(command: command, cwd: cwd, callerWorkspaceID: nil)
+            XCTAssertNil(call.params["cwd"], "the folder is not passed to the new terminal either")
+        }
+        let plain = try XCTUnwrap(SessionFinder.resumeCommand(kind: "codex", sessionID: codexID, cwd: "/tmp/proj"))
+        XCTAssertTrue(plain.hasPrefix("cd '/tmp/proj' && "), plain)
+    }
+
     func testSocketParamsOmitTitleAndQuery() {
         let command = "cd '/tmp/proj' && claude --dangerously-skip-permissions --resume '\(claudeID)'"
         let call = SessionFinder.resumeCall(command: command, cwd: "/tmp/proj", callerWorkspaceID: "WS-CALLER")

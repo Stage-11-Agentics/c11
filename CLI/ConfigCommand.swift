@@ -94,7 +94,8 @@ private func cfgFields(_ args: [String]) throws -> ConfigFields {
         systemPromptText: sysText,
         command: cfgOption(args, "--command"),
         initialPrompt: cfgOption(args, "--initial-prompt"),
-        env: try cfgEnv(args)
+        env: try cfgEnv(args),
+        machine: cfgOption(args, "--machine")
     )
 }
 
@@ -204,18 +205,114 @@ func runConfigCommand(commandArgs: [String], jsonOutput: Bool) throws {
 
 // MARK: - config launch (socket-bound; builds params for the config.launch method)
 
+/// One `config launch` argv scan. Value-taking options consume the next token
+/// even when that token starts with `--`, so `--title=--delegated` is a title
+/// and not a delegation request. Boolean flags do not consume the next token,
+/// so `--delegated NAME` still finds the name. Preflight splits `--name=value`
+/// into two tokens before this runs; the equals form is accepted here too.
+private struct ConfigLaunchArgv {
+    var name: String?
+    var delegated = false
+    var title: String?
+    var prompt: String?
+    var promptFile: String?
+    var area: String?
+    var pane: String?
+    var workspace: String?
+    var cwd: String?
+    var newWorkspace = false
+    var json = false
+}
+
+private func parseConfigLaunchArgv(_ args: [String]) -> ConfigLaunchArgv {
+    #if DEBUG
+    CLIFlagReadLog.read([
+        "--prompt", "--prompt-file", "--area", "--pane", "--workspace", "--cwd", "--title",
+        "--new-workspace", "--delegated", "--suppressed", "--json",
+    ])
+    #endif
+    let valueOptions: Set<String> = [
+        "--prompt", "--prompt-file", "--area", "--pane", "--workspace", "--cwd", "--title",
+    ]
+    var parsed = ConfigLaunchArgv()
+    var values: [String: String] = [:]
+    var index = 0
+    while index < args.count {
+        let token = args[index]
+        if token == "--" {
+            index += 1
+            continue
+        }
+        if token.hasPrefix("--") {
+            let flag: String
+            let inline: String?
+            if let equals = token.firstIndex(of: "=") {
+                flag = String(token[..<equals])
+                inline = String(token[token.index(after: equals)...])
+            } else {
+                flag = token
+                inline = nil
+            }
+            if valueOptions.contains(flag) {
+                let value: String?
+                if let inline {
+                    value = inline
+                    index += 1
+                } else if let taken = configLaunchOptionValue(args, index: index) {
+                    value = taken.value
+                    index = taken.next
+                } else {
+                    value = nil
+                    index += 1
+                }
+                if let value, values[flag] == nil {
+                    values[flag] = value
+                }
+                continue
+            }
+            // A boolean does not take the next token.
+            switch token {
+            case "--delegated", "--suppressed": parsed.delegated = true
+            case "--new-workspace": parsed.newWorkspace = true
+            case "--json": parsed.json = true
+            default: break
+            }
+            index += 1
+            continue
+        }
+        if parsed.name == nil { parsed.name = token }
+        index += 1
+    }
+    parsed.title = values["--title"]
+    parsed.prompt = values["--prompt"]
+    parsed.promptFile = values["--prompt-file"]
+    parsed.area = values["--area"]
+    parsed.pane = values["--pane"]
+    parsed.workspace = values["--workspace"]
+    parsed.cwd = values["--cwd"]
+    return parsed
+}
+
+/// The token after a value-taking option is that option's value, even when the
+/// token itself starts with `--`. Removing this boundary makes
+/// `--title --delegated` and the preflight-split form of `--title=--delegated`
+/// look like a delegation flag.
+private func configLaunchOptionValue(_ args: [String], index: Int) -> (value: String, next: Int)? {
+    guard index + 1 < args.count else { return nil }
+    return (args[index + 1], index + 2)
+}
+
 /// Parse `config launch` subArgs into the socket param dict. Placement/prompt
 /// validation reuses `ConfigCommandCore.parseLaunchInputs` so the CLI and socket
 /// surfaces share one rulebook. Returns the params for the `config.launch`
 /// method plus whether JSON output was requested.
 func buildConfigLaunchParams(subArgs: [String]) throws -> (params: [String: Any], json: Bool) {
-    guard let ref = cfgFirstPositional(subArgs) else {
+    let argv = parseConfigLaunchArgv(subArgs)
+    guard let ref = argv.name else {
         throw CLIError(message: "config launch requires a <name|id>")
     }
-    let promptInline = cfgOption(subArgs, "--prompt")
-    let promptFile = cfgOption(subArgs, "--prompt-file")
     var promptFileContents: String?
-    if let promptFile {
+    if let promptFile = argv.promptFile {
         guard let contents = try? String(contentsOfFile: cfgResolvePath(promptFile), encoding: .utf8),
               !contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CLIError(message: "config launch: failed to read --prompt-file: \(promptFile)")
@@ -226,14 +323,14 @@ func buildConfigLaunchParams(subArgs: [String]) throws -> (params: [String: Any]
     do {
         inputs = try ConfigCommandCore.parseLaunchInputs(
             nameOrId: ref,
-            pane: cfgOption(subArgs, "--area") ?? cfgOption(subArgs, "--pane"),
-            workspace: cfgOption(subArgs, "--workspace"),
-            newWorkspace: cfgFlag(subArgs, "--new-workspace"),
-            cwd: cfgOption(subArgs, "--cwd").map(cfgResolvePath),
-            prompt: promptInline,
-            promptFile: promptFile,
+            pane: argv.area ?? argv.pane,
+            workspace: argv.workspace,
+            newWorkspace: argv.newWorkspace,
+            cwd: argv.cwd.map(cfgResolvePath),
+            prompt: argv.prompt,
+            promptFile: argv.promptFile,
             promptFileContents: promptFileContents,
-            json: cfgFlag(subArgs, "--json")
+            json: argv.json
         )
     } catch let e as ConfigCoreError {
         throw cfgCLIError(e)
@@ -247,5 +344,12 @@ func buildConfigLaunchParams(subArgs: [String]) throws -> (params: [String: Any]
     }
     if let cwd = inputs.cwd { params["cwd"] = cwd }
     if let prompt = inputs.prompt { params["prompt"] = prompt }
+    // Caller is added at the socket call site, the same place launch-agent
+    // resolves it, so a bad panel env fails before anything is sent.
+    let extras = ConfigCommandCore.configLaunchFlagParams(
+        delegated: argv.delegated,
+        title: argv.title
+    )
+    for (key, value) in extras { params[key] = value }
     return (params, inputs.json)
 }

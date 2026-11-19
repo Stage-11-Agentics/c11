@@ -17,6 +17,8 @@ extension TerminalController {
         case "debug.terminals":
             return v2Result(id: id, self.v2DebugTerminals(params: params))
 #if DEBUG
+        case "debug.notification.open":
+            return v2Result(id: id, self.v2DebugOpenNotification(params: params))
         case "debug.session.save_and_load":
             return v2Result(id: id, self.v2DebugSessionSaveAndLoad(params: params))
         case "debug.shortcut.set":
@@ -27,6 +29,40 @@ extension TerminalController {
             return v2Result(id: id, self.v2DebugType(params: params))
         case "debug.terminal.operator_keys":
             return v2Result(id: id, self.v2DebugTerminalOperatorKeys(params: params))
+        case "debug.terminal.layer_probe":
+            return v2Result(id: id, v2MainSync {
+                guard let panelId = v2UUID(params, "tab_id") ?? v2UUID(params, "surface_id"),
+                      let located = AppDelegate.shared?.workspaceContainingPanel(
+                        panelId: panelId, preferredWorkspaceId: nil
+                      ), let terminal = located.workspace.panels[panelId] as? TerminalPanel else {
+                    return .err(code: "not_found", message: "Terminal panel not found", data: nil)
+                }
+                return .ok(terminal.surface.debugLayerContentsProbe())
+            })
+        case "debug.terminal.frame_watch":
+            // Main: reads layer contents and arms a main-run-loop timer.
+            return v2Result(id: id, v2MainSync {
+                var targets: [(String, TerminalSurface)] = []
+                for ref in v2StringArray(params, "surface_ids") ?? [] {
+                    guard let panelId = UUID(uuidString: ref) ?? v2ResolveHandleRef(ref),
+                          let located = AppDelegate.shared?.workspaceContainingPanel(
+                            panelId: panelId, preferredWorkspaceId: nil
+                          ), let terminal = located.workspace.panels[panelId] as? TerminalPanel else {
+                        return .err(code: "not_found", message: "Terminal panel not found: \(ref)", data: nil)
+                    }
+                    targets.append((ref, terminal.surface))
+                }
+                guard !targets.isEmpty else {
+                    return .err(code: "invalid_params", message: "surface_ids is required", data: nil)
+                }
+                return .ok(DebugFrameWatch.shared.arm(
+                    targets,
+                    stallAfterSelectionMs: v2Int(params, "stall_after_select_ms") ?? 0,
+                    timeoutMs: v2Int(params, "timeout_ms") ?? 10_000
+                ))
+            })
+        case "debug.terminal.frame_watch_read":
+            return v2Result(id: id, v2MainSync { .ok(DebugFrameWatch.shared.read()) })
         case "debug.terminal.scroll_viewport":
             return v2Result(id: id, self.v2DebugTerminalScrollViewport(params: params))
         case "debug.terminal.runtime_start_hold":
@@ -956,6 +992,23 @@ extension TerminalController {
         let resp = focusFromNotification(args)
         return resp == "OK" ? .ok([:]) : .err(code: "internal_error", message: resp, data: nil)
     }
+
+#if DEBUG
+    /// C11H-349: the operator's own notification open (a banner click), for a
+    /// guest proof where macOS banners cannot be clicked. The open runs with no
+    /// socket context, exactly as `userNotificationCenter(_:didReceive:)` runs it.
+    private func v2DebugOpenNotification(params: [String: Any]) -> V2CallResult {
+        guard let workspaceID = v2String(params, "workspace_id").flatMap(UUID.init(uuidString:)) else {
+            return .err(code: "invalid_params", message: "Missing workspace_id (a UUID)", data: nil)
+        }
+        let panelID = v2String(params, "surface_id").flatMap(UUID.init(uuidString:))
+        let opened = v2MainSync {
+            AppDelegate.shared?.operatorOpenNotification(
+                workspaceId: workspaceID, surfaceId: panelID, notificationId: nil) == true
+        }
+        return .ok(["opened": opened])
+    }
+#endif
 
     private func v2DebugFlashCount(params: [String: Any]) -> V2CallResult {
         guard let surfaceId = v2String(params, "surface_id") else {

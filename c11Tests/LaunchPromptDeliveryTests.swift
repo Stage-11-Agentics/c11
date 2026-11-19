@@ -78,6 +78,35 @@ pathlib.Path(os.environ['C11_LAUNCH_AGENT_RECEIPT']).write_text(json.dumps({
         }
     }
 
+    /// A headline leads the first message as one literal line: a shell sees no
+    /// newline, expansion or quote break in it, and the file pointer follows.
+    func testAHeadlineLeadsTheInstructionAsOneLiteralLine() throws {
+        let headline = "Piece \"1\" of 4: it's $(touch /tmp/nope) `id` $HOME\nsecond\tline\u{07}"
+        let plan = LaunchPromptDelivery.compose(command: "/usr/bin/printf %s", delivery: .positional,
+                                                promptFilePath: "/tmp/p q.md", headline: headline)
+        let expected = "Piece \"1\" of 4: it's $(touch /tmp/nope) `id` $HOME second line "
+            + "Read the file at /tmp/p q.md and follow it exactly."
+        let shell = Process()
+        shell.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        shell.arguments = ["-f", "-c", plan.launchLine]
+        let out = Pipe()
+        shell.standardOutput = out
+        try shell.run()
+        shell.waitUntilExit()
+        XCTAssertEqual(String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8), expected)
+
+        let long = LaunchPromptDelivery.instruction(path: "/p", headline: String(repeating: "z ", count: 400))
+        XCTAssertTrue(long.hasSuffix("… Read the file at /p and follow it exactly."))
+        XCTAssertEqual(LaunchPromptDelivery.instruction(path: "/p", headline: " \n "),
+                       LaunchPromptDelivery.instruction(path: "/p"))
+        for leading in ["--model x", "/clear now", "! rm", "-- -/ !"] {
+            XCTAssertFalse(LaunchPromptDelivery.instruction(path: "/p", headline: leading).first.map { "-/!".contains($0) } ?? true,
+                           leading)
+        }
+        XCTAssertEqual(LaunchPromptDelivery.sanitizedHeadline("--model x"), "model x")
+        XCTAssertNil(LaunchPromptDelivery.sanitizedHeadline("-- / !"))
+    }
+
     func testPostBootAndExistingTabCarryOnlyAFileInstruction() {
         let path = "/tmp/owned path.txt"
         let typed = LaunchPromptDelivery.compose(command: "kimi", delivery: .postBoot, promptFilePath: path)
@@ -130,6 +159,62 @@ pathlib.Path(os.environ['C11_LAUNCH_AGENT_RECEIPT']).write_text(json.dumps({
     }
 
     @MainActor
+    func testPostBootPromptWaitsBehindADialogAndNeverTypesIntoIt() {
+        var now: TimeInterval = 0
+        var jobs: [(TimeInterval, @MainActor () -> Void)] = []
+        var writes: [(String, TimeInterval)] = []
+        var dialogUp = false
+        let sequence = LaunchPostBootSequence(
+            launcher: "codex", prompt: "Read the file at /fixture and follow it exactly.",
+            isLive: { true }, isReady: { true },
+            submit: { text, completion in writes.append((text, now)); completion(true) },
+            isBlockedByDialog: { dialogUp },
+            schedule: { delay, work in jobs.append((now + delay, work)) })
+        func advance(to deadline: TimeInterval) {
+            while let index = jobs.indices.min(by: { jobs[$0].0 < jobs[$1].0 }), jobs[index].0 <= deadline {
+                let next = jobs.remove(at: index)
+                now = next.0
+                next.1()
+            }
+            now = deadline
+        }
+        // The launcher goes to a shell and is never held; the trust chooser then comes up.
+        dialogUp = true
+        sequence.start()
+        XCTAssertEqual(writes.map { $0.0 }, ["codex"], "a dialog does not hold the launcher line")
+        advance(to: 60)
+        XCTAssertEqual(writes.count, 1, "the prompt and its Return are held for a minute behind the chooser")
+        dialogUp = false   // a person answered it
+        advance(to: 61)
+        XCTAssertEqual(writes.map { $0.0 }, ["codex", "Read the file at /fixture and follow it exactly."])
+        XCTAssertGreaterThanOrEqual(writes[1].1, 60)
+    }
+
+    @MainActor
+    func testPostBootPromptIsDroppedNotTypedIfTheDialogOutlastsTheBound() {
+        var now: TimeInterval = 0
+        var jobs: [(TimeInterval, @MainActor () -> Void)] = []
+        var writes: [String] = []
+        let sequence = LaunchPostBootSequence(
+            launcher: "agent", prompt: "never into a chooser",
+            isLive: { true }, isReady: { true },
+            submit: { text, completion in writes.append(text); completion(true) },
+            isBlockedByDialog: { true },
+            schedule: { delay, work in jobs.append((now + delay, work)) })
+        sequence.start()
+        var steps = 0
+        while let index = jobs.indices.min(by: { jobs[$0].0 < jobs[$1].0 }), steps < 5_000 {
+            let next = jobs.remove(at: index)
+            now = next.0
+            next.1()
+            steps += 1
+        }
+        XCTAssertEqual(writes, ["agent"])
+        XCTAssertTrue(jobs.isEmpty, "no work is left after the bound")
+        XCTAssertGreaterThanOrEqual(now, TimeInterval(LaunchPostBootSequence.maxDialogWaits) * LaunchPostBootSequence.dialogRecheck)
+    }
+
+    @MainActor
     func testPostBootNeverSendsPromptAfterFailedLauncherSubmission() {
         var writes: [String] = []
         let sequence = LaunchPostBootSequence(
@@ -138,6 +223,38 @@ pathlib.Path(os.environ['C11_LAUNCH_AGENT_RECEIPT']).write_text(json.dumps({
             schedule: { _, _ in XCTFail("failed submission must not schedule a prompt") })
         sequence.start()
         XCTAssertEqual(writes, ["copilot"])
+    }
+
+    @MainActor
+    func testPostBootCancelsPromptWhenAttachmentChangesDuringDelay() {
+        var current = true
+        var writes: [String] = []
+        var delayed: (@MainActor () -> Void)?
+        let sequence = LaunchPostBootSequence(
+            launcher: "agent", prompt: "never send into replacement",
+            isLive: { true }, isReady: { true },
+            submit: { text, completion in writes.append(text); completion(true) },
+            generationIsCurrent: { current },
+            schedule: { _, work in delayed = work })
+        sequence.start()
+        XCTAssertEqual(writes, ["agent"])
+        current = false
+        delayed?()
+        XCTAssertEqual(writes, ["agent"])
+    }
+
+    @MainActor
+    func testPostBootCancelsWhenGenerationChangesBeforeLauncherCompletion() {
+        var current = true
+        var completion: ((Bool) -> Void)?
+        let sequence = LaunchPostBootSequence(
+            launcher: "agent", prompt: "never send into replacement",
+            isLive: { true }, isReady: { true }, submit: { _, done in completion = done },
+            generationIsCurrent: { current },
+            schedule: { _, _ in XCTFail("stale launcher completion scheduled a prompt") })
+        sequence.start()
+        current = false
+        completion?(true)
     }
 
     func testSettingsResolverPreservesBodyWithoutInliningIt() {

@@ -20,6 +20,15 @@ import SwiftUI
 struct WorkspaceCloseCardView: View {
     let content: ConfirmContent
     @ObservedObject var runtime: WorkspaceCloseInteractionRuntime
+    /// c11 (C11H-197): the hosting window's theme override.
+    @Environment(\.c11WindowThemeName) private var windowThemeName
+
+    /// The window theme's `[states]` for the always-dark card.
+    private var themeStates: ThemeStatePalette {
+        ThemeStatePalette.current(
+            context: ThemeManager.shared.makeContext(colorScheme: ColorScheme.dark, windowThemeName: windowThemeName)
+        )
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -64,7 +73,11 @@ struct WorkspaceCloseCardView: View {
             }
 
             if let inventory = content.workspaceInventory, inventory.panelCount > 0 {
-                WorkspaceCloseInventoryView(inventory: inventory, maxListHeight: maxListHeight)
+                WorkspaceCloseInventoryView(
+                    inventory: inventory,
+                    maxListHeight: maxListHeight,
+                    states: themeStates
+                )
             }
 
             HStack(spacing: 8) {
@@ -289,11 +302,12 @@ public struct WorkspaceCloseInventory {
 struct WorkspaceCloseInventoryView: View {
     let inventory: WorkspaceCloseInventory
     let maxListHeight: CGFloat
+    /// The active theme's `[states]`; unset draws c11's lifecycle colours.
+    var states: ThemeStatePalette = .unset
     /// The list's measured height; before the first measure, an estimate from
     /// the row count so the card opens at (nearly) its final size.
     @State private var measuredListHeight: CGFloat?
 
-    private static let amber = Color(red: 0xe0 / 255, green: 0xa0 / 255, blue: 0x30 / 255)
     private static let violet = Color(red: 0x9d / 255, green: 0x8a / 255, blue: 0xd9 / 255)
     private static let dim = Color(red: 0x9a / 255, green: 0x9c / 255, blue: 0xa3 / 255)
     private static let faint = Color(red: 0x74 / 255, green: 0x77 / 255, blue: 0x7f / 255)
@@ -328,7 +342,7 @@ struct WorkspaceCloseInventoryView: View {
             ForEach(inventory.liveStateCounts, id: \.kind) { entry in
                 Text(WorkspaceCloseInventory.stateCount(entry.kind, entry.count))
                     .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(Self.statusColor(entry.kind))
+                    .foregroundStyle(Self.statusColor(entry.kind, states: states))
             }
         }
         .accessibilityElement(children: .combine)
@@ -401,7 +415,7 @@ struct WorkspaceCloseInventoryView: View {
                     if let status = row.status {
                         Text(WorkspaceCloseInventory.statusWord(status))
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Self.statusColor(status, flagColorHex: row.flagColorHex))
+                            .foregroundStyle(Self.statusColor(status, flagColorHex: row.flagColorHex, states: states))
                             .fixedSize()
                     }
                 }
@@ -424,13 +438,17 @@ struct WorkspaceCloseInventoryView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private static func statusColor(
+    /// The card is always dark, so it takes the Dark slot's lifecycle colours:
+    /// the theme's `[states]`, else c11's (C11H-344: working yellow, waiting white).
+    static func statusColor(
         _ kind: BonsplitTabDetail.StatusKind,
-        flagColorHex: String? = nil
+        flagColorHex: String? = nil,
+        states: ThemeStatePalette = .unset
     ) -> Color {
+        let lifecycle = Workspace.resolvedSurfaceTabActivityColors(lightBackground: false, states: states)
         switch kind {
-        case .working: return BrandColors.whiteSwiftUI
-        case .waiting: return amber
+        case .working: return color(hex: lifecycle.runningHex ?? "") ?? BrandColors.whiteSwiftUI
+        case .waiting: return color(hex: lifecycle.waitingHex ?? "") ?? BrandColors.whiteSwiftUI
         case .flagged:
             return flagColorHex.flatMap { NSColor(hex: $0) }.map { Color(nsColor: $0) } ?? violet
         case .idle, .cold: return faint

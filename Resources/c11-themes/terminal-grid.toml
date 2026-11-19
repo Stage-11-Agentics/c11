@@ -1,0 +1,204 @@
+# Terminal Grid: the chrome drawn in one character grid: JetBrains Mono everywhere, grey on
+# near-black, square, orange for the one live or waiting thing, box-drawing card headers and a
+# legend line in the sidebar. Prototype key 3 (data-theme="grid") of design/themes/c11-themes.html.
+
+[identity]
+name         = "terminal-grid"
+display_name = "Terminal Grid"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 2
+
+[palette]
+black   = "#0B0B0C"          # chrome, sidebar, card, terminal
+raised  = "#0F0F11"          # active card
+ctl     = "#16171A"          # control group, omnibar
+rule    = "#2A2B2E"
+text    = "#C8C8C4"          # chrome text, focus frame, flag
+text2   = "#77787A"          # chrome secondary
+card    = "#D6D6D2"          # card and tab text
+card2   = "#8A8B8D"
+dim     = "#5E5F62"
+orange  = "#FF6A1F"
+clear   = "#00000000"
+
+[variables]
+background          = "$palette.black"
+surface             = "$palette.black"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.text2"
+accent              = "$palette.orange"
+separator           = "$palette.rule"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+# JUDGMENT: no CSS source for the window frame; grey like the focus frame, 1 pt, quiet when inactive.
+color            = "$foreground"
+thicknessPt      = 1.0
+inactiveOpacity  = 0.2
+unfocusedOpacity = 0.45
+
+[chrome.sidebar]
+tintOverlay                   = "$background"
+tintBase                      = "$background"
+tintBaseOpacity               = 1.0
+activeTabFill                 = "$palette.raised"
+activeTabFillFallback         = "$palette.raised"
+activeTabRail                 = "$foreground"
+activeTabRailFallback         = "$foreground"
+# JUDGMENT: the prototype draws no left-edge strip; the active card is a full grey outline.
+activeTabRailOpacity          = 0.0
+inactiveTabCustomOpacity      = 0.6
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accent"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$separator"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$surface"
+backgroundOpacity   = 1.0
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+# JUDGMENT: --chrome-ctl is #16171A, but the CSS sets .ctl and .ctl-group to background:none
+# and rules the group with 1 px instead, so the control fill is clear.
+controlFill         = "$palette.clear"
+controlForeground   = "$foreground"
+
+[chrome.tabBar]
+background      = "$surface"
+# JUDGMENT: --tab-active is #1A1B1E, but the CSS gives .tab.active background:none and marks
+# selection with a 2 px underline, so the fill is clear.
+activeFill      = "$palette.clear"
+divider         = "$separator"
+activeIndicator = "$accent"
+text            = "$palette.card"
+textSecondary   = "$palette.card2"
+activeText      = "$palette.card"
+number          = "$accent"
+
+[chrome.browserChrome]
+background  = "$surface"
+omnibarFill = "$palette.ctl"
+
+[chrome.markdownChrome]
+background = "$surface"
+
+[behavior]
+animateWorkspaceCrossfade = false
+
+# ---- schema 2 ----
+
+[type]
+ui      = "JetBrains Mono"
+display = "JetBrains Mono"
+mono    = "JetBrains Mono"
+
+# Every style names its family: a text style with no `family` keeps the system font.
+[type.windowTitle]
+family = "ui"
+weight = "medium"           # 500; c11 baseline is 600
+
+[type.cardTitle]
+family = "display"
+scale  = 0.71               # 12 / 17
+weight = "semibold"
+
+[type.cardLabel]
+family = "mono"             # sizes match the baseline (11 / 11.5), so no scale
+
+[type.agentRow]
+family = "ui"
+scale  = 0.89               # 12 / 13.5
+weight = "medium"
+
+[type.tab]
+family = "ui"
+scale  = 0.92               # 11.5 / 12.5
+
+[type.chip]
+family = "ui"
+scale  = 0.92               # 11 / 12
+weight = "medium"
+
+[type.pill]
+family = "ui"
+scale  = 0.86               # 12 / 14
+weight = "medium"
+
+[geometry]
+cardRadius         = 0.0
+cardBorderPt       = 1.0
+cardActiveBorderPt = 1.0
+cardPaddingPt      = 10.0   # the CSS is "10px 12px"; first value
+pillRadius         = 0.0
+controlRadius      = 0.0
+chipRadius         = 0.0
+markRadius         = 0.0
+progressHeightPt   = 6.0
+progressRadius     = 0.0
+tabSelection       = "underline"
+
+[chrome.card]
+sheen = false   # the prototype cards are flat: no top sheen, no identity wash
+fill          = "$surface"
+fillActive    = "$palette.raised"
+border        = "$separator"
+borderActive  = "$foreground"
+# JUDGMENT: no theme rule on .card.waiting, so the baseline mix stands:
+# color-mix(card-border-active 55%, card-border) = #818181.
+borderWaiting = "#818181"
+text          = "$palette.card"
+textSecondary = "$palette.card2"
+textDim       = "$palette.dim"
+rule          = "$separator"
+accent        = "$accent"
+progress      = "$palette.card"
+# JUDGMENT: the track is a dashed 3 px on / 3 px off pattern in --card-text-dim, which no role
+# can draw; the dim colour at half alpha approximates its density.
+progressTrack = "#5E5F6280"
+
+[chrome.pill]
+style  = "outline"
+fill   = "$surface"
+ink    = "$accent"
+border = "$accent"
+
+[chrome.descriptionBar]
+# chipFill unset: the chip has no fill. Border is color-mix(chrome-text 25%, transparent),
+# i.e. #C8C8C4 at .25 alpha (the CSS draws it dotted; no role for dash style).
+chipBorder = "#C8C8C440"
+chipText   = "$foreground"
+
+[chrome.area]
+focusBorder   = "$foreground"
+waitingBorder = "$accent"
+thicknessPt   = 1.0
+
+[backdrop]
+kind  = "solid"
+color = "$background"
+
+[states]
+waiting     = "$accent"
+waitingInk  = "$palette.black"
+# JUDGMENT: --live is orange in the CSS, but .state.running is repainted in card text and the
+# running mark is grey; only waiting stays orange. Set to $accent to make running orange too.
+running     = "$palette.card"
+idle        = "$palette.dim"
+cold        = "$palette.dim"
+flag        = "$foreground"
+unread      = "$palette.card2"
+# notification and usageLimit unset: the prototype draws neither.
+
+[ornaments]
+cardHeader    = "boxDrawing"
+sidebarLegend = true
+
+# Ghostty terminal theme for `c11 themes set <name> --with-terminal`
+[terminal]
+pairedTheme = "c11-terminal-grid"

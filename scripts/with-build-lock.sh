@@ -42,7 +42,7 @@ acquire_directory() {
   # os.mkdir preserves the kernel's EEXIST result, which is the lock contract.
   python3 -I -c 'import os, sys
 try:
-    os.mkdir(sys.argv[1])
+    os.mkdir(sys.argv[1], 0o700)
 except FileExistsError:
     sys.exit(1)
 except OSError as error:
@@ -51,7 +51,7 @@ except OSError as error:
 ' "$LOCK_DIR"
 }
 
-# Only the Atlas slot scheduler enables reentrancy. Ordinary local invocations
+# Only the build-host slot scheduler enables reentrancy. Ordinary local invocations
 # retain the single-lock behavior. Verify that the recorded owner is an ancestor.
 if [[ -n "${C11_ATLAS_BUILD_SLOT:-}" && -n "${C11_ATLAS_LOCK_OWNER:-}" &&
       "$(read_meta pid)" == "$C11_ATLAS_LOCK_OWNER" ]]; then
@@ -84,6 +84,17 @@ while true; do
   fi
   if [[ "$acquisition_status" -ne 1 ]]; then
     echo "[build-lock] atomic directory acquisition failed (python3 exit $acquisition_status)" >&2
+    exit 2
+  fi
+  # The lock keeps its shared path so older copies of this script in other
+  # worktrees still exclude each other. A lock folder another account made,
+  # or a link, is refused at once rather than waited on or written into
+  # (C11H-364 L21).
+  # GNU stat first: BSD stat refuses -c without writing to stdout, while GNU's -f prints the
+  # filesystem's details before it fails on the format.
+  lock_owner="$(stat -c '%u' "$LOCK_DIR" 2>/dev/null || /usr/bin/stat -f '%u' "$LOCK_DIR" 2>/dev/null || echo "")"
+  if [[ -L "$LOCK_DIR" || ( -e "$LOCK_DIR" && ! -d "$LOCK_DIR" ) || ( -n "$lock_owner" && "$lock_owner" != "$(id -u)" ) ]]; then
+    echo "[build-lock] $LOCK_DIR is not this user's lock folder (owner uid ${lock_owner:-?}); refusing to wait on or take it. Set C11_BUILD_LOCK_DIR to use another path." >&2
     exit 2
   fi
   owner_pid="$(read_meta pid)"

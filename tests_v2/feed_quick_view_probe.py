@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit C11-266 packaged UI proof in an owned Atlas guest (not test_ suite).
+"""Explicit C11-266 packaged UI proof in an owned build-host guest (not test_ suite).
 
 Supply exact run-id/PID/tagged bundle/CLI/socket. 80s active, 89s hard exit.
 Synthetic facts are setup; actual Accessibility keys/buttons drive the view.

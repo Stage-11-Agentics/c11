@@ -85,12 +85,26 @@ struct MailboxIdentity: Equatable {
     let role: String?
     /// Exact panel identity; independent of user metadata.
     let panelId: UUID?
+    /// C11H-360: the panel's terminal runs on a linked machine. A name a panel
+    /// on this Mac answers to is never answered by a linked panel.
+    let isLinked: Bool
 
-    init(title: String?, address: String?, role: String?, panelId: UUID? = nil) {
+    init(title: String?, address: String?, role: String?, panelId: UUID? = nil, isLinked: Bool = false) {
         self.title = MailboxIdentity.nonEmpty(title)
         self.address = MailboxIdentity.nonEmpty(address)
         self.role = MailboxIdentity.nonEmpty(role)
         self.panelId = panelId
+        self.isLinked = isLinked
+    }
+
+    /// A panel's identity as both resolvers build it. A linked panel's title
+    /// that its terminal set itself (an OSC 0/2 title, source `osc`) is not a
+    /// mail name: output on the other machine never chooses whose mail it gets.
+    static func panel(title: String?, address: String?, role: String?, panelId: UUID?,
+                      linkedMachine: String?, titleFromOSC: Bool) -> MailboxIdentity {
+        let linked = linkedMachine != nil
+        return MailboxIdentity(title: linked && titleFromOSC ? nil : title, address: address, role: role,
+                               panelId: panelId, isLinked: linked)
     }
 
     /// Treats empty strings as absent so a blank metadata value never matches a
@@ -104,6 +118,10 @@ struct MailboxIdentity: Equatable {
 /// Selects the subset of candidate surfaces that a parsed address resolves to,
 /// applying the address > role > title precedence for bare names. Pure and
 /// generic over the candidate type so both resolvers share one implementation.
+///
+/// C11H-360: every name form (bare, `panel:`, `role:`) matches panels on this
+/// Mac first; linked-machine panels answer only when no panel here does.
+/// `id:<uuid>` stays exact.
 enum MailboxMatcher {
 
     static func select<Item>(
@@ -111,10 +129,33 @@ enum MailboxMatcher {
         from items: [Item],
         identity: (Item) -> MailboxIdentity
     ) -> [Item] {
-        switch address {
-        case .id(let target):
+        if case .id(let target) = address {
             guard let target else { return [] }
             return items.filter { identity($0).panelId == target }
+        }
+        let local = selectByName(address, from: items.filter { !identity($0).isLinked }, identity: identity)
+        if !local.isEmpty { return local }
+        return selectByName(address, from: items.filter { identity($0).isLinked }, identity: identity)
+    }
+
+    /// Whether a panel on this Mac answers to `address` (any name form).
+    static func localAnswers<Item>(
+        _ address: MailboxAddress,
+        from items: [Item],
+        identity: (Item) -> MailboxIdentity
+    ) -> Bool {
+        if case .id = address { return false }
+        return !selectByName(address, from: items.filter { !identity($0).isLinked }, identity: identity).isEmpty
+    }
+
+    private static func selectByName<Item>(
+        _ address: MailboxAddress,
+        from items: [Item],
+        identity: (Item) -> MailboxIdentity
+    ) -> [Item] {
+        switch address {
+        case .id:
+            return []
         case .surface(let target):
             guard let target = MailboxIdentity.nonEmpty(target) else { return [] }
             return items.filter { identity($0).address == target }

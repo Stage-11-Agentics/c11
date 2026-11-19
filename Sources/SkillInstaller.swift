@@ -157,6 +157,8 @@ struct SkillInstallerApplyResult: Equatable {
     /// Local copies (`SkillInstallerState.isLocalCopy`) left in place.
     let keptLocal: [String]
     let destDir: URL
+    /// Retired packages (`SkillInstaller.retiredPackages`) whose stamped copy was removed.
+    var retired: [String] = []
 }
 
 struct SkillInstallerRemoveResult: Equatable {
@@ -166,6 +168,8 @@ struct SkillInstallerRemoveResult: Equatable {
     /// Local copies (`SkillInstallerState.isLocalCopy`) left in place.
     let keptLocal: [String]
     let destDir: URL
+    /// Retired packages (`SkillInstaller.retiredPackages`) whose stamped copy was removed.
+    var retired: [String] = []
 }
 
 struct SkillInstallerError: Error, CustomStringConvertible {
@@ -196,6 +200,12 @@ struct SkillInstallerError: Error, CustomStringConvertible {
 
 enum SkillInstaller {
     static let manifestFilename = ".c11-skill.json"
+
+    /// Packages a bundle no longer ships, mapped to the package that replaced them. The
+    /// retired line's sidecar skill folded into `c11` (C11H-269): asking for it means `c11`,
+    /// and installing or removing c11's skills also removes a copy c11 stamped under the old
+    /// name, so no agent keeps loading it. An unstamped folder of that name is never touched.
+    static let retiredPackages: [String: String] = ["c11h": "c11"] // c11-2.0:legacy
 
     // MARK: Source discovery
 
@@ -248,6 +258,7 @@ enum SkillInstaller {
     /// stable alphabetical order.
     static func discoverPackages(
         sourceDir: URL,
+        only: Set<String>? = nil,
         fileManager: FileManager = .default
     ) throws -> [SkillInstallerPackage] {
         var isDir: ObjCBool = false
@@ -271,7 +282,10 @@ enum SkillInstaller {
             )
         }
 
-        let allowlist: Set<String>? = try readInstallableAllowlist(sourceDir: sourceDir, fileManager: fileManager)
+        // With an explicit `only` the caller is the authority and the bundled MANIFEST is not
+        // consulted; without one, the MANIFEST's `installable` list filters the candidates.
+        let allowlist: Set<String>? = only == nil
+            ? try readInstallableAllowlist(sourceDir: sourceDir, fileManager: fileManager) : nil
 
         let packages: [SkillInstallerPackage] = children.compactMap { url in
             var childIsDir: ObjCBool = false
@@ -282,6 +296,7 @@ enum SkillInstaller {
             guard fileManager.fileExists(atPath: skillMd.path) else { return nil }
             let name = url.lastPathComponent
             if let allowlist, !allowlist.contains(name) { return nil }
+            if let only, !only.contains(name) { return nil }
             return SkillInstallerPackage(
                 name: name,
                 version: readSkillVersion(from: skillMd, fileManager: fileManager) ?? "0",
@@ -460,9 +475,10 @@ enum SkillInstaller {
         for target: SkillInstallerTarget,
         home: URL,
         sourceDir: URL,
+        only: Set<String>? = nil,
         fileManager: FileManager = .default
     ) throws -> [SkillInstallerPackageStatus] {
-        let packages = try discoverPackages(sourceDir: sourceDir, fileManager: fileManager)
+        let packages = try discoverPackages(sourceDir: sourceDir, only: only, fileManager: fileManager)
         let destRoot = target.skillsDir(home: home)
         return try packages.map { package in
             let destDir = destRoot.appendingPathComponent(package.name, isDirectory: true)
@@ -651,9 +667,10 @@ enum SkillInstaller {
         packages: Set<String>? = nil,
         appIdentity: AppIdentity = .current,
         now: () -> Date = Date.init,
+        only: Set<String>? = nil,
         fileManager: FileManager = .default
     ) throws -> SkillInstallerApplyResult {
-        let statuses = try status(for: target, home: home, sourceDir: sourceDir, fileManager: fileManager)
+        let statuses = try status(for: target, home: home, sourceDir: sourceDir, only: only, fileManager: fileManager)
         if statuses.isEmpty {
             throw SkillInstallerError(
                 code: .emptyPackageSet,
@@ -778,15 +795,18 @@ enum SkillInstaller {
         home: URL,
         sourceDir: URL,
         force: Bool = false,
+        packages named: Set<String>? = nil,
+        only: Set<String>? = nil,
         fileManager: FileManager = .default
     ) throws -> SkillInstallerRemoveResult {
-        let packages = try discoverPackages(sourceDir: sourceDir, fileManager: fileManager)
+        let packages = try discoverPackages(sourceDir: sourceDir, only: only, fileManager: fileManager)
+            .filter { named?.contains($0.name) ?? true }
         let destRoot = target.skillsDir(home: home)
         var removed: [String] = []
         var skipped: [String] = []
         var keptLocal: [String] = []
         let localCopies = force ? [] : Set(
-            try status(for: target, home: home, sourceDir: sourceDir, fileManager: fileManager)
+            try status(for: target, home: home, sourceDir: sourceDir, only: only, fileManager: fileManager)
                 .filter { $0.state.isLocalCopy }
                 .map(\.package.name)
         )
@@ -841,6 +861,102 @@ enum SkillInstaller {
             keptLocal: keptLocal,
             destDir: destRoot
         )
+    }
+
+    // MARK: - c11 entry points
+
+    /// What the app and the CLI call: the bundled skills `MANIFEST.json` lists, as c11 1.x
+    /// installed them, plus the cleanup of `retiredPackages`.
+    static func c11Status(
+        for target: SkillInstallerTarget, home: URL, sourceDir: URL,
+        fileManager: FileManager = .default
+    ) throws -> [SkillInstallerPackageStatus] {
+        try status(for: target, home: home, sourceDir: sourceDir, fileManager: fileManager)
+    }
+
+    /// Installs `packages` (nil: every bundled one). A retired package is retired only when
+    /// its replacement is among those installed.
+    static func c11Install(
+        target: SkillInstallerTarget, home: URL, sourceDir: URL, force: Bool,
+        packages: Set<String>? = nil, appIdentity: AppIdentity = .current,
+        now: () -> Date = Date.init, fileManager: FileManager = .default
+    ) throws -> SkillInstallerApplyResult {
+        var result = try install(target: target, home: home, sourceDir: sourceDir, force: force,
+                                 packages: packages, appIdentity: appIdentity, now: now,
+                                 fileManager: fileManager)
+        let retiring = Set(retiredPackages.filter { packages?.contains($0.value) ?? true }.keys)
+        let retirement = try retireStaleCopies(target: target, home: home, names: retiring,
+                                               force: force, fileManager: fileManager)
+        result.retired = retirement.retired
+        if !retirement.keptLocal.isEmpty {
+            result = SkillInstallerApplyResult(
+                target: result.target, installed: result.installed, refreshed: result.refreshed,
+                skipped: result.skipped, keptLocal: result.keptLocal + retirement.keptLocal,
+                destDir: result.destDir, retired: result.retired)
+        }
+        return result
+    }
+
+    /// Removes `packages` (nil: every bundled one) and retires the copies named in `retiring`
+    /// (nil: every retired package when no packages are named, none otherwise).
+    static func c11Remove(
+        target: SkillInstallerTarget, home: URL, sourceDir: URL, force: Bool = false,
+        packages: Set<String>? = nil, retiring: Set<String>? = nil,
+        fileManager: FileManager = .default
+    ) throws -> SkillInstallerRemoveResult {
+        var result = try remove(target: target, home: home, sourceDir: sourceDir, force: force,
+                                packages: packages, fileManager: fileManager)
+        let names = retiring ?? (packages == nil ? Set(retiredPackages.keys) : [])
+        let retirement = try retireStaleCopies(target: target, home: home, names: names,
+                                               force: force, fileManager: fileManager)
+        result.retired = retirement.retired
+        if !retirement.keptLocal.isEmpty {
+            result = SkillInstallerRemoveResult(
+                target: result.target, removed: result.removed, skipped: result.skipped,
+                keptLocal: result.keptLocal + retirement.keptLocal, destDir: result.destDir,
+                retired: result.retired)
+        }
+        return result
+    }
+
+    /// Removes each named `retiredPackages` copy whose `.c11-skill.json` stamp names that
+    /// package under the current schema. A local copy (edited since it was stamped, written
+    /// from a checkout, or a symlink) is kept unless `force`, by the rule `status` applies to
+    /// bundled packages. A folder without a valid stamp is never touched.
+    static func retireStaleCopies(
+        target: SkillInstallerTarget, home: URL, names: Set<String>, force: Bool,
+        fileManager: FileManager = .default
+    ) throws -> (retired: [String], keptLocal: [String]) {
+        let destRoot = target.skillsDir(home: home)
+        var retired: [String] = []
+        var keptLocal: [String] = []
+        for name in names.intersection(retiredPackages.keys).sorted() {
+            let dest = destRoot.appendingPathComponent(name, isDirectory: true)
+            let stamp = dest.appendingPathComponent(manifestFilename, isDirectory: false)
+            guard let data = try? Data(contentsOf: stamp),
+                  let record = try? JSONDecoder().decode(SkillInstallerRecord.self, from: data),
+                  record.schema == SkillInstallerRecord.schemaVersion,
+                  record.packageName == name else { continue }
+            if !force {
+                let isLink = (try? fileManager.destinationOfSymbolicLink(atPath: dest.path)) != nil
+                let destHash = try? contentHash(of: dest, skipInstallerManifest: true, fileManager: fileManager)
+                if isLink || record.isFromCheckout || destHash != record.sourceContentHash {
+                    keptLocal.append(name)
+                    continue
+                }
+            }
+            do {
+                try fileManager.removeItem(at: dest)
+            } catch {
+                throw SkillInstallerError(
+                    code: .copyFailed,
+                    message: "Cannot remove \(dest.path): \(error.localizedDescription)",
+                    path: dest.path
+                )
+            }
+            retired.append(name)
+        }
+        return (retired, keptLocal)
     }
 
     // MARK: - Plugin install/remove (OpenCode)

@@ -18,11 +18,11 @@ final class WorkspaceApplyChromeScaleTests: XCTestCase {
         var appearance = BonsplitConfiguration.Appearance()
         Workspace.applyChromeScale(.standard, to: &appearance)
 
-        // Every routed knob equals its scaled-from-default token at 1.00×.
+        // Every routed knob equals its token at 1.00×; text and tab widths take the 1.30× top-bar minimum.
         XCTAssertEqual(appearance.tabBarHeight,             30.0,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabTitleFontSize,         11.0,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabMinWidth,             112.0,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabMaxWidth,             220.0,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabTitleFontSize,         11.0 * 1.30,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabMinWidth,             112.0 * 1.30,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabMaxWidth,             220.0 * 1.30,  accuracy: 0.001)
         XCTAssertEqual(appearance.tabIconSize,              15.0,  accuracy: 0.001)
         XCTAssertEqual(appearance.tabItemHeight,            30.0,  accuracy: 0.001)
         XCTAssertEqual(appearance.tabHorizontalPadding,      6.0,  accuracy: 0.001)
@@ -38,23 +38,23 @@ final class WorkspaceApplyChromeScaleTests: XCTestCase {
 
     func testLargeTokensScaleEveryRoutedField() {
         var appearance = BonsplitConfiguration.Appearance()
-        Workspace.applyChromeScale(ChromeScaleTokens(multiplier: 1.12), to: &appearance)
+        Workspace.applyChromeScale(ChromeScaleTokens(multiplier: 1.40), to: &appearance)
 
-        XCTAssertEqual(appearance.tabBarHeight,             30.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabTitleFontSize,         11.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabMinWidth,             112.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabMaxWidth,             220.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabIconSize,              15.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabItemHeight,            30.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabHorizontalPadding,      6.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabCloseIconSize,          9.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabContentSpacing,         6.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabDirtyIndicatorSize,     8.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabNotificationBadgeSize,  6.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.tabActiveIndicatorHeight,  3.0 * 1.12,  accuracy: 0.001)
-        XCTAssertEqual(appearance.splitToolbarButtonIconSize,  12.0 * 1.12, accuracy: 0.001)
-        XCTAssertEqual(appearance.splitToolbarButtonFrameSize, 22.0 * 1.12, accuracy: 0.001)
-        XCTAssertEqual(appearance.splitToolbarSeparatorHeight, 18.0 * 1.12, accuracy: 0.001)
+        XCTAssertEqual(appearance.tabBarHeight,             30.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabTitleFontSize,         11.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabMinWidth,             112.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabMaxWidth,             220.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabIconSize,              15.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabItemHeight,            30.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabHorizontalPadding,      6.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabCloseIconSize,          9.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabContentSpacing,         6.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabDirtyIndicatorSize,     8.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabNotificationBadgeSize,  6.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.tabActiveIndicatorHeight,  3.0 * 1.40,  accuracy: 0.001)
+        XCTAssertEqual(appearance.splitToolbarButtonIconSize,  12.0 * 1.40, accuracy: 0.001)
+        XCTAssertEqual(appearance.splitToolbarButtonFrameSize, 22.0 * 1.40, accuracy: 0.001)
+        XCTAssertEqual(appearance.splitToolbarSeparatorHeight, 18.0 * 1.40, accuracy: 0.001)
     }
 
     func testCompactScalesDown() {
@@ -66,9 +66,9 @@ final class WorkspaceApplyChromeScaleTests: XCTestCase {
 
     func testExtraLargeScalesUp() {
         var appearance = BonsplitConfiguration.Appearance()
-        Workspace.applyChromeScale(ChromeScaleTokens(multiplier: 1.25), to: &appearance)
-        XCTAssertEqual(appearance.tabBarHeight, 30.0 * 1.25, accuracy: 0.001)
-        XCTAssertEqual(appearance.tabIconSize, 15.0 * 1.25, accuracy: 0.001)
+        Workspace.applyChromeScale(ChromeScaleTokens(multiplier: 1.55), to: &appearance)
+        XCTAssertEqual(appearance.tabBarHeight, 30.0 * 1.55, accuracy: 0.001)
+        XCTAssertEqual(appearance.tabIconSize, 15.0 * 1.55, accuracy: 0.001)
     }
 
     func testApplyIsIdempotent() {

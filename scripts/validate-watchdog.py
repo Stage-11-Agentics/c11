@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""C11-467 packaged proof. Run ONLY via sandbox-exec in an Atlas Tart guest.
+r"""C11-467 packaged proof. Run ONLY via sandbox-exec in a build-host Tart guest.
 
   scripts/sandbox-exec.sh <run> python3 /Volumes/My\ Shared\ Files/out/validate-watchdog.py \
       --app <guest-tagged.app> --mode oversleep --output /Volumes/My\ Shared\ Files/out/oversleep
@@ -69,14 +69,14 @@ def main():
     parser.add_argument("--mode", required=True, choices=("oversleep", "inert", "stress"))
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    # Refuse host execution even if a caller accidentally targets Atlas itself.
+    # Refuse host execution even if a caller accidentally targets the build host itself.
     virtual = subprocess.check_output(["/usr/sbin/sysctl", "-n", "kern.hv_vmm_present"], text=True).strip()
     app = args.app.resolve()
     guest_apps = Path.home() / "c11-sandbox/apps"
     if virtual != "1" or not app.is_relative_to(guest_apps) or not Path("/Volumes/My Shared Files/out").is_dir():
         raise SystemExit("REFUSED: requires a c11 sandbox guest and a guest-staged app")
     binary = app / "Contents/MacOS/c11"
-    if not binary.is_file() or "DEV" not in app.name:
+    if not binary.is_file() or "DEV" not in app.name or "c11" not in app.name:
         raise SystemExit("REFUSED: expected a tagged c11 DEV bundle")
     args.output.mkdir(parents=True, exist_ok=True)
     signal.signal(signal.SIGALRM, timeout)

@@ -1246,7 +1246,7 @@ class ActivityCLI(unittest.TestCase):
         self.assertIn('codex_session_metadata_conflict', result['coverage_gaps'])
 
     @unittest.skipUnless(os.environ.get('C11_ACTIVITY_MEMORY_PROBE') == '1',
-                         'large-history RSS probe runs on CI or explicitly admitted Atlas job')
+                         'large-history RSS probe runs on CI or explicitly admitted build-host job')
     def test_large_pre_window_history_has_bounded_resident_memory(self):
         if sys.platform != 'darwin':
             self.skipTest('macOS packaged CLI memory gate')
@@ -1269,7 +1269,7 @@ class ActivityCLI(unittest.TestCase):
         self.assertLess(rss, 128 * 1024 * 1024, 'historical samples must not remain resident')
 
     @unittest.skipUnless(os.environ.get('C11_ACTIVITY_MEMORY_PROBE') == '1',
-                         'large report RSS probe runs on CI or explicitly admitted Atlas job')
+                         'large report RSS probe runs on CI or explicitly admitted build-host job')
     def test_report_large_history_retains_compact_events_only(self):
         if sys.platform != 'darwin':
             self.skipTest('macOS packaged CLI memory gate')

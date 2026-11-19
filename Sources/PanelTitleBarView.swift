@@ -1,39 +1,556 @@
 import SwiftUI
+import Combine
 import AppKit
 import Bonsplit
 
 // M7 — Surface title bar.
 //
 // Renders above every terminal surface (and, when mounted, browser/markdown).
-// Shows the live description (the surface's `description` metadata key) and
-// the mailbox cell: the tab already carries the title, so the bar never
-// repeats it. A terminal always has the bar (its mailbox cell is permanent);
-// another panel with no description and no mail takes no height. Collapsed it is one truncated
-// line; expanded it is the full description (Markdown subset), capped and
-// scrollable. Title and description editing live on the tab (context menu and
-// the metadata CLI), not in this bar.
+// Shows the live description (the surface's `description` metadata key), the
+// mailbox cell and, on a terminal, a fixed chip naming the machine. The tab
+// already carries the title, so the bar never repeats it. A terminal always has
+// the bar (its mailbox cell is permanent); another panel with no description,
+// no mail and no chip takes no height. Collapsed it is one truncated line;
+// expanded it is the full description (Markdown subset), capped and scrollable.
+// Title and description editing live on the tab (context menu and the metadata
+// CLI), not in this bar.
+
+/// The persistence mark drawn in the session chip. `.none` still reserves its slot.
+enum SessionMark: Equatable {
+    case none
+    case notKept
+    case reconnecting
+}
+
+/// Wiring audit gap 6: the producer of the "where it runs" chip for LOCAL
+/// terminals. Remote terminals are fed by `HCRemoteStatusBinding`; a local one
+/// follows its own hc lifecycle here. Local inventory records carry no machine
+/// name (the address is `tN`, not `machine/tN`), so the feed supplies this
+/// computer's name on every note, or the name a live record did carry, which it
+/// keeps for the `.unresolved` and `.new` states that have no record. A remote
+/// terminal gets no subscription, so the two producers never write one panel.
+enum LocalSessionPlacementFeed {
+    /// This computer's name, read once. Not `Host.name`, which can wait on DNS.
+    static let localHostName: String = {
+        let name = Host.current().localizedName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? ProcessInfo.processInfo.hostName : name
+    }()
+
+    private final class Retained { var name: String? }
+
+    static func follow<P: Publisher>(
+        lifecycle: P,
+        persistence: @escaping () -> HCPersistence,
+        isRemote: Bool,
+        hostName: String = LocalSessionPlacementFeed.localHostName,
+        note: @escaping (HCLifecycle, HCPersistence, String?) -> Void
+    ) -> AnyCancellable? where P.Output == HCLifecycle, P.Failure == Never {
+        guard !isRemote else { return nil }
+        let retained = Retained()
+        return lifecycle.sink { value in
+            if case .live(let record) = value,
+               let name = record.machineName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+                retained.name = name
+            }
+            note(value, persistence(), retained.name ?? hostName)
+        }
+    }
+}
+
+/// Fixed-width host chip for one terminal. Built from `HCLifecycle` by `make`;
+/// the title bar copies it and does not measure fonts on the sidebar path.
+struct SessionPlacement: Equatable {
+    var machineName: String
+    var mark: SessionMark
+    /// C11H-126: the machine's roster id (`local` for this Mac, else hc's
+    /// lower-cased machine name). Empty when no machine is known yet.
+    var machineKey: String = ""
+    /// The roster color, filled in at draw time by `applyingRoster`. Stored
+    /// placements keep it nil, so a roster edit never touches workspace state.
+    var tint: String? = nil
+
+    /// English samples the width is measured from. A translation must not move the chip.
+    static let hostSample = "Notebook"
+    static let notKeptSample = "not kept"
+    static let reconnectingSample = "Reconnecting"
+    static let layoutSpace = "titlebar.session.layout"
+    static let chipAccessibilityIdentifier = "titlebar.session.chip"
+
+    /// Map a lifecycle onto the chip. `.live` reads `machineName` from the record
+    /// and, when that is empty, the retained name, so a local terminal still
+    /// shows its host. A record name wins. The side `machineName` is that
+    /// retained name, also used for `.unresolved` and `.new`. `.unresolved` is
+    /// Reconnecting and never "not kept", whatever `persistence` says, except
+    /// for a fresh terminal that has no session yet, which shows its machine.
+    /// `.ended` draws nothing: the evidence has no machine.
+    static func make(
+        lifecycle: HCLifecycle,
+        persistence: HCPersistence,
+        machineName: String?,
+        isLocal: Bool = false
+    ) -> SessionPlacement? {
+        let retained = normalized(machineName)
+        switch lifecycle {
+        case .new:
+            guard persistence == .nonpersistent else { return nil }
+            return chip(machine: retained, mark: .notKept, isLocal: isLocal)
+        case .live(let record):
+            let mark: SessionMark = persistence == .nonpersistent ? .notKept : .none
+            let name = normalized(record.machineName)
+            return chip(machine: name.isEmpty ? retained : name, mark: mark, isLocal: isLocal)
+        case .ended:
+            return nil
+        case .unresolved(let identity, .creationPending) where identity.origin == .fresh && identity.key == nil:
+            // C11H-205: a new terminal that has never had a session is
+            // starting, not reconnecting; "this session is unchanged" was false.
+            return chip(machine: retained, mark: .none, isLocal: isLocal)
+        case .unresolved:
+            return chip(machine: retained, mark: .reconnecting, isLocal: isLocal)
+        }
+    }
+
+    /// C11H-126: the chip as drawn, with the roster's name and color for this
+    /// machine. Unset roster fields keep the name the chip had and no tint.
+    func applyingRoster(_ entry: MachineRosterEntry?) -> SessionPlacement {
+        var resolved = self
+        if let name = entry?.name { resolved.machineName = name }
+        resolved.tint = entry?.color
+        return resolved
+    }
+
+    func applyingRoster(_ roster: MachineRoster) -> SessionPlacement {
+        guard !machineKey.isEmpty else { return self }
+        return applyingRoster(roster.entry(id: machineKey))
+    }
+
+    /// Terminals draw the stored chip. Browsers, markdown, and a missing panel do not.
+    static func shown(on panelType: PanelType?, stored: SessionPlacement?) -> SessionPlacement? {
+        guard panelType == .terminal else { return nil }
+        return stored
+    }
+
+    /// C11H-126: the host slot is as wide as the widest configured roster
+    /// name, never narrower than `hostSample` and never wider than
+    /// twice it. One roster drives every panel, so every chip is the same
+    /// width; a longer name truncates.
+    static let hostSlotCapFactor: CGFloat = 2
+
+    static func hostSlot(font: NSFont, configuredNames: [String]) -> CGFloat {
+        let floor = ceil(textWidth(hostSample, font: font))
+        let widest = configuredNames.map { ceil(textWidth($0, font: font)) }.max() ?? 0
+        return min(max(floor, widest), ceil(floor * hostSlotCapFactor))
+    }
+
+    static func metrics(multiplier: CGFloat, configuredNames: [String] = []) -> SessionChipMetrics {
+        metrics(multiplier: multiplier) { font in
+            hostSlot(font: font, configuredNames: configuredNames)
+        }
+    }
+
+    /// The live chip metrics: the roster's names, measured once per change.
+    static func metrics(multiplier: CGFloat, roster: MachineRoster) -> SessionChipMetrics {
+        metrics(multiplier: multiplier) { font in
+            roster.widthCache.width(fontSize: font.pointSize) {
+                hostSlot(font: font, configuredNames: roster.configuredNames())
+            }
+        }
+    }
+
+    /// The live chip metrics in a theme's `[type.chip]`. The slots are measured
+    /// in the themed font (cached per style, size and roster revision); the row
+    /// height stays the system font's, so the bar never changes height.
+    static func metrics(multiplier: CGFloat, roster: MachineRoster, textStyle: ThemeTextStyle) -> SessionChipMetrics {
+        guard !textStyle.isUnset else { return metrics(multiplier: multiplier, roster: roster) }
+        let key = ThemedChipMetricsCache.Key(multiplier: multiplier, style: textStyle, rosterRevision: roster.revision)
+        if let cached = ThemedChipMetricsCache.shared.value(for: key) { return cached }
+        let style = SessionChipTheme(textStyle: textStyle)
+        let base = metrics(multiplier: multiplier)
+        var themed = metrics(multiplier: multiplier, hostSlot: { font in
+            let names = roster.configuredNames().map { textStyle.apply($0) }
+            return hostSlot(font: font, configuredNames: names, sample: textStyle.apply(hostSample), kern: style.kern(font.pointSize))
+        }, font: { style.nsFont($0) }, kern: { style.kern($0) }, transform: { textStyle.apply($0) })
+        themed.rowHeight = base.rowHeight
+        ThemedChipMetricsCache.shared.store(themed, for: key)
+        return themed
+    }
+
+    static func hostSlot(font: NSFont, configuredNames: [String], sample: String, kern: CGFloat?) -> CGFloat {
+        let floor = ceil(textWidth(sample, font: font, kern: kern))
+        let widest = configuredNames.map { ceil(textWidth($0, font: font, kern: kern)) }.max() ?? 0
+        return min(max(floor, widest), ceil(floor * hostSlotCapFactor))
+    }
+
+    private static func metrics(
+        multiplier: CGFloat,
+        hostSlot measureHost: (NSFont) -> CGFloat,
+        font makeFont: (CGFloat) -> NSFont = { NSFont.systemFont(ofSize: $0, weight: .semibold) },
+        kern: (CGFloat) -> CGFloat? = { _ in nil },
+        transform: (String) -> String = { $0 }
+    ) -> SessionChipMetrics {
+        let hostFontSize = (12 * multiplier) + 1
+        let markFontSize = (12 * multiplier) - 1
+        let hostFont = makeFont(hostFontSize)
+        let markFont = makeFont(markFontSize)
+        let titleFont = NSFont.systemFont(ofSize: 12 * multiplier)
+        let hostSlot = measureHost(hostFont)
+        let markKern = kern(markFont.pointSize)
+        let markSlot = ceil(max(
+            textWidth(transform(notKeptSample), font: markFont, kern: markKern),
+            textWidth(transform(reconnectingSample), font: markFont, kern: markKern)
+        ))
+        let pad = ceil(6 * multiplier)
+        let gap = ceil(6 * multiplier)
+        let titleLine = ceil(titleFont.ascender - titleFont.descender + titleFont.leading) + 4
+        let hostLine = ceil(hostFont.ascender - hostFont.descender + hostFont.leading) + 4
+        return SessionChipMetrics(
+            pad: pad,
+            gap: gap,
+            hostFontSize: hostFontSize,
+            markFontSize: markFontSize,
+            hostSlot: hostSlot,
+            markSlot: markSlot,
+            width: pad + hostSlot + gap + markSlot + pad,
+            rowHeight: max(titleLine, hostLine, 18)
+        )
+    }
+
+    static func chipWidth(multiplier: CGFloat) -> CGFloat {
+        metrics(multiplier: multiplier).width
+    }
+
+    static func chipRowHeight(multiplier: CGFloat) -> CGFloat {
+        metrics(multiplier: multiplier).rowHeight
+    }
+
+    var markText: String {
+        switch mark {
+        case .none:
+            return ""
+        case .notKept:
+            return String(localized: "titlebar.session.notKept", defaultValue: "not kept")
+        case .reconnecting:
+            return String(localized: "titlebar.session.reconnecting", defaultValue: "Reconnecting")
+        }
+    }
+
+    var help: String? {
+        switch mark {
+        case .none:
+            return nil
+        case .notKept:
+            return String(
+                localized: "titlebar.session.notKept.help",
+                defaultValue: "This session will not survive a restart. Plain-shell fallback."
+            )
+        case .reconnecting:
+            return String(
+                localized: "titlebar.session.reconnecting.help",
+                defaultValue: "This session is unchanged. c11 is waiting to reach it again."
+            )
+        }
+    }
+
+    /// What VoiceOver reads as the chip's label: where the terminal runs. A bare
+    /// host name carries no context, so the label says what it names. When the
+    /// chip has only a mark (no machine known yet) the label names the chip.
+    var accessibilityLabel: String {
+        guard !machineName.isEmpty else {
+            return String(
+                localized: "titlebar.session.accessibility.label.noMachine",
+                defaultValue: "Where this terminal runs"
+            )
+        }
+        return String(
+            format: String(
+                localized: "titlebar.session.accessibility.label.machine",
+                defaultValue: "Runs on %@"
+            ),
+            machineName
+        )
+    }
+
+    /// The chip's accessibility value: the visible mark word ("not kept",
+    /// "Reconnecting"), or empty when the session is simply running.
+    var accessibilityValue: String { markText }
+
+    /// C11H-166: what VoiceOver says and AXDescription carries: where it runs,
+    /// then the mark when there is one ("Runs on Studio, Reconnecting").
+    var spokenLabel: String {
+        markText.isEmpty ? accessibilityLabel : "\(accessibilityLabel), \(markText)"
+    }
+
+    private static func normalized(_ name: String?) -> String {
+        name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private static func chip(machine: String, mark: SessionMark, isLocal: Bool) -> SessionPlacement? {
+        guard !machine.isEmpty || mark != .none else { return nil }
+        // hc names machines in lower case ("studio"); the chip reads "Studio".
+        let key: String
+        if isLocal {
+            key = MachineRoster.localID
+        } else {
+            key = MachineRoster.normalizedID(machine) ?? ""
+        }
+        return SessionPlacement(machineName: HCMachineTarget.displayName(machine), mark: mark, machineKey: key)
+    }
+
+    private static func textWidth(_ text: String, font: NSFont, kern: CGFloat? = nil) -> CGFloat {
+        var attributes: [NSAttributedString.Key: Any] = [.font: font]
+        if let kern { attributes[.kern] = kern }
+        return (text as NSString).size(withAttributes: attributes).width
+    }
+}
+
+/// The description chip in a schema-2 theme: `chipFill`, `chipBorder`,
+/// `chipText`, `geometry.chipRadius` and `[type.chip]`. Every field is
+/// optional; `.unset` draws today's chip.
+struct SessionChipTheme: Equatable {
+    var fill: Color?
+    var border: Color?
+    var text: Color?
+    var radius: CGFloat?
+    var textStyle: ThemeTextStyle = .unset
+
+    static let unset = SessionChipTheme()
+
+    /// The chip's text at `size` (the view's own size): semibold system type
+    /// today, else the theme's family, scale, weight, case and tracking.
+    func styled(_ string: String, size: CGFloat) -> Text {
+        guard !textStyle.isUnset else {
+            return Text(string).font(.system(size: size, weight: .semibold))
+        }
+        let text = Text(textStyle.apply(string))
+            .font(textStyle.font(baseSize: size, defaultWeight: .semibold))
+        guard textStyle.tracking != nil else { return text }
+        return text.tracking(textStyle.trackingPoints(baseSize: size))
+    }
+
+    /// The AppKit font the chip measures with, at the view's own `size`.
+    func nsFont(_ size: CGFloat) -> NSFont {
+        let scaled = size * CGFloat(textStyle.scale ?? 1)
+        let weight: NSFont.Weight
+        switch textStyle.weight {
+        case "regular": weight = .regular
+        case "medium": weight = .medium
+        case "bold": weight = .bold
+        case "heavy": weight = .heavy
+        default: weight = .semibold
+        }
+        return ThemeFontFamily.nsFont(named: textStyle.familyName, size: scaled, weight: weight, monospaced: false)
+    }
+
+    /// Kerning for an already-scaled font of `size`, or nil when the style sets none.
+    func kern(_ size: CGFloat) -> CGFloat? {
+        textStyle.tracking.map { CGFloat($0) * size }
+    }
+}
+
+/// Themed chip metrics, keyed by style, size and roster revision. Small and
+/// bounded: a theme switch or roster edit adds a key, and the cache resets past 32.
+final class ThemedChipMetricsCache: @unchecked Sendable {
+    struct Key: Hashable {
+        var multiplier: CGFloat
+        var family: String?
+        var scale: Double?
+        var weight: String?
+        var uppercase: Bool?
+        var tracking: Double?
+        var rosterRevision: Int
+
+        init(multiplier: CGFloat, style: ThemeTextStyle, rosterRevision: Int) {
+            self.multiplier = multiplier
+            family = style.familyName
+            scale = style.scale
+            weight = style.weight
+            uppercase = style.uppercase
+            tracking = style.tracking
+            self.rosterRevision = rosterRevision
+        }
+    }
+
+    static let shared = ThemedChipMetricsCache()
+
+    private let lock = NSLock()
+    private var values: [Key: SessionChipMetrics] = [:]
+
+    func value(for key: Key) -> SessionChipMetrics? {
+        lock.lock()
+        defer { lock.unlock() }
+        return values[key]
+    }
+
+    func store(_ metrics: SessionChipMetrics, for key: Key) {
+        lock.lock()
+        defer { lock.unlock() }
+        if values.count >= 32 { values.removeAll() }
+        values[key] = metrics
+    }
+}
+
+struct SessionChipMetrics: Equatable {
+    var pad: CGFloat
+    var gap: CGFloat
+    var hostFontSize: CGFloat
+    var markFontSize: CGFloat
+    var hostSlot: CGFloat
+    var markSlot: CGFloat
+    var width: CGFloat
+    var rowHeight: CGFloat
+}
+
+/// C11H-126: the where-it-runs chip. It observes the machine roster, so a
+/// name or color set in Settings or by `c11 machine set` repaints every open
+/// chip at once. Every chip shares one width (`SessionPlacement.metrics`).
+struct SessionChipView: View {
+    let placement: SessionPlacement
+    let multiplier: CGFloat
+    let rowHeight: CGFloat
+    let foreground: Color
+    let secondaryForeground: Color
+    let border: Color
+    /// The bar's background in the current appearance, for the text contrast.
+    let barBackground: NSColor
+    let colorScheme: ColorScheme
+    /// Schema-2 `[chrome.descriptionBar]`, `chipRadius` and `[type.chip]`; `.unset` draws today's chip.
+    var theme: SessionChipTheme = .unset
+
+    @ObservedObject private var roster = MachineRoster.shared
+
+    var body: some View {
+        // `revision` is read so a roster change redraws this chip.
+        let _ = roster.revision
+        let metrics = SessionPlacement.metrics(multiplier: multiplier, roster: roster, textStyle: theme.textStyle)
+        let shown = placement.applyingRoster(roster)
+        // c11h: the machine a terminal runs on is the bar's focal point
+        // (Atin, 2026-11-03): white on black inside a strong white border, in
+        // every theme and appearance. The roster names the machine, and its
+        // color is a small square before the name.
+        let radius = theme.radius ?? 4
+        let tint = shown.tint.flatMap(MachineRosterColor.nsColor)
+        let dot = Self.colorSlot(multiplier: multiplier, roster: roster)
+        let chip = HStack(spacing: metrics.gap) {
+            if dot > 0 {
+                Rectangle()
+                    .fill(tint.map { Color(nsColor: $0) } ?? Color.clear)
+                    .frame(width: dot - metrics.gap, height: dot - metrics.gap)
+            }
+            theme.styled(shown.machineName, size: metrics.hostFontSize)
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: metrics.hostSlot, alignment: .leading)
+            theme.styled(shown.markText, size: metrics.markFontSize)
+                .foregroundColor(markColor(shown.mark, text: shown.mark == .reconnecting ? Color.white.opacity(0.7) : nil))
+                .lineLimit(1)
+                .frame(width: metrics.markSlot, alignment: .leading)
+        }
+        .padding(.horizontal, metrics.pad)
+        .frame(width: metrics.width + dot, height: rowHeight, alignment: .center)
+        .background(
+            RoundedRectangle(cornerRadius: radius)
+                .fill(Color.black)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: radius)
+                .strokeBorder(Color.white, lineWidth: 1.5)
+        )
+        // C11H-166: one plain text element for AppKit. A container with its
+        // children ignored and an empty value reached AX with no description.
+        .accessibilityRepresentation {
+            Text(shown.spokenLabel)
+        }
+        .accessibilityLabel(Text(shown.spokenLabel))
+        .accessibilityIdentifier(SessionPlacement.chipAccessibilityIdentifier)
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(1)
+
+        if let help = shown.help {
+            chip.help(help)
+        } else {
+            chip
+        }
+    }
+
+    /// c11h: the width a roster color square takes inside every chip (its
+    /// side plus a gap), or zero when no machine has a color. Every chip
+    /// reserves it alike, so all chips stay one width.
+    static func colorSlot(multiplier: CGFloat, roster: MachineRoster) -> CGFloat {
+        roster.all().contains(where: { $0.color != nil }) ? ceil(8 * multiplier) + 4 : 0
+    }
+
+    /// On a tinted chip the mark uses the contrast color too: orange or gray
+    /// on an arbitrary tint can be unreadable.
+    private func markColor(_ mark: SessionMark, text: Color?) -> Color {
+        switch mark {
+        case .none:
+            return .clear
+        case .notKept:
+            return text ?? .orange
+        case .reconnecting:
+            return text?.opacity(0.8) ?? secondaryForeground
+        }
+    }
+
+    /// Black or white, whichever reads better on the tint composited over the
+    /// bar in this appearance.
+    static func contrastText(fill: String, background: NSColor, scheme: ColorScheme) -> Color {
+        let white = MachineRosterColor.prefersWhiteText(
+            fill: fill,
+            background: srgb(background, dark: scheme == .dark)
+        )
+        return white ? .white : .black
+    }
+
+    /// The bar color in sRGB as this appearance draws it. A translucent theme
+    /// color is taken as drawn over a neutral window background.
+    static func srgb(_ color: NSColor, dark: Bool) -> (r: Double, g: Double, b: Double) {
+        let fallback: (r: Double, g: Double, b: Double) = dark ? (0.12, 0.12, 0.12) : (0.93, 0.93, 0.93)
+        guard let appearance = NSAppearance(named: dark ? .darkAqua : .aqua) else { return fallback }
+        var result = fallback
+        appearance.performAsCurrentDrawingAppearance {
+            guard let rgb = color.usingColorSpace(.sRGB) else { return }
+            let a = Double(rgb.alphaComponent)
+            result = (
+                Double(rgb.redComponent) * a + fallback.r * (1 - a),
+                Double(rgb.greenComponent) * a + fallback.g * (1 - a),
+                Double(rgb.blueComponent) * a + fallback.b * (1 - a)
+            )
+        }
+        return result
+    }
+}
 
 struct PanelTitleBarState: Equatable {
     var title: String?
     var description: String?
     var titleSource: MetadataSource?
     var descriptionSource: MetadataSource?
+    /// C11H-278: when the description text last changed; drives its age label.
+    var descriptionUpdatedAt: Date? = nil
     var visible: Bool = true
     var collapsed: Bool = true
     /// The panel's `mailbox.address`, shown in the mailbox drawer's header.
     var mailboxAddress: String?
     /// The bar shows the mailbox cell (C11-397); see `showsMailbox(panelType:hasMail:)`.
     var showsMailbox: Bool = false
+    /// Terminal session chip. Nil hides it and, with no description or mail, the whole bar.
+    var placement: SessionPlacement? = nil
+    /// c11h: a terminal reserves the ⓘ and chip slots before its placement
+    /// arrives and after its session ends, so the mailbox cell and the
+    /// subtitle after them never move.
+    var isTerminal: Bool = false
 
     var hasDescription: Bool {
         !(description?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
-    /// The bar renders only when the workspace shows title bars and the surface
-    /// has a description or a mailbox. Everything that reserves space for the
-    /// bar (the portal's top frame edge included) keys off this.
+    /// The bar renders when the workspace shows title bars and the surface has a
+    /// description, a mailbox, or a session chip. Everything that reserves space
+    /// for the bar (the portal's top frame edge included) keys off this.
     var rendersBar: Bool {
-        visible && (hasDescription || showsMailbox)
+        visible && (hasDescription || showsMailbox || placement != nil)
     }
 
     /// Every terminal panel shows the mailbox cell from the start, mail or
@@ -51,6 +568,9 @@ let titleBarDescriptionMaxHeight: CGFloat = 90
 
 struct PanelTitleBarView: View {
     let state: PanelTitleBarState
+    /// Layout oracle. Nil in production, so the bar mounts no GeometryReader for it.
+    /// It stays ahead of `onToggleCollapsed` so a trailing closure is still the toggle.
+    var onLayout: ((String, CGRect) -> Void)? = nil
     var onToggleCollapsed: () -> Void = {}
     /// The panel's workspace and id, for the mailbox cell (C11-397). Without
     /// them the bar shows only the description.
@@ -61,6 +581,8 @@ struct PanelTitleBarView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.chromeScaleTokens) private var chromeTokens
+    /// c11 (C11H-197): the hosting window's theme override.
+    @Environment(\.c11WindowThemeName) private var windowThemeName
     @AppStorage(ThemeAppStorage.Keys.m1bSurfaceTitleBarMigrated, store: ThemeAppStorage.defaults)
     private var m1bSurfaceTitleBarMigrated = false
     @State private var measuredDescriptionHeight: CGFloat = 0
@@ -69,9 +591,12 @@ struct PanelTitleBarView: View {
     @StateObject private var drawerPresenter = CollapsedSheetPresenter()
     @StateObject private var drawerGeometry = MailboxDrawerGeometry()
     @State private var isDrawerOpen = false
+    @State private var showsHerderCores = false
     @State private var barWidth: CGFloat = 0
     /// This bar's mailbox cell is counted as on screen by the badge store.
     @State private var cellRegistered = false
+    /// C11H-278: the age's style for this bar's width (`nextAgeStyle`).
+    @State private var ageStyle: DescriptionAge.Style = .compact
 
     private var descriptionText: String {
         state.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -82,11 +607,11 @@ struct PanelTitleBarView: View {
     }
 
     private var themeContext: ThemeContext {
-        themeManager.makeContext(colorScheme: colorScheme)
+        themeManager.makeContext(colorScheme: colorScheme, windowThemeName: windowThemeName)
     }
 
     private var useThemeMigrationPath: Bool {
-        m1bSurfaceTitleBarMigrated && themeManager.isEnabled
+        themeManager.themedPathLive(flag: m1bSurfaceTitleBarMigrated, windowThemeName: windowThemeName)
     }
 
     private var resolvedBackgroundColor: NSColor {
@@ -149,6 +674,11 @@ struct PanelTitleBarView: View {
                         .frame(height: 1),
                     alignment: .bottom
                 )
+                .overlay {
+                    if let opacity = ThemeOrnaments.scanlinesOpacity(themeManager, windowThemeName: windowThemeName) {
+                        BonsplitScanlines(opacity: opacity)
+                    }
+                }
                 // The mailbox drawer hangs flush under the whole bar.
                 .background(CollapsedSheetAnchorReader { drawerPresenter.anchorView = $0 })
                 .background(
@@ -332,6 +862,17 @@ struct PanelTitleBarView: View {
     /// the full Markdown description (capped, scrollable) expanded.
     private var descriptionBar: some View {
         HStack(alignment: .top, spacing: 6) {
+            if state.isTerminal || state.placement != nil {
+                herderCoresButton(machineKey: state.placement?.machineKey ?? "")
+                if let placement = state.placement {
+                    sessionChip(placement)
+                } else {
+                    SessionChipSlot(multiplier: chromeTokens.topBarMultiplier, textStyle: chipTheme.textStyle)
+                }
+            }
+            // c11h: the mailbox sits beside the machine it belongs to, away
+            // from the crowded top-right corner (Atin, 2026-11-03).
+            mailboxCell
             Group {
                 if displaysCollapsed {
                     collapsedDescription
@@ -350,23 +891,15 @@ struct PanelTitleBarView: View {
             )
             .onPreferenceChange(TitleBarDescriptionWidthKey.self) { newValue in
                 if abs(newValue - descriptionWidth) > 0.5 { descriptionWidth = newValue }
+                let next = Self.nextAgeStyle(current: ageStyle, descriptionWidth: newValue,
+                                             fontSize: chromeTokens.surfaceTitleBarTitle)
+                if next != ageStyle { ageStyle = next }
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityText)
-            if let model = mailboxModel {
-                // Fixed width, pinned to the first line: a long description
-                // truncates before it and an expanded one grows under it.
-                MailboxCellView(
-                    model: model,
-                    isOpen: isDrawerOpen,
-                    fontSize: chromeTokens.surfaceTitleBarTitle - 1,
-                    secondary: resolvedSecondaryForegroundColor,
-                    action: toggleDrawer
-                )
-                .background(CollapsedSheetTrailingAnchorReader { drawerPresenter.trailingAnchorView = $0 })
-                .onAppear { updateCellRegistration(isVisibleInUI) }
-                .onDisappear { updateCellRegistration(false) }
-            }
+            .titleBarMeasure("description", observer: onLayout)
+            descriptionAgeSlot
+                .titleBarMeasure("descriptionAge", observer: onLayout)
             Button(action: onToggleCollapsed) {
                 Image(systemName: displaysCollapsed ? "chevron.right" : "chevron.down")
                     .font(.system(size: chromeTokens.surfaceTitleBarAccessory, weight: .semibold))
@@ -386,10 +919,49 @@ struct PanelTitleBarView: View {
             .disabled(!showsChevron)
             .accessibilityHidden(!showsChevron)
         }
+        .coordinateSpace(name: SessionPlacement.layoutSpace)
         // One height for every collapsed bar (placeholder or description,
-        // mailbox cell or not), so the panel below never moves. Expanded,
-        // the bar only grows from there.
+        // mailbox cell or not, empty mark or not), so the panel below never
+        // moves. Expanded, the bar only grows from there.
         .frame(minHeight: rowHeight, maxHeight: displaysCollapsed ? rowHeight : nil, alignment: .top)
+    }
+
+    /// C11H-278: how long ago the description was edited, in a fixed slot
+    /// before the chevron that stays when there is none, so neither the
+    /// description nor the chevron moves. A panel not on screen (a kept-alive
+    /// hidden workspace) holds the empty slot and listens to no clock.
+    @ViewBuilder
+    private var descriptionAgeSlot: some View {
+        let size = chromeTokens.surfaceTitleBarTitle
+        if isVisibleInUI {
+            DescriptionAgeLabel(
+                updatedAt: state.hasDescription ? state.descriptionUpdatedAt : nil,
+                style: ageStyle,
+                fontSize: size,
+                color: resolvedSecondaryForegroundColor.opacity(0.8)
+            )
+            .padding(.vertical, 2)
+        } else {
+            Color.clear
+                .frame(width: DescriptionAgeMetrics.slotWidth(style: ageStyle, fontSize: size), height: 1)
+        }
+    }
+
+    /// The subtitle keeps at least this much beside a full-style age.
+    static let minimumSubtitleWidth: CGFloat = 240
+
+    /// C11H-278: "edited 12 min ago" where the bar has room, "12m" (full text
+    /// on hover) where it does not, so a narrow panel keeps its subtitle. The
+    /// subtitle and the age share one width (the subtitle's measured width
+    /// plus the slot beside it), which the style does not change, so the
+    /// choice cannot flip back and forth. It changes only with the panel's
+    /// width, never as the age moves.
+    static func nextAgeStyle(current: DescriptionAge.Style, descriptionWidth: CGFloat, fontSize: CGFloat) -> DescriptionAge.Style {
+        // An unmeasured bar starts compact and stays so until it has room; a
+        // bar squeezed to nothing falls back to compact too.
+        let shared = descriptionWidth + DescriptionAgeMetrics.slotWidth(style: current, fontSize: fontSize)
+        let full = DescriptionAgeMetrics.slotWidth(style: .full, fontSize: fontSize)
+        return shared - full >= minimumSubtitleWidth ? .full : .compact
     }
 
     private var showsChevron: Bool {
@@ -439,9 +1011,85 @@ struct PanelTitleBarView: View {
         return ceil(natural) > width - 2
     }
 
-    /// The collapsed row's height: one line of the description font with its
-    /// padding, or the chevron's 18 pt slot if that is taller.
+    /// Fixed width, pinned to the first line beside the machine chip: the
+    /// description starts after it and truncates at the bar's end.
+    @ViewBuilder
+    private var mailboxCell: some View {
+        if let model = mailboxModel {
+            MailboxCellView(
+                model: model,
+                isOpen: isDrawerOpen,
+                fontSize: chromeTokens.surfaceTitleBarTitle - 1,
+                secondary: resolvedSecondaryForegroundColor,
+                unreadColor: themeManager.themeOwnsChrome(windowThemeName: windowThemeName)
+                    ? themeManager.style(.stateUnread, context: themeContext)
+                    : nil,
+                unreadTrailing: true,
+                action: toggleDrawer
+            )
+            .background(CollapsedSheetTrailingAnchorReader { drawerPresenter.trailingAnchorView = $0 })
+            .onAppear { updateCellRegistration(isVisibleInUI) }
+            .onDisappear { updateCellRegistration(false) }
+        }
+    }
+
+    /// c11h: the ⓘ at the bar's far left. It opens where c11's herder cores
+    /// run and how to add another machine.
+    private func herderCoresButton(machineKey: String) -> some View {
+        Button { showsHerderCores.toggle() } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: chromeTokens.surfaceTitleBarTitle, weight: .regular))
+                .foregroundColor(resolvedSecondaryForegroundColor)
+                .frame(width: 16, height: rowHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(String(localized: "titlebar.herderCores.help", defaultValue: "Where your terminals run, and how to add a machine"))
+        .accessibilityLabel(Text(String(localized: "titlebar.herderCores.accessibility", defaultValue: "Herder cores")))
+        .accessibilityIdentifier("titlebar.herderCores")
+        .popover(isPresented: $showsHerderCores, arrowEdge: .bottom) {
+            HerderCoresPopover(currentMachineKey: machineKey) { showsHerderCores = false }
+        }
+    }
+
+    /// Fixed chip on the first line. The description truncates before this slot.
+    private func sessionChip(_ placement: SessionPlacement) -> some View {
+        SessionChipView(
+            placement: placement,
+            multiplier: chromeTokens.topBarMultiplier,
+            rowHeight: rowHeight,
+            foreground: resolvedForegroundColor,
+            secondaryForeground: resolvedSecondaryForegroundColor,
+            border: resolvedBottomBorderColor,
+            barBackground: resolvedBackgroundColor,
+            colorScheme: colorScheme,
+            theme: chipTheme
+        )
+        .titleBarMeasure("chip", observer: onLayout)
+    }
+
+    /// Schema-2 chip values. Schema-1 themes define none, so this is `.unset`.
+    private var chipTheme: SessionChipTheme {
+        // Only schema-2 themes carry chip values; skip the context and lookups
+        // on every other bar render (title churn from spinners).
+        guard themeManager.themeOwnsChrome(windowThemeName: windowThemeName) else { return .unset }
+        let context = themeContext
+        return SessionChipTheme(
+            fill: themeManager.style(.chipFill, context: context),
+            border: themeManager.style(.chipBorder, context: context),
+            text: themeManager.style(.chipText, context: context),
+            radius: themeManager.style(.chipRadius, context: context),
+            textStyle: themeManager.textStyle(.chip, context: context)
+        )
+    }
+
+    /// The collapsed row's height. A chip uses the fixed metric (host line of
+    /// the host font, the description line, or 18), equal for every mark.
+    /// Font measurement stays here, off `panelTitleBarState`.
     private var rowHeight: CGFloat {
+        if state.placement != nil {
+            return SessionPlacement.chipRowHeight(multiplier: chromeTokens.topBarMultiplier)
+        }
         let font = NSFont.systemFont(ofSize: chromeTokens.surfaceTitleBarTitle)
         return max(ceil(font.ascender - font.descender + font.leading) + 4, 18)
     }
@@ -452,7 +1100,9 @@ struct PanelTitleBarView: View {
         let line = Self.collapsedLine(descriptionText)
         return Text(line.text)
             .font(.system(size: chromeTokens.surfaceTitleBarTitle))
-            .foregroundColor(line.isPlaceholder ? resolvedSecondaryForegroundColor : resolvedForegroundColor)
+            // c11h: the subtitle reads gray so the machine chip carries the
+            // bar's focus (Atin, 2026-11-03). The placeholder is dimmer still.
+            .foregroundColor(line.isPlaceholder ? resolvedSecondaryForegroundColor.opacity(0.7) : resolvedSecondaryForegroundColor)
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.vertical, 2)
@@ -914,6 +1564,331 @@ private struct TitleBarDescriptionMarkdown: View {
             .padding(.vertical, 3)
         case .rule:
             Divider().padding(.vertical, 4)
+        }
+    }
+}
+
+private extension View {
+    /// Optional rendered-layout oracle. Production passes nil and mounts no GeometryReader.
+    func titleBarMeasure(_ name: String, observer: ((String, CGRect) -> Void)?) -> some View {
+        background {
+            if let observer {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { observer(name, proxy.frame(in: .named(SessionPlacement.layoutSpace))) }
+                        .onChange(of: proxy.frame(in: .named(SessionPlacement.layoutSpace))) { _, frame in
+                            observer(name, frame)
+                        }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - c11: the chip's slot before a terminal has a placement
+
+/// Empty space exactly as wide as a chip, for a terminal whose placement has
+/// not arrived yet or whose session ended, so nothing after it moves.
+struct SessionChipSlot: View {
+    let multiplier: CGFloat
+    var textStyle: ThemeTextStyle = .unset
+    @ObservedObject private var roster = MachineRoster.shared
+
+    var body: some View {
+        let _ = roster.revision
+        let metrics = SessionPlacement.metrics(multiplier: multiplier, roster: roster, textStyle: textStyle)
+        Color.clear
+            .frame(width: metrics.width + SessionChipView.colorSlot(multiplier: multiplier, roster: roster), height: metrics.rowHeight)
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - c11: herder cores (the bar's ⓘ)
+
+/// Where c11's terminals run: this Mac's herder core (hc) and every machine
+/// it has linked, with each one's link state, hc version and how many of
+/// c11's terminals it holds; then how to add another machine. Opened from
+/// the ⓘ at the far left of a terminal's panel bar.
+struct HerderCoresPopover: View {
+    /// The roster id of the machine the panel that opened this runs on.
+    let currentMachineKey: String
+    let onClose: () -> Void
+
+    @ObservedObject private var roster = MachineRoster.shared
+    @ObservedObject private var directory = HCMachineDirectory.shared
+    @ObservedObject private var hcStatus = MachineHCStatus.shared
+    /// Terminal counts, taken when the popover opens: walking every window's
+    /// panels on each redraw of a busy bar would be wasted work.
+    @State private var counts: (byMachine: [String: Int], local: Int) = ([:], 0)
+
+    struct Core: Equatable, Identifiable {
+        let id: String
+        let name: String
+        let isLocal: Bool
+        let isCurrent: Bool
+        /// nil for this Mac (its core is the one c11 runs on).
+        let connected: Bool?
+        let linked: Bool
+        let version: String?
+        let terminals: Int
+    }
+
+    /// One row per core: this Mac first, then linked machines, then roster
+    /// entries hc no longer links. Terminal counts come from c11's panels.
+    static func cores(
+        rows: [MachineRosterRow],
+        versions: [String: String],
+        terminalsByMachine: [String: Int],
+        localTerminals: Int,
+        currentMachineKey: String
+    ) -> [Core] {
+        rows.map { row in
+            Core(
+                id: row.id,
+                name: row.displayName,
+                isLocal: row.isLocal,
+                isCurrent: row.id == (currentMachineKey.isEmpty ? MachineRoster.localID : currentMachineKey),
+                connected: row.connected,
+                linked: row.linked,
+                version: versions[row.id],
+                terminals: row.isLocal ? localTerminals : terminalsByMachine[row.id] ?? 0
+            )
+        }
+    }
+
+    static func detail(_ core: Core) -> String {
+        let terminals = core.terminals == 1
+            ? String(localized: "titlebar.herderCores.oneTerminal", defaultValue: "1 terminal")
+            : String(format: String(localized: "titlebar.herderCores.terminals", defaultValue: "%d terminals"), core.terminals)
+        let state: String
+        if core.isLocal {
+            state = String(localized: "titlebar.herderCores.thisMac", defaultValue: "This Mac")
+        } else if !core.linked {
+            state = String(localized: "titlebar.herderCores.notLinked", defaultValue: "Not linked")
+        } else if core.connected == true {
+            state = String(localized: "titlebar.herderCores.connected", defaultValue: "Connected")
+        } else {
+            state = String(localized: "titlebar.herderCores.unreachable", defaultValue: "Unreachable")
+        }
+        let version = core.version.map { "hc " + $0 }
+        return [state, version, core.linked ? terminals : nil].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private var cores: [Core] {
+        _ = roster.revision
+        let rows = MachineRosterRow.rows(
+            roster: roster.all(),
+            linked: Dictionary(directory.entries.map { ($0.machine, $0.connected) }, uniquingKeysWith: { a, _ in a }),
+            localHostName: LocalSessionPlacementFeed.localHostName
+        )
+        var versions: [String: String] = [:]
+        for (name, listed) in hcStatus.machines {
+            if let id = MachineRoster.normalizedID(name), let version = listed.version { versions[id] = version }
+        }
+        if let pin = hcStatus.pinVersion { versions[MachineRoster.localID] = pin }
+        return Self.cores(rows: rows, versions: versions, terminalsByMachine: counts.byMachine,
+                          localTerminals: counts.local, currentMachineKey: currentMachineKey)
+    }
+
+    private static func terminalCounts() -> (byMachine: [String: Int], local: Int) {
+        var byMachine: [String: Int] = [:]
+        var local = 0
+        for workspace in AppDelegate.shared?.allMainWindowWorkspaces() ?? [] {
+            for panel in workspace.panels.values {
+                guard let terminal = panel as? TerminalPanel else { continue }
+                if let machine = terminal.hcRemoteTarget?.machine, let id = MachineRoster.normalizedID(machine) {
+                    byMachine[id, default: 0] += 1
+                } else {
+                    local += 1
+                }
+            }
+        }
+        return (byMachine, local)
+    }
+
+    var body: some View {
+        let cores = cores
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(localized: "titlebar.herderCores.title", defaultValue: "Herder cores"))
+                    .font(.system(size: 15, weight: .semibold))
+                Text(String(localized: "titlebar.herderCores.lede",
+                            defaultValue: "Each machine runs a herder core (hc) that holds its terminals. They keep running when c11 quits, and c11 shows them all here."))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(cores) { core in
+                    HStack(alignment: .center, spacing: 10) {
+                        Rectangle()
+                            .fill(core.isLocal || core.connected == true ? Color.green : core.linked ? Color.orange : Color.gray)
+                            .frame(width: 8, height: 8)
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 6) {
+                                Text(core.name)
+                                    .font(.system(size: 13, weight: .semibold))
+                                if core.isCurrent {
+                                    Text(String(localized: "titlebar.herderCores.thisPanel", defaultValue: "THIS PANEL"))
+                                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.primary, lineWidth: 1))
+                                }
+                            }
+                            Text(Self.detail(core))
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 6)
+                    .accessibilityElement(children: .combine)
+                    Divider()
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(localized: "titlebar.herderCores.addTitle", defaultValue: "Add another machine"))
+                    .font(.system(size: 13, weight: .semibold))
+                ForEach(Array(Self.steps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .frame(width: 12, alignment: .trailing)
+                        Text(step)
+                            .font(.system(size: 12))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Button(String(localized: "titlebar.herderCores.addButton", defaultValue: "Add Machine…")) {
+                    onClose()
+                    SettingsWindowController.shared.show(navigationTarget: .machines)
+                }
+                .controlSize(.small)
+                .padding(.top, 2)
+                .accessibilityIdentifier("titlebar.herderCores.add")
+            }
+        }
+        .padding(16)
+        .frame(width: 380)
+        .onAppear {
+            counts = Self.terminalCounts()
+            hcStatus.refresh()
+        }
+    }
+
+    static var steps: [String] {
+        [
+            String(localized: "titlebar.herderCores.step1",
+                   defaultValue: "Pick a machine this Mac can reach over SSH with your key, no password prompt (a Tailscale name works): a Mac with Apple silicon and the Command Line Tools, or an x86-64 Linux machine with systemd, Python 3 and linger on."),
+            String(localized: "titlebar.herderCores.step2",
+                   defaultValue: "Click Add Machine… and give its SSH name. c11 installs a herder core there and links it; nothing else on that machine changes."),
+            String(localized: "titlebar.herderCores.step3",
+                   defaultValue: "New Terminal then asks where to run, and the chip in each panel's bar names the machine its terminal runs on."),
+        ]
+    }
+}
+
+// MARK: - Description age (C11H-278)
+
+/// The fixed slot an age label takes, measured once per style, size and
+/// weight from the localized widest samples in tabular digits. The language
+/// is fixed for the process, so a translation never moves the label later.
+enum DescriptionAgeMetrics {
+    private struct Key: Hashable {
+        let style: DescriptionAge.Style
+        let fontSize: CGFloat
+        let weight: CGFloat
+    }
+
+    private static let lock = NSLock()
+    private static var widths: [Key: CGFloat] = [:]
+
+    static func slotWidth(style: DescriptionAge.Style, fontSize: CGFloat, weight: NSFont.Weight = .regular) -> CGFloat {
+        let key = Key(style: style, fontSize: fontSize, weight: weight.rawValue)
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = widths[key] { return cached }
+        let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: weight)
+        let widest = DescriptionAge.widthSamples
+            .map { ceil(($0.text(style) as NSString).size(withAttributes: [.font: font]).width) }
+            .max() ?? 0
+        if widths.count >= 32 { widths.removeAll() }
+        widths[key] = widest
+        return widest
+    }
+}
+
+/// How long ago a description was edited, in a fixed-width slot that stays
+/// reserved when there is no description. It listens to the coarse
+/// `SidebarDecayClock` (paused while no window is visible) and changes its own
+/// state only when its text would change, so a tick re-evaluates this label at
+/// most once a minute and never the row, bar or window around it.
+struct DescriptionAgeLabel: View {
+    let updatedAt: Date?
+    let style: DescriptionAge.Style
+    let fontSize: CGFloat
+    var weight: NSFont.Weight = .regular
+    let color: Color
+    var alignment: Alignment = .trailing
+
+    /// The clock time the label last moved to. Ticks that leave the text as it
+    /// is do not touch it, so they invalidate nothing.
+    @State private var now = Date()
+
+    static let accessibilityIdentifier = "description.age"
+
+    var body: some View {
+        // C11H-238 meter: counts this body, so a run can show ticks re-render
+        // only age labels. Off, one static Bool load.
+        let _ = GraphChurnMeter.note(.descriptionAgeBody)
+        let age = updatedAt.map { DescriptionAge(updatedAt: $0, now: now) }
+        let fullText = age?.text(.full) ?? ""
+        Text(verbatim: age?.text(style) ?? "")
+            .font(.system(size: fontSize, weight: Font.Weight(weight)))
+            .monospacedDigit()
+            .foregroundColor(color)
+            .lineLimit(1)
+            .frame(width: DescriptionAgeMetrics.slotWidth(style: style, fontSize: fontSize, weight: weight),
+                   alignment: alignment)
+            // The compact "12m" says the rest on hover.
+            .safeHelp(style == .compact ? fullText : "")
+            .accessibilityLabel(Text(verbatim: fullText))
+            .accessibilityIdentifier(Self.accessibilityIdentifier)
+            .accessibilityHidden(age == nil)
+            .onReceive(Self.liveTicks) { tick in
+                if Self.shouldAdvance(updatedAt: updatedAt, shown: now, tick: tick) { now = tick }
+            }
+            .onChange(of: updatedAt) { _ in now = Date() }
+    }
+
+    /// Fresh clock times only. A `@Published` publisher replays its current
+    /// value on subscribe, which can be up to a tick older than the label's
+    /// own `now`; dropping it keeps a new label from reading a younger age.
+    /// Every later value is the wall clock at a tick or a resume.
+    static func ticks(of clock: SidebarDecayClock) -> Publishers.Drop<Published<Date>.Publisher> {
+        clock.$now.dropFirst()
+    }
+
+    /// One shared instance, so SwiftUI sees the same publisher on every update.
+    static let liveTicks = ticks(of: .shared)
+
+    /// A tick moves the label only when it changes what the label reads, in
+    /// either direction: a clock set back moves "12 min ago" to "2 min ago" at
+    /// once, as the socket's age does.
+    static func shouldAdvance(updatedAt: Date?, shown: Date, tick: Date) -> Bool {
+        guard let updatedAt else { return false }
+        return DescriptionAge(updatedAt: updatedAt, now: tick) != DescriptionAge(updatedAt: updatedAt, now: shown)
+    }
+}
+
+private extension Font.Weight {
+    init(_ weight: NSFont.Weight) {
+        switch weight {
+        case .medium: self = .medium
+        case .semibold: self = .semibold
+        case .bold: self = .bold
+        default: self = .regular
         }
     }
 }

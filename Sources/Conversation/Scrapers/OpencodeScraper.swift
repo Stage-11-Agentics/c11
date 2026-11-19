@@ -99,15 +99,19 @@ struct OpencodeScraper: Sendable, OpencodeSessionLookup {
     let maxCandidates: Int
     let homeDirectory: URL?
     let environment: [String: String]
+    /// How long a read waits on OpenCode's own write lock. Tests shorten it.
+    let busyTimeoutMilliseconds: Int32
 
     init(
         homeDirectory: URL? = FileManager.default.homeDirectoryForCurrentUser,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        maxCandidates: Int = OpencodeScraper.defaultMaxCandidates
+        maxCandidates: Int = OpencodeScraper.defaultMaxCandidates,
+        busyTimeoutMilliseconds: Int32 = 2_000
     ) {
         self.homeDirectory = homeDirectory
         self.environment = environment
         self.maxCandidates = maxCandidates
+        self.busyTimeoutMilliseconds = busyTimeoutMilliseconds
     }
 
     /// Resolve OpenCode's database override or the platform data path.
@@ -162,7 +166,7 @@ struct OpencodeScraper: Sendable, OpencodeSessionLookup {
             sqlite3_close(database)
             return nil
         }
-        sqlite3_busy_timeout(database, 2_000)
+        sqlite3_busy_timeout(database, busyTimeoutMilliseconds)
         return database
     }
 

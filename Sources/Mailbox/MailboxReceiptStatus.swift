@@ -70,11 +70,17 @@ enum MailboxReceiptStatus {
         var usageLimit: String?
         var delivery: Delivery = .notPushed
         var deliveryReason: String?
+        /// C11H-305: why a stranded doorbell line was not taken (the row's `why`).
+        var deliveryDetail: String?
         var deliveryRoute: String?
         var deliveredAt: Date?
         var read: Read = .unknown
         var readAt: Date?
         var claimedBy: UUID?
+        /// C11H-237: why undelivered mail is not rung yet (`journal_turn`,
+        /// `working_edge`, `waiting_for_idle`, a hold reason, ...) and since when.
+        var waitReason: String?
+        var waitSince: Date?
     }
 
     enum State: String {
@@ -321,8 +327,11 @@ enum MailboxReceiptStatus {
             if recipients[index].read == .read, recipients[index].delivery != .delivered {
                 recipients[index].delivery = .delivered
                 recipients[index].deliveryReason = "claim"
+                recipients[index].deliveryDetail = nil
                 recipients[index].deliveryRoute = nil
                 recipients[index].deliveredAt = recipients[index].readAt
+                recipients[index].waitReason = nil
+                recipients[index].waitSince = nil
             }
         }
         report.recipients = recipients
@@ -334,9 +343,21 @@ enum MailboxReceiptStatus {
         guard recipient.delivery != .delivered else { return }
         let outcome = row["outcome"] as? String ?? ""
         let reason = row["reason"] as? String
+        let holdSince = (row["hold_since"] as? String).flatMap(parseTimestamp)
         func set(_ delivery: Delivery, _ why: String? = reason) {
             recipient.delivery = delivery
             recipient.deliveryReason = why
+            // A stranded line keeps the newest why a row named (later looks carry none); any other state has none.
+            if why == "stranded" {
+                if let detail = row["why"] as? String { recipient.deliveryDetail = detail }
+            } else {
+                recipient.deliveryDetail = nil
+            }
+            if delivery == .held { wait(why, nil) } else if delivery != .pending { wait(nil, nil) }
+        }
+        func wait(_ code: String?, _ since: Date?) {
+            recipient.waitReason = code
+            recipient.waitSince = since
         }
         switch outcome {
         case "doorbell":
@@ -355,11 +376,19 @@ enum MailboxReceiptStatus {
             // composer hold.
             if reason == "working_decay" {
                 set(.pending, "working")
+                wait("working_edge", holdSince)
+            } else if reason == "journal_turn_closed" {
+                // C11H-237: the journal turn that held the mail closed; the
+                // look's own rows say what happened next.
+                set(.pending, reason)
+                wait(reason, at)
             } else if reason == "turnless_idle" {
                 set(.pending, "turnless_idle")
+                wait("turnless_idle", nil)
             } else if reason == "native_hold" {
                 // An OpenCode 2 attempt awaiting replay, not a composer hold.
                 set(.pending, "native_hold")
+                wait("native_hold", nil)
             } else {
                 set(.held)
             }
@@ -370,7 +399,7 @@ enum MailboxReceiptStatus {
             if reason == "native_unconfirmed" { set(.held, "unconfirmed") } else { set(.failed) }
         case "doorbell_skipped":
             switch reason {
-            case "draft", "dialog", "unknown_prompt", "stranded":
+            case "draft", "dialog", "unknown_prompt", "stranded", "headless_status", "composer_unread":
                 set(.held)
             case "unavailable":
                 // An unreadable or busy prompt read; retried like a hold.
@@ -380,9 +409,11 @@ enum MailboxReceiptStatus {
                 // this must not read as a wait. A later ring row still wins.
                 set(.notRung)
             case "once_per_idle", "already_covered", "in_flight", "native_attempt_unconfirmed",
-                 "operator_active", "input_transaction", "gate_closed", "input_unavailable":
+                 "operator_active", "input_transaction", "gate_closed", "input_unavailable",
+                 "agent_unconfirmed":
                 if [.notPushed, .pending, .notRung].contains(recipient.delivery) {
                     set(.pending)
+                    wait((row["hold"] as? String) ?? reason, holdSince)
                 }
             default:
                 set(.notRung)
@@ -390,7 +421,11 @@ enum MailboxReceiptStatus {
         case "buffered":
             // The queue row that follows a skip does not undo "cannot ring".
             if recipient.delivery == .notRung, recipient.deliveryReason == "agent_not_foreground" { break }
+            // A queue row keeps the reason the skip before it named.
+            let kept = recipient.delivery == .pending ? recipient.waitReason : nil
+            let keptSince = recipient.waitSince
             set(.pending, "waiting_for_idle")
+            if let kept { wait(kept, keptSince) } else { wait("waiting_for_idle", nil) }
         case "skipped":
             // Already claimed by a drain: the read state says the rest.
             break
@@ -602,7 +637,7 @@ enum MailboxClaimLog {
 extension MailboxReceiptStatus.Report {
 
     /// The `--json` document. Times are ISO-8601 with the local offset; no body.
-    func jsonObject(timeZone: TimeZone = .current) -> [String: Any] {
+    func jsonObject(timeZone: TimeZone = .current, now: Date = Date()) -> [String: Any] {
         func time(_ date: Date?) -> Any {
             date.map { MailboxReceiptStatus.localISO($0, timeZone: timeZone) } ?? NSNull()
         }
@@ -627,6 +662,7 @@ extension MailboxReceiptStatus.Report {
                     "delivered": recipient.delivery == .delivered,
                     "delivery": recipient.delivery.rawValue,
                     "delivery_reason": value(recipient.deliveryReason),
+                    "delivery_detail": value(recipient.deliveryDetail),
                     "delivery_route": value(recipient.deliveryRoute),
                     "delivered_at": time(recipient.deliveredAt),
                     "read": recipient.read == .read,
@@ -634,8 +670,31 @@ extension MailboxReceiptStatus.Report {
                     "read_at": time(recipient.readAt),
                     "claimed_by_panel_id": recipient.claimedBy?.uuidString as Any? ?? NSNull(),
                     "usage_limit": value(recipient.usageLimit),
-                ]
+                ].merging(waitFields(recipient, timeZone: timeZone, now: now)) { $1 }
             },
+        ]
+    }
+
+    /// C11H-237: for mail not yet delivered, how long it has waited since it
+    /// was sent and why, in a code and in plain words. Null once delivered.
+    private func waitFields(_ recipient: MailboxReceiptStatus.Recipient, timeZone: TimeZone,
+                            now: Date) -> [String: Any] {
+        let waiting = [.pending, .held].contains(recipient.delivery) && recipient.read != .read
+        let since = waiting ? recipient.sentAt : nil
+        let code = waiting ? recipient.waitReason : nil
+        let clock = MailboxReceiptStatus.Clock(now: now, timeZone: timeZone)
+        return [
+            "pending_since": since.map { MailboxReceiptStatus.localISO($0, timeZone: timeZone) } as Any? ?? NSNull(),
+            "pending_seconds": since.map { max(0, Int(now.timeIntervalSince($0).rounded(.down))) } as Any? ?? NSNull(),
+            "wait_reason": code as Any? ?? NSNull(),
+            "wait_since": (code == nil ? nil : recipient.waitSince)
+                .map { MailboxReceiptStatus.localISO($0, timeZone: timeZone) } as Any? ?? NSNull(),
+            "wait_reason_text": code.map {
+                if $0 == "stranded", let detail = recipient.deliveryDetail {
+                    return MailboxReceiptStatus.strandedText(why: detail)
+                }
+                return MailboxReceiptStatus.waitText(code: $0, since: recipient.waitSince, clock: clock)
+            } as Any? ?? NSNull(),
         ]
     }
 
@@ -681,7 +740,9 @@ extension MailboxReceiptStatus.Report {
                 defaultValue: "note: the scan limit was reached; some rows may be missing"
             ))
         }
-        return lines.joined(separator: "\n") + "\n"
+        // C11H-359: from, to, topic, names and reasons can come from another
+        // machine. Each line stays one line; any control prints as `\xHH`.
+        return lines.map { HCCoreUtility.printable($0) }.joined(separator: "\n") + "\n"
     }
 
     private func sentLine(_ recipient: MailboxReceiptStatus.Recipient, _ clock: MailboxReceiptStatus.Clock) -> String {
@@ -702,6 +763,10 @@ extension MailboxReceiptStatus.Report {
         case .delivering:
             return String(localized: "mailbox.status.delivered.delivering", defaultValue: "delivered  no, the doorbell is being typed")
         case .held:
+            if reason == "stranded", let detail = recipient.deliveryDetail {
+                let sentence = MailboxReceiptStatus.strandedText(why: detail)
+                return String(localized: "mailbox.status.delivered.held", defaultValue: "delivered  no, \(sentence)")
+            }
             let sentence = MailboxHoldNotice.sentence(outcome: "doorbell_recheck", reason: reason)
                 ?? (reason == "unconfirmed"
                     ? String(localized: "mailbox.status.held.unconfirmed",
@@ -709,6 +774,13 @@ extension MailboxReceiptStatus.Report {
                     : String(localized: "mailbox.status.held.reason", defaultValue: "held: \(reason)"))
             return String(localized: "mailbox.status.delivered.held", defaultValue: "delivered  no, \(sentence)")
         case .pending:
+            if let sent = recipient.sentAt {
+                let duration = MailboxReceiptStatus.durationText(clock.now.timeIntervalSince(sent))
+                let why = MailboxReceiptStatus.waitText(code: recipient.waitReason ?? "waiting_for_idle",
+                                                        since: recipient.waitSince, clock: clock)
+                return String(localized: "mailbox.status.delivered.pendingFor",
+                              defaultValue: "delivered  no, pending \(duration): \(why)")
+            }
             return String(localized: "mailbox.status.delivered.pending", defaultValue: "delivered  no, waiting for the recipient's next idle prompt")
         case .failed:
             return String(localized: "mailbox.status.delivered.failed", defaultValue: "delivered  no, the last attempt failed (\(reason)); c11 tries again")
@@ -743,10 +815,94 @@ extension MailboxReceiptStatus.Report {
 }
 
 extension MailboxReceiptStatus {
+    /// C11H-237: a wait reason in plain words. `since` is local wall time.
+    static func waitText(code: String, since: Date?, clock: Clock) -> String {
+        let at = clock.short(since)
+        switch code {
+        case "journal_turn":
+            if since == nil {
+                return String(localized: "mailbox.status.wait.journalTurnOpen",
+                              defaultValue: "the agent's journal shows a turn in progress")
+            }
+            return String(localized: "mailbox.status.wait.journalTurn",
+                          defaultValue: "the agent's journal shows a turn open since \(at)")
+        case "working_edge":
+            return String(localized: "mailbox.status.wait.workingEdge",
+                          defaultValue: "the agent showed work starting at \(at) and no end since; c11 looks again 2 minutes after that")
+        case "core_working":
+            return String(localized: "mailbox.status.wait.coreWorking",
+                          defaultValue: "the terminal's machine reports the agent working since \(at)")
+        case "journal_turn_closed":
+            return String(localized: "mailbox.status.wait.journalTurnClosed",
+                          defaultValue: "the agent's turn ended at \(at); c11 looked again")
+        case "waiting_for_idle", "gate_closed":
+            return String(localized: "mailbox.status.wait.idle",
+                          defaultValue: "waiting for the agent's next idle prompt")
+        case "turnless_idle":
+            return String(localized: "mailbox.status.wait.turnless",
+                          defaultValue: "already rung; this agent reports no turn edges, so new mail rings 5 minutes after the last ring")
+        case "native_hold":
+            return String(localized: "mailbox.status.wait.nativeHold",
+                          defaultValue: "a native delivery is waiting to be retried")
+        case "agent_unconfirmed":
+            return String(localized: "mailbox.status.wait.unconfirmed",
+                          defaultValue: "c11 has not yet confirmed the agent in front of the terminal")
+        case "operator_active":
+            return String(localized: "mailbox.status.wait.operator",
+                          defaultValue: "the operator typed in the panel moments ago")
+        case "once_per_idle", "already_covered":
+            return String(localized: "mailbox.status.wait.rung",
+                          defaultValue: "already rung in this idle period; waiting for the next one")
+        case "input_transaction":
+            return String(localized: "mailbox.status.wait.input",
+                          defaultValue: "other input is being typed into the panel")
+        default:
+            return MailboxHoldNotice.sentence(outcome: "doorbell_skipped", reason: code)
+                ?? String(localized: "mailbox.status.wait.other", defaultValue: "held: \(code)")
+        }
+    }
+
+    /// C11H-305: a doorbell line typed but not taken, and why (the stranded row's `why`).
+    static func strandedText(why: String) -> String {
+        let reason: String
+        switch why {
+        case "composer_holds_text":
+            reason = String(localized: "socket.send.unconfirmed.composer", defaultValue: "the text is still in its composer")
+        case "dialog":
+            reason = String(localized: "socket.send.unconfirmed.dialog", defaultValue: "a dialog or chooser is showing")
+        case "return_cut":
+            reason = String(localized: "mailbox.status.stranded.returnCut", defaultValue: "its Return was not sent")
+        default:
+            reason = String(localized: "socket.send.unconfirmed.no_turn", defaultValue: "its turn did not start")
+        }
+        return String(localized: "mailbox.status.held.stranded",
+                      defaultValue: "held: the doorbell line was typed but the agent did not take it (\(reason))")
+    }
+
+    /// `45s`, `18m`, `2h 05m`.
+    static func durationText(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded(.down)))
+        if total < 60 { return "\(total)s" }
+        if total < 3600 { return "\(total / 60)m" }
+        return String(format: "%dh %02dm", total / 3600, (total % 3600) / 60)
+    }
+
     /// Local wall time: the clock alone today, the date too otherwise.
     struct Clock {
         let now: Date
         let timeZone: TimeZone
+
+        /// `21:43`, or `2026-11-06 21:43` on another day; `-` when unknown.
+        func short(_ date: Date?) -> String {
+            guard let date else { return "-" }
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = timeZone
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = timeZone
+            formatter.dateFormat = calendar.isDate(date, inSameDayAs: now) ? "HH:mm" : "yyyy-MM-dd HH:mm"
+            return formatter.string(from: date)
+        }
 
         func text(_ date: Date?) -> String {
             guard let date else { return "-" }

@@ -148,5 +148,10 @@ if [[ -n "$c11_bin" ]]; then
     disown 2>/dev/null || true
 fi
 
+# C11H-35: the per-launch c11 note, by Pi's own flag (no file, no config).
+c11_bin_dir="$(cd "$(dirname "$0")" && pwd)"
+C11_NOTE_ARGS=()
+# shellcheck source=/dev/null
+[[ -r "$c11_bin_dir/c11-agent-note.sh" ]] && . "$c11_bin_dir/c11-agent-note.sh" && c11_note_args pi "$c11_bin_dir" "$@"
 export C11_AGENT_HOOK_CLI="$c11_bin"
-exec "$REAL_PI" --extension "$self_dir/pi-lifecycle.ts" "$@"
+exec "$REAL_PI" --extension "$self_dir/pi-lifecycle.ts" ${C11_NOTE_ARGS[@]+"${C11_NOTE_ARGS[@]}"} "$@"

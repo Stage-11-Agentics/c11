@@ -1,6 +1,6 @@
 # Tab sheet round three: worker brief
 
-You build round three of the c11 tab bar redesign. Worktree: `/Users/atin/Projects/Stage11/code/c11/c11-worktrees/tab-sheet-grid`, branch `tab-sheet-grid`. It is stacked on `tab-bar-qol` (c11 PR #459 plus bonsplit PR #5, reviewed and awaiting Atin's hand-check). First run `git submodule update --init --recursive`, which pins bonsplit at `781b108`, then branch bonsplit as `tab-sheet-grid` from there. When #459/#5 merge, rebase onto main; your parent will tell you.
+You build round three of the c11 tab bar redesign. Worktree: `~/src/c11/c11-worktrees/tab-sheet-grid`, branch `tab-sheet-grid`. It is stacked on `tab-bar-qol` (c11 PR #459 plus bonsplit PR #5, reviewed and awaiting Atin's hand-check). First run `git submodule update --init --recursive`, which pins bonsplit at `781b108`, then branch bonsplit as `tab-sheet-grid` from there. When #459/#5 merge, rebase onto main; your parent will tell you.
 
 Read first: this worktree's `CLAUDE.md`, `skills/c11-hotload/SKILL.md`, `design/tab-bar-qol/BRIEF.md` (round one, for context), and the round-one code: `vendor/bonsplit/Sources/Bonsplit/Internal/Views/CollapsedTabSheet.swift` and `TabBarView.swift`.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """C11-260 disposable sidebar fixture and model oracles, NOT a UI test.
 
-Use an isolated sandbox guest or an explicitly reserved tagged QA app on Atlas:
+Use an isolated sandbox guest or an explicitly reserved tagged QA app on the build host:
   C11_SOCKET=/tmp/c11-debug-TAG.sock C11_GROUPS_TEST_TAG=TAG \
   C11_CLI=/absolute/tagged.app/Contents/Resources/bin/c11 \
   python3 tests_v2/test_workspace_groups_sidebar.py prepare --state /tmp/sidebar.json

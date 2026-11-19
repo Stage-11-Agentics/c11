@@ -63,7 +63,7 @@ struct TelemetryLaunchDecision: Equatable {
 }
 
 /// Telemetry may start only in the identities that real users run. Staging,
-/// tagged Debug, sandbox-guest builds, c11h and any unknown bundle id start
+/// tagged Debug, sandbox-guest builds, c11 and any unknown bundle id start
 /// no SDK and send nothing, whatever the user setting says.
 enum TelemetryIdentityGate {
     static let productionBundleIdentifier = "com.stage11.c11"

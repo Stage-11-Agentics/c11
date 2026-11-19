@@ -118,11 +118,11 @@ Leverage = (unlock) / (cost × risk). Ranked. The top two are the leverage point
 
 **Risk:** low, but beware scope creep into a full ack/retry protocol. Keep it to *observability of consumption*, not guaranteed delivery semantics. The actor read its mailbox ≠ the actor acted; don't let "delivered" masquerade as "acked."
 
-### #6 — Cross-host / tailnet (Atlas + Hyperion)
+### #6 — Cross-host / tailnet (the build host + the laptop)
 
-**What:** the operator runs two always-on-ish machines on a tailnet. Today the mailbox is single-host-single-process. A cross-host bridge (a `webhook`/sync handler, or a tailnet-aware resolver) would let an agent on Hyperion message an agent on Atlas.
+**What:** the operator runs two always-on-ish machines on a tailnet. Today the mailbox is single-host-single-process. A cross-host bridge (a `webhook`/sync handler, or a tailnet-aware resolver) would let an agent on the laptop message an agent on the build host.
 
-**Unlocks:** genuinely new capability — the swarm spans machines. The persistent agentic host (Atlas, Hermes) becoming addressable from the laptop is real.
+**Unlocks:** genuinely new capability — the swarm spans machines. The persistent agentic host (the build host, Hermes) becoming addressable from the laptop is real.
 
 **Cost:** high, and it reopens the security model the design explicitly deferred (`from` is sender-attested, fine for same-user-same-host; *not* fine across a network boundary). This is where the deferred auth pass becomes mandatory.
 

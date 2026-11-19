@@ -18,6 +18,207 @@ final class WorkspaceMissionTests: XCTestCase {
         DispatchQueue.global(qos: .utility).sync { WorkspaceMissionFile.read(root: root.path) }
     }
 
+    private func readDocument(_ root: URL) -> WorkspaceProjectDocument? {
+        DispatchQueue.global(qos: .utility).sync { WorkspaceMissionFile.readDocument(root: root.path) }
+    }
+
+    func testCaptainOnlyFileDoesNotBecomeMissionProse() throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("C11.md")
+        for text in ["**Captain.** project-captain\n", "# Project\n\n## Captain\n\nproject-captain\n"] {
+            try text.write(to: file, atomically: true, encoding: .utf8)
+            let document = try XCTUnwrap(readDocument(root))
+            XCTAssertEqual(document.path, file.path)
+            XCTAssertEqual(document.captain, "project-captain")
+            XCTAssertNil(document.mission)
+            XCTAssertNil(read(root), "the captain address must never be injected as mission prose")
+        }
+    }
+
+    func testMarkedCaptainValuesAcceptBackticksInBoldAndHeadingForms() throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("C11.md")
+        for declaration in [
+            "**Captain.** `project-captain`",
+            "**Captain:** `project-captain`",
+            "**Captain**: `project-captain`",
+            "**Captain** `project-captain`",
+            "## Captain\n\n`project-captain`",
+        ] {
+            try (declaration + "\n\n## Mission\nMake the project useful.\n")
+                .write(to: file, atomically: true, encoding: .utf8)
+            let document = try XCTUnwrap(readDocument(root))
+            XCTAssertEqual(document.captain, "project-captain", declaration)
+            XCTAssertEqual(document.mission?.paragraph, "Make the project useful.", declaration)
+        }
+    }
+
+    func testCaptainValueUnwrapsOnlyOneCompleteBacktickPair() throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("C11.md")
+        let cases: [(String, String?)] = [
+            ("``project-captain``", "`project-captain`"),
+            ("`project-captain", "`project-captain"),
+            ("project-captain`", "project-captain`"),
+            ("project`captain", "project`captain"),
+            ("`", "`"),
+            ("``", nil),
+        ]
+        for (value, expected) in cases {
+            for declaration in ["**Captain.** \(value)", "## Captain\n\n\(value)"] {
+                try (declaration + "\n").write(to: file, atomically: true, encoding: .utf8)
+                let document = try XCTUnwrap(readDocument(root))
+                XCTAssertEqual(document.captain, expected, declaration)
+                XCTAssertNil(document.mission, declaration)
+            }
+        }
+    }
+
+    func testUnmarkedCaptainProseDoesNotSeedMetadataOrDisappearFromMission() throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("C11.md")
+        let prose = "Captain: prose-only"
+        for declaration in ["", "\n\n**Captain.** `project-captain`"] {
+            try ("# Project\n\n" + prose + declaration + "\n")
+                .write(to: file, atomically: true, encoding: .utf8)
+            let document = try XCTUnwrap(readDocument(root))
+            XCTAssertEqual(document.captain, declaration.isEmpty ? nil : "project-captain")
+            XCTAssertEqual(document.mission?.paragraph, prose)
+        }
+    }
+
+    func testCaptainMarkersIgnoreCommentsFencesQuotesAndKeepFirstValidAddress() throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try """
+        # Project
+        <!-- **Captain.** `comment-captain` -->
+        ```markdown
+        **Captain.** `fenced-captain`
+        ```
+        > **Captain.** `quoted-captain`
+        **Captain.**
+        **Captain.** \(String(repeating: "x", count: 257))
+        ## Mission
+        Make the project useful.
+        ## Captain
+        project-captain
+        ## Another workspace
+        **Captain.** second-captain
+        """.write(to: root.appendingPathComponent("C11.md"), atomically: true, encoding: .utf8)
+        let document = try XCTUnwrap(readDocument(root))
+        XCTAssertEqual(document.captain, "project-captain")
+        XCTAssertEqual(document.mission?.paragraph, "Make the project useful.")
+    }
+
+    func testLongerFenceKeepsNestedExamplesOutOfCaptainAndMission() throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        for marker in ["`", "~"] {
+            let outer = String(repeating: marker, count: 4)
+            let inner = String(repeating: marker, count: 3)
+            let text = """
+            \(outer)markdown
+            \(inner)swift
+            **Captain.** example
+            **Mission.** Example mission.
+            \(inner)
+            **Captain.** after-short-fence-example
+            **Mission.** After short fence example.
+            \(outer)not-a-closing-fence
+            **Captain.** still-example
+            \(outer)
+            **Captain.** real
+            **Mission.** Real mission.
+            """
+            try text.write(to: root.appendingPathComponent("C11.md"), atomically: true, encoding: .utf8)
+            let document = try XCTUnwrap(readDocument(root))
+            XCTAssertEqual(document.captain, "real")
+            XCTAssertEqual(document.mission?.paragraph, "Real mission.")
+        }
+    }
+
+    @MainActor
+    func testDocumentMonitorSharesOneReadAndPublishesCaptainOnlyChangesAndDeletion() async throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("C11.md")
+        try "## Mission\nSame mission.\n\n**Captain.** first\n".write(to: file, atomically: true, encoding: .utf8)
+        let reads = MissionReadCounter()
+        let monitor = WorkspaceMissionMonitor(interval: 0.05, documentReader: { root in
+            XCTAssertFalse(Thread.isMainThread)
+            reads.increment()
+            return WorkspaceMissionFile.readDocument(root: root)
+        })
+        let first = expectation(description: "both subscribers receive first captain")
+        let changed = expectation(description: "both subscribers receive captain-only edit")
+        let deleted = expectation(description: "both subscribers receive file deletion")
+        for item in [first, changed, deleted] { item.expectedFulfillmentCount = 2; item.assertForOverFulfill = true }
+        let receive: WorkspaceMissionMonitor.DocumentReceiver = { document in
+            if document != nil { XCTAssertEqual(document?.mission?.summary, "Same mission.") }
+            switch document?.captain {
+            case "first": first.fulfill()
+            case "second": changed.fulfill()
+            case nil: deleted.fulfill()
+            default: XCTFail("unexpected captain")
+            }
+        }
+        let one = monitor.observeDocument(root: root.path, receive: receive)
+        let two = monitor.observeDocument(root: root.path, receive: receive)
+        await fulfillment(of: [first], timeout: 2)
+        XCTAssertEqual(reads.value, 1)
+        try "## Mission\nSame mission.\n\n**Captain.** second\n".write(to: file, atomically: true, encoding: .utf8)
+        await fulfillment(of: [changed], timeout: 2)
+        try FileManager.default.removeItem(at: file)
+        await fulfillment(of: [deleted], timeout: 2)
+        withExtendedLifetime((one, two)) {}
+    }
+
+    @MainActor
+    func testCaptainBindingRejectsOldReadWhenRootReturnsToSamePath() async throws {
+        let firstRoot = try directory()
+        let secondRoot = try directory()
+        defer { try? FileManager.default.removeItem(at: firstRoot); try? FileManager.default.removeItem(at: secondRoot) }
+        try "**Captain.** old\n".write(to: firstRoot.appendingPathComponent("C11.md"), atomically: true, encoding: .utf8)
+        try "**Captain.** elsewhere\n".write(to: secondRoot.appendingPathComponent("C11.md"), atomically: true, encoding: .utf8)
+        let started = expectation(description: "first read captured old bytes")
+        let applied = expectation(description: "current root receives new bytes")
+        let release = DispatchSemaphore(value: 0)
+        let reads = MissionReadCounter()
+        let monitor = WorkspaceMissionMonitor(interval: 0.05, documentReader: { root in
+            let value = WorkspaceMissionFile.readDocument(root: root)
+            if root == firstRoot.path {
+                reads.increment()
+                if reads.value == 1 {
+                    started.fulfill()
+                    _ = release.wait(timeout: .now() + 3)
+                }
+            }
+            return value
+        })
+        var captains: [String] = []
+        var latest: WorkspaceProjectDocument?
+        let binding = WorkspaceMissionBinding(monitor: monitor, receiveDocument: { document in
+            latest = document
+            if let captain = document?.captain { captains.append(captain) }
+            if document?.captain == "new" { applied.fulfill() }
+        })
+        binding.setRoot(firstRoot.path)
+        await fulfillment(of: [started], timeout: 2)
+        binding.setRoot(secondRoot.path)
+        try "**Captain.** new\n".write(to: firstRoot.appendingPathComponent("C11.md"), atomically: true, encoding: .utf8)
+        binding.setRoot(firstRoot.path)
+        release.signal()
+        await fulfillment(of: [applied], timeout: 2)
+        XCTAssertEqual(captains, ["new"], "the first root's old callback must not match a later subscription to that root")
+        binding.setRoot(nil)
+        XCTAssertNil(latest)
+    }
+
     func testUsesMarkedMissionRatherThanDocumentTitleOrPreamble() throws {
         let root = try directory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -224,6 +425,43 @@ final class WorkspaceMissionTests: XCTestCase {
             process.waitUntilExit()
             XCTAssertEqual(process.terminationStatus, 0)
             XCTAssertEqual(String(decoding: data, as: UTF8.self), expected + "\n")
+        }
+    }
+
+    /// C11H-51: `C11_MISSION_FILE` names a file on this Mac. A launch on another
+    /// machine never reads the local mission and keeps the environment and launch
+    /// line it was asked for, with or without a prompt, in every delivery shape.
+    func testRemoteLaunchKeepsItsOwnEnvironmentAndCommandWithAndWithoutAPrompt() throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "Local mission.".write(to: root.appendingPathComponent("C11.md"), atomically: true, encoding: .utf8)
+        var remoteReads = 0
+        let remote = WorkspaceMissionLaunchContext.forLaunch(isRemote: true, missionRoot: root.path) { _ in
+            remoteReads += 1
+            return nil
+        }
+        XCTAssertNil(remote)
+        XCTAssertEqual(remoteReads, 0, "a remote launch never reads this Mac's mission")
+        let local = WorkspaceMissionLaunchContext.forLaunch(isRemote: false, missionRoot: root.path)
+        let localPath = try XCTUnwrap(local?.mission?.path)
+
+        let requested = ["C11_MISSION_FILE": "/remote/project/C11.md", "REMOTE_ONLY": "1"]
+        XCTAssertEqual(remote.environment(requested), requested, "the remote override survives")
+        XCTAssertEqual(local.environment(requested)["C11_MISSION_FILE"], localPath)
+        XCTAssertEqual(local.environment(requested)["REMOTE_ONLY"], "1")
+
+        let store = LaunchPromptStore(rootDirectory: root.appendingPathComponent("runtime"))
+        let staged = try store.stage(prompt: "Task.")
+        defer { store.discard(staged) }
+        for promptPath in [nil, staged.url.path] {
+            for mode: AgentPromptDelivery in [.positional, .flag("--prompt"), .postBoot] {
+                let plan = LaunchPromptDelivery.compose(command: "agent-cli --model x", delivery: mode, promptFilePath: promptPath)
+                let label = "\(mode) prompt=\(promptPath != nil)"
+                XCTAssertEqual(remote.command(plan.launchLine), plan.launchLine, label)
+                XCTAssertFalse(remote.command(plan.launchLine).contains("C11_MISSION_FILE"), label)
+                XCTAssertTrue(local.command(plan.launchLine).hasPrefix("export C11_MISSION_FILE="), label)
+                XCTAssertTrue(local.command(plan.launchLine).contains(localPath), label)
+            }
         }
     }
 

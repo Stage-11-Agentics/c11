@@ -1,6 +1,9 @@
 import AppKit
+import Bonsplit
 import Darwin
+import Combine
 import Foundation
+import os
 
 /// What a captured main-thread backtrace says the wedge actually is.
 ///
@@ -298,6 +301,25 @@ struct MainThreadHangDetector {
     var isInEpisode: Bool { inEpisode }
 }
 
+/// C11H-238: one ended main-thread stall, as the `main.stall` event carries it.
+struct MainThreadStall: Equatable {
+    let durationMs: Int
+    let cause: String
+    let appActive: Bool
+    let visible: Bool
+    let panelCount: Int
+    /// hc inventory snapshots the app received in the ten seconds before the end.
+    let hcSnapshots10s: Int
+    /// The latest the watchdog itself woke during the stall (0: on time).
+    let watchdogLateMs: Int
+
+    var payload: [String: Any] {
+        ["duration_ms": durationMs, "cause": cause, "active": appActive, "visible": visible,
+         "panel_count": panelCount, "hc_events_10s": hcSnapshots10s, "watchdog_late_ms": watchdogLateMs,
+         "watchdog_late": watchdogLateMs > Int(MainThreadWatchdogLateness.thresholdMs)]
+    }
+}
+
 /// Watchdog-thread-only rate limiter. A starving watchdog can wake late on
 /// every tick; preserve a count and maximum without writing a line per wakeup.
 struct MainThreadWatchdogLateness {
@@ -305,8 +327,12 @@ struct MainThreadWatchdogLateness {
     private var count = 0
     private var maximumMs: Double = 0
 
+    /// A wake this late is the watchdog's own starvation, reported on its own
+    /// line (`watchdog.late`) and flagged on any capture it delays.
+    static let thresholdMs: Double = 1000
+
     mutating func record(nowUptime: Double, lateMs: Double) -> String? {
-        guard lateMs > 1000 else { return nil }
+        guard lateMs > Self.thresholdMs else { return nil }
         count += 1
         maximumMs = max(maximumMs, lateMs)
         if let lastLogUptime, nowUptime - lastLogUptime < 60 { return nil }
@@ -333,7 +359,8 @@ enum MainThreadHangCapture {
     ) -> Int {
         // Failure to promote must never lead to suspending main at background QoS.
         guard setQoS(QOS_CLASS_USER_INTERACTIVE, 0) == 0 else { return -2 }
-        defer { _ = setQoS(QOS_CLASS_BACKGROUND, 0) }
+        // Back to the watchdog's own class (C11H-238), never below it.
+        defer { _ = setQoS(MainThreadHangMonitor.watchdogQoS, 0) }
         guard suspend(thread) == KERN_SUCCESS else { return -1 }
         // LIFO: main resumes before the watchdog gives up its priority, even
         // when thread_get_state fails and the reader returns zero frames.
@@ -404,6 +431,14 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     /// Watchdog-thread-only: how the current episode was classified at
     /// detection. Recovery needs the fingerprint, and only `handleHang` sees it.
     private var currentEpisodeSignature: MainThreadHangDescriptor?
+    /// Watchdog-thread-only: the latest wake of this episode's watchdog, and
+    /// the visibility at its first capture, for `main.stall`.
+    private var episodeWatchdogLateMs: Double = 0
+    private var episodeVisibility: AppVisibility = .unwatched
+    /// Where `main.stall` goes. The default is the events stream; tests replace it.
+    var stallSink: (MainThreadStall) -> Void = { stall in
+        EventEmitter.shared.emitMainStall(stall)
+    }
 
     private let lock = NSLock()
     private var lastAckUptime: TimeInterval = 0
@@ -456,9 +491,34 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
         let thread = Thread { [weak self] in self?.runLoop() }
         thread.name = "com.stage11.c11.hang-monitor"
-        thread.qualityOfService = .background
+        // C11H-238: at background QoS the watchdog was starved for 15-25 s
+        // under load and recorded no stack for the stall it existed to see.
+        thread.qualityOfService = Self.watchdogThreadQoS
         thread.stackSize = 512 * 1024
         thread.start()
+        Self.scheduleForcedStall(ProcessInfo.processInfo.environment)
+    }
+
+    /// The watchdog's class: high enough to run while main and every core are
+    /// busy, below the user-interactive class the capture borrows.
+    static let watchdogQoS = QOS_CLASS_USER_INITIATED
+    static let watchdogThreadQoS: QualityOfService = .userInitiated
+
+    /// C11H-238 proof seam: `C11_FORCE_MAIN_STALL=<delay>:<stall>` blocks
+    /// main once, `stall` seconds starting `delay` seconds after install (each
+    /// 1-30). Read once; any other value does nothing.
+    static func forcedStall(_ env: [String: String]) -> (delay: Double, stall: Double)? {
+        guard let raw = env["C11_FORCE_MAIN_STALL"] else { return nil }
+        let parts = raw.split(separator: ":").compactMap { Double($0) }
+        guard parts.count == 2, parts.allSatisfy({ $0.isFinite && (1...30).contains($0) }) else { return nil }
+        return (parts[0], parts[1])
+    }
+
+    private static func scheduleForcedStall(_ env: [String: String]) {
+        guard let plan = forcedStall(env) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + plan.delay) {
+            Thread.sleep(forTimeInterval: plan.stall)
+        }
     }
 
     /// On by default; opt out via env. Never runs under the XCTest host, where
@@ -544,10 +604,12 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
                 switch detector.evaluate(nowUptime: now, pingPostedUptime: ping, lastAckUptime: ack) {
                 case .none:
-                    break
+                    if detector.isInEpisode { episodeWatchdogLateMs = max(episodeWatchdogLateMs, lateMs) }
                 case .capture(let gapMs, let recapture):
                     handleHang(gapMs: gapMs, recapture: recapture, watchdogLateMs: lateMs)
                 case .recovered(let durationMs):
+                    // The recovery tick's own lateness belongs to the episode too.
+                    episodeWatchdogLateMs = max(episodeWatchdogLateMs, lateMs)
                     handleRecovery(durationMs: durationMs)
                 }
             }
@@ -598,6 +660,8 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         // never accumulate.
         if !recapture { currentEpisodeSignature = signature }
         lock.lock(); let visibility = self.visibility; lock.unlock()
+        if !recapture { episodeVisibility = visibility; episodeWatchdogLateMs = 0 }
+        episodeWatchdogLateMs = max(episodeWatchdogLateMs, watchdogLateMs)
 
         if signature.cause == MainThreadHangSignature.runLoopIdleCause {
             idleCapture = (stack, signature, visibility)
@@ -609,7 +673,8 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         lines.append(
             "=== c11 \(kind) \(Self.timestamp()) stalledMs=\(Int(gapMs)) pid=\(getpid()) "
                 + "cause=\(signature.label) active=\(visibility.appIsActive ? 1 : 0) "
-                + "visible=\(visibility.hasVisibleWindow ? 1 : 0) watchdogLateMs=\(Int(watchdogLateMs)) ==="
+                + "visible=\(visibility.hasVisibleWindow ? 1 : 0) watchdogLateMs=\(Int(watchdogLateMs)) "
+                + "watchdogLate=\(watchdogLateMs > MainThreadWatchdogLateness.thresholdMs ? 1 : 0) ==="
         )
         if stack.isEmpty {
             lines.append("  <no backtrace captured>")
@@ -650,6 +715,15 @@ final class MainThreadHangMonitor: @unchecked Sendable {
 
         let signature = currentEpisodeSignature
         currentEpisodeSignature = nil
+        // C11H-238: every stall reaches the events stream, built here on the
+        // watchdog thread from lock-protected counters; main is never asked.
+        let now = ProcessInfo.processInfo.systemUptime
+        stallSink(MainThreadStall(durationMs: Int(durationMs), cause: signature?.label ?? "unknown",
+            appActive: episodeVisibility.appIsActive, visible: episodeVisibility.hasVisibleWindow,
+            panelCount: HCLoadMeter.shared.panelCount,
+            hcSnapshots10s: HCLoadMeter.shared.snapshotsLast10s(nowUptime: now),
+            watchdogLateMs: Int(episodeWatchdogLateMs)))
+        episodeWatchdogLateMs = 0
         guard let signature else { return }
         let precursor = precursorTracker.record(
             fingerprint: signature.fingerprint,
@@ -844,7 +918,7 @@ final class MainThreadHangMonitor: @unchecked Sendable {
     }
 
     /// Mirrors the debug-log path conventions: an explicit override wins, then a
-    /// tag-derived `/tmp` path next to the other debug logs for tagged dev builds,
+    /// tag-derived path in c11's per-user folder for tagged dev builds,
     /// and finally a durable per-user log under `~/Library/Logs/c11/` for the
     /// production app (where `/tmp` would be wiped on reboot).
     private static func resolveLogURL() -> URL {
@@ -866,12 +940,12 @@ final class MainThreadHangMonitor: @unchecked Sendable {
         if let tag = c11Env("C11_TAG", in: env)?.trimmingCharacters(in: .whitespacesAndNewlines), !tag.isEmpty {
             let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
             let slug = String(tag.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" })
-            return URL(fileURLWithPath: "/tmp/c11-hang-\(slug).log")
+            return URL(fileURLWithPath: C11UserRuntime.logPath("c11-hang-\(slug).log"))
         }
 
         let logs = FileManager.default
             .urls(for: .libraryDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Logs/c11", isDirectory: true)
+            .appendingPathComponent("Logs/\(C11Identity.logsDirectoryName)", isDirectory: true)
         return logs.appendingPathComponent("hang.log")
     }
 }
@@ -975,21 +1049,23 @@ struct HangLogRotator {
     }
 
     private mutating func write(_ data: Data) {
-        if let handle = try? FileHandle(forWritingTo: logURL) {
-            defer { try? handle.close() }
-            guard let end = try? handle.seekToEnd() else { return }
-            guard (try? handle.write(contentsOf: data)) != nil else { return }
-            // `seekToEnd` is an lseek, not a stat, and it keeps the tracked size
-            // honest even if something else appended to the file.
-            trackedSize = Int(clamping: end) + data.count
-        } else {
+        // Opened no-follow, owner and single-link checked, so a planted link
+        // is never appended to or measured (C11H-364 L21).
+        var descriptor = C11UserRuntime.openLogForAppend(logURL.path)
+        if descriptor == nil {
             try? FileManager.default.createDirectory(
                 at: logURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            guard (try? data.write(to: logURL, options: .atomic)) != nil else { return }
-            trackedSize = data.count
+            descriptor = C11UserRuntime.openLogForAppend(logURL.path)
         }
+        guard let descriptor else { return }
+        defer { Darwin.close(descriptor) }
+        // `lseek` is not a stat, and it keeps the tracked size honest even if
+        // something else appended to the file.
+        let end = lseek(descriptor, 0, SEEK_END)
+        guard end >= 0, C11UserRuntime.writeAll(descriptor, data) else { return }
+        trackedSize = Int(clamping: end) + data.count
     }
 
     /// Shift the generations down, archive the live log, and open a fresh one
@@ -1044,22 +1120,267 @@ struct HangLogRotator {
     /// Last resort when the live log cannot be renamed away: zero it in place so
     /// it stops growing. Returns whether the truncate landed.
     private func truncateInPlace() -> Bool {
-        guard let handle = try? FileHandle(forWritingTo: logURL) else { return false }
-        defer { try? handle.close() }
-        return (try? handle.truncate(atOffset: 0)) != nil
+        guard let descriptor = C11UserRuntime.openLogForAppend(logURL.path) else { return false }
+        defer { Darwin.close(descriptor) }
+        return ftruncate(descriptor, 0) == 0
     }
 
     // MARK: Defaults
 
+    /// The log's own size (`lstat`): a link is never measured as its target.
     static func fileSize(_ url: URL) -> Int {
-        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
-              let size = values.fileSize else { return 0 }
-        return max(size, 0)
+        var info = stat()
+        guard lstat(url.path, &info) == 0,
+              info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG) else { return 0 }
+        return max(Int(info.st_size), 0)
     }
 
     static func defaultTimestamp() -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: Date())
+    }
+}
+
+// MARK: - Graph churn meter (C11H-238)
+
+/// C11H-238 diagnostic seam: counts what dirties the window's SwiftUI graph.
+///
+/// Off unless the app is launched with `C11_GRAPH_CHURN=<seconds>` (1-600),
+/// read once. Off, every `note` is one load of a static `Bool` and nothing is
+/// observed. On, it counts named sources (call sites that publish to objects the
+/// root and sidebar observe), every `objectWillChange` of each live workspace,
+/// the notification store and the workspace managers, root hosting-view layout
+/// passes and their main-thread time, and portal full syncs. Main only bumps
+/// counters under a lock; every period a utility queue formats one line of
+/// per-second rates, with the window's visibility, and appends it to
+/// `C11_GRAPH_CHURN_LOG`, default `~/Library/Logs/c11/graph-churn.log`.
+@MainActor
+enum GraphChurnMeter {
+    enum Source: String, CaseIterable {
+        case journalSnapshot = "journal_snapshot"
+        case portScanWrite = "port_scan_write"
+        case statusWrite = "status_write"
+        case progressWrite = "progress_write"
+        case logWrite = "log_write"
+        case metadataSend = "metadata_send"
+        case attentionWrite = "attention_write"
+        case sidebarMarkTick = "sidebar_mark_tick"
+        case hiddenWrapperUpdate = "hidden_wrapper_update"
+        case portalFullSync = "portal_full_sync"
+        case rootLayout = "root_layout"
+        case workspaceWillChange = "workspace_will_change"
+        case notificationsWillChange = "notifications_will_change"
+        case managerWillChange = "manager_will_change"
+        case focusHistoryWillChange = "focus_history_will_change"
+        case themeWillChange = "theme_will_change"
+        case attentionIndexWillChange = "attention_index_will_change"
+        case windowAttributesWillChange = "window_attributes_will_change"
+        case sidebarStateWillChange = "sidebar_state_will_change"
+        case sidebarSelectionWillChange = "sidebar_selection_will_change"
+        case defaultsDidChange = "defaults_did_change"
+        case appBody = "app_body"
+        case appManagerWillChange = "app_manager_will_change"
+        case appSidebarWillChange = "app_sidebar_will_change"
+        case appSelectionWillChange = "app_selection_will_change"
+        case appNotificationsWillChange = "app_notifications_will_change"
+        case appFocusHistoryWillChange = "app_focus_history_will_change"
+        case contentViewBody = "content_view_body"
+        case updateModelWillChange = "update_model_will_change"
+        /// C11H-278: one description age label's body evaluation.
+        case descriptionAgeBody = "description_age_body"
+        /// C11H-296: one evaluation of the sidebar's workspace list body, which
+        /// rebuilds every card's agent rows.
+        case sidebarListBody = "sidebar_list_body"
+    }
+
+    nonisolated static let period: TimeInterval? = {
+        guard let raw = ProcessInfo.processInfo.environment["C11_GRAPH_CHURN"],
+              let seconds = Double(raw), seconds.isFinite, (1...600).contains(seconds) else { return nil }
+        return seconds
+    }()
+
+    nonisolated static let isEnabled: Bool = period != nil
+
+    /// Counters are noted from main-thread call sites that are not all
+    /// actor-isolated (socket `v2MainSync` closures), so they sit behind a lock.
+    private struct Tally {
+        var counts: [Source: Int] = [:]
+        var rootLayoutSeconds: TimeInterval = 0
+    }
+    nonisolated private static let tally = OSAllocatedUnfairLock(initialState: Tally())
+    private static var observed: Set<ObjectIdentifier> = []
+    private static var cancellables: [ObjectIdentifier: AnyCancellable] = [:]
+    /// Aggregation, formatting and file output run here, never on main.
+    nonisolated private static let queue = DispatchQueue(label: "c11.graph-churn", qos: .utility)
+    nonisolated(unsafe) private static var timer: DispatchSourceTimer?
+    /// Touched only on `queue`.
+    nonisolated(unsafe) private static var windowStart = ProcessInfo.processInfo.systemUptime
+    /// Window state, noted on main by `WindowVisibilityGate`; read on `queue`.
+    private struct Visibility {
+        var active = true; var visible = true; var workspaces = 0
+        /// The activity-mark clock, any renderer (sidebar and tab strips):
+        /// subscribers and whether its timer runs, read on main each period.
+        var clockSubscribers = 0; var clockTicking = false
+    }
+    nonisolated private static let visibility = OSAllocatedUnfairLock(initialState: Visibility())
+
+    /// `_printChanges` on the root, sidebar and workspace bodies writes
+    /// synchronously; only `C11_GRAPH_CHURN_PRINT=1` turns it on, never in a
+    /// measured run.
+    nonisolated static let printsChanges: Bool =
+        isEnabled && ProcessInfo.processInfo.environment["C11_GRAPH_CHURN_PRINT"] == "1"
+
+    nonisolated static func noteVisibility(active: Bool, visible: Bool) {
+        guard isEnabled else { return }
+        visibility.withLock { $0.active = active; $0.visible = visible }
+    }
+
+    @inline(__always)
+    nonisolated static func note(_ source: Source, _ count: Int = 1) {
+        guard isEnabled else { return }
+        tally.withLock { $0.counts[source, default: 0] += count }
+    }
+
+    @inline(__always)
+    nonisolated static func noteRootLayout(seconds: TimeInterval) {
+        guard isEnabled else { return }
+        tally.withLock {
+            $0.counts[.rootLayout, default: 0] += 1
+            $0.rootLayoutSeconds += seconds
+        }
+    }
+
+    /// Starts the period timer. Called once at launch; a no-op when off.
+    static func startIfEnabled() {
+        guard let period, timer == nil else { return }
+        if printsChanges {
+            // `_printChanges` writes with `print`; a file-backed stdout would
+            // hold it in a block buffer until exit.
+            setvbuf(stdout, nil, _IOLBF, 0)
+        }
+        attachObservers()
+        queue.async {
+            windowStart = ProcessInfo.processInfo.systemUptime
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + period, repeating: period)
+            timer.setEventHandler { flush() }
+            timer.resume()
+            self.timer = timer
+        }
+    }
+
+    private static var observedPairs: Set<String> = []
+    private static var pairCancellables: [String: AnyCancellable] = [:]
+
+    private static func observe<P: Publisher>(_ id: ObjectIdentifier, _ publisher: P, as source: Source)
+        where P.Failure == Never {
+        guard observed.insert(id).inserted else { return }
+        cancellables[id] = publisher.sink { _ in note(source) }
+    }
+
+    /// The app struct's own state objects, counted under their own names even
+    /// when they are the same instances the window contexts hold.
+    static func observeAppObjects(manager: WorkspaceManager, sidebar: SidebarState, selection: SidebarSelectionState,
+                                  notifications: TerminalNotificationStore, focusHistory: FocusHistoryStore) {
+        guard isEnabled else { return }
+        func pair<P: Publisher>(_ object: AnyObject, _ publisher: P, _ source: Source) where P.Failure == Never {
+            let key = "\(ObjectIdentifier(object).hashValue)-\(source.rawValue)"
+            guard observedPairs.insert(key).inserted else { return }
+            pairCancellables[key] = publisher.sink { _ in note(source) }
+        }
+        pair(manager, manager.objectWillChange, .appManagerWillChange)
+        pair(sidebar, sidebar.objectWillChange, .appSidebarWillChange)
+        pair(selection, selection.objectWillChange, .appSelectionWillChange)
+        pair(notifications, notifications.objectWillChange, .appNotificationsWillChange)
+        pair(focusHistory, focusHistory.objectWillChange, .appFocusHistoryWillChange)
+    }
+
+    /// Picks up workspaces created since the last period.
+    private static func attachObservers() {
+        guard let app = AppDelegate.shared else { return }
+        if let store = app.notificationStore {
+            observe(ObjectIdentifier(store), store.objectWillChange, as: .notificationsWillChange)
+        }
+        for manager in app.liveWorkspaceManagersForDiagnostics() {
+            observe(ObjectIdentifier(manager), manager.objectWillChange, as: .managerWillChange)
+        }
+        observe(ObjectIdentifier(FocusHistoryStore.shared), FocusHistoryStore.shared.objectWillChange,
+                as: .focusHistoryWillChange)
+        observe(ObjectIdentifier(ThemeManager.shared), ThemeManager.shared.objectWillChange, as: .themeWillChange)
+        observe(ObjectIdentifier(PanelAttentionIndex.shared), PanelAttentionIndex.shared.objectWillChange,
+                as: .attentionIndexWillChange)
+        observe(ObjectIdentifier(WindowAttributesStore.shared), WindowAttributesStore.shared.objectWillChange,
+                as: .windowAttributesWillChange)
+        for (sidebar, selection) in app.sidebarStatesForDiagnostics() {
+            observe(ObjectIdentifier(sidebar), sidebar.objectWillChange, as: .sidebarStateWillChange)
+            observe(ObjectIdentifier(selection), selection.objectWillChange, as: .sidebarSelectionWillChange)
+        }
+        if let update = app.updateViewModelForDiagnostics() {
+            observe(ObjectIdentifier(update), update.objectWillChange, as: .updateModelWillChange)
+        }
+        // Any instance: `@AppStorage` with a suite store writes through its own.
+        observe(ObjectIdentifier(UserDefaults.self),
+                NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification),
+                as: .defaultsDidChange)
+        for workspace in app.liveWorkspacesForDiagnostics() {
+            observe(ObjectIdentifier(workspace), workspace.objectWillChange, as: .workspaceWillChange)
+        }
+        let count = observed.count
+        let clock = BonsplitActivityAnimationClock.shared
+        let subscribers = clock.subscriberCount, ticking = clock.isTicking
+        visibility.withLock {
+            $0.workspaces = count; $0.clockSubscribers = subscribers; $0.clockTicking = ticking
+        }
+    }
+
+    /// On `queue`: snapshot the counters, format one line, append it.
+    nonisolated private static func flush() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = max(0.001, now - windowStart)
+        windowStart = now
+        let taken = tally.withLock { current -> Tally in
+            let snapshot = current
+            current = Tally()
+            return snapshot
+        }
+        let state = visibility.withLock { $0 }
+        var fields = [
+            "ts=\(ISO8601DateFormatter().string(from: Date()))",
+            "seconds=\(String(format: "%.1f", elapsed))",
+            "active=\(state.active ? 1 : 0)",
+            "visible=\(state.visible ? 1 : 0)",
+            "workspaces=\(state.workspaces)",
+            "mark_clock_subscribers=\(state.clockSubscribers)",
+            "mark_clock_ticking=\(state.clockTicking ? 1 : 0)",
+            "root_layout_ms_per_s=\(String(format: "%.1f", taken.rootLayoutSeconds * 1000 / elapsed))",
+        ]
+        for source in Source.allCases {
+            fields.append("\(source.rawValue)=\(String(format: "%.2f", Double(taken.counts[source] ?? 0) / elapsed))")
+        }
+        append(fields.joined(separator: " ") + "\n")
+        // New workspaces since the last period: one short main hop to subscribe.
+        DispatchQueue.main.async { MainActor.assumeIsolated { attachObservers() } }
+    }
+
+    nonisolated private static let logURL: URL = {
+        if let path = ProcessInfo.processInfo.environment["C11_GRAPH_CHURN_LOG"], !path.isEmpty {
+            return URL(fileURLWithPath: path)
+        }
+        return FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Logs/\(C11Identity.logsDirectoryName)/graph-churn.log")
+    }()
+
+    nonisolated private static func append(_ line: String) {
+        let url = logURL
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let data = line.data(using: .utf8) else { return }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: url)
+        }
     }
 }

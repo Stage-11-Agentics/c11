@@ -43,7 +43,9 @@ Notes:
 - CLI output defaults to short refs (`panel:N`, `area:N`, `workspace:N`, `window:N`).
 - UUIDs are still accepted on input; only request UUID output when needed (`--id-format uuids|both`).
 - Keep using one `panel:N` per task within the current c11 process unless you intentionally switch. Short refs (`panel:N`, `area:N`, `workspace:N`, `window:N`) start over after a restart; store the panel UUID from `c11 --id-format both tree --json` to find that same browser panel afterward.
-**Place browsers by anchor, never by focus.** `browser open`, `open-split`, and `new` anchor on the caller (`$C11_PANEL_ID`) unless `--panel` or `--area` is given. The first open splits beside the anchor when space permits; later opens join its browser area. A cross-workspace `--workspace` open adds a panel to an existing area without splitting. `--area <ref>` adds there without splitting. `open --panel <browser>` still navigates that browser in place; `--panel <terminal>` places beside it.
+**Place browsers by anchor, never by focus.** `browser open`, `open-split`, and `new` anchor on the caller (`$C11_PANEL_ID`) unless `--panel` or `--area` is given. The first open splits beside the anchor when space permits; later opens join its browser area. A cross-workspace `--workspace` open adds a panel to an existing area without splitting. `--area <ref>` adds there without splitting, and is how a browser joins a markdown panel's area or any other view area that already exists. `open --panel <browser>` still navigates that browser in place; `--panel <terminal>` places beside it.
+
+**Two areas is the ceiling you reach on your own** (the c11 skill, "Where new work goes"). Once the workspace has two areas, every browser you open is a panel, never a third area: `--area <ref>` of the view area that already holds browsers or docs, else your own area. The operator can promote a panel to its own area with a drag; you cannot un-clutter their screen.
 
 ## Browser Profiles
 

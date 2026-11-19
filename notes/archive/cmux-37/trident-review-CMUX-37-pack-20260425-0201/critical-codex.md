@@ -57,7 +57,7 @@ I did not run local tests because `CLAUDE.md` says tests run via CI/VM only. I a
 
 6. **Potential - Opencode restart syntax is unverified and diverges from the supplied plan.** ❓ Likely but hard to verify
 
-   `Sources/AgentRestartRegistry.swift:128` emits `opencode --continue\n`, while the review context says the plan expected `opencode -c` with a fresh `opencode` fallback. I could not verify opencode help because the installed command attempts to create `/Users/atin/.cache/opencode/bin` and the sandbox blocks it with EPERM. This should still be treated as suspicious: Phase 5 is typing agent commands into terminals, and at least the Codex row is already confirmed wrong.
+   `Sources/AgentRestartRegistry.swift:128` emits `opencode --continue\n`, while the review context says the plan expected `opencode -c` with a fresh `opencode` fallback. I could not verify opencode help because the installed command attempts to create `~/.cache/opencode/bin` and the sandbox blocks it with EPERM. This should still be treated as suspicious: Phase 5 is typing agent commands into terminals, and at least the Codex row is already confirmed wrong.
 
 ## Validation Pass
 

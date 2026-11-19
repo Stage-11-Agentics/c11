@@ -1,0 +1,78 @@
+# Datasheet Mono — the colour register only. Orange marks what needs you
+# (the badge); selection is ink. The geometry (radius 0), the mono uppercase
+# labels and the hover brackets need theme schema work and are not here.
+# Spec: ~/src/aesthetics/datasheet-mono/AESTHETIC.md
+
+[identity]
+name         = "datasheet-mono"
+display_name = "Datasheet Mono"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 1
+
+[palette]
+surface = "#111214"
+sidebar = "#0C0D0F"
+chip    = "#1A1B1F"
+edge    = "#2C2E33"
+ink     = "#FFFFFF"
+text2   = "#A3A4A8"
+orange  = "#FF4F1F"
+
+[variables]
+background          = "$palette.sidebar"
+surface             = "$palette.surface"
+foreground          = "$palette.ink"
+foregroundSecondary = "$palette.text2"
+accent              = "$palette.ink"
+accentAlt           = "$palette.orange"
+separator           = "$palette.edge"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$foreground"
+thicknessPt      = 1.0
+inactiveOpacity  = 0.18
+unfocusedOpacity = 0.4
+
+[chrome.sidebar]
+tintOverlay                   = "$background"
+tintBase                      = "$background"
+tintBaseOpacity               = 1.0
+activeTabFill                 = "$surface"
+activeTabFillFallback         = "$surface"
+activeTabRail                 = "$foreground"
+activeTabRailFallback         = "$foreground"
+activeTabRailOpacity          = 1.0
+inactiveTabCustomOpacity      = 0.6
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accentAlt"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$separator"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$surface"
+backgroundOpacity   = 1.0
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+
+[chrome.tabBar]
+background      = "$surface"
+activeFill      = "$palette.chip"
+divider         = "$separator"
+activeIndicator = "$foreground"
+
+[chrome.browserChrome]
+background  = "$surface"
+omnibarFill = "$palette.chip"
+
+[chrome.markdownChrome]
+background = "$surface"
+
+[behavior]
+animateWorkspaceCrossfade = false

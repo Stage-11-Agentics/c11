@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """C11-478 guest acceptance: stale panel reads and rename-safe mailbox replies.
 
-Run on Atlas: C11_SANDBOX_HOST=local scripts/check-overnight-panel-mail.py RUN
+Run on the build host: C11_SANDBOX_HOST=local scripts/check-overnight-panel-mail.py RUN
 RUN must already be running through sandbox-up.sh. All c11 calls go through
 sandbox-agent.sh; shell commands and files go through sandbox-exec.sh. This
 script never connects to the host's c11 socket. It removes its own panels and

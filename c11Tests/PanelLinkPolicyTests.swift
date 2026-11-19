@@ -14,7 +14,9 @@ final class PanelLinkPolicyTests: XCTestCase {
     @MainActor
     func testExternalGetURLConsumesC11BeforeSceneFallback() {
         let inputs = ["c11://panel/\(id)", " C11://workspace/\(id) ", "c11:invalid",
-                      "c11://%", "c11://panel/\(id)?run=x", "c11:" + String(repeating: "x", count: 10_000)]
+                      "c11://%", "c11://panel/\(id)?run=x", "c11:" + String(repeating: "x", count: 10_000),
+                      "c11h://panel/\(id)", " C11H://workspace/\(id) ", "c11h:invalid", // c11-2.0:keep (hidden alias)
+                      "c11h:" + String(repeating: "x", count: 10_000)] // c11-2.0:keep (hidden alias)
         var consumed: [String] = []
         var forwarded: [URL] = []
         for input in inputs {
@@ -46,22 +48,41 @@ final class PanelLinkPolicyTests: XCTestCase {
         }
     }
 
+    /// C11H-51: both browser delegate guards (main-frame navigation and popups)
+    /// cancel through this one check, and the external opener refuses both
+    /// panel-link schemes, so scripted c11h:// navigation never leaves the app. // c11-2.0:keep (hidden alias)
+    func testBrowserGuardsCancelPanelLinksAndNeverOpenThemExternally() {
+        for href in ["c11h://panel/\(id)", "C11H://workspace/\(id)", "c11h:invalid", "c11h://panel/\(id)?run=x", // c11-2.0:keep (hidden alias)
+                     "c11://panel/\(id)", "c11:notes"] {
+            let url = URL(string: href)!
+            XCTAssertTrue(browserCancelsPanelLinkNavigation(url), href)
+            XCTAssertFalse(browserShouldOpenURLExternally(url), href)
+        }
+        for href in ["https://example.com/c11h:x", "discord://channels/1", "c11hx://panel/\(id)", "c110://panel/\(id)"] { // c11-2.0:keep (hidden alias)
+            XCTAssertFalse(browserCancelsPanelLinkNavigation(URL(string: href)!), href)
+        }
+        XCTAssertFalse(browserCancelsPanelLinkNavigation(nil))
+        XCTAssertTrue(browserShouldOpenURLExternally(URL(string: "discord://channels/1")!))
+    }
+
     func testTerminalConsumesEveryInternalSchemeBeforeExternalResolution() {
-        for link in ["c11://panel/\(id)", "C11:panel/\(id)", "c11:notes", "c11://%", "c11://panel/not-a-uuid", " c11://workspace/\(id) "] {
+        for link in ["c11://panel/\(id)", "C11:panel/\(id)", "c11:notes", "c11://%", "c11://panel/not-a-uuid", " c11://workspace/\(id) ",
+                     "c11h://panel/\(id)", "C11H:panel/\(id)", "c11h:notes", "c11h://panel/not-a-uuid"] { // c11-2.0:keep (hidden alias)
             XCTAssertTrue(PanelLinkTarget.usesScheme(link), link)
             XCTAssertNil(resolveTerminalOpenURLTarget(link), link)
         }
         XCTAssertFalse(PanelLinkTarget.usesScheme("https://example.com/c11:notes"))
         XCTAssertFalse(PanelLinkTarget.usesScheme("c110://panel/\(id)"))
+        XCTAssertFalse(PanelLinkTarget.usesScheme("c11hx://panel/\(id)"))
         XCTAssertEqual(resolveTerminalOpenURLTarget("mailto:test@example.com"), .external(URL(string: "mailto:test@example.com")!))
         XCTAssertEqual(resolveTerminalOpenURLTarget("https://example.com"), .embeddedBrowser(URL(string: "https://example.com")!))
     }
 
     func testTerminalRequiresNativeCommandClickAndNeverSocketAuthority() {
-        let valid = TerminalPanelLinkPolicy(isNativeCommandClick: true, isSocketCommand: false, isKeyWindow: true, isVisible: true)
+        let valid = TerminalPanelLinkPolicy(isNativeClick: true, isSocketCommand: false, isKeyWindow: true, isVisible: true)
         XCTAssertNil(valid.refusalReason)
         var value = valid
-        value.isNativeCommandClick = false
+        value.isNativeClick = false
         XCTAssertEqual(value.refusalReason, "missing_native_input")
         value = valid
         value.isSocketCommand = true
@@ -74,10 +95,103 @@ final class PanelLinkPolicyTests: XCTestCase {
         XCTAssertEqual(value.refusalReason, "view_hidden")
     }
 
+    // C11H-325: a program holding the mouse (Claude Code fullscreen) hides
+    // links from Ghostty, so c11 takes a plain or Cmd click on its own links.
+    func testCapturedClickOnAC11LinkIsTakenFromTheProgram() {
+        let origin = CGPoint(x: 40, y: 12)
+        for href in ["c11://panel/\(id)", "c11h://workspace/\(id)"] { // c11-2.0:keep (hidden alias)
+            for modifiers: NSEvent.ModifierFlags in [[], .command, .capsLock, [.command, .capsLock]] {
+                let click = CapturedPanelLinkClick.begin(
+                    modifiers: modifiers, at: origin, mouseCaptured: { true }, hrefAtPointer: { href })
+                XCTAssertEqual(click, CapturedPanelLinkClick(href: href, origin: origin), "\(href) \(modifiers)")
+                XCTAssertEqual(click?.finish(hrefAtPointer: { href }), href)
+            }
+        }
+        // A malformed c11 target is still ours, so it reaches the invalid
+        // notice instead of the program.
+        let malformed = "c11:" + String(repeating: "x", count: 508)
+        XCTAssertNotNil(CapturedPanelLinkClick.begin(
+            modifiers: [], at: origin, mouseCaptured: { true }, hrefAtPointer: { malformed }))
+    }
+
+    func testCapturedClickLeavesEveryOtherClickToTheProgramOrGhostty() {
+        let link = "c11://panel/\(id)"
+        var reads = 0
+        // Not captured: Ghostty's own link path handles it; the cell is never read.
+        XCTAssertNil(CapturedPanelLinkClick.begin(
+            modifiers: [], at: .zero, mouseCaptured: { false }, hrefAtPointer: { reads += 1; return link }))
+        // Shift is Ghostty's grab release; Option and Control chords are the
+        // program's. Neither the capture nor the cell is read.
+        for modifiers: NSEvent.ModifierFlags in [.shift, .option, .control, [.command, .shift],
+                                                 [.command, .option], [.command, .control]] {
+            XCTAssertNil(CapturedPanelLinkClick.begin(
+                modifiers: modifiers, at: .zero,
+                mouseCaptured: { reads += 1; return true }, hrefAtPointer: { reads += 1; return link }),
+                "\(modifiers)")
+        }
+        XCTAssertEqual(reads, 0)
+        // Another scheme, a bare cell or a lookalike scheme stays the program's.
+        for href in ["https://example.com", "file:///tmp/x", "c110://panel/\(id)", "", nil] as [String?] {
+            XCTAssertNil(CapturedPanelLinkClick.begin(
+                modifiers: [], at: .zero, mouseCaptured: { true }, hrefAtPointer: { href }),
+                "\(String(describing: href))")
+        }
+    }
+
+    func testHeldPressBecomesTheProgramsDragPastTheThreshold() {
+        let click = CapturedPanelLinkClick(href: "c11://panel/\(id)", origin: CGPoint(x: 100, y: 100))
+        for point in [CGPoint(x: 100, y: 100), CGPoint(x: 101, y: 101), CGPoint(x: 102, y: 100), CGPoint(x: 100, y: 97.5)] {
+            XCTAssertFalse(click.becomesDrag(at: point), "a click's jitter stays a click: \(point)")
+        }
+        for point in [CGPoint(x: 103, y: 100), CGPoint(x: 100, y: 96), CGPoint(x: 160, y: 140)] {
+            XCTAssertTrue(click.becomesDrag(at: point), "a drag goes to the program: \(point)")
+        }
+    }
+
+    func testCapturedClickNavigatesOnlyWhenReleasedOnItsLink() {
+        let link = "c11://panel/\(id)"
+        let click = CapturedPanelLinkClick(href: link, origin: .zero)
+        XCTAssertEqual(click.finish(hrefAtPointer: { link }), link)
+        XCTAssertNil(click.finish(hrefAtPointer: { nil }), "released off any link")
+        XCTAssertNil(click.finish(hrefAtPointer: { "c11://workspace/\(self.id)" }), "released on another link")
+        XCTAssertNil(click.finish(hrefAtPointer: { "https://example.com" }))
+    }
+
+    func testCapturedPreviewNeedsCommandAlone() {
+        XCTAssertTrue(CapturedPanelLinkClick.previewsWith(.command))
+        XCTAssertTrue(CapturedPanelLinkClick.previewsWith([.command, .capsLock]))
+        for modifiers: NSEvent.ModifierFlags in [[], .shift, [.command, .shift], [.command, .option], [.command, .control]] {
+            XCTAssertFalse(CapturedPanelLinkClick.previewsWith(modifiers), "\(modifiers)")
+        }
+    }
+
+    func testCapturedHoverSkipsWorkOnlyForTheSameTargetAndPreviewState() {
+        let link = Array("c11://panel/\(id)".utf8)
+        let shown = CapturedPanelLinkHover(target: link, shown: true)
+        link.withUnsafeBytes { bytes in
+            XCTAssertTrue(shown.covers(bytes, previewShowing: true), "a move within the same link does nothing")
+            XCTAssertFalse(shown.covers(bytes, previewShowing: false),
+                           "a preview cleared some other way is shown again on the same link")
+        }
+        Array("c11://workspace/\(id)".utf8).withUnsafeBytes { other in
+            XCTAssertFalse(shown.covers(other, previewShowing: true), "another link is read")
+        }
+        [UInt8]().withUnsafeBytes { none in
+            XCTAssertFalse(shown.covers(none, previewShowing: true), "leaving the link clears the preview")
+            XCTAssertTrue(CapturedPanelLinkHover(target: [], shown: false).covers(none, previewShowing: false),
+                          "moves over cells with no link do nothing")
+        }
+        let https = Array("https://example.com".utf8)
+        https.withUnsafeBytes { bytes in
+            XCTAssertTrue(CapturedPanelLinkHover(target: https, shown: false).covers(bytes, previewShowing: false),
+                          "an https link is not decoded again on every move")
+        }
+    }
+
     func testTerminalRefusalNoticeNeverCallsALiveTargetUnavailable() {
         // C11-533 #2: a click that only reached a non-key window or a hidden
         // view says nothing about the target, so it shows no notice.
-        let base = TerminalPanelLinkPolicy(isNativeCommandClick: true, isSocketCommand: false, isKeyWindow: true, isVisible: true)
+        let base = TerminalPanelLinkPolicy(isNativeClick: true, isSocketCommand: false, isKeyWindow: true, isVisible: true)
         var notKey = base
         notKey.isKeyWindow = false
         var hidden = base
@@ -86,7 +200,7 @@ final class PanelLinkPolicyTests: XCTestCase {
             XCTAssertNil(PanelLinkNotice.forTerminalRefusal(policy.refusalReason ?? ""))
         }
         var plainClick = base
-        plainClick.isNativeCommandClick = false
+        plainClick.isNativeClick = false
         XCTAssertEqual(PanelLinkNotice.forTerminalRefusal(plainClick.refusalReason ?? ""), .terminalActivation)
         var socket = base
         socket.isSocketCommand = true
@@ -114,6 +228,9 @@ final class PanelLinkPolicyTests: XCTestCase {
 
     func testOnlyLinkPrefixInterceptsSearchInputWhileAllSchemeURLsStayBlocked() {
         XCTAssertTrue(PanelLinkTarget.isLink(" \nC11://panel/\(id) "))
+        XCTAssertTrue(PanelLinkTarget.isLink(" \nC11H://panel/\(id) ")) // c11-2.0:keep (hidden alias)
+        XCTAssertFalse(PanelLinkTarget.isLink("c11h:notes")) // c11-2.0:keep (hidden alias)
+        XCTAssertTrue(PanelLinkTarget.usesScheme(URL(string: "c11h://panel/\(id)")!)) // c11-2.0:keep (hidden alias)
         XCTAssertFalse(PanelLinkTarget.isLink("c11: notes"))
         XCTAssertFalse(PanelLinkTarget.isLink("c11:notes"))
         XCTAssertNil(resolveBrowserNavigableURL("c11: notes"))
@@ -785,5 +902,27 @@ final class ExternalPanelLinkPresenterKeyTests: XCTestCase {
             XCTAssertFalse(window.isVisible)
             XCTAssertEqual(opened, 0)
         }
+    }
+}
+
+/// C11H-365 (N4): a markdown status pill's link follows the mail drawer's
+/// rule. Any agent can write a pill, including one on a linked machine through
+/// the relay, so a `file:`, `ssh:`, Settings or app-scheme link opens nothing;
+/// c11 panel links and plain web links still open. Fails with the rule
+/// widened to every scheme.
+final class SidebarStatusLinkRuleTests: XCTestCase {
+    func testOnlyPanelAndWebLinksOpen() throws {
+        let refused = ["file:///System/Applications/Calculator.app", "ssh://studio", "shortcuts://run-shortcut?name=x",
+                       "x-apple.systempreferences:com.apple.preference.security", "someapp://open?x=1",
+                       "javascript:alert(1)", "http://user:pw@example.com/"]
+        for href in refused {
+            let url = try XCTUnwrap(URL(string: href), href)
+            XCTAssertEqual(SidebarStatusLinkRule.decision(for: url), .refused, "\(href) must open nothing")
+        }
+        for href in ["https://github.com/Stage-11-Agentics/c11/pull/1", "http://127.0.0.1:18080/n4"] {
+            XCTAssertEqual(SidebarStatusLinkRule.decision(for: try XCTUnwrap(URL(string: href))), .web, href)
+        }
+        let scheme = try XCTUnwrap(PanelLinkFormat.acceptedSchemes.first)
+        XCTAssertEqual(SidebarStatusLinkRule.decision(for: try XCTUnwrap(URL(string: "\(scheme)://panel/123"))), .panelLink)
     }
 }

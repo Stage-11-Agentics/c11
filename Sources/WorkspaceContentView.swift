@@ -2,6 +2,7 @@ import SwiftUI
 import Foundation
 import AppKit
 import Bonsplit
+import Combine
 
 /// View that renders a Workspace's content using BonsplitView
 struct WorkspaceContentView: View {
@@ -26,6 +27,9 @@ struct WorkspaceContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
+    /// c11 (C11H-197): the hosting window's theme override. The workspace keeps
+    /// the last one it was shown with, for its AppKit-side bonsplit chrome.
+    @Environment(\.c11WindowThemeName) private var windowThemeName
     @EnvironmentObject var notificationStore: TerminalNotificationStore
 
     private var isMinimalMode: Bool {
@@ -35,14 +39,15 @@ struct WorkspaceContentView: View {
     }
 
     private var useThemeM1bWorkspaceContentViewContextPath: Bool {
-        m1bWorkspaceContentViewContextMigrated && themeManager.isEnabled
+        themeManager.themedPathLive(flag: m1bWorkspaceContentViewContextMigrated, windowThemeName: windowThemeName)
     }
 
     private var environmentThemeContext: ThemeContext {
         themeManager.makeContext(
             workspaceColor: workspace.customColor,
             colorScheme: colorScheme,
-            isWindowFocused: NSApp.keyWindow?.isKeyWindow ?? true
+            isWindowFocused: NSApp.keyWindow?.isKeyWindow ?? true,
+            windowThemeName: windowThemeName
         )
     }
 
@@ -58,9 +63,18 @@ struct WorkspaceContentView: View {
     }
 
     var body: some View {
+        // C11H-238 meter: name what invalidated this body (stdout, meter runs only).
+        let _ = GraphChurnMeter.printsChanges ? Self._printChanges() : ()
         let appearance = PanelAppearance.fromConfig(config)
         let isSplit = workspace.bonsplitController.allPaneIds.count > 1 ||
             workspace.panels.count > 1
+        let areaFramePalette = AreaFramePalette.resolve(themeManager, context: environmentThemeContext)
+        let captainTabIDs = Set(workspace.captainPanelIDs.compactMap { workspace.bonsplitTabIdFromTabId($0) })
+        let captainFrameColor = themeManager.isEnabled
+            ? themeManager.snapshot(for: environmentThemeContext).resolveStyleColor(.cardAccent, context: environmentThemeContext)
+            : nil
+        let captainFrameStyle = AreaFrameStroke(color: captainFrameColor ?? .controlAccentColor,
+                                                thicknessPt: 1, cornerRadius: areaFramePalette?.cornerRadius ?? 0)
 
         // Inactive workspaces are kept alive in a ZStack (for state preservation) but their
         // AppKit-backed views can still intercept drags. Disable drop acceptance for them.
@@ -142,12 +156,29 @@ struct WorkspaceContentView: View {
         // the overlay inside the SwiftUI tree leaves it stranded behind
         // portal-hosted terminals/browsers, which is why we route through an
         // AppKit overlay layer instead.
+        //
+        // The same slot carries each area's frame anchor (`[chrome.area]`), which the
+        // portal overlays stroke above terminals and browsers, including captain
+        // rings when the theme has no focus/waiting palette.
         .environment(\.paneOverlayBuilder, { paneId in
             AnyView(
                 AreaInteractionOverlayHostView(
                     paneId: paneId,
                     controller: workspace.areaCloseOverlayController
                 )
+                .background {
+                    if areaFramePalette != nil || !captainTabIDs.isEmpty {
+                        AreaFrameAnchor(
+                            palette: areaFramePalette,
+                            paneId: paneId,
+                            controller: workspace.bonsplitController,
+                            isWorkspaceInputActive: isWorkspaceInputActive,
+                            captainTabIDs: captainTabIDs,
+                            captainStyle: captainFrameStyle
+                        )
+                        .equatable()
+                    }
+                }
             )
         })
         // Workspace-scoped close-confirmation anchor. Reports its window-coord
@@ -167,7 +198,15 @@ struct WorkspaceContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             syncBonsplitNotificationBadges()
+            // c11 (C11H-197): a workspace that just appeared in a window (launch,
+            // or moved here from another window) takes this window's theme
+            // before its chrome is applied.
+            workspace.windowThemeName = windowThemeName
             refreshGhosttyAppearanceConfig(reason: "onAppear")
+        }
+        .onChange(of: windowThemeName) { _, newValue in
+            workspace.windowThemeName = newValue
+            workspace.applyGhosttyChrome(from: config, reason: "windowThemeChanged")
         }
         .onChange(of: notificationStore.notifications) { _, _ in
             syncBonsplitNotificationBadges()
@@ -194,6 +233,15 @@ struct WorkspaceContentView: View {
             // `applyGhosttyChrome` keeps rapid color changes cheap.
             themeManager.invalidateForWorkspaceColorChange()
             workspace.applyGhosttyChrome(from: config, reason: "customColorDidChange")
+        }
+        .onReceive(themeManager.$active.dropFirst().receive(on: DispatchQueue.main)) { _ in
+            // A theme load (`c11 themes set`, a user theme edit, a slot flip)
+            // changes the strip's type, selection and state colours without any
+            // Ghostty event. Keyed on the active theme, not the shared `version`,
+            // which also bumps on every Ghostty background and workspace colour
+            // change. `$active` publishes before the engine swaps its snapshot,
+            // so the apply runs on the next main-queue turn, after it.
+            workspace.applyGhosttyChrome(from: config, reason: "activeThemeChanged")
         }
         .onReceive(NotificationCenter.default.publisher(for: .ghosttyDefaultBackgroundDidChange)) { notification in
             let payloadHex = (notification.userInfo?[GhosttyNotificationKey.backgroundColor] as? NSColor)?.hexString() ?? "nil"
@@ -226,16 +274,17 @@ struct WorkspaceContentView: View {
         // application-lifecycle semantics cross the package boundary.
         .environment(
             \.bonsplitActivityAnimationEnabled,
-            isWorkspaceInputActive
-                && scenePhase == .active
-                && !reduceMotion
-                && !staticActivityMarks
+            ActivityMarkSettings.motionPermissions(
+                inputActive: isWorkspaceInputActive, sceneActive: scenePhase == .active,
+                reduceMotion: reduceMotion, staticMarks: staticActivityMarks
+            ).defaultMotion
         )
         .environment(
             \.bonsplitExplicitActivityAnimationEnabled,
-            isWorkspaceInputActive
-                && scenePhase == .active
-                && !reduceMotion
+            ActivityMarkSettings.motionPermissions(
+                inputActive: isWorkspaceInputActive, sceneActive: scenePhase == .active,
+                reduceMotion: reduceMotion, staticMarks: staticActivityMarks
+            ).explicitMotion
         )
         .overlay(
             WorkspaceFrame(
@@ -417,14 +466,8 @@ extension WorkspaceContentView {
         if !found {
             let ts = ISO8601DateFormatter().string(from: Date())
             let line = "[\(ts)] PANEL NOT FOUND for tabId=\(bonsplitTab.id) ws=\(workspace.id) panelCount=\(workspace.panels.count)\n"
-            let logPath = "/tmp/cmux-panel-debug.log"
-            if let handle = FileHandle(forWritingAtPath: logPath) {
-                handle.seekToEndOfFile()
-                handle.write(line.data(using: .utf8)!)
-                handle.closeFile()
-            } else {
-                FileManager.default.createFile(atPath: logPath, contents: line.data(using: .utf8))
-            }
+            // c11's per-user folder, no-follow and owner checked (C11H-364 L21).
+            C11UserRuntime.appendLog(Data(line.utf8), to: C11UserRuntime.logPath("cmux-panel-debug.log"))
         }
     }
     #else
@@ -433,6 +476,71 @@ extension WorkspaceContentView {
         _ = workspace
     }
     #endif
+}
+
+/// One area's frame anchor (`AreaFrameAnchorView`). Its body reads the area's
+/// focus and its tabs' marks from bonsplit, so it re-evaluates on a focus change or
+/// a mark change (the same edges that repaint the activity marks), never per keystroke.
+/// Only the selected workspace frames its areas: an outgoing workspace stays drawn
+/// for a moment during a switch, and its rings must not show over the new one.
+///
+/// Equatable, and mounted `.equatable()`: the parent re-renders on every theme
+/// version bump and builds a fresh palette, which must not re-run this body.
+struct AreaFrameAnchor: View, Equatable {
+    let palette: AreaFramePalette?
+    let paneId: PaneID
+    let controller: BonsplitController
+    let isWorkspaceInputActive: Bool
+    var captainTabIDs: Set<TabID> = []
+    var captainStyle: AreaFrameStroke? = nil
+
+    static func == (lhs: AreaFrameAnchor, rhs: AreaFrameAnchor) -> Bool {
+        lhs.paneId == rhs.paneId
+            && lhs.controller === rhs.controller
+            && lhs.isWorkspaceInputActive == rhs.isWorkspaceInputActive
+            && lhs.palette == rhs.palette
+            && lhs.captainTabIDs == rhs.captainTabIDs
+            && lhs.captainStyle == rhs.captainStyle
+    }
+
+    var body: some View {
+        AreaFrameAnchorRepresentable(stroke: stroke, captainStroke: captainStroke)
+            .equatable()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    var stroke: AreaFrameStroke? {
+        guard isWorkspaceInputActive else { return nil }
+        return palette?.stroke(
+            isFocusedArea: controller.focusedPaneId == paneId,
+            hasWaitingPanel: controller.tabs(inPane: paneId).contains { $0.activityState == .waiting }
+        )
+    }
+    var captainStroke: AreaFrameStroke? {
+        guard isWorkspaceInputActive, let selected = controller.selectedTab(inPane: paneId),
+              captainTabIDs.contains(selected.id) else { return nil }
+        return captainStyle
+    }
+}
+
+/// Equatable on its stroke, so a title change in the area, which re-runs the
+/// anchor's body, does not reach `updateNSView`.
+struct AreaFrameAnchorRepresentable: NSViewRepresentable, Equatable {
+    let stroke: AreaFrameStroke?
+    var captainStroke: AreaFrameStroke? = nil
+
+    func makeNSView(context: Context) -> AreaFrameAnchorView {
+        let view = AreaFrameAnchorView(frame: .zero)
+        view.stroke = stroke
+        view.captainStroke = captainStroke
+        return view
+    }
+
+    func updateNSView(_ nsView: AreaFrameAnchorView, context: Context) {
+        nsView.stroke = stroke
+        nsView.captainStroke = captainStroke
+    }
 }
 
 /// View shown for empty panes
@@ -464,7 +572,10 @@ struct EmptyPanelView: View {
         dlog("emptyPane.newTerminal pane=\(paneId.id.uuidString.prefix(5))")
         #endif
         focusPane()
-        _ = workspace.newTerminalSurface(inPane: paneId)
+        let workspace = workspace, paneId = paneId
+        MachinePicker.ask(.terminal) { request in
+            _ = workspace.newTerminalSurface(inPane: paneId, machine: request)
+        }
     }
 
     private func createBrowser() {
@@ -472,7 +583,9 @@ struct EmptyPanelView: View {
         dlog("emptyPane.newBrowser pane=\(paneId.id.uuidString.prefix(5))")
         #endif
         focusPane()
-        _ = workspace.newBrowserSurface(inPane: paneId)
+        PanelLineage.shared.withOrigin(.operator) {
+            _ = workspace.newBrowserSurface(inPane: paneId)
+        }
     }
 
     private var newSurfaceShortcut: StoredShortcut {

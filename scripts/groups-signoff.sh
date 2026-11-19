@@ -103,8 +103,9 @@ COMMANDS="$RESULTS_DIR/commands.txt"
 MANIFEST="$RESULTS_DIR/run.json"
 CLEANUP_DONE="0"
 
-[[ -d "$APP" ]] || die "tagged app is missing; build it on Atlas first: $APP"
+[[ -d "$APP" ]] || die "tagged app is missing; build it on the build host first: $APP"
 [[ -f "$CLI" && -x "$CLI" ]] || die "tagged CLI is missing or not executable: $CLI"
+[[ "$SOCKET" != "$HOME/Library/Application Support/c11/c11.sock" ]] || die "c11 socket is forbidden"
 [[ "$SOCKET" != "$HOME/Library/Application Support/c11/c11.sock" ]] || die "production socket is forbidden"
 [[ "$RESULTS_DIR" != "$FIXTURE_ROOT" && "$RESULTS_DIR" != /tmp/c11-groups-g60-* ]] || die "results must not be inside the disposable fixture root"
 
@@ -281,7 +282,10 @@ manifest = {
         "bundle_info": bundle_info,
         "running_build_identity": running_identity,
         "socket": socket_path,
-        "socket_is_production": socket_path == os.path.expanduser("~/Library/Application Support/c11/c11.sock"),
+        "socket_is_production": socket_path in {
+            os.path.expanduser("~/Library/Application Support/c11/c11.sock"),
+            os.path.expanduser("~/Library/Application Support/c11/c11.sock"),
+        },
     },
     "results_dir": results,
     "baseline_artifact": baseline or None,

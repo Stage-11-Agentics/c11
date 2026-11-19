@@ -33,7 +33,7 @@ Their README still says "a primitive, not a solution," but in practice cmux now 
 - **Agent Hibernation** (0.64.11), extended in 0.64.21 and 0.64.23 to trigger under memory pressure. c11 has manual workspace hibernate (C11-25) but nothing agent-aware or automatic.
 - **Event journal drives sidebar status** (#10490). Running, Needs input, Idle and Error now come from a durable journal instead of text heuristics.
 - **Restore hardening** (unreleased): `agents.launchers` declares wrapper launchers such as multi-account routers, so restore resumes through them. `launch_rejection_reason` explains why a captured launch was refused for restore.
-- **Agents on SSH hosts** (unreleased): Claude Code and Codex running on a remote host report status to the sidebar (#14902). `cmux session move` moves a stopped session, with its transcript, memory and git tree, between the Mac and an SSH host (#14959). This maps directly onto the Atlas and Hyperion split.
+- **Agents on SSH hosts** (unreleased): Claude Code and Codex running on a remote host report status to the sidebar (#14902). `cmux session move` moves a stopped session, with its transcript, memory and git tree, between the Mac and an SSH host (#14959). This maps directly onto the build host and the laptop split.
 - **Team launchers:** `claude-teams`, `codex-teams`, `omo`, `omx` and `omc` turn teammates into native splits through a tmux shim. c11 has only `claude-teams`.
 
 ### 2. Attention and automation
@@ -90,7 +90,7 @@ Their README still says "a primitive, not a solution," but in practice cmux now 
 
 - **How it works:** it acts through the accessibility tree on background windows. It claims to do this without stealing keyboard focus or moving the visible cursor.
 - **Extras:** each session gets its own colored agent cursor, and trajectories can be recorded and replayed.
-- **Why it matters for c11:** the planned `c11-computer-use` validation skill, and the 2026-09-29 call that synthesized drags on Hyperion disrupt your live use. A focus-safe driver is exactly what that is missing.
+- **Why it matters for c11:** the planned `c11-computer-use` validation skill, and the 2026-09-29 call that synthesized drags on the laptop disrupt your live use. A focus-safe driver is exactly what that is missing.
 - **Not verified here.** The no-focus-steal claim needs a test before anyone relies on it. Drags in particular probably still move things.
 
 ### 7. Platform bets (high volume, low relevance)
@@ -156,7 +156,7 @@ Our assumption stays the same: the divergence is deliberate, and there is no res
    - Yes: one agent checks the 12 items against c11 source and files confirmed ones as Lattice tickets.
    - No: this file stays the record.
 2. **Trial `cmux-cua` against a tagged c11 build?**
-   - Yes: a bounded test of whether it can drive c11 without moving your cursor or stealing focus. A pass would make on-machine `c11-computer-use` validation viable on Hyperion.
+   - Yes: a bounded test of whether it can drive c11 without moving your cursor or stealing focus. A pass would make on-machine `c11-computer-use` validation viable on the laptop.
    - No: it stays a note.
 3. **Retire the stale catchup plan?** `upstream-triage/catchup/feature-catchup-plan.md` still frames a 912-commit forward sweep.
    - Yes: rewrite it around the "idea source plus bug oracle" stance above.

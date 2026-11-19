@@ -21,9 +21,9 @@ The capability being protected is the session-resume rail: wrapper -> hooks -> s
 
 ## Emerging Patterns
 
-The branch extends an existing pattern at [Resources/bin/claude](/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:125): classify `argv[0]` with a bash `case`, then either passthrough or fall through to c11 injection.
+The branch extends an existing pattern at [Resources/bin/claude](~/src/c11/Resources/bin/claude:125): classify `argv[0]` with a bash `case`, then either passthrough or fall through to c11 injection.
 
-That same pattern exists in the sibling [Resources/bin/codex](/Users/atin/Projects/Stage11/code/c11/Resources/bin/codex:79), with a larger list of non-interactive/auxiliary commands. The pattern is converging across wrappers, but the classification vocabulary is still embedded as shell literals.
+That same pattern exists in the sibling [Resources/bin/codex](~/src/c11/Resources/bin/codex:79), with a larger list of non-interactive/auxiliary commands. The pattern is converging across wrappers, but the classification vocabulary is still embedded as shell literals.
 
 Three categories are now mixed together:
 
@@ -33,7 +33,7 @@ Three categories are now mixed together:
 
 The anti-pattern to catch early is **unnamed launch classes**. The code has classes, but the code does not name them. The comment names Agent View, but the executable shape still says "one passthrough list." As more TUIs gain background/supervisor models, this will become the wrong abstraction to maintain.
 
-A strong positive pattern is the wrapper's latency discipline. Socket checks are bounded at 0.75s in [Resources/bin/claude](/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:90), c11 writes are backgrounded in [Resources/bin/claude](/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:166), and real Claude is always allowed to launch. That should remain sacred.
+A strong positive pattern is the wrapper's latency discipline. Socket checks are bounded at 0.75s in [Resources/bin/claude](~/src/c11/Resources/bin/claude:90), c11 writes are backgrounded in [Resources/bin/claude](~/src/c11/Resources/bin/claude:166), and real Claude is always allowed to launch. That should remain sacred.
 
 ## How This Could Evolve
 
@@ -87,13 +87,13 @@ That manifest could start as documentation plus tests. Later it can drive a tiny
 
 ## Leverage Points
 
-The highest leverage line is [Resources/bin/claude](/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:126). That one arm is now the choke point for every upstream Claude CLI verb that should not receive c11's session/hook injection.
+The highest leverage line is [Resources/bin/claude](~/src/c11/Resources/bin/claude:126). That one arm is now the choke point for every upstream Claude CLI verb that should not receive c11's session/hook injection.
 
-The second leverage point is [tests/test_claude_wrapper_hooks.py](/Users/atin/Projects/Stage11/code/c11/tests/test_claude_wrapper_hooks.py:38). The existing fake-real-Claude harness already creates a wrapper dir, fake real binary, fake c11 ping command, and controllable live/stale/missing socket cases. That is enough to test this branch behaviorally: invoke `claude agents`, `claude attach abc123`, etc., and assert the fake real binary receives exactly the original argv with no `--session-id` or `--settings`.
+The second leverage point is [tests/test_claude_wrapper_hooks.py](~/src/c11/tests/test_claude_wrapper_hooks.py:38). The existing fake-real-Claude harness already creates a wrapper dir, fake real binary, fake c11 ping command, and controllable live/stale/missing socket cases. That is enough to test this branch behaviorally: invoke `claude agents`, `claude attach abc123`, etc., and assert the fake real binary receives exactly the original argv with no `--session-id` or `--settings`.
 
-The third leverage point is [Resources/bin/claude](/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:151), where the wrapper already writes agent identity after classification. Agent View commands bypass this today because they exec before line 151. That is right for session-resume capture, but it may be too coarse for UI state. Optional supervisor metadata can live before the passthrough exec without injecting hooks.
+The third leverage point is [Resources/bin/claude](~/src/c11/Resources/bin/claude:151), where the wrapper already writes agent identity after classification. Agent View commands bypass this today because they exec before line 151. That is right for session-resume capture, but it may be too coarse for UI state. Optional supervisor metadata can live before the passthrough exec without injecting hooks.
 
-The fourth leverage point is [Sources/AgentRestartRegistry.swift](/Users/atin/Projects/Stage11/code/c11/Sources/AgentRestartRegistry.swift:143). The restore side already encodes terminal-type-specific resume policy. Launch-time policy and restore-time policy are separate today. They should remain independently deployable, but they should share names and concepts.
+The fourth leverage point is [Sources/AgentRestartRegistry.swift](~/src/c11/Sources/AgentRestartRegistry.swift:143). The restore side already encodes terminal-type-specific resume policy. Launch-time policy and restore-time policy are separate today. They should remain independently deployable, but they should share names and concepts.
 
 ## The Flywheel
 
@@ -103,15 +103,15 @@ This PR is a useful trigger because Agent View is not just another subcommand. I
 
 ## Concrete Suggestions
 
-1. **High Value - Add behavioral coverage for Agent View passthrough.** ✅ Confirmed — [tests/test_claude_wrapper_hooks.py](/Users/atin/Projects/Stage11/code/c11/tests/test_claude_wrapper_hooks.py:38) already has the harness shape needed. Extend it with a live-socket case for all seven new commands. Expected result: fake real Claude receives the original argv exactly; `--session-id` and `--settings` are absent; bounded c11 ping still occurs. This is not a source-text test; it verifies executable wrapper behavior through a fake binary.
+1. **High Value - Add behavioral coverage for Agent View passthrough.** ✅ Confirmed — [tests/test_claude_wrapper_hooks.py](~/src/c11/tests/test_claude_wrapper_hooks.py:38) already has the harness shape needed. Extend it with a live-socket case for all seven new commands. Expected result: fake real Claude receives the original argv exactly; `--session-id` and `--settings` are absent; bounded c11 ping still occurs. This is not a source-text test; it verifies executable wrapper behavior through a fake binary.
 
-2. **High Value - Name the launch policy classes in the wrapper.** ✅ Confirmed — the current executable policy is concentrated in [Resources/bin/claude](/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:114). A small follow-up can introduce `is_auxiliary_subcommand`, `is_supervisor_subcommand`, and later `has_detached_session_flag` without changing behavior. Risk: shell predicate drift; mitigation is the behavioral test corpus above.
+2. **High Value - Name the launch policy classes in the wrapper.** ✅ Confirmed — the current executable policy is concentrated in [Resources/bin/claude](~/src/c11/Resources/bin/claude:114). A small follow-up can introduce `is_auxiliary_subcommand`, `is_supervisor_subcommand`, and later `has_detached_session_flag` without changing behavior. Risk: shell predicate drift; mitigation is the behavioral test corpus above.
 
-3. **High Value - Explicitly decide `CLAUDECODE` behavior for passthrough commands.** ✅ Confirmed — passthrough exec happens at [Resources/bin/claude](/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:127), before `unset CLAUDECODE` at [Resources/bin/claude](/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:133). This may be deliberate for `mcp/config`, but Agent View is interactive enough that the decision should be named. Low-risk follow-up: unset `CLAUDECODE` before all in-c11 passthrough execs, or document why supervisor commands must preserve it.
+3. **High Value - Explicitly decide `CLAUDECODE` behavior for passthrough commands.** ✅ Confirmed — passthrough exec happens at [Resources/bin/claude](~/src/c11/Resources/bin/claude:127), before `unset CLAUDECODE` at [Resources/bin/claude](~/src/c11/Resources/bin/claude:133). This may be deliberate for `mcp/config`, but Agent View is interactive enough that the decision should be named. Low-risk follow-up: unset `CLAUDECODE` before all in-c11 passthrough execs, or document why supervisor commands must preserve it.
 
-4. **Strategic - Introduce a wrapper policy manifest or policy helper.** ❓ Needs exploration — [Resources/bin/claude](/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:125) and [Resources/bin/codex](/Users/atin/Projects/Stage11/code/c11/Resources/bin/codex:79) prove the duplicated taxonomy exists. The open question is implementation weight. A manifest gives reviewable data; a Swift helper gives better tests and parsing; plain bash predicates are the lowest-risk stepping stone.
+4. **Strategic - Introduce a wrapper policy manifest or policy helper.** ❓ Needs exploration — [Resources/bin/claude](~/src/c11/Resources/bin/claude:125) and [Resources/bin/codex](~/src/c11/Resources/bin/codex:79) prove the duplicated taxonomy exists. The open question is implementation weight. A manifest gives reviewable data; a Swift helper gives better tests and parsing; plain bash predicates are the lowest-risk stepping stone.
 
-5. **Strategic - Track supervisor mode separately from session resume.** ❓ Needs exploration — metadata writes are available through [Sources/TerminalController.swift](/Users/atin/Projects/Stage11/code/c11/Sources/TerminalController.swift:7849), and restore policy is terminal-type-driven in [Sources/AgentRestartRegistry.swift](/Users/atin/Projects/Stage11/code/c11/Sources/AgentRestartRegistry.swift:143). A future `agent_mode=supervisor` should not imply a resumable foreground session. Dependency: decide sidebar rendering and whether `claude attach <short-id>` is stable enough across restarts.
+5. **Strategic - Track supervisor mode separately from session resume.** ❓ Needs exploration — metadata writes are available through [Sources/TerminalController.swift](~/src/c11/Sources/TerminalController.swift:7849), and restore policy is terminal-type-driven in [Sources/AgentRestartRegistry.swift](~/src/c11/Sources/AgentRestartRegistry.swift:143). A future `agent_mode=supervisor` should not imply a resumable foreground session. Dependency: decide sidebar rendering and whether `claude attach <short-id>` is stable enough across restarts.
 
 6. **Strategic - Update the c11 skill once Agent View behavior is intentional.** ✅ Confirmed — project guidance says agent-facing behavior changes should reach the skill. The useful note is short: Claude Agent View subcommands passthrough inside c11 and bypass the session-resume rail; they may later gain supervisor metadata. This prevents future agents from debugging a missing `claude.session_id` as if it were a hook failure.
 
@@ -121,10 +121,10 @@ This PR is a useful trigger because Agent View is not just another subcommand. I
 
 ## Validation Pass
 
-- ✅ Confirmed — the branch diff is limited to [Resources/bin/claude](/Users/atin/Projects/Stage11/code/c11/Resources/bin/claude:114), one commit over local `origin/main`.
+- ✅ Confirmed — the branch diff is limited to [Resources/bin/claude](~/src/c11/Resources/bin/claude:114), one commit over local `origin/main`.
 - ✅ Confirmed — the new Agent View commands bypass hook/session injection by execing before `unset CLAUDECODE`, `set-agent`, hook JSON construction, hook tempfile creation, and `--session-id` injection.
-- ✅ Confirmed — [tests/test_claude_wrapper_hooks.py](/Users/atin/Projects/Stage11/code/c11/tests/test_claude_wrapper_hooks.py:38) can exercise wrapper behavior without the real Claude binary or local app launch.
-- ✅ Confirmed — c11 metadata and restore architecture can support richer launch classes: `set-agent`/metadata writes exist, and [Sources/AgentRestartRegistry.swift](/Users/atin/Projects/Stage11/code/c11/Sources/AgentRestartRegistry.swift:143) already maps terminal types to restore commands.
+- ✅ Confirmed — [tests/test_claude_wrapper_hooks.py](~/src/c11/tests/test_claude_wrapper_hooks.py:38) can exercise wrapper behavior without the real Claude binary or local app launch.
+- ✅ Confirmed — c11 metadata and restore architecture can support richer launch classes: `set-agent`/metadata writes exist, and [Sources/AgentRestartRegistry.swift](~/src/c11/Sources/AgentRestartRegistry.swift:143) already maps terminal types to restore commands.
 - ❓ Needs exploration — whether Agent View short IDs are durable enough for restore or should only be displayed as live supervisor context.
 - ❓ Needs exploration — whether `CLAUDECODE` affects `claude agents` or `claude attach` in real Claude Code 2.1.139+. The code ordering is verified; runtime sensitivity needs a tagged/manual check or CI environment with that binary.
 

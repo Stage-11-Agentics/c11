@@ -235,7 +235,8 @@ struct PanelActivityDetailsSnapshot: Equatable {
 
 /// Which color a 9pt activity mark takes. Color means attention only: a
 /// named flag's token or generic violet wins, then blue on a cold mark whose prompt cache expired,
-/// else the gray/gold lifecycle ramp. Delegation is not a color; it draws a
+/// else the lifecycle colour (working yellow, waiting white, idle and cold
+/// gray). Delegation is not a color; it draws a
 /// lineage baseline (`BonsplitActivityMarkLineage`).
 enum ActivityMarkTint: Equatable {
     case flag
@@ -245,7 +246,7 @@ enum ActivityMarkTint: Equatable {
 
     /// `promptCacheExpired` is set only for a cold mark
     /// (`AgentActivityHelpProjection.promptCacheExpired`); a waiting agent
-    /// keeps its gold.
+    /// keeps its waiting colour.
     static func resolve(flagged: Bool, promptCacheExpired: Bool, usageLimited: Bool = false) -> ActivityMarkTint {
         if flagged { return .flag }
         if usageLimited { return .usageLimit }
@@ -399,17 +400,23 @@ struct WorkspacePulseSummary: Equatable {
 struct WorkspacePulseAgentContext: Equatable {
     let title: String
     let subtitle: String?
+    /// C11H-278: when the description shown here last changed: the subtitle's,
+    /// or the title's when the description stands in for a missing title.
+    var descriptionUpdatedAt: Date? = nil
 }
 
 enum WorkspacePulseAgentContextProjector {
-    static func project(title: String?, subtitle: String?) -> WorkspacePulseAgentContext? {
+    /// `subtitle` is the panel's description; `descriptionUpdatedAt` is its
+    /// edit time and is kept only while that description is shown.
+    static func project(title: String?, subtitle: String?, descriptionUpdatedAt: Date? = nil) -> WorkspacePulseAgentContext? {
         let title = normalized(title)
         let subtitle = normalized(subtitle)
+        let shownAt = subtitle == nil ? nil : descriptionUpdatedAt
         if let title {
-            return WorkspacePulseAgentContext(title: title, subtitle: subtitle)
+            return WorkspacePulseAgentContext(title: title, subtitle: subtitle, descriptionUpdatedAt: shownAt)
         }
         if let subtitle {
-            return WorkspacePulseAgentContext(title: subtitle, subtitle: nil)
+            return WorkspacePulseAgentContext(title: subtitle, subtitle: nil, descriptionUpdatedAt: shownAt)
         }
         return nil
     }
@@ -559,5 +566,68 @@ public enum SidebarActivityProjector {
             )
         }
         return SidebarVisiblePill(text: explicitText, stage: .expired, isDerived: false)
+    }
+}
+
+// MARK: - Compact card signal (C11H-221)
+
+extension WorkspacePulseSummary {
+    /// The compact card's mark order: flagged agents first, then waiting,
+    /// working, idle and cold; within a state, normal agents before delegates,
+    /// then roster order. Overflow drops from the quiet end, so a flagged or
+    /// waiting mark is never the one hidden behind `+N`.
+    var signalAgents: [WorkspacePulseAgent] {
+        func rank(_ agent: WorkspacePulseAgent) -> Int {
+            if agent.flagged { return 0 }
+            switch agent.presentedState {
+            case .waiting: return 1
+            case .working: return 2
+            case .idle: return 3
+            case .cold: return 4
+            }
+        }
+        return agents.enumerated().sorted { lhs, rhs in
+            let (left, right) = (rank(lhs.element), rank(rhs.element))
+            if left != right { return left < right }
+            if lhs.element.lineageDepth != rhs.element.lineageDepth {
+                return lhs.element.lineageDepth < rhs.element.lineageDepth
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    /// Agents waiting on the operator; a stopped delegate reads idle.
+    var waitingOnOperatorCount: Int { agentCount(for: .waiting) }
+
+    /// Terminals, browsers and documents that are not agents.
+    var nonAgentPanelCount: Int { terminalCount + browserCount + documentCount }
+
+    /// The agent whose flag colours the compact card's band, if any.
+    var bandFlagAgent: WorkspacePulseAgent? { signalAgents.first(where: \.flagged) }
+}
+
+/// Fits the compact card's marks into its width (C11H-221).
+enum WorkspacePulseSignalLayout {
+    static let markSlot: CGFloat = 9
+    static let markGap: CGFloat = 3
+    /// Room held back for the `+N` tail when marks get dropped.
+    static let tailWidth: CGFloat = 24
+
+    /// Marks shown out of `total`; the rest are counted in the tail.
+    static func visibleCount(total: Int, availableWidth: CGFloat,
+                             slot: CGFloat = markSlot, gap: CGFloat = markGap,
+                             tailWidth: CGFloat = tailWidth) -> Int {
+        guard total > 0 else { return 0 }
+        // Zero is the first layout pass, before geometry resolves.
+        guard availableWidth > 0 else { return total }
+        let all = CGFloat(total) * slot + CGFloat(total - 1) * gap
+        if all <= availableWidth { return total }
+        let fit = Int(floor((availableWidth - tailWidth + gap) / (slot + gap)))
+        return max(0, min(total - 1, fit))
+    }
+
+    /// A count as the compact card prints it: at most two digits, then 99+.
+    static func countText(_ value: Int) -> String {
+        value > 99 ? "99+" : String(max(0, value))
     }
 }

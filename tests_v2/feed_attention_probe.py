@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit C11-265 Atlas guest UI probe; not an automatic test_ suite.
+"""Explicit C11-265 build-host guest UI probe; not an automatic test_ suite.
 
 Uses the C11-263 PID/display/screenshot/dismissal safety preflight. Run via
 sandbox-exec with --run-id, --pid, --app, --cli, --socket. Active limit 80s.

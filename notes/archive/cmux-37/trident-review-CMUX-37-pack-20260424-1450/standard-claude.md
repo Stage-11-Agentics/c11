@@ -4,7 +4,7 @@
 - **Branch:** cmux-37/phase-1-snapshots-restore
 - **Latest Commit:** 2047daff97f99905bccd0bf74a81fe6b703f8c27
 - **Linear Story:** CMUX-37 Phase 1
-- **Worktree:** /Users/atin/Projects/Stage11/code/c11-worktrees/cmux-37-phase1
+- **Worktree:** ~/src/c11-worktrees/cmux-37-phase1
 ---
 
 ## Summary

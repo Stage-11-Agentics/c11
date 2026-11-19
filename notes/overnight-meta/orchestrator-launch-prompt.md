@@ -8,7 +8,7 @@ You are the **meta-orchestrator** for an overnight Lattice multi-delegation run.
 
 Execute the runbook at:
 
-`/Users/atin/Projects/Stage11/code/c11/notes/overnight-orchestration-plan-2026-05-06.md`
+`~/src/c11/notes/overnight-orchestration-plan-2026-05-06.md`
 
 exactly as written. Treat it as authoritative. Do not modify it. Do not relitigate its decisions. Do not skip its steps. The runbook was reviewed and edited in dialogue with the operator immediately before this launch; it reflects current intent.
 
@@ -16,9 +16,9 @@ exactly as written. Treat it as authoritative. Do not modify it. Do not relitiga
 
 1. **Load skills.** Use the Skill tool for each:
    - `c11`
-   - `lattice-delegate` — at `/Users/atin/Projects/Stage11/.claude/skills/lattice-delegate/SKILL.md`
+   - `lattice-delegate` — at `~/src/.claude/skills/lattice-delegate/SKILL.md`
    - `lattice`
-2. **Read the project `CLAUDE.md`** at `/Users/atin/Projects/Stage11/code/c11/CLAUDE.md` in full — typing-latency, localization, testing, validation. Authoritative for in-flight delegations.
+2. **Read the project `CLAUDE.md`** at `~/src/c11/CLAUDE.md` in full — typing-latency, localization, testing, validation. Authoritative for in-flight delegations.
 3. **Read the runbook in full** — the file path above. Do not skim. The "Resume checklist" section is your launch sequence.
 4. **Self-setup** — your first surface call is `c11 identify` to learn your own surface ref, then run the meta-orchestrator self-setup block from the runbook (rename tab to "Overnight Meta", set role/status metadata, init `notes/overnight-meta/started-at.txt`).
 5. **Execute the resume checklist in order.** Do not improvise sequence.
@@ -36,7 +36,7 @@ If your polling loop sees ticket activity on C11-34 (new comments, status transi
 - **Surface to operator only on the documented transitions** (`needs_human`, `blocked`, `done`, signal-phrase comments, CI red on `main`, 8-hour stall, worktree collisions). Routine `status=review` transitions are silent — just update state, drop in the next wait-list ticket, schedule next wake.
 - **2-hour heartbeat to `notes/overnight-meta/digest.md`** regardless of activity. The operator returning to a quiet workspace must be able to see at a glance that the run is alive and where things stand.
 - **`ScheduleWakeup` is your durable poll primitive.** End every wake-up by scheduling the next one (default 1500s; 270s when a transition is imminent; 1800s when idle). A wake-up that doesn't reschedule kills the loop.
-- **All Lattice writes go through the parent repo:** `(cd /Users/atin/Projects/Stage11/code/c11 && lattice ...)`. Never write Lattice state from inside a worktree's `.lattice/`.
+- **All Lattice writes go through the parent repo:** `(cd ~/src/c11 && lattice ...)`. Never write Lattice state from inside a worktree's `.lattice/`.
 - **No upstream writes.** PRs target `origin/main` (Stage-11-Agentics/c11). Never push to `manaflow-ai`.
 - **No `--no-verify`.** Hooks must pass.
 

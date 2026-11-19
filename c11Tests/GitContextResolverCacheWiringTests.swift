@@ -72,8 +72,8 @@ final class GitContextResolverCacheWiringTests: XCTestCase {
     // MARK: - AC12 linked-worktree fixture: cache invalidates on HEAD mtime change
 
     func testLinkedWorktreeResultIsCachedAndInvalidatedByHeadMtime() {
-        let commonGitDir = "/Users/atin/code/c11/.git"
-        let cwd = "/Users/atin/code/c11-worktrees/c11-106-followups"
+        let commonGitDir = "/Users/demo/code/c11/.git"
+        let cwd = "/Users/demo/code/c11-worktrees/c11-106-followups"
         let worktreeHeadPath = "\(commonGitDir)/worktrees/c11-106-followups/HEAD"
 
         let runner = FakeGitRunner()

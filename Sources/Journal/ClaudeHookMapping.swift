@@ -12,6 +12,11 @@ enum ClaudeHookMapping {
         var request = requestID(subcommand, object)
         switch subcommand {
         case "session-start", "active":
+            // C11H-322: a `compact` start fires mid-turn after auto-compaction,
+            // in the process that is already running. It says nothing the
+            // journal can use, and a verified start puts its session at the
+            // prompt, so it records nothing.
+            guard (object["source"] as? String) != "compact" else { return nil }
             kind = .sessionStarted
             native = "SessionStart"
         case "session-end":

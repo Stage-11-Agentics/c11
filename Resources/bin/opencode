@@ -280,7 +280,12 @@ plugin_path="$(cd "$self_dir/../skills/opencode-plugins" && pwd)/c11-notify.js"
 plugin_url="file://$plugin_path"
 plugin_url="${plugin_url//\\/\\\\}"
 plugin_url="${plugin_url//\"/\\\"}"
-c11_runtime_config="{\"plugin\":[\"$plugin_url\"]}"
+# C11H-35: the c11 note rides as an instructions file from the bundle (no file written).
+c11_bin_dir="$(cd "$(dirname "$0")" && pwd)"
+c11_instructions=""
+# shellcheck source=/dev/null
+[[ -r "$c11_bin_dir/c11-agent-note.sh" ]] && . "$c11_bin_dir/c11-agent-note.sh" && c11_instructions="$(c11_opencode_instructions_json "$c11_bin_dir")"
+c11_runtime_config="{\"plugin\":[\"$plugin_url\"]$c11_instructions}"
 c11_runtime_plugin=0
 
 # OpenCode merges its config sources. Prefer the in-memory content override;

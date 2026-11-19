@@ -34,8 +34,9 @@ public enum DefaultColorPalette {
 public enum WorkspaceMetadataKey {
     public static let description = "description"
     public static let icon = "icon"
+    public static let captain = "captain"
 
-    public static let canonical: Set<String> = [description, icon]
+    public static let canonical: Set<String> = [description, icon, captain]
 }
 
 /// Surface-scoped metadata keys used by the Phase 1 Snapshot + restart
@@ -96,12 +97,20 @@ public enum PanelMetadataKeyName {
     public static let terminalTypeClaudeCode = "claude-code"
 }
 
+/// C11H-365 (N12): true when `text` holds a C0 control byte (0x00-0x1F) or
+/// DEL (0x7F). A shell's line editor reads those as editing keys even
+/// inside single quotes, so a resume line typed into a terminal never
+/// carries one.
+nonisolated public func containsTerminalControlByte(_ text: String) -> Bool {
+    text.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
+}
+
 /// Project-dir grammar for `claude.session_project_dir`. Must be an
-/// absolute POSIX path with no NUL, newline, carriage return, or single
-/// quote. The single-quote ban is what lets the registry's single-quote
-/// shell escape stay a no-op even under defense-in-depth. Length cap is
-/// 4096 — well above Darwin's 1024 PATH_MAX, with headroom for synthetic
-/// or encoded paths.
+/// absolute POSIX path with no C0 control byte, DEL, or single quote
+/// (C11H-365: every control byte, not only NUL, LF and CR). The single-quote
+/// ban is what lets the registry's single-quote shell escape stay a no-op
+/// even under defense-in-depth. Length cap is 4096 — well above Darwin's
+/// 1024 PATH_MAX, with headroom for synthetic or encoded paths.
 ///
 /// File-scoped so both `SurfaceMetadataStore.validateReservedKey` (in the
 /// app target) and the `c11 claude-hook session-start` handler (in the
@@ -112,13 +121,8 @@ public let claudeSessionProjectDirMaxLen = 4096
 nonisolated public func isValidClaudeSessionProjectDir(_ candidate: String) -> Bool {
     guard candidate.first == "/" else { return false }
     if candidate.count > claudeSessionProjectDirMaxLen { return false }
-    for scalar in candidate.unicodeScalars {
-        switch scalar.value {
-        case 0x00, 0x0A, 0x0D, 0x27: return false  // NUL, LF, CR, '
-        default: continue
-        }
-    }
-    return true
+    if containsTerminalControlByte(candidate) { return false }
+    return !candidate.unicodeScalars.contains { $0.value == 0x27 }  // '
 }
 
 /// Grammar for `opencode.session_id`: `ses_` + a 26-character **base62**
@@ -163,16 +167,16 @@ nonisolated public func isValidOpencodeSessionProjectDir(_ candidate: String) ->
 
 /// Validation for workspace metadata writes.
 ///
-/// Values for canonical keys have specific caps; unknown keys are accepted up
-/// to the generic caps below. All keys must match a conservative ASCII
+/// Values for canonical keys have specific caps; unknown keys accept JSON and
+/// the store caps the complete object at 64 KiB. All new keys match an ASCII
 /// grammar to keep the socket wire shape stable and to avoid escape surprises
 /// in logs and CLI output.
 public enum WorkspaceMetadataValidator {
     public static let maxDescriptionLen = 2048
     public static let maxIconLen = 32
-    public static let maxCustomKeys = 32
+    public static let payloadCapBytes = 64 * 1024
+    public static let maxCaptainBytes = 256
     public static let maxCustomKeyLen = 64
-    public static let maxCustomValueLen = 1024
 
     /// Key grammar: non-empty ASCII letters/digits/underscore/dot/hyphen.
     /// Pattern: `^[A-Za-z0-9_.\-]+$`. No whitespace, no arbitrary UTF-8.
@@ -183,6 +187,7 @@ public enum WorkspaceMetadataValidator {
         case keyTooLong(limit: Int)
         case keyInvalidCharacters
         case valueTooLong(key: String, limit: Int)
+        case invalidValue(key: String, reason: String)
 
         public var code: String {
             switch self {
@@ -190,6 +195,7 @@ public enum WorkspaceMetadataValidator {
             case .keyTooLong: return "invalid_key"
             case .keyInvalidCharacters: return "invalid_key"
             case .valueTooLong: return "value_too_long"
+            case .invalidValue: return "invalid_value"
             }
         }
 
@@ -203,6 +209,9 @@ public enum WorkspaceMetadataValidator {
                 return "metadata key must match [A-Za-z0-9_.-]+"
             case .valueTooLong(let key, let limit):
                 return "metadata value for '\(key)' exceeds max length \(limit)"
+            case .invalidValue(let key, let reason):
+                return String(format: String(localized: "workspace.metadata.invalidValue",
+                    defaultValue: "Metadata value for '%@' %@"), key, reason)
             }
         }
 
@@ -210,28 +219,12 @@ public enum WorkspaceMetadataValidator {
             switch self {
             case .valueTooLong(let key, let limit):
                 return ["key": key, "limit": limit]
+            case .invalidValue(let key, _):
+                return ["key": key]
             case .keyTooLong(let limit):
                 return ["limit": limit]
             default:
                 return nil
-            }
-        }
-    }
-
-    public enum CapacityError: Error, Equatable {
-        case tooManyKeys(limit: Int)
-
-        public var code: String { "too_many_keys" }
-        public var message: String {
-            switch self {
-            case .tooManyKeys(let limit):
-                return "workspace metadata exceeds max \(limit) keys"
-            }
-        }
-        public var detail: [String: Any]? {
-            switch self {
-            case .tooManyKeys(let limit):
-                return ["limit": limit]
             }
         }
     }
@@ -244,7 +237,11 @@ public enum WorkspaceMetadataValidator {
     /// Validate a key/value pair for writing.
     public static func validate(key: String, value: String) throws {
         try validateKey(key)
-        try validateValue(key: key, value: value)
+        _ = try normalizedValue(key: key, value: value)
+    }
+
+    public static func validate(key: String, value: Any) throws {
+        _ = try normalizedValue(key: key, value: value)
     }
 
     /// Validate a key grammar only (used for deletion paths).
@@ -259,29 +256,48 @@ public enum WorkspaceMetadataValidator {
         }
     }
 
-    private static func validateValue(key: String, value: String) throws {
-        let limit = valueLimit(for: key)
-        if value.count > limit {
-            throw ValidationError.valueTooLong(key: key, limit: limit)
+    /// Canonical values stay strings; custom keys accept every JSON value.
+    public static func normalizedValue(key: String, value: Any) throws -> Any {
+        try validateKey(key)
+        if key == WorkspaceMetadataKey.captain { return try normalizedCaptain(value) }
+        if key == WorkspaceMetadataKey.description || key == WorkspaceMetadataKey.icon {
+            guard let string = value as? String else {
+                throw ValidationError.invalidValue(key: key, reason: String(localized: "workspace.metadata.requiresString", defaultValue: "must be a string"))
+            }
+            let limit = valueLimit(for: key)
+            if string.count > limit { throw ValidationError.valueTooLong(key: key, limit: limit) }
         }
+        return value
     }
 
-    /// Cap (in characters) for a given key. Canonical keys have dedicated
-    /// limits; anything else falls back to the generic custom-value cap.
+    public static func normalizedCaptain(_ value: Any) throws -> String {
+        let key = WorkspaceMetadataKey.captain
+        guard let raw = value as? String else {
+            throw ValidationError.invalidValue(key: key, reason: String(localized: "workspace.metadata.requiresString", defaultValue: "must be a string"))
+        }
+        // Reject line breaks and controls before trimming so a trailing newline
+        // cannot turn an invalid multiline identity into an accepted address.
+        guard !raw.unicodeScalars.contains(where: {
+            CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0)
+        }) else {
+            throw ValidationError.invalidValue(key: key, reason: String(localized: "workspace.metadata.captain.singleLine", defaultValue: "must be a single line without control characters"))
+        }
+        let value = raw.trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty else {
+            throw ValidationError.invalidValue(key: key, reason: String(localized: "workspace.metadata.captain.nonempty", defaultValue: "must be non-empty; clear the key to remove it"))
+        }
+        guard value.utf8.count <= maxCaptainBytes else {
+            throw ValidationError.valueTooLong(key: key, limit: maxCaptainBytes)
+        }
+        return value
+    }
+
     public static func valueLimit(for key: String) -> Int {
         switch key {
         case WorkspaceMetadataKey.description: return maxDescriptionLen
         case WorkspaceMetadataKey.icon: return maxIconLen
-        default: return maxCustomValueLen
-        }
-    }
-
-    /// Validate the post-write map does not exceed the custom-key count cap.
-    /// Canonical keys do not count against the custom-key budget.
-    public static func validateCapacity(after candidate: [String: String]) throws {
-        let customCount = candidate.keys.filter { !WorkspaceMetadataKey.canonical.contains($0) }.count
-        if customCount > maxCustomKeys {
-            throw CapacityError.tooManyKeys(limit: maxCustomKeys)
+        case WorkspaceMetadataKey.captain: return maxCaptainBytes
+        default: return Int.max // Custom values are bounded by the whole JSON object.
         }
     }
 }

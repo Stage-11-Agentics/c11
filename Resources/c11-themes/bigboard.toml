@@ -1,0 +1,215 @@
+# Big Board: mission control's wall. Everything JetBrains Mono in wide-tracked caps, console cards
+# with a header row, green for running, amber for waiting and hold, a clock in the titlebar.
+# Prototype key 7 (design/themes/c11-themes.html, [data-theme="bigboard"]).
+
+[identity]
+name         = "bigboard"
+display_name = "Big Board"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 2
+
+[palette]
+void      = "#05070A"   # --chrome, --sidebar-bg
+surface   = "#080B10"   # --card
+raised    = "#0F1721"   # --tab-active
+rule      = "#15202B"   # --chrome-rule, --card-border, --card-rule
+text      = "#DFE8EE"   # --card-text, --tab-text
+textDim   = "#65788A"   # --chrome-text-2, --tab-text-2
+green     = "#3DDC84"   # live, running, selection
+amber     = "#FFB224"   # hold / needs you
+cardActive = "#0B1118"  # --card-active
+chromeText = "#D9E3EA"  # --chrome-text (the titlebar's own ink)
+cardText2 = "#8AA0B2"
+cardDim   = "#52677A"
+violet    = "#B08CFF"   # --flag
+steel     = "#1F3A52"   # --cold
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.chromeText"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.green"
+accentAlt           = "$palette.amber"
+separator           = "$palette.rule"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$accent"
+thicknessPt      = 1.0
+inactiveOpacity  = 0.25
+unfocusedOpacity = 0.5
+
+[chrome.sidebar]
+tintOverlay                   = "$background"
+tintBase                      = "$background"
+tintBaseOpacity               = 1.0
+activeTabFill                 = "$palette.cardActive"
+activeTabFillFallback         = "$palette.cardActive"
+activeTabRail                 = "$accent"
+activeTabRailFallback         = "$accent"
+activeTabRailOpacity          = 1.0
+inactiveTabCustomOpacity      = 0.6
+inactiveTabMultiSelectOpacity = 0.35
+# Judgment: amber, not the green accent (the brief maps --accent here). The approved colour
+# register and the prototype's badge (`.ctl .badge`) are amber: a count is something that needs you.
+badgeFill                     = "$accentAlt"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$separator"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$background"
+backgroundOpacity   = 1.0
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+# Judgment: the CSS sets `.ctl { background: none }` (the group gets a 1 px rule instead,
+# which has no role), so the fill is transparent. --chrome-ctl (#121820) is therefore unused.
+controlFill         = "#00000000"
+controlForeground   = "$foreground"
+
+[chrome.tabBar]
+background      = "$background"
+activeFill      = "$palette.raised"
+divider         = "$separator"
+activeIndicator = "$accent"
+text            = "$palette.text"
+activeText      = "$palette.text"
+textSecondary   = "$foregroundSecondary"
+number          = "$accent"
+
+[chrome.browserChrome]
+background  = "$background"
+omnibarFill = "$surface"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = false
+
+# ---- schema 2 ----
+
+[type]
+ui      = "JetBrains Mono"
+display = "JetBrains Mono"
+mono    = "JetBrains Mono"
+
+# 11 / 13; uppercase, .16em, 600
+[type.windowTitle]
+scale    = 0.85
+weight   = "semibold"
+case     = "upper"
+tracking = 0.16
+
+# 11.5 / 17; 600, .14em
+[type.cardTitle]
+scale    = 0.68
+weight   = "semibold"
+case     = "upper"
+tracking = 0.14
+
+# 10 / 11; .meta, .usage, .branch, .ports at .12em. Judgment: .state is .16em but shares
+# this style; the .12em of the other four wins.
+[type.cardLabel]
+scale    = 0.91
+case     = "upper"
+tracking = 0.12
+
+# 11.5 / 13.5; weight stays the baseline 500
+[type.agentRow]
+scale = 0.85
+
+# 10.5 / 12.5 (.strip); uppercase, .1em
+[type.tab]
+scale    = 0.84
+case     = "upper"
+tracking = 0.1
+
+# 10 / 12; uppercase, .14em; weight stays the baseline 600
+[type.chip]
+scale    = 0.83
+case     = "upper"
+tracking = 0.14
+
+# 10.5 / 14; uppercase, .16em; weight stays the baseline 600
+[type.pill]
+scale    = 0.75
+case     = "upper"
+tracking = 0.16
+
+[geometry]
+cardRadius         = 2
+cardBorderPt       = 1
+cardActiveBorderPt = 1
+# Judgment: the CSS pad is `0 0 10px`, with the header row full-bleed and every other row
+# inset 12 px by margin. A uniform 12 is the sane reading of the first value; the brief's literal 0
+# would put text on the card edge unless the console header draws its own inset.
+cardPaddingPt      = 12
+pillRadius         = 0
+controlRadius      = 0
+chipRadius         = 0
+markRadius         = 0
+progressHeightPt   = 3
+progressRadius     = 0
+tabSelection       = "overline"   # .tab.active: inset 0 2px 0 accent (thickness has no role)
+
+[chrome.card]
+sheen = false   # the prototype cards are flat: no top sheen, no identity wash
+fill         = "$surface"
+fillActive   = "$palette.cardActive"
+border       = "$separator"
+borderActive = "$accent"
+# Judgment: the prototype has no .card.waiting rule, so this is the baseline mix,
+# color-mix(borderActive 55%, border), computed: #3DDC84 over #15202B (a dim green, not amber).
+borderWaiting = "#2B875C"
+text          = "$palette.text"
+textSecondary = "$palette.cardText2"
+textDim       = "$palette.cardDim"
+rule          = "$separator"
+accent        = "$accent"
+# Judgment: the bar's .g segment is amber (--attn) in the CSS; .w is green, .d is #1F2D3A.
+progress      = "$accentAlt"
+progressTrack = "$separator"
+
+[chrome.pill]
+style  = "outline"
+ink    = "$accentAlt"
+border = "$accentAlt"
+
+[chrome.descriptionBar]
+# The CSS sets `.chip { background: none }`; written as transparent so c11's 7% fill does not show.
+chipFill   = "#00000000"
+chipBorder = "$accent.opacity(0.4)"   # rgba(61,220,132,.4)
+chipText   = "$accent"
+
+[chrome.area]
+focusBorder   = "$accent"
+waitingBorder = "$accentAlt"
+thicknessPt   = 1
+
+[backdrop]
+kind  = "solid"
+color = "$background"
+
+[states]
+waiting    = "$accentAlt"
+waitingInk = "$background"   # ink on the amber count badge (.waiting-pill .n)
+running    = "$accent"
+cold       = "$palette.steel"
+flag       = "$palette.violet"
+unread     = "$accentAlt"
+
+[ornaments]
+titlebarClock = true
+stateTags     = true
+cardHeader    = "console"
+
+# Ghostty terminal theme for `c11 themes set <name> --with-terminal`
+[terminal]
+pairedTheme = "c11-bigboard"

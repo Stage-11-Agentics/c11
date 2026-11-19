@@ -36,7 +36,7 @@
 **Mostly yes, and c11 already does this for four agents.** cmux's own Claude integration works the same way: its wrapper injects a `--settings` blob per launch and writes no Claude config (`CLI/CMUXCLI+ClaudeHookSettings.swift` on upstream/main). cmux writes tenant config only for Codex (`~/.codex/hooks.json` plus a flag in `config.toml`), Gemini, Grok, Cursor and the rest (`docs/agent-hooks.md`).
 
 Verified per CLI:
-- Every CLI below was checked against `--help` from the version installed on Hyperion.
+- Every CLI below was checked against `--help` from the version installed on the laptop.
 - Where the mechanism lives in source, I read the source too.
 - Rows marked unverified were not run.
 
@@ -329,6 +329,6 @@ The Return key drops from "sets working" to a `keypress`-confidence hint. It cou
 5. Write the per-process hook rule into CLAUDE.md? (Needs you, question 5.)
 6. Does `grok` (the TUI) honor `--plugin-dir` or `GROK_CONFIG` hooks? This needs a one-off test in a scratch pane. If yes, Grok moves from the observation tier to hooks.
 7. Does omp load `pi-lifecycle.ts` unchanged? One test. Same consequence for omp.
-8. Should the journal accept events from a remote producer from day one, for agents on Atlas over SSH? It shapes the append verb's attribution rules, so it should be settled with topic 02 before phase 1.
+8. Should the journal accept events from a remote producer from day one, for agents on the build host over SSH? It shapes the append verb's attribution rules, so it should be settled with topic 02 before phase 1.
 9. Auto-resume after capacity errors (cmux #15373): leave it out of 1.0 as policy that belongs above the host? I'd leave it out. The journal would make it a small add later.
 10. Mailbox delivery through hooks instead of keystrokes (cmux #15279): this is a real c11 mailbox improvement that the producer layer enables. Is it in scope here or in a separate topic?

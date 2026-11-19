@@ -126,9 +126,14 @@ TAG_ID="$(sanitize_bundle "$TAG")"
 TAG_SLUG="$(sanitize_path "$TAG")"
 APP="$HOME/Library/Developer/Xcode/DerivedData/c11-${TAG_SLUG}/Build/Products/Debug/c11 DEV ${TAG}.app"
 BID="com.stage11.c11.debug.${TAG_ID}"
-SOCK="/tmp/c11-debug-${TAG_SLUG}.sock"
+# The tagged build's socket and debug log live in c11's per-user folder
+# ($(getconf DARWIN_USER_TEMP_DIR)c11, 0700), never at fixed /tmp names (C11H-364).
+# shellcheck source=lib/c11-user-paths.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/c11-user-paths.sh"
+RUNTIME_DIR="$(c11_ensure_user_runtime_dir)"
+SOCK="$(c11_socket_path_for_stem "c11-debug-${TAG_SLUG}" "$RUNTIME_DIR")"
 DSOCK="$HOME/Library/Application Support/c11/c11d-dev-${TAG_SLUG}.sock"
-LOG="/tmp/c11-debug-${TAG_SLUG}.log"
+LOG="$RUNTIME_DIR/c11-debug-${TAG_SLUG}.log"
 
 if [[ ! -d "$APP" ]]; then
   echo "error: tagged app not found at $APP" >&2

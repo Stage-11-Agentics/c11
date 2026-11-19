@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Two mails in a row to one idle native seat ring natively twice (C11-476).
-Runs in an existing Atlas sandbox guest started with `--agents pi`.
+Runs in an existing build-host sandbox guest started with `--agents pi`.
 OpenCode uses the credential-free synthetic provider; Pi uses its fixture.
 Each seat gets mail A, `recv --ack`, then more mails with no typed turn between.
 Each must log `submitted` on the seat's native route, never `once_per_idle`.

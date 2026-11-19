@@ -22,6 +22,13 @@ struct CapabilityFeatures {
         case panelLinks = "links.panel"
         case terminalLinks = "links.terminal"
         case fleet = "fleet"
+        // c11 (C11H-197): window names, window themes, placement, displays.
+        case windowName = "window.name"
+        case windowTheme = "window.theme"
+        case windowMove = "window.move"
+        case displayList = "display.list"
+        // c11 (C11H-228): `c11 show`, a display-only viewer from any machine.
+        case show = "show"
     }
 
     struct Entry {
@@ -54,7 +61,14 @@ struct CapabilityFeatures {
         Entry(id: .markdownAgentCLI, version: 1, enabled: true),
         Entry(id: .panelLinks, version: 1, enabled: true),
         Entry(id: .terminalLinks, version: 1, enabled: true),
-        Entry(id: .fleet, version: 1, enabled: true),
+        // 2: `system.fleet` takes filters and `since` (C11H-320).
+        // 3: rows carry `stalled`, `context` and `restore`; `stalled` filter (C11H-320 PR 3).
+        Entry(id: .fleet, version: 3, enabled: true),
+        Entry(id: .windowName, version: 1, enabled: true),
+        Entry(id: .windowTheme, version: 1, enabled: true),
+        Entry(id: .windowMove, version: 1, enabled: true),
+        Entry(id: .displayList, version: 1, enabled: true),
+        Entry(id: .show, version: 1, enabled: true),
     ])
 
     private let entries: [ID: Entry]

@@ -16,7 +16,7 @@
 
 ## The git baseline (what you'd know without Etch)
 
-All four PRs were authored and merged by the human operator account, and the squashed commits all carry `Atin <atin@atin.me>`:
+All four PRs were authored and merged by the human operator account, and the squashed commits all carry `Atin <operator@example.com>`:
 
 | PR | Title | Branch | Squash commit | Author | Merged by |
 |----|-------|--------|---------------|--------|-----------|

@@ -1,6 +1,6 @@
 # Standard Plan Review — conversation-store-architecture (Claude)
 
-**Plan reviewed:** `/Users/atin/Projects/Stage11/code/c11/docs/conversation-store-architecture.md`
+**Plan reviewed:** `~/src/c11/docs/conversation-store-architecture.md`
 **Reviewer:** Claude (Opus 4.7), Standard Plan Review
 **Date:** 2026-04-27
 

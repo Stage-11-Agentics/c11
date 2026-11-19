@@ -204,15 +204,27 @@ if [[ -n "$c11_bin" ]]; then
     boundary_surface="${CMUX_SURFACE_ID:-}"
     if [[ "$boundary_surface" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
         boundary_dir="${CMUX_SOCKET_PATH}.codex-launch-boundaries"
-        boundary_tmp="${boundary_dir}/.${boundary_surface}.$$"
+        boundary_tmp=""
         boundary_token="${boundary_surface}:$$:${RANDOM}"
-        if (umask 077 && mkdir -p -- "$boundary_dir" && {
-            printf '%s\n%s\n%s\n' \
+        # The folder sits beside the socket. It must be a real directory this
+        # user owns, mode 0700: a folder another account made beside a /tmp
+        # socket name, or a link, is refused and the marker skipped. The
+        # temporary marker comes from mktemp (exclusive, 0600, never follows
+        # a link) and is renamed into place, replacing rather than following
+        # whatever is at the final name (C11H-364 N15).
+        # GNU stat first: BSD stat refuses -c without writing to stdout,
+        # while GNU's -f reads as file-system status and prints it before
+        # failing, which would make every folder look wrong.
+        (umask 077 && mkdir -p -- "$boundary_dir") 2>/dev/null || true
+        boundary_mode="$(stat -c '%a' "$boundary_dir" 2>/dev/null || /usr/bin/stat -f '%Lp' "$boundary_dir" 2>/dev/null || true)"
+        if [[ -d "$boundary_dir" && ! -L "$boundary_dir" && -O "$boundary_dir" && "$boundary_mode" == 700 ]] \
+            && boundary_tmp="$(umask 077 && mktemp "${boundary_dir}/.${boundary_surface}.XXXXXXXX" 2>/dev/null)" \
+            && printf '%s\n%s\n%s\n' \
                 "$(date +%s)" "$EXPECTED_RESUME_ID" "$boundary_token" \
-                > "$boundary_tmp"
-        } && mv -f -- "$boundary_tmp" "${boundary_dir}/${boundary_surface}"); then
+                > "$boundary_tmp" \
+            && mv -f -- "$boundary_tmp" "${boundary_dir}/${boundary_surface}"; then
             :
-        else
+        elif [[ -n "$boundary_tmp" ]]; then
             rm -f -- "$boundary_tmp" 2>/dev/null || true
         fi
     fi
@@ -258,11 +270,17 @@ if [[ -n "$c11_bin" ]]; then
     codex_notify_config="notify=[\"${notify_handler}\",\"__c11-notify\"]"
 fi
 
+# C11H-35: the per-launch c11 note, by Codex's own flag (no file, no config).
+c11_bin_dir="$(cd "$(dirname "$0")" && pwd)"
+C11_NOTE_ARGS=()
+# shellcheck source=/dev/null
+[[ -r "$c11_bin_dir/c11-agent-note.sh" ]] && . "$c11_bin_dir/c11-agent-note.sh" && c11_note_args codex "$c11_bin_dir" "$@"
+
 if [[ -n "$codex_notify_config" ]]; then
-    # Trust isolation for Codex hooks is verified separately on Atlas. Until
+    # Trust isolation for Codex hooks is verified separately on the build host. Until
     # that probe proves that a bypass trusts only c11-owned hooks, keep the
     # process rail to notify alone: no --enable hooks, hooks.* config, or
     # --dangerously-bypass-hook-trust.
-    C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" -c "$codex_notify_config" "$@"
+    C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" -c "$codex_notify_config" ${C11_NOTE_ARGS[@]+"${C11_NOTE_ARGS[@]}"} "$@"
 fi
-C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" "$@"
+C11_CODEX_WRAPPER_REENTRY=1 exec "$REAL_CODEX" ${C11_NOTE_ARGS[@]+"${C11_NOTE_ARGS[@]}"} "$@"

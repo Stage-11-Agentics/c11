@@ -7,17 +7,17 @@ You are one of two independent auditors (one Claude Fable, one GPT-6-Astra). **W
 c11 is Stage 11's macOS terminal multiplexer for running many coding agents in parallel, a fork of cmux. The fork happened on 2026-03-18, and upstream cmux has since merged about 2,950 fix-like changes. A sweep has verified which of those bugs c11 still has. c11 1.0 is a major release that absorbs the ones worth having. Your job: **decide what 1.0 must take, what is nice to have, and what is not a priority, and challenge the verifiers where they were wrong.**
 
 Read first:
-- `~/Projects/Stage11/code/c11/upstream-triage/c11-1.0/C11-1.0.md`, the whole 1.0 plan. Section 5 is the bug harvest.
-- `~/Projects/Stage11/code/c11/upstream-triage/c11-1.0/05-bug-sweep.md`, the round-one report: method, top ten, tracks.
-- `~/Projects/Stage11/code/c11/upstream-triage/c11-1.0/05-bug-sweep-data/LEDGER.md`, the merged, deduplicated list of every verified bug. This is the list you are auditing.
+- `~/src/c11/upstream-triage/c11-1.0/C11-1.0.md`, the whole 1.0 plan. Section 5 is the bug harvest.
+- `~/src/c11/upstream-triage/c11-1.0/05-bug-sweep.md`, the round-one report: method, top ten, tracks.
+- `~/src/c11/upstream-triage/c11-1.0/05-bug-sweep-data/LEDGER.md`, the merged, deduplicated list of every verified bug. This is the list you are auditing.
 - The per-batch evidence: `05-bug-sweep-data/verdicts/*.md` and `verdicts-*.md`.
 
 Sources:
-- c11 at `~/Projects/Stage11/code/c11`. Read `origin/main` (`git show origin/main:<path>`), because the local checkout is behind.
+- c11 at `~/src/c11`. Read `origin/main` (`git show origin/main:<path>`), because the local checkout is behind.
 - cmux at the `upstream/main` ref in the same repo.
 - c11's Ghostty submodule is at `ghostty/`.
 
-READ ONLY: no edits, branches, builds, tests or `git fetch`. This machine (Hyperion) is shared: no heavy work.
+READ ONLY: no edits, branches, builds, tests or `git fetch`. This machine (the laptop) is shared: no heavy work.
 
 ## Atin's use profile (drives priority)
 
@@ -46,7 +46,7 @@ READ ONLY: no edits, branches, builds, tests or `git fetch`. This machine (Hyper
 
 ## Output
 
-Write to `~/Projects/Stage11/code/c11/upstream-triage/c11-1.0/05-bug-sweep-data/audit-fable.md`, where `fable` is `fable` or `astra`. Sections, in order:
+Write to `~/src/c11/upstream-triage/c11-1.0/05-bug-sweep-data/audit-fable.md`, where `fable` is `fable` or `astra`. Sections, in order:
 
 1. **Verdict in five lines.** How many must do, nice to have, not a priority, rejected. The single most important fix.
 2. **Spot-check results:** checked N, held M, overturned (list with reasons).

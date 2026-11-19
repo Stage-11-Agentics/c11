@@ -291,4 +291,10 @@ enum FeedAnswerInFlight {
         panelIDs.remove(panelID)
         lock.unlock()
     }
+
+    static func isActive(panelID: UUID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return panelIDs.contains(panelID)
+    }
 }

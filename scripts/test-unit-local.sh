@@ -65,7 +65,7 @@ for arg in "$@"; do
   esac
 done
 
-# The logic suite is process-isolated and runs in parallel on Atlas. Keep the
+# The logic suite is process-isolated and runs in parallel on the build host. Keep the
 # host-bound c11-unit scheme serial because its tests launch an app process.
 if [[ "$SCHEME" == "c11-logic" && -n "${C11_TEST_PARALLEL_WORKERS:-}" ]]; then
   PARALLEL_WORKERS="$C11_TEST_PARALLEL_WORKERS"

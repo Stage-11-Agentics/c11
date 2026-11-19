@@ -1981,7 +1981,7 @@ index 00000000..d8986dd7
 +  "workspaces": [
 +    {
 +      "title": "cmux-41",
-+      "cwd": "/Users/atin/Projects/Stage11/code/cmux",
++      "cwd": "/Users/demo/src/cmux",
 +      "content_area": { "pixels": { "width": 2808, "height": 1629 } },
 +      "panes": [
 +        {
@@ -1994,7 +1994,7 @@ index 00000000..d8986dd7
 +              "index_in_pane": 0,
 +              "title": "Claude :: CMUX-41 impl",
 +              "description": "Implementing snapshot/restore...",
-+              "cwd": "/Users/atin/Projects/Stage11/code/cmux",
++              "cwd": "/Users/demo/src/cmux",
 +              "terminal_type": "claude-code",
 +              "model": "claude-opus-4-7",
 +              "manifest": { "claude.session_id": "abc123...", ... }

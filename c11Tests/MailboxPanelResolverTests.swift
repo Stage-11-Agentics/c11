@@ -729,4 +729,43 @@ final class MailboxAddressTests: XCTestCase {
         let blank = id("", address: nil, role: nil)
         XCTAssertEqual(select("surface:", [blank]), [])
     }
+
+    // MARK: - C11H-360: a linked panel never answers to a local panel's name
+
+    func testGlobalResolverPrefersPanelsOnThisMacForEveryNameForm() {
+        let senderWorkspace = UUID(), localWorkspace = UUID()
+        let linked = UUID(), local = UUID()
+        let surfaces = [
+            MailboxGlobalResolver.PanelRecord(workspaceId: senderWorkspace, surfaceId: linked, name: "Watcher",
+                                              address: "watch", role: "reviewer", linkedMachine: "studio"),
+            MailboxGlobalResolver.PanelRecord(workspaceId: localWorkspace, surfaceId: local, name: "Watcher",
+                                              address: "watch", role: "reviewer"),
+        ]
+        let resolver = MailboxGlobalResolver(surfaces: { surfaces })
+        for to in ["Watcher", "watch", "panel:watch", "role:reviewer"] {
+            XCTAssertEqual(resolver.resolve(name: to, senderWorkspaceId: senderWorkspace),
+                           .unique(workspaceId: localWorkspace, surfaceIds: [local]), to)
+        }
+        XCTAssertEqual(resolver.resolve(name: "id:\(linked.uuidString)", senderWorkspaceId: senderWorkspace),
+                       .unique(workspaceId: senderWorkspace, surfaceIds: [linked]))
+        // A linked address loses to a local title too: bare names match here first.
+        let mixed = [
+            MailboxGlobalResolver.PanelRecord(workspaceId: senderWorkspace, surfaceId: linked, name: "x",
+                                              address: "Watcher", linkedMachine: "studio"),
+            MailboxGlobalResolver.PanelRecord(workspaceId: localWorkspace, surfaceId: local, name: "Watcher"),
+        ]
+        XCTAssertEqual(MailboxGlobalResolver(surfaces: { mixed }).resolve(name: "Watcher", senderWorkspaceId: senderWorkspace),
+                       .unique(workspaceId: localWorkspace, surfaceIds: [local]))
+    }
+
+    func testGlobalResolverIgnoresALinkedPanelsTerminalTitle() {
+        let workspace = UUID(), linked = UUID()
+        let osc = [MailboxGlobalResolver.PanelRecord(workspaceId: workspace, surfaceId: linked, name: "reviewer",
+                                                     linkedMachine: "studio", titleFromOSC: true)]
+        XCTAssertEqual(MailboxGlobalResolver(surfaces: { osc }).resolve(name: "reviewer", senderWorkspaceId: workspace), .unresolved)
+        let named = [MailboxGlobalResolver.PanelRecord(workspaceId: workspace, surfaceId: linked, name: "reviewer",
+                                                       linkedMachine: "studio")]
+        XCTAssertEqual(MailboxGlobalResolver(surfaces: { named }).resolve(name: "reviewer", senderWorkspaceId: workspace),
+                       .unique(workspaceId: workspace, surfaceIds: [linked]), "alone with an operator-set name, still reachable")
+    }
 }

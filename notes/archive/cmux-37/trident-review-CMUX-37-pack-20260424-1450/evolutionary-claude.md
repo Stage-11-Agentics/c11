@@ -104,7 +104,7 @@ The seam already exists: `SurfaceMetadataStore`, `PaneMetadataStore`, and `TabMa
 Once snapshots are content-addressed and have a stable wire format, **make the URL the primary handle**:
 
 ```
-c11 restore https://snapshots.stage11.ai/abc123
+c11 restore https://snapshots.example.com/abc123
 c11 restore s3://my-team/workspace-snapshots/feature-foo
 c11 restore git://my-repo.git#snapshots/feature-foo
 ```

@@ -100,7 +100,7 @@ final class AgentManifestTests: XCTestCase {
     /// including claude's cd-prefix special case and the absent-row agents.
     func testResumeCommandReproducesPhase1() {
         let uuid = "550e8400-e29b-41d4-a716-446655440000"
-        let projectDir = "/Users/atin/Projects/example"
+        let projectDir = "/Users/demo/Projects/example"
         let inputs: [(String?, [String: String])] = [
             (uuid, [:]),
             (uuid, [PanelMetadataKeyName.claudeSessionProjectDir: projectDir]),

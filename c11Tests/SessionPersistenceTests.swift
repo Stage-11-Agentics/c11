@@ -107,7 +107,7 @@ final class WindowGeometryPersistenceTests: XCTestCase {
 
 final class SidebarTilesPolicyTests: XCTestCase {
     func testColumnsUseEffectiveWidthAndScale() {
-        for (width, count) in [(200.0, 1), (323, 1), (324, 2), (400, 2), (485, 2), (486, 3), (600, 3)] {
+        for (width, count) in [(200.0, 1), (323, 1), (324, 2), (400, 2), (485, 2), (486, 3), (600, 3), (620, 3)] {
             XCTAssertEqual(SidebarLayoutPolicy.columns(width: width), count)
         }
         XCTAssertEqual(SidebarLayoutPolicy.columns(width: 400, scale: 1.25), 1)
@@ -121,7 +121,7 @@ final class SidebarTilesPolicyTests: XCTestCase {
         XCTAssertEqual(SidebarLayoutPolicy.effectiveWidth(400, windowWidth: 1050), 350)
         XCTAssertEqual(SidebarLayoutPolicy.columns(width: SidebarLayoutPolicy.effectiveWidth(400, windowWidth: 971)), 1)
         XCTAssertEqual(SidebarLayoutPolicy.columns(width: SidebarLayoutPolicy.effectiveWidth(400, windowWidth: 972)), 2)
-        XCTAssertEqual(SidebarLayoutPolicy.effectiveWidth(900, windowWidth: 3000), 600)
+        XCTAssertEqual(SidebarLayoutPolicy.effectiveWidth(900, windowWidth: 3000), 620)
         XCTAssertEqual(SidebarLayoutPolicy.effectiveWidth(.nan, windowWidth: 1200), 200)
         XCTAssertFalse(SidebarLayoutPolicy.showsTiles(width: SidebarLayoutPolicy.effectiveWidth(486, windowWidth: 900)))
         XCTAssertTrue(SidebarLayoutPolicy.showsTiles(width: SidebarLayoutPolicy.effectiveWidth(486, windowWidth: 1800)))
@@ -151,8 +151,10 @@ final class SidebarTilesPolicyTests: XCTestCase {
         // The menu's 3 Columns falls back to the most that fit.
         XCTAssertEqual(state.show(columns: 3, windowWidth: 1200, scale: 1), 2)
         XCTAssertTrue(state.isVisible)
-        // At 1.6x chrome scale three columns would need 778 pt, past the 600 pt maximum.
+        // At 1.6x chrome scale three columns would need 778 pt, past the 620 pt maximum.
         XCTAssertNil(SidebarLayoutPolicy.requestedWidth(forColumns: 3, current: 200, windowWidth: 3000, scale: 1.6))
+        // At the Large chrome scale (1.25x) three columns need 608 pt, inside it (C11H-199).
+        XCTAssertEqual(SidebarLayoutPolicy.requestedWidth(forColumns: 3, current: 200, windowWidth: 2560, scale: 1.25), 608)
         // A 486 pt request shows two columns here but three once the window widens;
         // picking 2 Columns writes a width that stays at two.
         XCTAssertEqual(SidebarLayoutPolicy.requestedWidth(forColumns: 2, current: 486, windowWidth: 1200, scale: 1), 324)
@@ -170,7 +172,7 @@ final class SidebarTilesPolicyTests: XCTestCase {
         }
         XCTAssertFalse(SidebarLayoutPolicy.showsTiles(width: 404.9, scale: 1.25))
         XCTAssertTrue(SidebarLayoutPolicy.showsTiles(width: 405, scale: 1.25))
-        // Every chrome scale can reach Tiles inside the 600 pt maximum, with room to spare.
+        // Every chrome scale can reach Tiles inside the 620 pt maximum, with room to spare.
         for scale in [0.5, 0.85, 1, 1.25, 1.55, 1.6, 2, 3] {
             XCTAssertTrue(SidebarLayoutPolicy.showsTiles(width: 520, scale: scale), "scale \(scale)")
         }
@@ -939,26 +941,19 @@ final class SessionPersistenceTests: XCTestCase {
     }
 
     @MainActor
-    func testWorkspaceCreationDoesNotRequestFirstRunWelcomeDuringQALaunch() {
-        let defaults = UserDefaults.standard
-        let previousWelcome = defaults.object(forKey: WelcomeSettings.shownKey)
-        let previousGrid = defaults.object(forKey: DefaultGridSettings.enabledKey)
+    func testWorkspaceCreationDoesNotRequestFirstRunWelcomeDuringQALaunch() throws {
+        // C11H-302: a suite of its own. The parallel test workers share one
+        // standard domain, and other tests write these keys concurrently.
+        let suiteName = "c11.sessionPersistence.qaWelcome.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        // The manager's own first workspace neither welcomes nor builds a grid.
         defaults.set(true, forKey: WelcomeSettings.shownKey)
         defaults.set(false, forKey: DefaultGridSettings.enabledKey)
-        defer {
-            if let previousWelcome {
-                defaults.set(previousWelcome, forKey: WelcomeSettings.shownKey)
-            } else {
-                defaults.removeObject(forKey: WelcomeSettings.shownKey)
-            }
-            if let previousGrid {
-                defaults.set(previousGrid, forKey: DefaultGridSettings.enabledKey)
-            } else {
-                defaults.removeObject(forKey: DefaultGridSettings.enabledKey)
-            }
-        }
 
-        let manager = WorkspaceManager()
+        let manager = WorkspaceManager(welcomeDefaults: defaults)
+        // The test-host suppression (C11H-317) would hide the QA guard.
+        manager.suppressesFirstRunLayout = false
         manager.qaLaunchPolicyProvider = { .on(.fresh) }
         var welcomeRequests = 0
         manager.firstRunWelcomeRequestForTesting = { _ in welcomeRequests += 1 }
@@ -967,7 +962,30 @@ final class SessionPersistenceTests: XCTestCase {
         _ = manager.addWorkspace(select: true)
 
         XCTAssertEqual(welcomeRequests, 0, "QA workspace creation must not start the first-run welcome flow")
-        XCTAssertFalse(defaults.bool(forKey: WelcomeSettings.shownKey), "QA launch must not persist the welcome as shown")
+    }
+
+    /// C11H-317: in an XCTest process, `WorkspaceManager.init`'s own first
+    /// workspace requests neither the Welcome quad nor the default grid.
+    /// Fails with the suppression removed: the first manager asks for the
+    /// welcome (QA off), the second for the grid (whatever the QA policy).
+    @MainActor
+    func testWorkspaceManagerInXCTestProcessRequestsNoFirstRunLayout() throws {
+        XCTAssertTrue(QALaunchPolicy.isHostedTestProcess(environment: ["XCTestConfigurationFilePath": "/x"]))
+        XCTAssertFalse(QALaunchPolicy.isHostedTestProcess(environment: [:]))
+        XCTAssertFalse(QALaunchPolicy.isHostedTestProcess(environment: ["C11_QA_LAUNCH": "fresh"]))
+        for welcomeShown in [false, true] {
+            let suiteName = "c11.sessionPersistence.testHostLayout.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            defaults.set(welcomeShown, forKey: WelcomeSettings.shownKey)
+            defaults.set(true, forKey: DefaultGridSettings.enabledKey)
+
+            let manager = WorkspaceManager(welcomeDefaults: defaults)
+
+            XCTAssertTrue(manager.suppressesFirstRunLayout)
+            XCTAssertEqual(manager.welcomeQuadRequestCount, 0, "welcomeShown=\(welcomeShown)")
+            XCTAssertEqual(manager.defaultGridRequestCount, 0, "welcomeShown=\(welcomeShown)")
+        }
     }
 
     func testQALaunchPolicyDualReadsLegacyKeyButC11Wins() {
@@ -1497,6 +1515,17 @@ final class SessionPersistenceTests: XCTestCase {
                 includeScrollback: false
             )
         )
+    }
+
+    /// C11H-100: only the first TERM starts the clean quit; one that lands while it runs does
+    /// nothing. The source itself is never installed here: the test process keeps TERM's default.
+    func testOnlyTheFirstTerminationSignalStartsTheCleanQuit() {
+        let quit = TerminationSignalQuit()
+        var quits = 0
+        XCTAssertTrue(quit.received { quits += 1 })
+        XCTAssertFalse(quit.received { quits += 1 })
+        XCTAssertFalse(quit.received { quits += 1 })
+        XCTAssertEqual(quits, 1)
     }
 
     func testResigningActiveDoesNotSaveSessionSnapshot() async {

@@ -10,7 +10,7 @@ Atin records them separately.
 
 ## Preconditions
 
-Run on Atlas with a tagged Debug app built from this checkout. The tag must be
+Run on the build host with a tagged Debug app built from this checkout. The tag must be
 the single ticket tag `c11-261`. The tagged app and CLI are
 derived from the tag, and the only accepted socket is:
 
@@ -25,7 +25,7 @@ The launch path suppresses both startup dialogs with `--qa fresh` or
 ```text
 source checkout and HEAD
 origin/main
-Atlas hostname
+Studio hostname
 tagged app path and CLI SHA-256
 tagged socket path
 display identity from system_profiler SPDisplaysDataType
@@ -186,7 +186,7 @@ Expected Collapsed Flag counts are flags=2, waiting=2, eligible unread=3. Read
 native activity/AX labels alongside metadata; absent waiting projection is a
 failure or unverified seam, never an agent-lifecycle PASS.
 
-Use a fresh reviewer and the exact tagged app on Atlas. Enumerate displays
+Use a fresh reviewer and the exact tagged app on the build host. Enumerate displays
 first instead of assuming a display index. Set a hard 20-minute timer, prove
 synthetic dismissal before handoff, and capture screenshots plus a short
 scenario artifact. Inspect `c11 tree --no-layout` before calling the run good;
@@ -253,7 +253,7 @@ chapter's evidence. The socket oracle deliberately does not call
 The independent reviewer records `PASS`, `FAIL`, or `UNVERIFIED` per chapter;
 no result is inferred from the socket oracle or from a green build.
 
-Explicitly routed C11-260 residuals: the Atlas Validator integration matrix owns
+Explicitly routed C11-260 residuals: the build-host Validator integration matrix owns
 pending-prime creation/mount cap (C11-301: creation ≤2, handoff ≤3, selected always
 mounted, queue settles to one), and the real selective-resume picker (keep subset,
 omit a window, retain empty folders, no-selection fallback). Record actual UI/log
@@ -292,7 +292,7 @@ comparison pair is candidate `a2e448b74d9ecdfdf356498cfb431036de9e5c95` and
 control `dedc6007a5bb886388af23d7c48c48d76025772f`; a later documentation-only
 commit does not silently replace either binary or its source identity.
 
-Once both artifacts exist, request `REQUEST QUIET ATLAS C11-261 <minutes>` at
+Once both artifacts exist, request `REQUEST QUIET STUDIO C11-261 <minutes>` at
 tab:210 and await the reservation. The Orchestrator holds both real build-slot
 FDs; the owner observes its named holder/lease and never takes those locks.
 The revised request is 25 minutes. Record load at 1 Hz, host CPU/RSS processes

@@ -2,10 +2,20 @@ import AppKit
 import Foundation
 
 extension TerminalController {
-    func v2WorkspaceGroupRecords(_ manager: WorkspaceManager) -> [[String: Any]] {
-        manager.workspaceGroups.map { group in
+    /// Each group's record, with its JSON object and its Captain's presence
+    /// (C11H-299). Presence is instance-wide: the holder may be in any window.
+    /// Without a caller's projection, panels are walked only when one of this
+    /// window's groups declares a Captain (C11H-301).
+    func v2WorkspaceGroupRecords(_ manager: WorkspaceManager,
+                                 captainProjection: WorkspaceCaptainProjection? = nil) -> [[String: Any]] {
+        guard !manager.workspaceGroups.isEmpty else { return [] }
+        let groupMetadata = WorkspaceMetadataStore.groups.readSnapshot()
+        let projection = captainProjection ?? WorkspaceCaptainProjection.groupPresence(
+            groups: manager.workspaceGroups, groupMetadata: groupMetadata,
+            holders: { WorkspaceCaptainCoordinator.holders(in: AppDelegate.shared?.fleetWorkspaces() ?? []) })
+        return manager.workspaceGroups.map { group in
             let members = manager.workspaces.filter { $0.groupId == group.id }.map { $0.id.uuidString }
-            return [
+            var record: [String: Any] = [
                 "id": group.id.uuidString,
                 "ref": v2Ref(kind: .workspaceGroup, uuid: group.id),
                 "name": group.name,
@@ -14,8 +24,21 @@ extension TerminalController {
                 "is_collapsed": group.isCollapsed,
                 "is_pinned": group.isPinned,
                 "member_workspace_ids": members,
-                "member_count": members.count
+                "member_count": members.count,
+                "metadata": groupMetadata.metadata[group.id] ?? [:],
+                "metadata_sources": groupMetadata.sources[group.id] ?? [:]
             ]
+            record.merge(projection.groupSummary(for: group.id).presenceJSONObject) { _, derived in derived }
+            return record
+        }
+    }
+
+    /// C11H-342: the sidebar's root items in draw order, pinned segment first.
+    func v2WorkspaceRootOrder(_ manager: WorkspaceManager) -> [[String: Any]] {
+        manager.workspaceRootEntries.map { entry in
+            let kind: V2HandleKind = entry.isGroup ? .workspaceGroup : .workspace
+            return ["kind": entry.isGroup ? "group" : "workspace", "id": entry.id.uuidString,
+                    "ref": v2Ref(kind: kind, uuid: entry.id), "is_pinned": entry.isPinned]
         }
     }
 
@@ -98,6 +121,31 @@ extension TerminalController {
                 }
                 return id
             }
+            /// C11H-342: a root item, a group or an ungrouped workspace, by ref or UUID.
+            func rootItemId(_ raw: Any?) throws -> UUID {
+                guard let value = (raw as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) else { throw invalid() }
+                let namesGroup = value.hasPrefix(V2HandleKind.workspaceGroup.rawValue + ":")
+                    || UUID(uuidString: value).map { uuid in
+                        allManagers.contains { $0.workspaceGroups.contains { $0.id == uuid } }
+                    } == true
+                if namesGroup { return try groupId(value) }
+                let id = try workspaceId(value)
+                guard manager.workspaces.first(where: { $0.id == id })?.groupId == nil else {
+                    throw WorkspaceGroupOperationError.notRootItem
+                }
+                return id
+            }
+            /// A member move's before/after: a workspace. A group named there
+            /// (a group is never inside a group) is `not_member`, not unknown.
+            func memberTargetId(_ raw: Any?) throws -> UUID {
+                if let value = (raw as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   value.hasPrefix(V2HandleKind.workspaceGroup.rawValue + ":")
+                    || UUID(uuidString: value).map({ uuid in
+                        allManagers.contains { $0.workspaceGroups.contains { $0.id == uuid } } }) == true {
+                    throw WorkspaceGroupOperationError.notMember
+                }
+                return try workspaceId(raw)
+            }
             if method == "workspace.reorder_batch" {
                 guard let raw = params["ordered_workspace_ids"] as? [String], !raw.isEmpty else { throw invalid() }
                 let ids = try raw.map { try workspaceId($0) }
@@ -124,8 +172,10 @@ extension TerminalController {
                 let id = try workspaceId(params["workspace_id"])
                 guard let destination = params["to_group_id"] else { throw invalid() }
                 let targetGroup = destination is NSNull ? nil : try groupId(destination)
-                let before = try params["before_id"].map { try workspaceId($0) }
-                let after = try params["after_id"].map { try workspaceId($0) }
+                // At the root, before/after name a group or an ungrouped workspace.
+                let relative: (Any?) throws -> UUID = targetGroup == nil ? rootItemId : memberTargetId
+                let before = try params["before_id"].map { try relative($0) }
+                let after = try params["after_id"].map { try relative($0) }
                 guard params["index"] == nil, before == nil || after == nil else { throw invalid() }
                 try manager.moveWorkspaceToGroup(workspaceId: id, groupId: targetGroup, before: before, after: after)
                 affectedId = targetGroup
@@ -155,8 +205,8 @@ extension TerminalController {
                     if verb == "add" { try manager.addWorkspacesToGroup(id: id, workspaceIds: ids) }
                     else { try manager.removeWorkspacesFromGroup(id: id, workspaceIds: ids) }
                 case "move":
-                    let before = try params["before_id"].map { try groupId($0) }
-                    let after = try params["after_id"].map { try groupId($0) }
+                    let before = try params["before_id"].map { try rootItemId($0) }
+                    let after = try params["after_id"].map { try rootItemId($0) }
                     let index = params["index"] as? Int
                     guard params["index"] == nil || index != nil,
                           (before == nil ? 0 : 1) + (after == nil ? 0 : 1) + (index == nil ? 0 : 1) == 1 else { throw invalid() }
@@ -166,7 +216,8 @@ extension TerminalController {
                 }
             }
             let groups = v2WorkspaceGroupRecords(manager)
-            var payload: [String: Any] = ["window_id": v2OrNull(windowId?.uuidString), "workspace_groups": groups]
+            var payload: [String: Any] = ["window_id": v2OrNull(windowId?.uuidString), "workspace_groups": groups,
+                                          "root_order": v2WorkspaceRootOrder(manager)]
             if let affectedId {
                 payload["group_id"] = affectedId.uuidString
                 payload["group"] = groups.first { $0["id"] as? String == affectedId.uuidString } ?? ["id": affectedId.uuidString]

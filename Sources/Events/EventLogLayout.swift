@@ -33,7 +33,7 @@ enum EventLogLayout {
     /// `MailboxLayout.stateDirectoryName` / `SocketControlSettings
     /// .socketDirectoryName`; duplicated here so the CLI target resolves the
     /// state root without a cross-target import.
-    static let stateDirectoryName = "c11"
+    static let stateDirectoryName = C11Identity.stateDirectoryName
 
     /// Subdirectory of the state root that holds the event logs.
     static let eventsDirectoryName = "events"

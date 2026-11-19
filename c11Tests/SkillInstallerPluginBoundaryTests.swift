@@ -7,6 +7,7 @@ import XCTest
 @testable import c11
 #endif
 
+// c11-2.0:begin-keep (the retired c11h line is the foreign one here)
 final class SkillInstallerPluginBoundaryTests: XCTestCase {
     private var sandbox: URL!
     private var home: URL!
@@ -24,7 +25,7 @@ final class SkillInstallerPluginBoundaryTests: XCTestCase {
                   to: SkillInstallerTarget.opencode.skillsDir(home: home).appendingPathComponent("user-owned/SKILL.md"))
         try writeSkill(version: "1", body: "Initial bundled fixture")
         try write(Data("export const bundledFixture = () => 'runtime-only';\n".utf8),
-                  to: source.appendingPathComponent("opencode-plugins/c11-notify.js"))
+                  to: source.appendingPathComponent("opencode-plugins/c11h-notify.js"))
     }
 
     override func tearDownWithError() throws {
@@ -42,7 +43,7 @@ final class SkillInstallerPluginBoundaryTests: XCTestCase {
     }
 
     func testUnmanagedPluginAndUnrelatedTenantFilesStayByteIdentical() throws {
-        try seedPlugin(body: "user-authored plugin, no c11 marker\n", marked: false)
+        try seedPlugin(body: "user-authored plugin, no c11h marker\n", marked: false)
         try exerciseOrdinarySkillLifecyclePreservingTenantFiles()
     }
 
@@ -55,7 +56,7 @@ final class SkillInstallerPluginBoundaryTests: XCTestCase {
         try seedPlugin(body: "old bundled plugin copy\n", marked: true)
         // The marker remains from installation, while the user owns later edits.
         try Data("operator edited this plugin\nconst custom = 'preserve me';\n".utf8)
-            .write(to: pluginRoot.appendingPathComponent("c11-notify.js"))
+            .write(to: pluginRoot.appendingPathComponent("c11h-notify.js"))
         try exerciseOrdinarySkillLifecyclePreservingTenantFiles()
     }
 
@@ -76,31 +77,37 @@ final class SkillInstallerPluginBoundaryTests: XCTestCase {
 
     private func exerciseOrdinarySkillLifecyclePreservingTenantFiles() throws {
         let before = try tenantSnapshot()
-        let bundledPlugin = source.appendingPathComponent("opencode-plugins/c11-notify.js")
+        let bundledPlugin = source.appendingPathComponent("opencode-plugins/c11h-notify.js")
         let bundledBytes = try Data(contentsOf: bundledPlugin)
-        let skillFile = SkillInstallerTarget.opencode.skillsDir(home: home).appendingPathComponent("c11/SKILL.md")
+        let skillsDir = SkillInstallerTarget.opencode.skillsDir(home: home)
+        let skillFile = skillsDir.appendingPathComponent("c11/SKILL.md")
+        let c11hCopy = skillsDir.appendingPathComponent("c11h")
 
-        let installed = try SkillInstaller.install(
+        // C11H-36: c11's own sidecar installs; the bundled c11h skill beside it is not offered.
+        let installed = try SkillInstaller.c11Install(
             target: .opencode, home: home, sourceDir: source, force: false, appIdentity: identity)
         XCTAssertEqual(installed.installed, ["c11"])
-        XCTAssertEqual(try Data(contentsOf: skillFile), try Data(contentsOf: source.appendingPathComponent("c11/SKILL.md")))
+        XCTAssertEqual(installed.skipped, [])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: skillFile.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: c11hCopy.path))
         assertNoPluginChanges(try SkillInstaller.installPlugins(
             target: .opencode, home: home, sourceDir: source, force: false, appIdentity: identity))
         XCTAssertEqual(try tenantSnapshot(), before)
 
         try writeSkill(version: "2", body: "Updated bundled fixture")
-        let refreshed = try SkillInstaller.install(
+        let refreshed = try SkillInstaller.c11Install(
             target: .opencode, home: home, sourceDir: source, force: false, appIdentity: identity)
+        XCTAssertEqual(refreshed.installed, [])
         XCTAssertEqual(refreshed.refreshed, ["c11"])
-        XCTAssertEqual(try Data(contentsOf: skillFile), try Data(contentsOf: source.appendingPathComponent("c11/SKILL.md")))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: c11hCopy.path))
         // Even force must have no authority over persistent plugin copies.
         assertNoPluginChanges(try SkillInstaller.installPlugins(
             target: .opencode, home: home, sourceDir: source, force: true, appIdentity: identity))
         XCTAssertEqual(try tenantSnapshot(), before)
 
-        let removed = try SkillInstaller.remove(target: .opencode, home: home, sourceDir: source)
+        let removed = try SkillInstaller.c11Remove(target: .opencode, home: home, sourceDir: source)
         XCTAssertEqual(removed.removed, ["c11"])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: skillFile.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: skillsDir.appendingPathComponent("c11").path))
         assertNoPluginChanges(try SkillInstaller.removePlugins(target: .opencode, home: home, sourceDir: source))
         XCTAssertEqual(try tenantSnapshot(), before)
         // The runtime bundle plugin is independent of skill copy/removal.
@@ -116,23 +123,24 @@ final class SkillInstallerPluginBoundaryTests: XCTestCase {
     }
 
     private func seedPlugin(body: String, marked: Bool) throws {
-        let plugin = pluginRoot.appendingPathComponent("c11-notify.js")
+        let plugin = pluginRoot.appendingPathComponent("c11h-notify.js")
         try write(Data(body.utf8), to: plugin)
         try write(Data("another user's plugin\n".utf8), to: pluginRoot.appendingPathComponent("unrelated-plugin.js"))
         try write(Data([13, 10, 0, 128]), to: pluginRoot.appendingPathComponent("unrelated-file.bin"))
         if marked {
             let record = SkillInstallerRecord(
-                schema: SkillInstallerRecord.schemaVersion, packageName: "c11-notify.js",
+                schema: SkillInstallerRecord.schemaVersion, packageName: "c11h-notify.js",
                 skillVersion: nil, installedAt: "2026-01-01T00:00:00Z",
                 appVersion: "0.1", appBuild: "old", commitShort: "old",
                 sourceContentHash: try SkillInstaller.fileContentHash(of: plugin))
-            try write(JSONEncoder().encode(record), to: pluginRoot.appendingPathComponent("c11-notify.c11-plugin.json"))
+            try write(JSONEncoder().encode(record), to: pluginRoot.appendingPathComponent("c11h-notify.c11h-plugin.json"))
         }
     }
 
     private func writeSkill(version: String, body: String) throws {
         try write(Data("---\nname: c11\nversion: \(version)\ndescription: Synthetic fixture\n---\n\(body)\n".utf8),
                   to: source.appendingPathComponent("c11/SKILL.md"))
+        try write(Data("{\"installable\":[\"c11\"]}\n".utf8), to: source.appendingPathComponent("MANIFEST.json"))
     }
 
     private func write(_ data: Data, to url: URL) throws {
@@ -140,8 +148,8 @@ final class SkillInstallerPluginBoundaryTests: XCTestCase {
         try data.write(to: url)
     }
 
-    /// Snapshot every tenant file except the one ordinary skill c11 owns in
-    /// this fixture. New, missing or changed plugin/config files fail equality.
+    /// Snapshot every tenant file except the one ordinary skill c11h owns in
+    /// this fixture (c11's sidecar). New, missing or changed plugin/config files fail equality.
     private func tenantSnapshot() throws -> [String: Data] {
         let enumerator = try XCTUnwrap(FileManager.default.enumerator(
             at: configRoot, includingPropertiesForKeys: [.isRegularFileKey]))
@@ -161,3 +169,4 @@ final class SkillInstallerPluginBoundaryTests: XCTestCase {
         return result
     }
 }
+// c11-2.0:end-keep

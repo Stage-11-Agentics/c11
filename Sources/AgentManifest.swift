@@ -638,17 +638,22 @@ struct UserAgentLaunchTemplate: Codable, Equatable {
         return kind.range(of: "^[a-z][a-z0-9-]*$", options: .regularExpression) != nil
     }
 
-    static func templateURL(kind: String) -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/c11/agents", isDirectory: true)
+    static func templateURL(
+        kind: String,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> URL {
+        C11Identity.userAgentsDirectory(home: home)
             .appendingPathComponent("\(kind).json")
     }
 
     /// Load the template for a custom kind, or `nil` when no file exists or
     /// it fails to decode. Callers treat `nil` as "unknown agent type".
-    static func load(kind: String) -> UserAgentLaunchTemplate? {
+    static func load(
+        kind: String,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> UserAgentLaunchTemplate? {
         guard isValidKind(kind) else { return nil }
-        let url = templateURL(kind: kind)
+        let url = templateURL(kind: kind, home: home)
         guard let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(UserAgentLaunchTemplate.self, from: data),
               !decoded.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

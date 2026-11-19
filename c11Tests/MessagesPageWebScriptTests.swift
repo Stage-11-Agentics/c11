@@ -174,6 +174,18 @@ final class MessagesPageWebScriptTests: XCTestCase {
         XCTAssertEqual(title, "Unnamed panel \(unseen.uuidString.prefix(4))")
     }
 
+    func testOpenPanelLinkUsesTheAppsOwnScheme() async throws {
+        let view = try await load(
+            snapshot([record(id: "s1", sender: "id:\(alpha.uuidString)", surface: bravo)]),
+            fragment: MessagesPageWeb.deepLinkFragment(panelID: bravo, nonce: 3)
+        )
+
+        try await assertNoScriptErrors(view)
+        let href = try await value(view, "document.querySelector('#cw-inspector a.cw-bk').getAttribute('href')") as? String
+        XCTAssertEqual(PanelLinkFormat.scheme, "c11")
+        XCTAssertEqual(href, "c11://panel/\(bravo.uuidString.lowercased())")
+    }
+
     func testWorkspaceScopeWithNoMessagesDoesNotThrow() async throws {
         let view = try await load(snapshot([]))
         _ = try await value(view, "document.querySelector('#cw-scope [data-v=workspace]').click(); 0")

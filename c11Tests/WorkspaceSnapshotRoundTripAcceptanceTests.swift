@@ -70,9 +70,13 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         // Step 1: seed.
         let seedPlan = try loadFixturePlan(named: "mixed-claude-mailbox")
         let deps = makeDependencies()
+        // Per-step wall-clock guard off: a loaded test host must not add a
+        // `per_step_timeout_exceeded` failure to a behavioural check. Speed
+        // is not asserted here; it will be measured by
+        // the layout-apply perf-lane benchmark (ticket to follow).
         let seedResult = WorkspaceLayoutExecutor.apply(
             seedPlan,
-            options: ApplyOptions(select: false),
+            options: ApplyOptions(select: false, perStepTimeoutMs: 0),
             dependencies: deps
         )
         XCTAssertFalse(seedResult.workspaceRef.isEmpty, "seed workspaceRef populated")
@@ -212,9 +216,13 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
         // receives a synthesised command. Phase 0 behaviour preserved.
         let seedPlan = try loadFixturePlan(named: "mixed-claude-mailbox")
         let deps = makeDependencies()
+        // Per-step wall-clock guard off: a loaded test host must not add a
+        // `per_step_timeout_exceeded` failure to a behavioural check. Speed
+        // is not asserted here; it will be measured by
+        // the layout-apply perf-lane benchmark (ticket to follow).
         let seedResult = WorkspaceLayoutExecutor.apply(
             seedPlan,
-            options: ApplyOptions(select: false),
+            options: ApplyOptions(select: false, perStepTimeoutMs: 0),
             dependencies: deps
         )
         let workspace = try XCTUnwrap(resolveWorkspace(from: seedResult.workspaceRef))
@@ -298,9 +306,13 @@ final class WorkspaceSnapshotRoundTripAcceptanceTests: XCTestCase {
     ) throws {
         let seedPlan = try loadFixturePlan(named: fixtureName)
         let deps = makeDependencies()
+        // Per-step wall-clock guard off: a loaded test host must not add a
+        // `per_step_timeout_exceeded` failure to a behavioural check. Speed
+        // is not asserted here; it will be measured by
+        // the layout-apply perf-lane benchmark (ticket to follow).
         let seedResult = WorkspaceLayoutExecutor.apply(
             seedPlan,
-            options: ApplyOptions(select: false),
+            options: ApplyOptions(select: false, perStepTimeoutMs: 0),
             dependencies: deps
         )
         XCTAssertFalse(seedResult.workspaceRef.isEmpty)

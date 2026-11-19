@@ -66,13 +66,20 @@ def main():
             assert 'workspace_title' in result.stdout and 'Hidden workspace' in result.stdout
             assert 'working' in result.stdout and '\x1b' not in result.stdout
             assert len(result.stdout.splitlines()) == 2, result.stdout
-            for args in [['fleet', '--workspace', 'workspace:1'], ['fleet', 'extra'], ['fleet', '--bogus']]:
+            # Filters (C11H-320) stay one request; the app resolves refs against tree's handles.
+            filtered = {'workspace': 'workspace:1', 'lifecycle': ['working', 'blocked'], 'flagged': True}
+            before = len(requests)
+            result = run(['fleet', '--workspace', 'workspace:1', '--lifecycle', 'working, blocked', '--flagged', '--json'])
+            assert result.returncode == 0, result.stderr
+            actual = requests[before:]
+            assert len(actual) == 1 and actual[0]['method'] == 'system.fleet' and actual[0]['params'] == filtered, actual
+            for args in [['fleet', 'extra'], ['fleet', '--bogus'], ['fleet', '--workspace']]:
                 before = len(requests)
                 result = run(args)
                 assert result.returncode != 0, args
                 assert len(requests) == before, requests[before:]
             assert not errors, errors
-            print('PASS: fleet JSON/table; one request; all-window scope; control escaping; argument preflight')
+            print('PASS: fleet JSON/table; one request; filters pass through; all-window scope; control escaping; argument preflight')
         finally:
             stopped.set(); worker.join(timeout=2); server.close()
 

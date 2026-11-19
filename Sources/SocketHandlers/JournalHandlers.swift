@@ -31,7 +31,19 @@ extension TerminalController {
                 pid = number.int32Value
             } else { pid = nil }
             adoptLostJournalOwner(draft, interactivePID: pid)
-            let result = try JournalCoordinator.shared.append(draft, interactivePID: pid)
+            let runtime: JournalRuntimeIdentity?
+            if draft.source == .hook, draft.adapter == .claudeHook, draft.agentKind == "claude-code",
+               let pid, let peerPID = SocketCommandContext.current?.callerPID,
+               let peerInfo = MailboxAgentForeground.processTerminalInfo(pid: peerPID),
+               let agent = MailboxNativeDoorbell.verifiedAgent(
+                peer: .init(pid: peerPID, startTime: peerInfo.startTime), agentPID: pid
+               ) {
+                runtime = JournalRuntimeIdentity(pid: pid, startTimeMicroseconds: agent.startTime)
+            } else { runtime = nil }
+            let rootExit = HCSessionEndRootWitness.capture(draft: draft, interactivePID: pid,
+                callerPID: SocketCommandContext.current?.callerPID)
+            let result = try JournalCoordinator.shared.append(draft, interactivePID: pid, verifiedRuntimeIdentity: runtime,
+                sessionEndRootExit: rootExit)
             let bytes = try JSONEncoder().encode(result.receipt)
             let receipt = try JSONSerialization.jsonObject(with: bytes) as! [String: Any]
             return .ok(receipt)

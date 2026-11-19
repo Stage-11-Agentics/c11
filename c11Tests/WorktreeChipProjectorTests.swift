@@ -41,7 +41,7 @@ final class WorktreeChipProjectorTests: XCTestCase {
     // MARK: - AC4: Color stability + distinctness
 
     func testWorktreeColorStableAcrossCalls() {
-        let path = "/Users/atin/code/c11-worktrees/c11-104-sidebar-chips"
+        let path = "/Users/demo/code/c11-worktrees/c11-104-sidebar-chips"
         let context = ResolvedGitContext(
             outer: .linkedWorktree(
                 basename: "c11-104-sidebar-chips",
@@ -57,8 +57,8 @@ final class WorktreeChipProjectorTests: XCTestCase {
     func testDifferentWorktreesGetDifferentColors() {
         // Two paths chosen so that DJB2(path).bucket differs across the
         // 10-entry palette. Sanity-checked at authoring time.
-        let pathA = "/Users/atin/code/c11-worktrees/c11-104-sidebar-chips"
-        let pathB = "/Users/atin/code/c11-worktrees/c11-103-session-resume"
+        let pathA = "/Users/demo/code/c11-worktrees/c11-104-sidebar-chips"
+        let pathB = "/Users/demo/code/c11-worktrees/c11-103-session-resume"
         let a = WorktreeChipProjector.project(
             ResolvedGitContext(outer: .linkedWorktree(
                 basename: "a", absolutePath: pathA, branch: .attached("x")
@@ -75,7 +75,7 @@ final class WorktreeChipProjectorTests: XCTestCase {
     }
 
     func testColorHexIsFromKnownPalette() {
-        let path = "/Users/atin/code/c11-worktrees/c11-104-sidebar-chips"
+        let path = "/Users/demo/code/c11-worktrees/c11-104-sidebar-chips"
         let context = ResolvedGitContext(
             outer: .linkedWorktree(
                 basename: "any",
@@ -215,7 +215,7 @@ final class WorktreeChipProjectorTests: XCTestCase {
         let context = ResolvedGitContext(
             outer: .linkedWorktree(
                 basename: "c11-104-sidebar-chips",
-                absolutePath: "/Users/atin/code/c11-worktrees/c11-104-sidebar-chips",
+                absolutePath: "/Users/demo/code/c11-worktrees/c11-104-sidebar-chips",
                 branch: .attached("feat/x")
             )
         )

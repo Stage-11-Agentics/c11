@@ -11,11 +11,54 @@ import XCTest
 /// for tests so we can exercise the binary-match table without a live ps scan.
 final class AgentDetectorTests: XCTestCase {
 
+    func testRecoveredTTYScansModelAndCacheBeforePeriodicSweep() {
+        let workspace = UUID(), panel = UUID()
+        let swept = expectation(description: "initial recovery reads agent signals")
+        let detector = AgentDetector(scan: { ttys in
+            XCTAssertEqual(ttys, "ttys999")
+            return ["ttys999": .init(pid: 42, ppid: 1, tty: "ttys999", tpgid: 42,
+                                      comm: "claude", args: "claude")]
+        }, sweepModels: { targets, plain in
+            XCTAssertEqual(targets.map(\.surfaceId), [panel])
+            XCTAssertEqual(targets.map(\.kind), ["claude-code"])
+            XCTAssertTrue(plain.isEmpty)
+            swept.fulfill()
+        })
+        detector.registerTTY(workspaceId: workspace, panelId: panel, ttyName: "ttys999", recoverAgent: true)
+        wait(for: [swept], timeout: 2)
+        detector.unregister(workspaceId: workspace, panelId: panel)
+    }
+
     // MARK: - Direct comm matches
 
     func testClassifyClaudeReturnsClaudeCode() {
         XCTAssertEqual(AgentDetector.classify(comm: "claude", args: ""), "claude-code")
         XCTAssertEqual(AgentDetector.classify(comm: "claude-code", args: ""), "claude-code")
+    }
+
+    // MARK: - Incus-wrapped seats (C11H-191)
+
+    /// A seat in an Incus container: the terminal's foreground is the `incus exec` client, and the
+    /// harness is the command after `--`.
+    func testClassifyIncusExecSeatReturnsItsHarness() {
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: "incus exec ws-54f6260c --user 1000 --cwd /home/agent/work -- claude --dangerously-skip-permissions 'ask codex later'"), "claude-code")
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: "incus exec ws-54f6260c -- codex --yolo --model gpt-6-astra"), "codex")
+        // A launcher that wraps the harness in a shell names it as the client's argv[0] (`exec -a claude incus exec …`).
+        let wrapped = #"claude exec ws-54f6260c-f7d201d7 --user 1000 --env C11_AGENT_TYPE=claude-code -- bash -lc exec "$@" bash claude --model claude-sonnet-5-5"#
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: wrapped), "claude-code")
+    }
+
+    /// Only the command after `--` counts: its arguments, a shell wrapper's words and an agent's name in a
+    /// path or an `--env` value never make a plain command an agent.
+    func testClassifyIncusWithoutAnAgentStaysUnknown() {
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: "incus exec ws-54f6260c -- bash -l"), "unknown")
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: "incus exec ws-54f6260c -- tail -f /var/log/codex"), "unknown")
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: "incus exec ws-54f6260c -- watch pgrep claude"), "unknown")
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: #"incus exec ws-54f6260c -- bash -lc exec "$@" bash claude"#), "unknown")
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: "incus exec ws-54f6260c --env C11_AGENT_TYPE=claude -- bash"), "unknown")
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: "incus list claude"), "unknown")
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: "incus exec ws-54f6260c claude"), "unknown")
+        XCTAssertEqual(AgentDetector.classify(comm: "incus", args: "incus exec ws-54f6260c --"), "unknown")
     }
 
     func testClassifyCopilotReturnsGitHubCopilot() {
@@ -32,8 +75,8 @@ final class AgentDetectorTests: XCTestCase {
     func testClassifyTruncatedCommUsesArgvZeroExecutable() {
         XCTAssertEqual(
             AgentDetector.classify(
-                comm: "/Users/atin/.loc",
-                args: "/Users/atin/.local/bin/claude --dangerously-skip-permissions --model opus"
+                comm: "/Users/demo/.loc",
+                args: "/Users/demo/.local/bin/claude --dangerously-skip-permissions --model opus"
             ),
             "claude-code"
         )
@@ -42,8 +85,8 @@ final class AgentDetectorTests: XCTestCase {
     func testClassifyArgvZeroDoesNotMatchLaterUserArguments() {
         XCTAssertEqual(
             AgentDetector.classify(
-                comm: "/Users/atin/.loc",
-                args: "/Users/atin/bin/report --label claude"
+                comm: "/Users/demo/.loc",
+                args: "/Users/demo/bin/report --label claude"
             ),
             "unknown"
         )
@@ -116,7 +159,7 @@ final class AgentDetectorTests: XCTestCase {
     /// like an agent, a shell's `-c` text, or a later argument stays `shell`.
     func testShellOutsideBundledWrapperStaysShell() {
         let dirs = [wrapperBin]
-        for args in ["bash", "bash /Users/atin/bin/claude", "bash ./opencode --auto",
+        for args in ["bash", "bash /Users/demo/bin/claude", "bash ./opencode --auto",
                      "bash -c opencode", "zsh ./build.sh \(wrapperBin)/opencode",
                      "bash \(wrapperBin)/c11", "bash \(wrapperBin)/opencode-v2-config.py version"] {
             XCTAssertEqual(
@@ -133,7 +176,7 @@ final class AgentDetectorTests: XCTestCase {
     /// named binary in argv. The bun runtime branch + script-basename match it.
     func testClassifyBunShimOmpReturnsOmp() {
         XCTAssertEqual(
-            AgentDetector.classify(comm: "bun", args: "bun /Users/atin/.bun/bin/omp"),
+            AgentDetector.classify(comm: "bun", args: "bun /Users/demo/.bun/bin/omp"),
             "omp")
     }
 
@@ -142,13 +185,13 @@ final class AgentDetectorTests: XCTestCase {
     /// misses and the basename match is what classifies it.
     func testClassifyNodeShimPiReturnsPi() {
         XCTAssertEqual(
-            AgentDetector.classify(comm: "node", args: "node /Users/atin/.bun/bin/pi"),
+            AgentDetector.classify(comm: "node", args: "node /Users/demo/.bun/bin/pi"),
             "pi")
     }
 
     /// Module-path invocation still matches via the substring rail (here bun).
     func testClassifyBunModulePathOmpReturnsOmp() {
-        let args = "bun /Users/atin/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js"
+        let args = "bun /Users/demo/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js"
         XCTAssertEqual(AgentDetector.classify(comm: "bun", args: args), "omp")
     }
 
@@ -169,7 +212,7 @@ final class AgentDetectorTests: XCTestCase {
     /// `unknown` because only node/bun/deno were treated as interpreters.
     func testClassifyPythonShimKimiReturnsKimi() {
         XCTAssertEqual(
-            AgentDetector.classify(comm: "python", args: "python /Users/atin/.local/bin/kimi"),
+            AgentDetector.classify(comm: "python", args: "python /Users/demo/.local/bin/kimi"),
             "kimi")
     }
 
@@ -179,7 +222,7 @@ final class AgentDetectorTests: XCTestCase {
         XCTAssertEqual(
             AgentDetector.classify(
                 comm: "python3.13",
-                args: "python3.13 /Users/atin/.local/pipx/venvs/kimi-cli/bin/kimi"),
+                args: "python3.13 /Users/demo/.local/pipx/venvs/kimi-cli/bin/kimi"),
             "kimi")
     }
 
@@ -222,7 +265,7 @@ final class AgentDetectorTests: XCTestCase {
     /// Live `ps` line: comm is a 16-character clip of the path, and the tty
     /// column is padded. The full argv0 still ends in `claude`.
     func testClassifyLongDirectoryPath() throws {
-        let line = "22771 22744 ??          0 /tmp/c11-246-psp /tmp/c11-246-psprobe/dir-claude-501-Users-atin-Projects-Stage11-code-c11-0bb5b2bc-702c-4390-a904-scratchpad-worktrees-very-long-component-name/claude"
+        let line = "22771 22744 ??          0 /tmp/c11-246-psp /tmp/c11-246-psprobe/dir-claude-501-Users-demo-Projects-Stage11-code-c11-0bb5b2bc-702c-4390-a904-scratchpad-worktrees-very-long-component-name/claude"
         let info = try XCTUnwrap(AgentDetector.parsePSLine(line))
         XCTAssertEqual(info.comm, "/tmp/c11-246-psp")
         XCTAssertEqual(
@@ -231,7 +274,7 @@ final class AgentDetectorTests: XCTestCase {
         )
         // Same identity when the argv line was sliced down to `tpgid` and
         // only proc_pidpath still has the path.
-        let path = "/private/tmp/claude-501/Users-atin-Projects-Stage11-code-c11/0bb5b2bc-702c-4390-a904-79405ad6efdd/scratchpad/claude"
+        let path = "/private/tmp/claude-501/Users-demo-Projects-Stage11-code-c11/0bb5b2bc-702c-4390-a904-79405ad6efdd/scratchpad/claude"
         XCTAssertGreaterThan(path.count, 16)
         XCTAssertEqual(
             AgentDetector.classify(AgentDetector.ProcessFacts(
@@ -285,11 +328,11 @@ final class AgentDetectorTests: XCTestCase {
     /// column's two-space pad. Captured from `ps -t ttys001`. The 16-character
     /// comm clip is not the agent; the full argv0 is.
     func testParsePSLineTTYTwoSpacePadUsesFullArgv0() throws {
-        let line = "62387 62165 ttys001  62387 /Users/atin/.gro /Users/atin/.grok/bin/grok --always-approve"
+        let line = "62387 62165 ttys001  62387 /Users/demo/.gro /Users/demo/.grok/bin/grok --always-approve"
         let info = try XCTUnwrap(AgentDetector.parsePSLine(line))
         XCTAssertEqual(info.tty, "ttys001")
-        XCTAssertEqual(info.comm, "/Users/atin/.gro")
-        XCTAssertEqual(info.args, "/Users/atin/.grok/bin/grok --always-approve")
+        XCTAssertEqual(info.comm, "/Users/demo/.gro")
+        XCTAssertEqual(info.args, "/Users/demo/.grok/bin/grok --always-approve")
         XCTAssertEqual(AgentDetector.classify(comm: info.comm, args: info.args), "grok")
     }
 
@@ -312,9 +355,9 @@ final class AgentDetectorTests: XCTestCase {
     func testClassifySymlinkTargetDoesNotHideArgv0() {
         XCTAssertEqual(
             AgentDetector.classify(AgentDetector.ProcessFacts(
-                comm: "/Users/atin/.loc",
-                args: "/Users/atin/.local/bin/claude --dangerously-skip-permissions",
-                executablePath: "/Users/atin/.local/share/claude/versions/2.1.286"
+                comm: "/Users/demo/.loc",
+                args: "/Users/demo/.local/bin/claude --dangerously-skip-permissions",
+                executablePath: "/Users/demo/.local/share/claude/versions/2.1.286"
             )),
             "claude-code"
         )

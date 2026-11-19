@@ -101,6 +101,8 @@ final class PanelSeenTracker {
     private let screenLockedProvider: () -> Bool
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
     private var distributedRelay: DistributedRelay?
+    /// Called on main after the seen panel changes (C11H-330 evaporation).
+    var onSeenChange: (@MainActor () -> Void)?
 
     /// `seenProvider` answers "which panel is on screen in front of the operator";
     /// `now` is the clock. Both are injectable for tests.
@@ -144,6 +146,7 @@ final class PanelSeenTracker {
         let date = now()
         clock.observe(seen: seen, at: date)
         FocusHistoryStore.shared.noteTransition(panelId: seen, at: date)
+        onSeenChange?()
     }
 
     func setInterruption(_ reason: InterruptReason, active: Bool) {

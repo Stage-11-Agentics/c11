@@ -1,6 +1,6 @@
 # Topic 03: Feed, and replying to agents from notifications
 
-**Report path:** `~/Projects/Stage11/code/c11/upstream-triage/c11-1.0/03-feed-attention.md`
+**Report path:** `~/src/c11/upstream-triage/c11-1.0/03-feed-attention.md`
 
 Atin said: "Feed. Ooh. Tell me more about Feed. That seems cool. How can I access that?" He also finds attention and automation interesting. He explicitly skipped the automations rule engine, `cmux events` and `cmux current`, so do not scope those.
 

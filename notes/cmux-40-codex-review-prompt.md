@@ -2,7 +2,7 @@
 
 Review the staged commit on branch `cmux-40-skill-installer` in the
 c11mux (Stage 11 fork of cmux) repository at
-`/Users/atin/Projects/Stage11/code/cmux`.
+`~/src/cmux`.
 
 ## Context
 
@@ -30,7 +30,7 @@ about the terminal"** principle:
   `skills/MANIFEST.json`, `Resources/Localizable.xcstrings`.
 
 The full diff (code only, `.lattice/` and `vendor/bonsplit/` excluded)
-is at `/Users/atin/Projects/Stage11/code/cmux/notes/cmux-40-code-diff.patch`.
+is at `~/src/cmux/notes/cmux-40-code-diff.patch`.
 
 ## What I want reviewed
 
@@ -86,7 +86,7 @@ Please give me an honest, principled review focused on:
 
 ## Output format
 
-Write your findings to `/Users/atin/Projects/Stage11/code/cmux/notes/cmux-40-codex-review.md`.
+Write your findings to `~/src/cmux/notes/cmux-40-codex-review.md`.
 
 Structure: one short intro, then a section per numbered concern above,
 calling out specific file:line references and proposed fixes. If

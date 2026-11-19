@@ -7,7 +7,7 @@ import SwiftUI
 public final class ThemeManager: ObservableObject {
     public static let shared = ThemeManager()
     public nonisolated static let bundledThemesDirectoryName = "c11-themes"
-    public nonisolated static let userThemesApplicationSupportDirectoryName = "c11"
+    public nonisolated static let userThemesApplicationSupportDirectoryName = C11Identity.stateDirectoryName
 
     public struct ThemeDescriptor: Equatable, Sendable {
         public enum Source: String, Equatable, Sendable {
@@ -29,12 +29,12 @@ public final class ThemeManager: ObservableObject {
     }
 
     @Published public private(set) var active: C11Theme
-    @Published public private(set) var activeLight: C11Theme
-    @Published public private(set) var activeDark: C11Theme
     @Published public private(set) var availableThemes: [ThemeDescriptor] = []
     @Published public private(set) var version: UInt64 = 1
 
     public private(set) var snapshot: ResolvedThemeSnapshot
+    /// Where the one active theme's name is stored.
+    private let selectionDefaults: UserDefaults
 
     public let sidebarPublisher = PassthroughSubject<Void, Never>()
     public let titleBarPublisher = PassthroughSubject<Void, Never>()
@@ -54,6 +54,10 @@ public final class ThemeManager: ObservableObject {
     private var loadedThemeCache: [String: C11Theme] = [:]
     private var lastKnownGoodThemes: [String: C11Theme] = [:]
     private var malformedThemes: [String: String] = [:]
+    /// c11 (C11H-197): snapshots of the themes windows override the app theme
+    /// with, by name. Dropped wherever the active snapshot is rebuilt or its
+    /// caches are invalidated, so an override never outlives a reload.
+    private var overrideSnapshots: [String: ResolvedThemeSnapshot] = [:]
 
     private var watcher: ThemeDirectoryWatcher?
     private let pathsOverride: PathsOverride?
@@ -75,17 +79,19 @@ public final class ThemeManager: ObservableObject {
 
     public init(
         notificationCenter: NotificationCenter = .default,
-        pathsOverride: PathsOverride? = nil
+        pathsOverride: PathsOverride? = nil,
+        selectionDefaults: UserDefaults = ThemeAppStorage.defaults
     ) {
         self.notificationCenter = notificationCenter
+        self.selectionDefaults = selectionDefaults
         self.disabledByEnvironment = ProcessInfo.processInfo.environment["CMUX_DISABLE_THEME_ENGINE"] == "1"
         self.pathsOverride = pathsOverride
+
+        ThemeFontFamily.registerBundledFonts()
 
         let loaded = ThemeManager.loadThemeFromBundle(named: "stage11", override: pathsOverride)
             ?? C11Theme.fallbackStage11
         self.active = loaded
-        self.activeLight = loaded
-        self.activeDark = loaded
         self.snapshot = ResolvedThemeSnapshot(theme: loaded)
 
         notificationCenter.publisher(for: .ghosttyDefaultBackgroundDidChange)
@@ -99,6 +105,7 @@ public final class ThemeManager: ObservableObject {
         }
 
         rescanThemes()
+        Self.migrateToOneTheme(selectionDefaults) { [themesByName] in themesByName[$0] != nil }
         applyActiveSelections()
     }
 
@@ -106,6 +113,7 @@ public final class ThemeManager: ObservableObject {
         guard isEnabled else {
             return nil
         }
+        let snapshot = self.snapshot(for: context)
 
         if T.self == NSColor.self {
             return snapshot.resolveColor(role: role, context: context) as? T
@@ -129,12 +137,138 @@ public final class ThemeManager: ObservableObject {
         return nil
     }
 
+    // MARK: Schema 2
+
+    /// True when the active theme is schema 2. Such a theme owns the chrome: every
+    /// themed path draws from it, as if its `theme.m1b.*` debug flag were on.
+    /// Window chrome asks `themeOwnsChrome(windowThemeName:)` instead.
+    public var activeThemeOwnsChrome: Bool {
+        isEnabled && active.identity.schema >= 2
+    }
+
+    /// Whether a themed path is live: its debug flag, or a schema-2 active theme.
+    public func themedPathLive(flag: Bool) -> Bool {
+        isEnabled && (flag || active.identity.schema >= 2)
+    }
+
+    // MARK: Per-window theme (C11H-197)
+
+    /// The snapshot a window with this theme override paints its chrome from: the
+    /// named theme's when it is loaded and differs from the app theme, else the
+    /// app theme's. An unknown or malformed name silently follows the app theme.
+    public func snapshot(windowThemeName: String?) -> ResolvedThemeSnapshot {
+        guard let name = windowThemeName, !name.isEmpty, name != active.identity.name else {
+            return snapshot
+        }
+        if let cached = overrideSnapshots[name] { return cached }
+        guard let overrideTheme = self.theme(named: name) else { return snapshot }
+        let built = ResolvedThemeSnapshot(theme: overrideTheme)
+        overrideSnapshots[name] = built
+        return built
+    }
+
+    /// `snapshot(windowThemeName:)` for the context's window.
+    public func snapshot(for context: ThemeContext) -> ResolvedThemeSnapshot {
+        snapshot(windowThemeName: context.windowThemeName)
+    }
+
+    /// The theme a window with this override paints its chrome with.
+    public func theme(windowThemeName: String?) -> C11Theme {
+        snapshot(windowThemeName: windowThemeName).theme
+    }
+
+    /// The theme the context's window paints its chrome with.
+    public func theme(for context: ThemeContext) -> C11Theme {
+        snapshot(for: context).theme
+    }
+
+    /// The name of the theme a window with this override actually shows: the
+    /// override when it resolves, else the app theme's name.
+    public func effectiveThemeName(windowThemeName: String?) -> String {
+        theme(windowThemeName: windowThemeName).identity.name
+    }
+
+    /// `activeThemeOwnsChrome` for a window: true when the theme it shows is schema 2.
+    public func themeOwnsChrome(windowThemeName: String?) -> Bool {
+        isEnabled && theme(windowThemeName: windowThemeName).identity.schema >= 2
+    }
+
+    public func themeOwnsChrome(context: ThemeContext) -> Bool {
+        themeOwnsChrome(windowThemeName: context.windowThemeName)
+    }
+
+    /// `themedPathLive(flag:)` for a window.
+    public func themedPathLive(flag: Bool, windowThemeName: String?) -> Bool {
+        isEnabled && (flag || theme(windowThemeName: windowThemeName).identity.schema >= 2)
+    }
+
+    public func themedPathLive(flag: Bool, context: ThemeContext) -> Bool {
+        themedPathLive(flag: flag, windowThemeName: context.windowThemeName)
+    }
+
+    private func dropOverrideSnapshots() {
+        if !overrideSnapshots.isEmpty { overrideSnapshots.removeAll() }
+    }
+
+    /// A schema-2 value from the context's theme (the window's override, else the
+    /// active theme); nil when the theme leaves it unset.
+    /// Supports NSColor, Color, Double, CGFloat, Bool, String and ThemeGradient.
+    public func style<T>(_ role: ThemeStyleRole, context: ThemeContext) -> T? {
+        guard isEnabled else { return nil }
+        let snapshot = self.snapshot(for: context)
+        if T.self == NSColor.self || T.self == Color.self {
+            // A gradient-kind role asked for one colour answers with its first stop.
+            let color = role.definition?.kind == .gradient
+                ? snapshot.resolveStyleGradient(role, context: context)?.firstColor
+                : snapshot.resolveStyleColor(role, context: context)
+            if T.self == Color.self { return color.map { Color(nsColor: $0) } as? T }
+            return color as? T
+        }
+        if T.self == ThemeGradient.self {
+            if role.definition?.kind == .color {
+                return snapshot.resolveStyleColor(role, context: context)
+                    .map { ThemeGradient(stops: [.init(color: $0, location: 0)]) } as? T
+            }
+            return snapshot.resolveStyleGradient(role, context: context) as? T
+        }
+        if T.self == Double.self {
+            return snapshot.resolveStyleNumber(role) as? T
+        }
+        if T.self == CGFloat.self {
+            return snapshot.resolveStyleNumber(role).map { CGFloat($0) } as? T
+        }
+        if T.self == Bool.self {
+            return snapshot.resolveStyleBool(role) as? T
+        }
+        if T.self == String.self {
+            return snapshot.resolveStyleString(role) as? T
+        }
+        return nil
+    }
+
+    /// A resolved `[type.<style>]` of the active theme; `.unset` when the theme sets none of it.
+    public func textStyle(_ style: ThemeTextStyleName) -> ThemeTextStyle {
+        guard isEnabled else { return .unset }
+        return snapshot.resolveTextStyle(style)
+    }
+
+    /// A resolved `[type.<style>]` of the theme a window shows.
+    public func textStyle(_ style: ThemeTextStyleName, windowThemeName: String?) -> ThemeTextStyle {
+        guard isEnabled else { return .unset }
+        return snapshot(windowThemeName: windowThemeName).resolveTextStyle(style)
+    }
+
+    public func textStyle(_ style: ThemeTextStyleName, context: ThemeContext) -> ThemeTextStyle {
+        textStyle(style, windowThemeName: context.windowThemeName)
+    }
+
     public func makeContext(
         workspaceColor: String? = nil,
         colorScheme: ThemeContext.ColorScheme,
         forceBright: Bool = false,
         isWindowFocused: Bool = true,
-        workspaceState: WorkspaceState? = nil
+        workspaceState: WorkspaceState? = nil,
+        windowThemeName: String? = nil
     ) -> ThemeContext {
         ThemeContext(
             workspaceColor: workspaceColor,
@@ -142,7 +276,8 @@ public final class ThemeManager: ObservableObject {
             forceBright: forceBright,
             ghosttyBackgroundGeneration: ghosttyBackgroundGeneration,
             isWindowFocused: isWindowFocused,
-            workspaceState: workspaceState
+            workspaceState: workspaceState,
+            windowThemeName: windowThemeName
         )
     }
 
@@ -151,14 +286,16 @@ public final class ThemeManager: ObservableObject {
         colorScheme: ColorScheme,
         forceBright: Bool = false,
         isWindowFocused: Bool = true,
-        workspaceState: WorkspaceState? = nil
+        workspaceState: WorkspaceState? = nil,
+        windowThemeName: String? = nil
     ) -> ThemeContext {
         makeContext(
             workspaceColor: workspaceColor,
             colorScheme: colorScheme.themeContextColorScheme,
             forceBright: forceBright,
             isWindowFocused: isWindowFocused,
-            workspaceState: workspaceState
+            workspaceState: workspaceState,
+            windowThemeName: windowThemeName
         )
     }
 
@@ -185,6 +322,7 @@ public final class ThemeManager: ObservableObject {
     /// dependents re-render; per-section publishers fire for narrower subscribers.
     public func invalidateForWorkspaceColorChange() {
         snapshot.invalidateCaches()
+        dropOverrideSnapshots()
         version &+= 1
         dividerPublisher.send()
         framePublisher.send()
@@ -248,6 +386,30 @@ public final class ThemeManager: ObservableObject {
             }
         }
 
+        // Schema-2 roles appear only when the theme sets them (unset keeps today's look).
+        for definition in ThemeStyleRoleRegistry.all {
+            let role = ThemeStyleRole(definition.path)
+            guard let raw = active.styleValue(role) else { continue }
+            let expression = raw.string ?? raw.number.map { String($0) } ?? raw.bool.map { $0 ? "true" : "false" }
+            var resolved: String? = expression
+            switch definition.kind {
+            case .color:
+                resolved = (style(role, context: context) as NSColor?)
+                    .map { $0.hexString(includeAlpha: $0.alphaComponent < 0.999) }
+            case .gradient:
+                resolved = (style(role, context: context) as ThemeGradient?)?.stops
+                    .map { "\($0.color.hexString(includeAlpha: $0.color.alphaComponent < 0.999)) \(Int(($0.location * 100).rounded()))%" }
+                    .joined(separator: ", ")
+            default:
+                break
+            }
+            rolesPayload[definition.path] = [
+                "expression": expression,
+                "resolved": resolved,
+                "inherited_from": nil,
+            ]
+        }
+
         let descriptor = themesByName[active.identity.name]
         let sourcePath = descriptor?.sourcePath ?? "<bundled>"
         let warnings: [String]
@@ -303,6 +465,7 @@ public final class ThemeManager: ObservableObject {
         }
     }
 
+    /// The scheme the app renders in, for resolving theme values. c11App forces dark.
     public static func currentColorScheme() -> ThemeContext.ColorScheme {
         let match = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
         if match == .darkAqua {
@@ -313,19 +476,30 @@ public final class ThemeManager: ObservableObject {
 
     // MARK: - User themes + hot reload (M3)
 
-    public static let defaultLightSlotKey = "theme.active.light"
-    public static let defaultDarkSlotKey = "theme.active.dark"
+    /// The one theme c11 shows, day and night. The key keeps its old name so an
+    /// upgrade reads the theme the operator already picked.
+    public static let activeThemeKey = "theme.active.light"
+    /// The retired night theme. Read once by the upgrade, then removed.
+    static let retiredNightThemeKey = "theme.active.dark"
+
+    /// The upgrade to one theme keeps the day theme. When the day theme is unset or no
+    /// longer exists (one of the themes c11 stopped shipping), an existing night theme
+    /// takes its place. Either way the night key is gone afterwards.
+    static func migrateToOneTheme(_ defaults: UserDefaults, isAvailable: (String) -> Bool) {
+        guard let night = defaults.string(forKey: retiredNightThemeKey) else { return }
+        let day = defaults.string(forKey: activeThemeKey)
+        if day.map(isAvailable) != true, isAvailable(night) {
+            defaults.set(night, forKey: activeThemeKey)
+        }
+        defaults.removeObject(forKey: retiredNightThemeKey)
+    }
 
     public var userThemesDirectory: URL {
         ThemeManager.userThemesDirectory(override: pathsOverride)
     }
 
-    public var activeLightName: String {
-        ThemeAppStorage.defaults.string(forKey: Self.defaultLightSlotKey) ?? "stage11"
-    }
-
-    public var activeDarkName: String {
-        ThemeAppStorage.defaults.string(forKey: Self.defaultDarkSlotKey) ?? "stage11"
+    public var activeThemeName: String {
+        selectionDefaults.string(forKey: Self.activeThemeKey) ?? "stage11"
     }
 
     public func descriptor(named name: String) -> ThemeDescriptor? {
@@ -359,32 +533,21 @@ public final class ThemeManager: ObservableObject {
         applyActiveSelections()
     }
 
-    public func setActiveTheme(name: String, for scheme: ThemeContext.ColorScheme) -> Bool {
+    /// Makes `name` the one theme and repaints. False, changing nothing, for an unknown name.
+    @discardableResult
+    public func setActiveTheme(name: String) -> Bool {
         guard themesByName[name] != nil else {
             ThemeDiagnostics.loader("setActiveTheme: unknown theme '\(name)'")
             return false
         }
-        switch scheme {
-        case .light:
-            ThemeAppStorage.defaults.set(name, forKey: Self.defaultLightSlotKey)
-        case .dark:
-            ThemeAppStorage.defaults.set(name, forKey: Self.defaultDarkSlotKey)
-        }
-        applyActiveSelections()
-        return true
-    }
-
-    public func setActiveThemeForBothSlots(name: String) -> Bool {
-        guard themesByName[name] != nil else { return false }
-        ThemeAppStorage.defaults.set(name, forKey: Self.defaultLightSlotKey)
-        ThemeAppStorage.defaults.set(name, forKey: Self.defaultDarkSlotKey)
+        selectionDefaults.set(name, forKey: Self.activeThemeKey)
         applyActiveSelections()
         return true
     }
 
     public func clearActiveOverrides() {
-        ThemeAppStorage.defaults.removeObject(forKey: Self.defaultLightSlotKey)
-        ThemeAppStorage.defaults.removeObject(forKey: Self.defaultDarkSlotKey)
+        selectionDefaults.removeObject(forKey: Self.activeThemeKey)
+        selectionDefaults.removeObject(forKey: Self.retiredNightThemeKey)
         applyActiveSelections()
     }
 
@@ -512,19 +675,10 @@ public final class ThemeManager: ObservableObject {
     }
 
     private func applyActiveSelections() {
-        let lightName = activeLightName
-        let darkName = activeDarkName
-
-        let lightTheme = resolvedTheme(for: lightName)
-        let darkTheme = resolvedTheme(for: darkName)
-
-        activeLight = lightTheme
-        activeDark = darkTheme
-
-        let currentScheme = Self.currentColorScheme()
-        let chosen = currentScheme == .dark ? darkTheme : lightTheme
+        let chosen = resolvedTheme(for: activeThemeName)
         active = chosen
         snapshot = ResolvedThemeSnapshot(theme: chosen)
+        ThemeFontFamily.resetAvailabilityCache()
         bumpVersionAndPublishAll()
     }
 
@@ -568,6 +722,7 @@ public final class ThemeManager: ObservableObject {
     private func handleGhosttyBackgroundChange() {
         ghosttyBackgroundGeneration &+= 1
         snapshot.invalidateCaches()
+        dropOverrideSnapshots()
         version &+= 1
 
         // Only chrome sections that commonly reference `$ghosttyBackground` are signaled.
@@ -581,6 +736,8 @@ public final class ThemeManager: ObservableObject {
     }
 
     private func bumpVersionAndPublishAll() {
+        // Every caller has just rebuilt the active snapshot or rescanned themes.
+        dropOverrideSnapshots()
         version &+= 1
         sidebarPublisher.send()
         titleBarPublisher.send()

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sidebar Selection</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23000000'/%3E%3Cg fill='%23e8e8e8' transform='translate(34.96 387.08) scale(0.35913 -0.35913)'%3E%3Cpath transform='translate(0)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3Cpath transform='translate(600)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root{
+  --page:#0d0e10; --ink:#e8e8e8; --ink2:#8a8b8d; --rule:#26282c;
+  --mono:"JetBrains Mono","SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){ --page:#f4f3f0; --ink:#141414; --ink2:#5c5d60; --rule:#d6d4cf; }
+}
+:root[data-theme="light"]{ --page:#f4f3f0; --ink:#141414; --ink2:#5c5d60; --rule:#d6d4cf; }
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:13px/1.4 var(--mono);padding:16px}
+h1{font-size:15px;margin:0 0 4px;letter-spacing:.04em;text-transform:uppercase}
+.sub{color:var(--ink2);margin:0 0 14px;max-width:1100px}
+.bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.bar button{font:inherit;font-size:12px;background:transparent;color:var(--ink);border:1px solid var(--rule);padding:6px 10px;cursor:pointer;min-width:150px;text-align:left}
+.bar button[aria-pressed="true"]{background:var(--ink);color:var(--page);border-color:var(--ink)}
+.note{color:var(--ink2);min-height:3.6em;max-width:1100px;margin:0 0 14px}
+.grid{display:flex;flex-wrap:wrap;gap:14px}
+.col{width:268px;flex:0 0 268px}
+.col h2{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);margin:0 0 6px}
+.sb{padding:8px 10px 10px 8px;background:var(--sb);border:1px solid var(--rule)}
+.card{position:relative;margin:0 0 6px;padding:7px 10px 7px 10px;background:var(--fill);border:var(--bw) solid var(--edge);border-radius:var(--r);color:var(--text);cursor:pointer;user-select:none}
+.card .t{display:flex;justify-content:space-between;font-weight:700;font-size:13px;font-family:-apple-system,"SF Pro Text",system-ui,sans-serif}
+.card .ws{font:600 10px var(--mono);color:var(--dim);letter-spacing:.06em}
+.card .m{margin-top:4px;height:12px;display:flex;gap:6px;align-items:center;font:10px var(--mono);color:var(--text2)}
+.card .m i{display:inline-block;width:46px;height:4px;background:var(--status);border-radius:1px}
+.card .ring{position:absolute;pointer-events:none}
+.card .spine{position:absolute;pointer-events:none}
+.card .notch{position:absolute;pointer-events:none}
+.card .pointer{position:absolute;pointer-events:none}
+.card.recede .t,.card.recede .m span{opacity:.58}
+.bar button.wide{min-width:280px}
+</style>
+</head>
+<body>
+<h1>Sidebar selection: eleven treatments, seven themes</h1>
+<p class="sub">Click any card to select it. Flagship and C11H carry workspace colors; Inbox is waiting; Harbor has no color (the case from the screenshot). Keys 0 to 9 and x switch treatments; t toggles the view.</p>
+<div class="bar" id="mode"></div>
+<div class="bar" id="bar"></div>
+<p class="note" id="note"></p>
+<div class="grid" id="grid"></div>
+<script>
+const THEMES = [
+  {id:"c11", name:"c11 / Stage 11 (dark)", sb:"#0A0C0F", fill:"#111317", fillActive:"#111317", text:"#E9EAEB", text2:"#8A8F96", dim:"#6a7078", edge:"rgba(112,130,145,.32)", sel:"#FFFFFF", accent:"#C4A561", waiting:"rgba(224,170,60,.7)", r:12, bw:1, ownsEdge:false, shadow:"rgba(0,0,0,.6)"},
+  {id:"light", name:"Stage 11 (light)", sb:"#E9E6E0", fill:"#F5F2ED", fillActive:"#F5F2ED", text:"#141414", text2:"#55585c", dim:"#7a7d80", edge:"rgba(112,130,145,.32)", sel:"#111111", accent:"#8F7733", waiting:"rgba(190,130,20,.7)", r:12, bw:1, ownsEdge:false, shadow:"rgba(60,40,10,.22)"},
+  {id:"nocturne", name:"Nocturne", sb:"#050607", fill:"#0B0C0F", fillActive:"#0F1115", text:"#E8EAEE", text2:"#8A909A", dim:"#5B606A", edge:"#1A1D22", sel:"#C9D6EA", accent:"#C9D6EA", waiting:"#7A8390", r:4, bw:1, ownsEdge:true, shadow:"rgba(0,0,0,.7)"},
+  {id:"bigboard", name:"Big Board", sb:"#05070A", fill:"#080B10", fillActive:"#0B1118", text:"#DFE8EE", text2:"#8AA0B2", dim:"#52677A", edge:"#15202B", sel:"#3DDC84", accent:"#3DDC84", waiting:"#2B875C", r:2, bw:1, ownsEdge:true, shadow:"rgba(0,0,0,.7)"},
+  {id:"outrun", name:"Outrun Horizon", sb:"linear-gradient(#2A0B4C,#0B0716)", fill:"#0E0820", fillActive:"#080414", text:"#F3EEFF", text2:"#C3B5E6", dim:"#8D7FB3", edge:"rgba(45,226,230,.22)", sel:"#2DE2E6", accent:"#2DE2E6", waiting:"rgba(45,226,230,.65)", r:6, bw:1.5, ownsEdge:true, shadow:"rgba(0,0,0,.7)"},
+  {id:"grid", name:"Terminal Grid", sb:"#0B0B0C", fill:"#0B0B0C", fillActive:"#0F0F11", text:"#D6D6D2", text2:"#8A8B8D", dim:"#5E5F62", edge:"#2A2B2E", sel:"#C8C8C4", accent:"#FF6A1F", waiting:"#818181", r:0, bw:1, ownsEdge:true, shadow:"rgba(0,0,0,.7)"},
+  {id:"mono", name:"Datasheet Mono", sb:"#0C0D0F", fill:"#111214", fillActive:"#111214", text:"rgba(255,255,255,.92)", text2:"rgba(255,255,255,.58)", dim:"rgba(255,255,255,.46)", edge:"#2C2E33", sel:"#FFFFFF", accent:"#FFFFFF", waiting:"#2C2E33", r:0, bw:1, ownsEdge:true, shadow:"rgba(0,0,0,.7)"},
+];
+const CARDS = [
+  {name:"Carbon", ws:13, color:null, status:"#2ECC71"},
+  {name:"Flagship", ws:2, color:"#D7E36B", status:"#2ECC71"},
+  {name:"Harbor", ws:3, color:null, status:"#2ECC71"},
+  {name:"Inbox", ws:4, color:null, status:"#2ECC71", waiting:true},
+  {name:"C11H", ws:6, color:"#5AA9E6", status:"#2ECC71"},
+  {name:"Ledger", ws:22, color:null, status:"#3a6ea5"},
+];
+
+// Every treatment from 2 on shares #2's grammar: workspace color is a left notch, only the
+// selected card carries a heavy edge. The flags say what each one adds on top.
+const VARIANTS = [
+  {key:"today", k:"0", label:"Today", legacy:true,
+   note:"What ships. Selected: 2.5pt white outer ring plus the identity (or gold) ring inside it. A colored unselected card gets a 2pt outline in its own color, so Flagship and Harbor look like twins."},
+  {key:"spine", k:"1", label:"Spine", spine:6, keepIdentityOutline:true,
+   note:"Your proposal as stated: 3pt outline, corners at most 3pt, 6pt right bar. Colored cards keep their identity outline, so the grammar is only half fixed."},
+  {key:"spinequiet", k:"2", label:"Spine + notch", spine:6, notch:true,
+   note:"The base of everything below. Only the selected card has a heavy edge; workspace color becomes a 4pt left notch. Left edge = which workspace, right edge = where you are."},
+  {key:"dock", k:"3", label:"Docked tab", notch:true, dock:true,
+   note:"The selected card runs to the sidebar edge and drops its right border, joined to the content like a folder tab."},
+  {key:"invert", k:"4", label:"Inverted title", notch:true, invert:true,
+   note:"The selected card's title row flips to the selection ink. Loudest, and it competes with the status pills."},
+  {key:"tint", k:"5", label:"Spine + wash", spine:6, notch:true, wash:.14,
+   note:"#2 plus a wash of the selection ink across the card fill (14 percent). The selected card reads as lit from inside, so it pops even in peripheral vision, before you look for the edge."},
+  {key:"lift", k:"6", label:"Spine + lift", spine:6, notch:true, wash:.06, lift:true,
+   note:"#2 plus elevation: a faint wash, a drop shadow, and a soft glow in the selection ink. The selected card floats above the column. Most 'physical' of the set; the glow carries Outrun's neon naturally and stays subtle in the flat themes."},
+  {key:"pointer", k:"7", label:"Spine + pointer", spine:6, notch:true, pointer:true,
+   note:"#2 plus a small arrowhead on the bar that pokes into the gutter toward the content: 'this one is on screen'. Directional, unambiguous, and tiny."},
+  {key:"halo", k:"8", label:"Spine + halo", spine:6, notch:true, halo:true,
+   note:"#2 plus a second thin ring 2pt outside the outline, like a macOS keyboard-focus ring. A double edge nothing else in the sidebar uses, so it cannot be mistaken for a color or waiting state."},
+  {key:"dim", k:"9", label:"Spine + recede", spine:6, notch:true, recede:true,
+   note:"#2 plus every other card recedes: names and marks drop to about 60 percent. The selection wins by contrast rather than by decoration. Cost: you read the others a little slower (status colors stay full strength)."},
+  {key:"beacon", k:"x", label:"Beacon (combined)", spine:8, notch:true, wash:.12, pointer:true, glow:true,
+   note:"The best pieces stacked: 8pt bar with the pointer, a 12 percent wash, and a soft glow. Most distinguished of the eleven while keeping #2's grammar intact."},
+];
+
+const hash = new URLSearchParams(location.hash.slice(1));
+let variant = hash.get("v") || "beacon";
+let selected = hash.get("sel") || "Harbor";
+let view = hash.get("view") || "themes";       // themes: all themes, one variant | variants: one theme, all variants
+let themeId = hash.get("theme") || "c11";
+
+function el(tag, attrs={}, kids=[]){ const e=document.createElement(tag); for(const[k,v] of Object.entries(attrs)){ if(k==="text") e.textContent=v; else e.setAttribute(k,v);} for(const k of kids) e.appendChild(k); return e; }
+
+function renderCard(th, c, V){
+  const isSel = c.name===selected;
+  const card = el("div",{class:"card"});
+  const s = card.style;
+  let fill = isSel ? th.fillActive : th.fill;
+  if(isSel && V.wash) fill = `color-mix(in srgb, ${th.sel} ${V.wash*100}%, ${th.fillActive})`;
+  s.setProperty("--fill", fill);
+  s.setProperty("--text", th.text); s.setProperty("--text2", th.text2); s.setProperty("--dim", th.dim);
+  s.setProperty("--status", c.status);
+  let r = th.r, bw = th.bw, edge = th.edge;
+  const notch = c.color && V.notch;
+
+  if(V.legacy){
+    if(isSel){ bw = th.ownsEdge ? th.bw : 2.5; edge = th.sel;
+      const inner = c.color || (th.ownsEdge ? null : th.accent);
+      if(inner){ const ring=el("div",{class:"ring"}); Object.assign(ring.style,{inset:"0",border:`2px solid ${inner}`,borderRadius:Math.max(0,r-bw)+"px"}); card.appendChild(ring);} }
+    else if(c.waiting){ bw=1.5; edge=th.waiting; }
+    else if(c.color){ bw = th.ownsEdge?th.bw:2; edge=c.color; }
+  } else {
+    if(isSel){ bw=3; edge=th.sel; r=Math.min(th.r,3); }
+    else if(c.waiting){ bw=1.5; edge=th.waiting; }
+    else if(c.color && V.keepIdentityOutline){ bw=2; edge=c.color; }
+  }
+  if(V.dock && isSel){
+    s.borderRightWidth="0"; s.marginRight="-11px"; s.paddingRight="21px";
+    s.borderRadius = `${r}px 0 0 ${r}px`;
+  }
+  s.setProperty("--r", r+"px"); s.setProperty("--bw", bw+"px"); s.setProperty("--edge", edge);
+  const shadows = [];
+  if(isSel && V.lift) shadows.push(`0 6px 16px ${th.shadow}`, `0 0 14px color-mix(in srgb, ${th.sel} 28%, transparent)`);
+  if(isSel && V.glow) shadows.push(`0 0 18px color-mix(in srgb, ${th.sel} 34%, transparent)`);
+  if(shadows.length) s.boxShadow = shadows.join(", ");
+  if(isSel && V.halo){ s.outline = `1.5px solid color-mix(in srgb, ${th.sel} 70%, transparent)`; s.outlineOffset = "2px"; }
+  if(!isSel && V.recede) card.classList.add("recede");
+
+  if(notch){
+    const n=el("div",{class:"notch"});
+    Object.assign(n.style,{left:"0",top:"0",bottom:"0",width:"4px",background:c.color,
+      borderRadius: r? `${Math.max(0,r-bw)}px 0 0 ${Math.max(0,r-bw)}px`:"0"});
+    card.appendChild(n); s.paddingLeft="14px";
+  }
+  if(V.spine && isSel){
+    const sp=el("div",{class:"spine"});
+    Object.assign(sp.style,{right:"0",top:"0",bottom:"0",width:V.spine+"px",background:th.sel});
+    card.appendChild(sp); s.paddingRight=(10+V.spine)+"px";
+  }
+  if(V.pointer && isSel){
+    const p=el("div",{class:"pointer"});
+    Object.assign(p.style,{right:`-${bw+7}px`,top:"50%",transform:"translateY(-50%)",width:"0",height:"0",
+      borderTop:"7px solid transparent",borderBottom:"7px solid transparent",borderLeft:`7px solid ${th.sel}`});
+    card.appendChild(p);
+  }
+  const title = el("div",{class:"t"},[el("span",{text:c.name}), el("span",{class:"ws",text:"WS "+c.ws})]);
+  if(V.invert && isSel){
+    Object.assign(title.style,{background:th.sel,color:th.fillActive,margin:"-7px -10px 0 -10px",padding:"5px 10px",borderRadius:`${Math.max(0,r-bw)}px ${Math.max(0,r-bw)}px 0 0`});
+    if(notch){ title.style.marginLeft="-14px"; title.style.paddingLeft="14px"; }
+    title.querySelector(".ws").style.color=th.fillActive;
+  }
+  card.appendChild(title);
+  card.appendChild(el("div",{class:"m"},[el("span",{text:c.waiting?"⏳ 1":"⚑ "+(c.ws%9+1)}), el("i")]));
+  card.addEventListener("click",()=>{ selected=c.name; render(); });
+  return card;
+}
+
+function column(heading, th, V){
+  const sb=el("div",{class:"sb"}); sb.style.background=th.sb;
+  CARDS.forEach(c=>sb.appendChild(renderCard(th,c,V)));
+  return el("div",{class:"col"},[el("h2",{text:heading}), sb]);
+}
+
+function button(label, pressed, onclick, cls){ const b=el("button",{"aria-pressed":String(pressed),text:label}); if(cls) b.className=cls; b.onclick=onclick; return b; }
+
+function render(){
+  const mode=document.getElementById("mode"); mode.innerHTML="";
+  mode.appendChild(button("View: every theme, one treatment", view==="themes", ()=>{view="themes";render();}, "wide"));
+  mode.appendChild(button("View: one theme, every treatment", view==="variants", ()=>{view="variants";render();}, "wide"));
+  const bar=document.getElementById("bar"); bar.innerHTML="";
+  const grid=document.getElementById("grid"); grid.innerHTML="";
+  const note=document.getElementById("note");
+  if(view==="themes"){
+    VARIANTS.forEach(v=>bar.appendChild(button(`${v.k} · ${v.label}`, v.key===variant, ()=>{variant=v.key;render();})));
+    const V=VARIANTS.find(v=>v.key===variant);
+    note.textContent = V.note;
+    for(const th of THEMES) grid.appendChild(column(th.name, th, V));
+  } else {
+    THEMES.forEach(th=>bar.appendChild(button(th.name, th.id===themeId, ()=>{themeId=th.id;render();})));
+    note.textContent = "Every treatment on one theme. Click a card to move the selection in all of them at once.";
+    const th=THEMES.find(t=>t.id===themeId);
+    for(const V of VARIANTS) grid.appendChild(column(`${V.k} · ${V.label}`, th, V));
+  }
+}
+document.addEventListener("keydown",e=>{
+  if(e.key==="t"){ view = view==="themes"?"variants":"themes"; render(); return; }
+  const V=VARIANTS.find(v=>v.k===e.key); if(V){ variant=V.key; view="themes"; render(); }
+});
+render();
+</script>
+</body>
+</html>

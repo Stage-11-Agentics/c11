@@ -6,7 +6,7 @@
 #                  a target dep. Because c11 has ENABLE_DEBUG_DYLIB=YES, Debug
 #                  points at c11 DEV.app/Contents/MacOS/c11.debug.dylib (with
 #                  an rpath so dyld can find it); Release points at the
-#                  classic c11.app/Contents/MacOS/c11 stub. See the inline
+#                  c11.app/Contents/MacOS/c11 stub. See the inline
 #                  block at lines 140-152 for the rpath arithmetic.
 #   STRATEGY=A  -> dual-compile Sources/ files listed in c11-27-sources.txt.
 # INCLUDE_VERIFY_PROMOTE=1 also moves the one VERIFY-PROMOTE test

@@ -64,7 +64,7 @@ enum SocketControlMode: String, CaseIterable, Identifiable {
 }
 
 enum SocketControlPasswordStore {
-    static let directoryName = "c11"
+    static let directoryName = C11Identity.passwordDirectoryName
     static let fileName = "socket-control-password"
     private static let keychainMigrationDefaultsKey = "socketControlPasswordMigrationVersion"
     private static let keychainMigrationVersion = 1
@@ -140,26 +140,11 @@ enum SocketControlPasswordStore {
         loadLegacyPassword: () -> String? = { loadLegacyPasswordFromKeychain() },
         deleteLegacyPassword: () -> Bool = { deleteLegacyPasswordFromKeychain() }
     ) {
-        guard defaults.integer(forKey: keychainMigrationDefaultsKey) < keychainMigrationVersion else {
-            return
-        }
-
-        guard let legacyPassword = normalized(loadLegacyPassword()) else {
-            defaults.set(keychainMigrationVersion, forKey: keychainMigrationDefaultsKey)
-            return
-        }
-
-        do {
-            if try loadPassword(fileURL: fileURL) == nil {
-                try savePassword(legacyPassword, fileURL: fileURL)
-            }
-            guard deleteLegacyPassword() else {
-                return
-            }
-            defaults.set(keychainMigrationVersion, forKey: keychainMigrationDefaultsKey)
-        } catch {
-            // Leave migration unset so it retries on next launch.
-        }
+        // c11 does not read or delete the cmux/c11 socket-control keychain item.
+        _ = defaults
+        _ = fileURL
+        _ = loadLegacyPassword
+        _ = deleteLegacyPassword
     }
 
     static func loadPassword(fileURL: URL? = nil) throws -> String? {
@@ -236,38 +221,17 @@ enum SocketControlPasswordStore {
     }
 
     private static func loadLegacyPasswordFromKeychain() -> String? {
-#if canImport(Security)
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: legacyKeychainService,
-            kSecAttrAccount: legacyKeychainAccount,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ]
-
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
-#else
+        // c11 does not read the cmux/c11 socket-control keychain item.
+        _ = legacyKeychainService
+        _ = legacyKeychainAccount
         return nil
-#endif
     }
 
     private static func deleteLegacyPasswordFromKeychain() -> Bool {
-#if canImport(Security)
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: legacyKeychainService,
-            kSecAttrAccount: legacyKeychainAccount,
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        return status == errSecSuccess || status == errSecItemNotFound
-#else
+        // c11 does not delete another product's keychain item.
+        _ = legacyKeychainService
+        _ = legacyKeychainAccount
         return false
-#endif
     }
 
     private static func cachedLazyKeychainFallbackPassword(
@@ -336,12 +300,12 @@ struct SocketControlSettings {
     static let allowSocketPathOverrideKey = "C11_ALLOW_SOCKET_OVERRIDE"
     static let socketPasswordEnvKey = "C11_SOCKET_PASSWORD"
     static let launchTagEnvKey = "C11_TAG"
-    static let baseDebugBundleIdentifier = "com.stage11.c11.debug"
-    private static let socketDirectoryName = "c11"
-    private static let stableSocketFileName = "c11.sock"
+    static let baseDebugBundleIdentifier = C11Identity.untaggedDebugBundleIdentifier
+    private static let socketDirectoryName = C11Identity.socketDirectoryName
+    private static let stableSocketFileName = C11Identity.stableSocketFileName
     private static let lastSocketPathFileName = "last-socket-path"
-    static let legacyStableDefaultSocketPath = "/tmp/c11.sock"
-    static let legacyLastSocketPathFile = "/tmp/c11-last-socket-path"
+    static let legacyStableDefaultSocketPath = C11Identity.tmpStableSocketPath
+    static let legacyLastSocketPathFile = C11Identity.lastSocketPathFile
 
     static var stableDefaultSocketPath: String {
         stableSocketFileURL()?.path ?? legacyStableDefaultSocketPath
@@ -414,6 +378,17 @@ struct SocketControlSettings {
         guard let raw = c11Env(launchTagEnvKey, in: environment) else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// The tag hc names its session by. Every build but release carries one in
+    /// its bundle identifier (`C11Identity.sessionTag`), and is often launched
+    /// without `C11_TAG`. A literal `C11_TAG` still wins.
+    static func hcLaunchTag(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier
+    ) -> String? {
+        if let tag = launchTag(environment: environment) { return tag }
+        return C11Identity.sessionTag(bundleIdentifier: bundleIdentifier)
     }
 
     /// Whether the running app is a **local development build**: a Debug build,
@@ -503,8 +478,8 @@ struct SocketControlSettings {
         // uses. On teardown the test host unlinks the socket, killing the operator's
         // c11 socket. Detect XCTest via XCTestConfigurationFilePath and isolate per-PID.
         if environment["XCTestConfigurationFilePath"] != nil,
-           fallback == "/tmp/c11-debug.sock" {
-            fallback = "/tmp/c11-test-\(processIdentifier).sock"
+           fallback == C11Identity.debugSocketPath {
+            fallback = C11Identity.xctestSocketPath(processIdentifier: processIdentifier)
         }
 
         if let taggedDebugPath = taggedDebugSocketPath(
@@ -513,7 +488,8 @@ struct SocketControlSettings {
         ) {
             if isTruthy(c11Env(allowSocketPathOverrideKey, in: environment)),
                let override = c11Env("C11_SOCKET_PATH", in: environment),
-               !override.isEmpty {
+               !override.isEmpty,
+               C11Identity.isOwnSocketPath(override) {
                 return override
             }
             return taggedDebugPath
@@ -545,14 +521,14 @@ struct SocketControlSettings {
         if let taggedDebugPath = taggedDebugSocketPath(bundleIdentifier: bundleIdentifier, environment: [:]) {
             return taggedDebugPath
         }
-        if bundleIdentifier == "com.stage11.c11.nightly" {
-            return "/tmp/c11-nightly.sock"
+        if bundleIdentifier == C11Identity.nightlyBundleIdentifier {
+            return C11Identity.nightlySocketPath
         }
         if isDebugLikeBundleIdentifier(bundleIdentifier) || isDebugBuild {
-            return "/tmp/c11-debug.sock"
+            return C11Identity.debugSocketPath
         }
         if isStagingBundleIdentifier(bundleIdentifier) {
-            return "/tmp/c11-staging.sock"
+            return C11Identity.stagingSocketPath
         }
         // C11-155 defense-in-depth: only the canonical prod build owns the shared
         // `~/Library/Application Support/c11/c11.sock`. Any other bundle that still
@@ -572,7 +548,7 @@ struct SocketControlSettings {
         )
     }
 
-    static let prodBundleIdentifier = "com.stage11.c11"
+    static let prodBundleIdentifier = C11Identity.releaseBundleIdentifier
 
     /// A stable socket path scoped to a specific bundle id, living alongside the
     /// prod socket in the shared `c11/` state dir but with a bundle-derived
@@ -612,12 +588,66 @@ struct SocketControlSettings {
         }
     }
 
+    /// Records the bound socket in the Application Support marker, the
+    /// per-user one, and the shared `/tmp/c11-last-socket-path` older readers
+    /// use. Each is written 0600 through `C11UserRuntime.writeBreadcrumb`: a
+    /// `/tmp` entry another account created is left alone rather than
+    /// written through (C11H-364, hardening note 10).
     static func recordLastSocketPath(_ path: String, filePath: String = lastSocketPathFile) {
-        let payload = Data((path + "\n").utf8)
-        writeSocketPathMarker(payload, to: filePath)
-        if filePath != legacyLastSocketPathFile {
-            writeSocketPathMarker(payload, to: legacyLastSocketPathFile)
+        var targets = [filePath]
+        if (try? C11UserRuntime.ensureDirectory()) != nil {
+            targets.append(C11Identity.userLastSocketPathFile)
         }
+        targets.append(C11Identity.lastSocketPathFile)
+        var written: Set<String> = []
+        for target in targets where written.insert(target).inserted {
+            writeSocketPathMarker(path, to: target)
+        }
+    }
+
+    /// The shared `/tmp` name a build before C11H-364 bound for the same
+    /// channel, when `boundPath` is this build's own default socket (not an
+    /// override or a pid sibling). c11 keeps a symlink there so shells stamped
+    /// with that name before the update still reach it.
+    static func legacyAliasPath(
+        forBoundPath boundPath: String,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier,
+        isDebugBuild: Bool = SocketControlSettings.isDebugBuild
+    ) -> String? {
+        guard C11UserRuntime.isInsideDirectory(boundPath) else { return nil }
+        let stem: String
+        if let tagged = taggedDebugSocketPath(bundleIdentifier: bundleIdentifier, environment: environment),
+           tagged == boundPath {
+            stem = taggedDebugSocketStem(bundleIdentifier: bundleIdentifier, environment: environment) ?? ""
+        } else if let slug = taggedStagingSocketSlug(bundleIdentifier: bundleIdentifier),
+                  boundPath == C11Identity.userSocketPath(stem: "c11-" + slug) {
+            // `reloads.sh --tag` stamps a tagged staging build with this name;
+            // before C11H-364 it was `/tmp/c11-<slug>.sock`.
+            stem = "c11-" + slug
+        } else if boundPath == C11Identity.nightlySocketPath {
+            stem = "c11-nightly"
+        } else if boundPath == C11Identity.debugSocketPath {
+            stem = "c11-debug"
+        } else if boundPath == C11Identity.stagingSocketPath {
+            stem = "c11-staging"
+        } else {
+            return nil
+        }
+        return stem.isEmpty ? nil : C11UserRuntime.legacySocketPath(stem: stem)
+    }
+
+    /// The slug `reloads.sh --tag` names a tagged staging build's socket
+    /// from, read back from its bundle id (`com.stage11.c11.staging.<tag>`):
+    /// the rest, dots to dashes, trimmed of dashes.
+    static func taggedStagingSocketSlug(bundleIdentifier: String?) -> String? {
+        let prefix = C11Identity.stagingBundleIdentifier + "."
+        guard let bundleId = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              bundleId.hasPrefix(prefix) else { return nil }
+        let slug = String(bundleId.dropFirst(prefix.count))
+            .replacingOccurrences(of: ".", with: "-")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return slug.isEmpty ? nil : slug
     }
 
     static func shouldHonorSocketPathOverride(
@@ -627,8 +657,11 @@ struct SocketControlSettings {
         overridePath: String? = nil,
         ownDefaultPath: String? = nil
     ) -> Bool {
+        if let overridePath, !C11Identity.isOwnSocketPath(overridePath) {
+            return false
+        }
         if isTruthy(c11Env(allowSocketPathOverrideKey, in: environment)) {
-            return true
+            return overridePath.map(C11Identity.isOwnSocketPath) ?? true
         }
         let honorsByChannel = isDebugLikeBundleIdentifier(bundleIdentifier)
             || isStagingBundleIdentifier(bundleIdentifier)
@@ -657,22 +690,30 @@ struct SocketControlSettings {
     /// (it would unlink the peer's live socket). Tag-specific paths are
     /// deliberately absent — those are launch-script intent, not inheritance.
     static func isForeignSharedDefaultSocketPath(_ path: String) -> Bool {
-        let shared: Set<String> = [
-            stableDefaultSocketPath,          // prod: ~/Library/Application Support/c11/c11.sock
-            "/tmp/c11-staging.sock",
-            "/tmp/c11-debug.sock",
-            "/tmp/c11-nightly.sock",
-        ]
-        return shared.contains(path)
+        !C11Identity.isOwnSocketPath(path)
     }
 
     static func isDebugLikeBundleIdentifier(_ bundleIdentifier: String?) -> Bool {
         guard let bundleIdentifier else { return false }
-        return bundleIdentifier == "com.stage11.c11.debug"
-            || bundleIdentifier.hasPrefix("com.stage11.c11.debug.")
+        return bundleIdentifier == C11Identity.untaggedDebugBundleIdentifier
+            || bundleIdentifier.hasPrefix(C11Identity.untaggedDebugBundleIdentifier + ".")
     }
 
     static func taggedDebugSocketPath(
+        bundleIdentifier: String?,
+        environment: [String: String]
+    ) -> String? {
+        taggedDebugSocketSlug(bundleIdentifier: bundleIdentifier, environment: environment)
+            .map { C11Identity.taggedDebugSocketPath(slug: $0) }
+    }
+
+    /// `c11-debug-<slug>`, the stem a tagged Debug build's socket is named from.
+    static func taggedDebugSocketStem(bundleIdentifier: String?, environment: [String: String]) -> String? {
+        taggedDebugSocketSlug(bundleIdentifier: bundleIdentifier, environment: environment)
+            .map { "c11-debug-\($0)" }
+    }
+
+    private static func taggedDebugSocketSlug(
         bundleIdentifier: String?,
         environment: [String: String]
     ) -> String? {
@@ -683,7 +724,7 @@ struct SocketControlSettings {
                 .replacingOccurrences(of: ".", with: "-")
                 .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
             if !slug.isEmpty {
-                return "/tmp/c11-debug-\(slug).sock"
+                return slug
             }
         }
 
@@ -700,13 +741,13 @@ struct SocketControlSettings {
               !tag.isEmpty else {
             return nil
         }
-        return "/tmp/c11-debug-\(tag).sock"
+        return tag
     }
 
     static func isStagingBundleIdentifier(_ bundleIdentifier: String?) -> Bool {
         guard let bundleIdentifier else { return false }
-        return bundleIdentifier == "com.stage11.c11.staging"
-            || bundleIdentifier.hasPrefix("com.stage11.c11.staging.")
+        return bundleIdentifier == C11Identity.stagingBundleIdentifier
+            || bundleIdentifier.hasPrefix(C11Identity.stagingBundleIdentifier + ".")
     }
 
     static func stableSocketDirectoryURL(fileManager: FileManager = .default) -> URL? {
@@ -727,15 +768,18 @@ struct SocketControlSettings {
             .appendingPathComponent(lastSocketPathFileName, isDirectory: false)
     }
 
-    private static func writeSocketPathMarker(_ payload: Data, to filePath: String) {
+    private static func writeSocketPathMarker(_ socketPath: String, to filePath: String) {
         let fileURL = URL(fileURLWithPath: filePath)
         let parentURL = fileURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(
-            at: parentURL,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        try? payload.write(to: fileURL, options: .atomic)
+        let parent = parentURL.path
+        if parent != "/tmp" && parent != "/private/tmp" {
+            try? FileManager.default.createDirectory(
+                at: parentURL,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+        }
+        C11UserRuntime.writeBreadcrumb(socketPath, to: filePath)
     }
 
     private static func inspectStableDefaultSocketPathEntry(_ path: String) -> StableDefaultSocketPathEntry {

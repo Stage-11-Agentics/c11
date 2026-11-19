@@ -1,6 +1,6 @@
 # Topic 06: The grab list (hardening, workspaces, navigation, browser)
 
-**Report path:** `~/Projects/Stage11/code/c11/upstream-triage/c11-1.0/06-grab-list.md`
+**Report path:** `~/src/c11/upstream-triage/c11-1.0/06-grab-list.md`
 
 Atin wants these pulled into c11 1.0 without a separate debate on each: "We should just grab anything we want here." Scope each one concretely, in this order:
 

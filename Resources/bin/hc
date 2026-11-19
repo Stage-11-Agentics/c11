@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# c11's PATH-scoped existing-connection adapter. Never edits tenant state.
+set -u
+self_dir="$(cd -- "$(dirname -- "$0")" && pwd -P)"
+
+fall_through() {
+    local remaining="${PATH:-}" directory candidate
+    while :; do
+        directory="${remaining%%:*}"
+        candidate="${directory:-.}/hc"
+        if [[ -x "$candidate" && ! "$candidate" -ef "$0" ]]; then
+            exec "$candidate" "$@"
+        fi
+        [[ "$remaining" == *:* ]] || break
+        remaining="${remaining#*:}"
+    done
+    printf '%s\n' 'hc_not_found' >&2
+    exit 127
+}
+
+# R2: a caller targeting ANY other tuple retains its own hc unchanged, even
+# inside a c11 terminal. Both expected values are supplied by 2C's env builder.
+if [[ -z "${C11_HC_SESSION:-}" || -z "${C11_HC_SOCKET:-}" ||
+      "${HC_SESSION:-}" != "$C11_HC_SESSION" || "${HC_SOCKET:-}" != "$C11_HC_SOCKET" ]]; then
+    fall_through "$@"
+fi
+case "$C11_HC_SESSION" in c11|c11-*|c11h|c11h-*) ;; *) fall_through "$@" ;; esac # c11-2.0:legacy (adopted namespace)
+
+# For OUR tuple, a dead app must not fall through and autostart another build.
+if [[ -z "${C11_SOCKET_PATH:-}" || ! -S "$C11_SOCKET_PATH" || ! -x "$self_dir/c11" ]]; then
+    printf '%s\n' 'hc_managed_runtime' >&2
+    exit 1
+fi
+exec "$self_dir/c11" hc "$@"

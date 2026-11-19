@@ -44,6 +44,7 @@ private struct AppKitHiddenWrapper<Content: View>: NSViewControllerRepresentable
         if host.view.isHidden != isHidden {
             host.view.isHidden = isHidden
         }
+        GraphChurnMeter.note(.hiddenWrapperUpdate)
         host.rootView = content
     }
 }
@@ -354,6 +355,10 @@ final class SidebarState: ObservableObject {
     @Published var customTitlebarForeground = Color.white.opacity(0.82)
     // Opaque fill behind the titlebar control group, derived from the titlebar background.
     @Published var titlebarControlsBackdrop = Color(white: 0.2)
+    @Published var titlebarControlsBackdropIsLight = false
+    /// What the sidebar draws now (C11H-221). Not published: the sidebar owns
+    /// the decision and `sidebar-state` only reads it.
+    var shownDensity: SidebarDensity = .cards
 
     init(isVisible: Bool = true, persistedWidth: CGFloat = CGFloat(SessionPersistencePolicy.defaultSidebarWidth)) {
         self.isVisible = isVisible
@@ -814,7 +819,8 @@ final class FileDropOverlayView: NSView {
         activeDragTextBox = textBox
         if textBox != nil { return .copy }
 
-        let hasTerminalTarget = terminalUnderPoint(loc) != nil
+        let terminal = terminalUnderPoint(loc)
+        let hasTerminalTarget = terminal != nil
 #if DEBUG
         logDragRouteDecision(
             phase: phase,
@@ -824,8 +830,10 @@ final class FileDropOverlayView: NSView {
             hasTerminalTarget: hasTerminalTarget
         )
 #endif
-        guard shouldCapture, hasTerminalTarget else { return [] }
-        return .copy
+        guard shouldCapture, let terminal else { return [] }
+        // C11H-363: the terminal's own answer, so a drop it will refuse shows
+        // no operation before the operator lets go.
+        return terminal.dropOperation(for: sender)
     }
 
     /// [TextBox] Hit-test the window for an `InputTextView` (TextBox field)
@@ -1569,6 +1577,8 @@ func installFileDropOverlay(on window: NSWindow, workspaceManager: WorkspaceMana
 struct ContentView: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     @ObservedObject private var themeManager = ThemeManager.shared
+    /// c11 (C11H-197): this window's name and theme override.
+    @ObservedObject private var windowAttributes = WindowAttributesStore.shared
     let windowId: UUID
     @EnvironmentObject var workspaceManager: WorkspaceManager
     @EnvironmentObject var notificationStore: TerminalNotificationStore
@@ -1803,8 +1813,9 @@ struct ContentView: View {
         static let workspaceShouldPin = "workspace.shouldPin"
         static let workspaceHasPullRequests = "workspace.hasPullRequests"
         static let workspaceHasSplits = "workspace.hasSplits"
-        static let workspaceHasAbove = "workspace.hasAbove"
-        static let workspaceHasBelow = "workspace.hasBelow"
+        static let workspaceHasAbove = WorkspaceSidebarStepPalette.hasAboveKey
+        static let workspaceHasBelow = WorkspaceSidebarStepPalette.hasBelowKey
+        static let workspaceCanMoveToTop = "workspace.canMoveToTop"
         static let workspaceHasUnread = "workspace.hasUnread"
         static let workspaceHasRead = "workspace.hasRead"
 
@@ -2227,6 +2238,7 @@ struct ContentView: View {
     /// Space at top of content area for the titlebar. This must be at least the actual titlebar
     /// height; otherwise controls like Bonsplit tab dragging can be interpreted as window drags.
     @State private var titlebarPadding: CGFloat = 32
+    @Environment(\.chromeScaleTokens) private var chromeTokens
     @AppStorage(WorkspacePresentationModeSettings.modeKey)
     private var workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
 
@@ -2316,13 +2328,19 @@ struct ContentView: View {
             if sidebarState.titlebarControlsBackdrop != colors.backdrop {
                 sidebarState.titlebarControlsBackdrop = colors.backdrop
             }
+            if sidebarState.titlebarControlsBackdropIsLight != colors.isLight {
+                sidebarState.titlebarControlsBackdropIsLight = colors.isLight
+            }
         }
     }
 
     private var terminalContentWithSidebarDropOverlay: some View {
         terminalContent
             .overlay {
-                SidebarExternalDropOverlay(draggedWorkspaceId: sidebarDraggedWorkspaceId)
+                SidebarExternalDropOverlay(
+                    draggedWorkspaceId: sidebarDraggedWorkspaceId,
+                    workspaceManager: workspaceManager
+                )
             }
     }
 
@@ -2351,14 +2369,26 @@ struct ContentView: View {
         return TitlebarControlsColors(titlebarBackground: background)
     }
 
+    /// c11 (C11H-197): the theme this window overrides the app theme with; nil
+    /// follows the app theme. Injected for every view in the window at the root.
+    private var windowThemeName: String? {
+        windowAttributes.themeName(for: windowId)
+    }
+
+    /// c11 (C11H-197): the operator's name for this window, if any.
+    private var windowName: String? {
+        windowAttributes.name(for: windowId)
+    }
+
     private var useThemeM1bCustomTitlebarPath: Bool {
-        m1bCustomTitlebarMigrated && themeManager.isEnabled
+        themeManager.themedPathLive(flag: m1bCustomTitlebarMigrated, windowThemeName: windowThemeName)
     }
 
     private var titlebarThemeContext: ThemeContext {
         themeManager.makeContext(
             workspaceColor: workspaceManager.selectedWorkspace?.customColor,
-            colorScheme: colorScheme
+            colorScheme: colorScheme,
+            windowThemeName: windowThemeName
         )
     }
 
@@ -2430,14 +2460,32 @@ struct ContentView: View {
                         .accessibilityIdentifier("workspace.titlebarFolder")
                 }
 
-                Text(titlebarText)
-                    .font(.system(size: 13, weight: .bold))
+                // c11 (C11H-197): the window's name, ahead of the workspace
+                // title. It keeps its width; the title truncates first.
+                if let windowName {
+                    titlebarWindowNameLabel(windowName)
+                }
+
+                // With Big Board's clock the title is laid out first, so the
+                // clock (not the title) gives way; without it, 0 is the default.
+                let clockStyle = titlebarClockStyle
+                styledTitlebarTitle
                     .foregroundColor(titleForeground)
                     .lineLimit(1)
+                    .layoutPriority(clockStyle == nil ? 0 : 1)
                     .accessibilityIdentifier("workspace.titlebarTitle")
                     .allowsHitTesting(false)
 
                 Spacer(minLength: 8)
+
+                // Big Board's clock: in the trailing slot, dropped rather than
+                // squeezing the title when the window is too narrow for both.
+                if let clockStyle {
+                    ViewThatFits(in: .horizontal) {
+                        ThemeTitlebarClock(style: clockStyle)
+                        Color.clear.frame(width: 0, height: 0)
+                    }
+                }
 
                 WorkspaceRootTitlebarLabel(
                     workspace: selectedTitlebarWorkspace,
@@ -2449,12 +2497,23 @@ struct ContentView: View {
                     workspace: selectedTitlebarWorkspace,
                     foregroundColor: fakeTitlebarTextColor
                 )
+
+                // c11h: the top-right corner fills the screen, so a window left
+                // as a sliver after a display change comes back in one click.
+                // Disabled, not removed, in full screen so the slot never moves.
+                WindowMaximizeButton(
+                    foregroundColor: fakeTitlebarTextColor.opacity(0.75),
+                    accessibilityIdentifier: "WindowMaximizeButton.titlebar"
+                )
+                .buttonStyle(.plain)
+                .disabled(isFullScreen)
+                .opacity(isFullScreen ? 0.3 : 1)
             }
             // HStack fills the titlebar height and the text centers within it.
             // Dropping the explicit frame(height: 28) + .padding(.top, 2) (which
             // sat the content 30pt tall in a 32pt outer, with the implicit
             // bottom space stacking against the 1pt bottom border so the text
-            // read as bottom-heavy) lets the 13pt bold text sit symmetrically.
+            // read as bottom-heavy) lets the bold text sit symmetrically.
             .padding(.leading, customTitlebarLeadingPadding)
             .padding(.trailing, 8)
         }
@@ -2472,6 +2531,69 @@ struct ContentView: View {
                 .fill(resolvedCustomTitlebarBottomBorder)
                 .frame(height: 1)
         }
+        .themeScanlines()
+    }
+
+    /// The window's name as a quiet capsule: the title's type at a smaller size, in
+    /// the title bar's secondary colour. Priority 2 keeps it whole while the
+    /// workspace title (0, or 1 beside the clock) truncates.
+    private func titlebarWindowNameLabel(_ name: String) -> some View {
+        let style = themeManager.themeOwnsChrome(windowThemeName: windowThemeName)
+            ? themeManager.textStyle(.windowTitle, windowThemeName: windowThemeName)
+            : .unset
+        let baseSize = max(9, chromeTokens.windowTitlebarTitle - 2)
+        let color = titlebarWindowNameColor
+        var text = Text(style.apply(name)).font(style.chromeFont(size: baseSize, weight: .medium))
+        if style.tracking != nil {
+            text = text.tracking(style.trackingPoints(baseSize: baseSize))
+        }
+        return text
+            .foregroundColor(color)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 1)
+            .overlay(Capsule(style: .continuous).strokeBorder(color.opacity(0.5), lineWidth: 1))
+            .layoutPriority(2)
+            .accessibilityIdentifier("workspace.titlebarWindowName")
+            .allowsHitTesting(false)
+    }
+
+    private var titlebarWindowNameColor: Color {
+        if useThemeM1bCustomTitlebarPath,
+           let color: NSColor = themeManager.resolve(.titleBar_foregroundSecondary, context: titlebarThemeContext) {
+            return Color(nsColor: color)
+        }
+        return fakeTitlebarTextColor.opacity(0.65)
+    }
+
+    /// The title in the theme's `[type.windowTitle]`; unset, bold system at the top-bar size.
+    private var styledTitlebarTitle: Text {
+        let style = themeManager.themeOwnsChrome(windowThemeName: windowThemeName)
+            ? themeManager.textStyle(.windowTitle, windowThemeName: windowThemeName)
+            : .unset
+        guard !style.isUnset else {
+            return Text(titlebarText).font(.system(size: chromeTokens.windowTitlebarTitle, weight: .bold))
+        }
+        let baseSize = chromeTokens.windowTitlebarTitle
+        let text = Text(style.apply(titlebarText)).font(style.font(baseSize: baseSize, defaultWeight: .bold))
+        guard style.tracking != nil else { return text }
+        return text.tracking(style.trackingPoints(baseSize: baseSize))
+    }
+
+    private var titlebarClockStyle: ThemeTitlebarClock.Style? {
+        // Checked before any context or colour work: this runs on every body.
+        guard themeManager.themeOwnsChrome(windowThemeName: windowThemeName),
+              (themeManager.style(.ornamentTitlebarClock, context: titlebarThemeContext) as Bool?) == true else {
+            return nil
+        }
+        let primary = fakeTitlebarTextColor
+        return ThemeTitlebarClock.style(
+            themeManager,
+            context: titlebarThemeContext,
+            primary: primary,
+            secondary: primary.opacity(0.6)
+        )
     }
 
     private var customTitlebarLeadingPadding: CGFloat {
@@ -2547,21 +2669,14 @@ struct ContentView: View {
         return workspaceManager.workspaces.first(where: { $0.id == selectedId })
     }
 
+    /// The titlebar's draggable folder: never a directory a terminal on
+    /// another machine reported (C11H-363, `Workspace.localFolderDirectory`).
     private var focusedDirectory: String? {
         guard let selectedId = workspaceManager.selectedWorkspaceId,
               let workspace = workspaceManager.workspaces.first(where: { $0.id == selectedId }) else {
             return nil
         }
-        // Use focused panel's directory if available
-        if let focusedPanelId = workspace.focusedPanelId,
-           let panelDir = workspace.panelDirectories[focusedPanelId] {
-            let trimmed = panelDir.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                return trimmed
-            }
-        }
-        let dir = workspace.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        return dir.isEmpty ? nil : dir
+        return workspace.localFolderDirectory()
     }
 
     private var contentAndSidebarLayout: AnyView {
@@ -2602,18 +2717,27 @@ struct ContentView: View {
     }
 
     var body: some View {
+        // C11H-238 meter: name what invalidated this body (stdout, meter runs only).
+        let _ = GraphChurnMeter.printsChanges ? Self._printChanges() : ()
+        let _ = GraphChurnMeter.note(.contentViewBody)
         var view = AnyView(
-            contentAndSidebarLayout
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .overlay(alignment: .topLeading) {
-                    if isFullScreen && sidebarState.isVisible && !isMinimalMode {
-                        fullscreenControls
-                            .padding(.leading, 10)
-                            .padding(.top, 4)
+            // C11H-38: the launch resume banner takes its own strip below the
+            // content, so it never overlaps a terminal or the titlebar. It
+            // observes its own model and adds nothing when there is no report.
+            VStack(spacing: 0) {
+                contentAndSidebarLayout
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .overlay(alignment: .topLeading) {
+                        if isFullScreen && sidebarState.isVisible && !isMinimalMode {
+                            fullscreenControls
+                                .padding(.leading, 10)
+                                .padding(.top, 4)
+                        }
                     }
-                }
-                .frame(minWidth: CGFloat(SessionPersistencePolicy.minimumWindowWidth), minHeight: CGFloat(SessionPersistencePolicy.minimumWindowHeight))
-                .background(Color.clear)
+                LaunchResumeBannerView()
+            }
+            .frame(minWidth: CGFloat(SessionPersistencePolicy.minimumWindowWidth), minHeight: CGFloat(SessionPersistencePolicy.minimumWindowHeight))
+            .background(Color.clear)
         )
 
         view = AnyView(view.onAppear {
@@ -3149,6 +3273,17 @@ struct ContentView: View {
             installFileDropOverlay(on: window, workspaceManager: workspaceManager)
         }))
 
+        // c11 (C11H-197): the AppKit title follows a rename (the accessor above
+        // runs once per window).
+        view = AnyView(view.onChange(of: windowName) { _, _ in
+            guard let observedWindow, observedWindow.title != desiredWindowTitle else { return }
+            observedWindow.title = desiredWindowTitle
+        })
+
+        // c11 (C11H-197): every view in this window paints its chrome with the
+        // window's theme override (nil follows the app theme).
+        view = AnyView(view.environment(\.c11WindowThemeName, windowThemeName))
+
         return view
     }
 
@@ -3396,6 +3531,10 @@ struct ContentView: View {
         WindowGlassEffect.updateTint(to: window, color: tintColor)
     }
 
+    private var desiredWindowTitle: String {
+        windowName ?? ""
+    }
+
     @discardableResult
     private func applyMainWindowChrome(to window: NSWindow) -> Bool {
         var didChange = false
@@ -3406,8 +3545,10 @@ struct ContentView: View {
             didChange = true
         }
 
-        if window.title != "" {
-            window.title = ""
+        // c11 (C11H-197): the window's name is its AppKit title, so the Window
+        // menu and Mission Control list it; the title itself stays hidden.
+        if window.title != desiredWindowTitle {
+            window.title = desiredWindowTitle
             didChange = true
         }
 
@@ -5312,12 +5453,11 @@ struct ContentView: View {
                 CommandPaletteContextKeys.workspaceHasSplits,
                 workspace.bonsplitController.allPaneIds.count > 1
             )
-            let workspaceIndex = workspaceManager.workspaces.firstIndex { $0.id == workspace.id }
-            snapshot.setBool(CommandPaletteContextKeys.workspaceHasAbove, (workspaceIndex ?? 0) > 0)
-            snapshot.setBool(
-                CommandPaletteContextKeys.workspaceHasBelow,
-                (workspaceIndex ?? workspaceManager.workspaces.count - 1) < workspaceManager.workspaces.count - 1
-            )
+            // C11H-342: Move Up/Down enable from the sidebar step they perform;
+            // Move to Top keeps its flat rule.
+            for (key, value) in WorkspaceSidebarStepPalette.context(workspaceManager) { snapshot.setBool(key, value) }
+            snapshot.setBool(CommandPaletteContextKeys.workspaceCanMoveToTop,
+                             (workspaceManager.workspaces.firstIndex { $0.id == workspace.id } ?? 0) > 0)
             snapshot.setBool(
                 CommandPaletteContextKeys.workspaceHasUnread,
                 notificationStore.notifications.contains { $0.workspaceId == workspace.id && !$0.isRead }
@@ -5648,7 +5788,7 @@ struct ContentView: View {
         )
         contributions.append(
             CommandPaletteCommandContribution(
-                commandId: "palette.moveWorkspaceUp",
+                commandId: WorkspaceSidebarStepPalette.moveUpCommandId,
                 title: constant(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")),
                 subtitle: workspaceSubtitle,
                 keywords: ["workspace", "move", "up", "reorder"],
@@ -5658,7 +5798,7 @@ struct ContentView: View {
         )
         contributions.append(
             CommandPaletteCommandContribution(
-                commandId: "palette.moveWorkspaceDown",
+                commandId: WorkspaceSidebarStepPalette.moveDownCommandId,
                 title: constant(String(localized: "contextMenu.moveDown", defaultValue: "Move Down")),
                 subtitle: workspaceSubtitle,
                 keywords: ["workspace", "move", "down", "reorder"],
@@ -5673,7 +5813,7 @@ struct ContentView: View {
                 subtitle: workspaceSubtitle,
                 keywords: ["workspace", "move", "top", "reorder"],
                 when: { $0.bool(CommandPaletteContextKeys.hasWorkspace) },
-                enablement: { $0.bool(CommandPaletteContextKeys.workspaceHasAbove) }
+                enablement: { $0.bool(CommandPaletteContextKeys.workspaceCanMoveToTop) }
             )
         )
         contributions.append(
@@ -6079,6 +6219,8 @@ struct ContentView: View {
             workspaceManager.addWorkspace()
         }
         registry.register(commandId: "palette.openFolder") {
+            // The workspace records who ran the command, not the modal's run loop (C11H-260).
+            let creation = PanelLineage.shared.captureCreation()
             // Defer so the command palette dismisses before the modal sheet appears.
             DispatchQueue.main.async {
                 let openPanel = NSOpenPanel()
@@ -6088,7 +6230,9 @@ struct ContentView: View {
                 openPanel.title = String(localized: "panel.openFolder.title", defaultValue: "Open Folder")
                 openPanel.prompt = String(localized: "panel.openFolder.prompt", defaultValue: "Open")
                 if openPanel.runModal() == .OK, let url = openPanel.url {
-                    workspaceManager.addWorkspace(workingDirectory: url.path)
+                    PanelLineage.shared.replay(creation) {
+                        _ = workspaceManager.addWorkspace(workingDirectory: url.path)
+                    }
                 }
             }
         }
@@ -6102,13 +6246,16 @@ struct ContentView: View {
             AppDelegate.shared?.uninstallCmuxCLIInPath(nil)
         }
         registry.register(commandId: "palette.newTerminalTab") {
-            workspaceManager.newSurface()
+            workspaceManager.newSurfaceAskingMachine()
         }
         registry.register(commandId: "palette.newBrowserTab") {
             // Let command-palette dismissal complete first so omnibar focus
             // is not blocked by the palette visibility guard.
+            let creation = PanelLineage.shared.captureCreation()
             DispatchQueue.main.async {
-                _ = AppDelegate.shared?.openBrowserAndFocusAddressBar()
+                PanelLineage.shared.replay(creation) {
+                    _ = AppDelegate.shared?.openBrowserAndFocusAddressBar()
+                }
             }
         }
         registry.register(commandId: "palette.surfaceDetails") {
@@ -6210,15 +6357,14 @@ struct ContentView: View {
         }
         registry.register(commandId: "palette.nextWorkspace") {
             workspaceManager.selectNextWorkspace(cause: "palette")
+            workspaceManager.acknowledgeOperatorOpen(workspaceId: workspaceManager.selectedWorkspaceId)
         }
         registry.register(commandId: "palette.previousWorkspace") {
             workspaceManager.selectPreviousWorkspace(cause: "palette")
+            workspaceManager.acknowledgeOperatorOpen(workspaceId: workspaceManager.selectedWorkspaceId)
         }
-        registry.register(commandId: "palette.moveWorkspaceUp") {
-            moveSelectedWorkspace(by: -1)
-        }
-        registry.register(commandId: "palette.moveWorkspaceDown") {
-            moveSelectedWorkspace(by: 1)
+        for command in WorkspaceSidebarStepPalette.commands {
+            registry.register(commandId: command.commandId) { moveSelectedWorkspace(commandId: command.commandId) }
         }
         registry.register(commandId: "palette.moveWorkspaceToTop") {
             guard let workspace = workspaceManager.selectedWorkspace else {
@@ -6762,7 +6908,8 @@ struct ContentView: View {
 #endif
         recordCommandPaletteUsage(command.id)
         SocketCommandContext.adoptForPaletteSession()
-        command.action()
+        // C11H-260: a palette command is the operator's, unless a socket drives the session.
+        PanelLineage.shared.withOrigin(.operator) { command.action() }
         if command.dismissOnRun {
             dismissCommandPalette(restoreFocus: false)
         }
@@ -7281,17 +7428,10 @@ struct ContentView: View {
         )
     }
 
-    private func selectedWorkspaceIndex() -> Int? {
-        guard let workspace = workspaceManager.selectedWorkspace else { return nil }
-        return workspaceManager.workspaces.firstIndex { $0.id == workspace.id }
-    }
-
-    private func moveSelectedWorkspace(by delta: Int) {
-        guard let workspace = workspaceManager.selectedWorkspace,
-              let currentIndex = selectedWorkspaceIndex() else { return }
-        let targetIndex = currentIndex + delta
-        guard targetIndex >= 0, targetIndex < workspaceManager.workspaces.count else { return }
-        _ = workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: targetIndex)
+    /// C11H-342: one sidebar step, as the menu, the row and the socket take.
+    private func moveSelectedWorkspace(commandId: String) {
+        guard let id = WorkspaceSidebarStepPalette.perform(commandId, on: workspaceManager),
+              let workspace = workspaceManager.workspaces.first(where: { $0.id == id }) else { return }
         SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
     }
 
@@ -7501,16 +7641,8 @@ struct ContentView: View {
     }
 
     private func focusedTerminalDirectoryURL() -> URL? {
-        guard let workspace = workspaceManager.selectedWorkspace else { return nil }
-        let rawDirectory: String = {
-            if let focusedPanelId = workspace.focusedPanelId,
-               let directory = workspace.panelDirectories[focusedPanelId] {
-                return directory
-            }
-            return workspace.currentDirectory
-        }()
-        let trimmed = rawDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        guard let workspace = workspaceManager.selectedWorkspace,
+              let trimmed = workspace.localFolderDirectory() else { return nil }
         guard FileManager.default.fileExists(atPath: trimmed) else { return nil }
         return URL(fileURLWithPath: trimmed, isDirectory: true)
     }
@@ -8527,6 +8659,8 @@ struct WorkspaceSidebar: View {
     @EnvironmentObject var workspaceManager: WorkspaceManager
     @EnvironmentObject var notificationStore: TerminalNotificationStore
     @Environment(\.colorScheme) private var colorScheme
+    /// c11 (C11H-197): the hosting window's theme override.
+    @Environment(\.c11WindowThemeName) private var windowThemeName
     @Binding var selection: SidebarSelection
     @Binding var selectedWorkspaceIds: Set<UUID>
     @Binding var lastSidebarSelectionIndex: Int?
@@ -8542,6 +8676,13 @@ struct WorkspaceSidebar: View {
     @State private var draggedWorkspaceId: UUID?
     @State private var dropIndicator: SidebarDropIndicator?
     @State private var panelDropTargetWorkspaceId: UUID?
+    /// C11H-221: full cards while every workspace fits, compact cards once
+    /// they would scroll. Measurements live in a plain reference so a card
+    /// growing by a point never re-evaluates this body; only a flip does.
+    @AppStorage(SidebarDensitySetting.key)
+    private var sidebarDensityRaw = SidebarDensitySetting.defaultValue.rawValue
+    @State private var sidebarDensity: SidebarDensity = SidebarDensityTracker.startDensity
+    @State private var densityTracker = SidebarDensityTracker()
     @AppStorage(SidebarWorkspaceDetailSettings.hideAllDetailsKey)
     private var sidebarHideAllDetails = SidebarWorkspaceDetailSettings.defaultHideAllDetails
     @AppStorage(SidebarWorkspaceDetailSettings.showNotificationMessageKey)
@@ -8602,46 +8743,64 @@ struct WorkspaceSidebar: View {
     }
 
     private var useThemeM1bSidebarTabItemPath: Bool {
-        m1bSidebarTabItemMigrated && themeManager.isEnabled
+        themeManager.themedPathLive(flag: m1bSidebarTabItemMigrated, windowThemeName: windowThemeName)
+    }
+
+    /// True when `role` resolves to a colour built from the workspace's own
+    /// colour (Stage 11's `$workspaceColor`), false for a fixed theme colour
+    /// (Nocturne's `#0F1115`). Two sample workspace colours that resolve to the
+    /// same fill mean the fill does not carry the workspace's colour.
+    private func themedFillDerivesFromWorkspaceColor(_ role: ThemeRole) -> Bool {
+        func sample(_ hex: String) -> NSColor? {
+            themeManager.resolve(role, context: themeManager.makeContext(
+                workspaceColor: hex,
+                colorScheme: colorScheme,
+                forceBright: false,
+                windowThemeName: windowThemeName
+            ))
+        }
+        return sample("#000000") != sample("#FFFFFF")
     }
 
     private func themedSidebarWorkspaceColors(
         workspace: Workspace,
         isActive: Bool,
         isMultiSelected: Bool
-    ) -> (background: NSColor?, rail: NSColor?) {
-        guard useThemeM1bSidebarTabItemPath else { return (nil, nil) }
+    ) -> (background: NSColor?, rail: NSColor?, fillCarriesWorkspaceColor: Bool) {
+        guard useThemeM1bSidebarTabItemPath else { return (nil, nil, false) }
 
         let context = themeManager.makeContext(
             workspaceColor: workspace.customColor,
             colorScheme: colorScheme,
-            forceBright: activeWorkspaceIndicatorStyle == .leftRail
+            forceBright: activeWorkspaceIndicatorStyle == .leftRail,
+            windowThemeName: windowThemeName
         )
 
         switch activeWorkspaceIndicatorStyle {
         case .leftRail:
-            guard isActive else { return (nil, nil) }
+            guard isActive else { return (nil, nil, false) }
 
             let role: ThemeRole = workspace.customColor == nil ? .sidebar_activeTabRailFallback : .sidebar_activeTabRail
             guard let baseColor: NSColor = themeManager.resolve(role, context: context) else {
-                return (nil, nil)
+                return (nil, nil, false)
             }
             let opacity = (themeManager.resolve(.sidebar_activeTabRailOpacity, context: context) as Double?) ?? 0.95
-            return (nil, baseColor.withAlphaComponent(CGFloat(opacity)))
+            return (nil, baseColor.withAlphaComponent(CGFloat(opacity)), false)
 
         case .solidFill:
             if isActive {
                 let role: ThemeRole = workspace.customColor == nil ? .sidebar_activeTabFillFallback : .sidebar_activeTabFill
                 guard let fill: NSColor = themeManager.resolve(role, context: context) else {
-                    return (nil, nil)
+                    return (nil, nil, false)
                 }
-                return (fill, nil)
+                let carries = workspace.customColor != nil && themedFillDerivesFromWorkspaceColor(role)
+                return (fill, nil, carries)
             }
 
             guard workspace.customColor != nil,
                   let fill: NSColor = themeManager.resolve(.sidebar_activeTabFill, context: context)
             else {
-                return (nil, nil)
+                return (nil, nil, false)
             }
 
             let opacityRole: ThemeRole = isMultiSelected
@@ -8649,8 +8808,95 @@ struct WorkspaceSidebar: View {
                 : .sidebar_inactiveTabCustomOpacity
             let opacity = (themeManager.resolve(opacityRole, context: context) as Double?)
                 ?? (isMultiSelected ? 0.35 : 0.7)
-            return (fill.withAlphaComponent(CGFloat(opacity)), nil)
+            return (
+                fill.withAlphaComponent(CGFloat(opacity)),
+                nil,
+                themedFillDerivesFromWorkspaceColor(.sidebar_activeTabFill)
+            )
         }
+    }
+
+    /// Runs on every stack, scroll or footer measurement; writes state only
+    /// when the density flips, so ordinary card growth costs no sidebar body.
+    private func updateSidebarDensity() {
+        let tracker = densityTracker
+        guard let stack = tracker.stack, let footer = tracker.footer, footer.frame.minY > 0 else { return }
+        let isCompact = sidebarDensity == .compact
+        // A measurement from the other density is a frame in flight; wait for ours.
+        guard stack.density == sidebarDensity, footer.dense == isCompact else { return }
+        let kinds = PanelAttentionIndex.shared.flagKindSummary.groups.count
+        let scale = compact
+            ? ChromeScaleSettings.multiplier(presetRaw: chromeScalePresetRaw, customMultiplier: chromeScaleCustomMultiplier)
+            : ChromeScaleSettings.multiplier(for: ChromeScaleSettings.preset(for: chromeScalePresetRaw))
+        let columns = compact
+            ? SidebarLayoutPolicy.columns(width: Double(stack.frame.width), scale: Double(scale)) : 1
+        // Only one column has a dense footer; in Tiles both densities share one.
+        if !footer.dense, columns == 1 {
+            tracker.fullFooterHeight = Double(footer.frame.height)
+            tracker.fullFooterKinds = kinds
+        }
+        let denseHeight = Double(footer.frame.height)
+        let fullFooter: Double = {
+            guard columns == 1 else { return denseHeight }
+            if let measured = tracker.fullFooterHeight {
+                return SidebarDensityPolicy.fullFooterHeight(measuredHeight: measured, measuredKinds: tracker.fullFooterKinds,
+                                                             kinds: kinds, denseHeight: denseHeight)
+            }
+            let remembered = SidebarDensityTracker.rememberedFullFooter()
+            return SidebarDensityPolicy.fullFooterHeight(measuredHeight: remembered?.height,
+                                                         measuredKinds: remembered?.kinds ?? 0,
+                                                         kinds: kinds, denseHeight: denseHeight)
+        }()
+        let available = Double(footer.frame.minY - tracker.scrollTop - stack.frame.minY)
+        let cardsAvailable = isCompact
+            ? SidebarDensityPolicy.cardsAvailable(compactAvailable: available, denseFooterHeight: denseHeight,
+                                                  fullFooterHeight: fullFooter)
+            : available
+
+        // The stack's lines exactly as the view draws them: one per row in a
+        // column, and in Tiles a new run at every folder header and group change.
+        // Rows whose workspace is already gone draw nothing; count them as the view does.
+        let liveIds = Set(workspaceManager.workspaces.map(\.id))
+        let rows = groupCoordinator.projection.rows.filter { row in
+            guard case .workspace(let item) = row else { return true }
+            return liveIds.contains(item.workspaceId)
+        }
+        var lines: [SidebarDensityLine] = []
+        var shownIds = Set<UUID>()
+        for run in WorkspaceSidebarTileRun.pack(rows) {
+            if case .group = run.rows[0] {
+                lines.append(.header)
+                continue
+            }
+            for line in run.lines(columns: columns) {
+                lines.append(.cards(line.rows.map { row -> Double? in
+                    guard case .workspace(let item) = row else { return nil }
+                    shownIds.insert(item.workspaceId)
+                    return tracker.cardHeights[item.workspaceId]
+                }))
+            }
+        }
+        // Forget closed workspaces; a hidden one is measured again when shown.
+        if tracker.cardHeights.count > shownIds.count * 2 + 8 {
+            tracker.cardHeights = tracker.cardHeights.filter { shownIds.contains($0.key) }
+        }
+        let estimate = SidebarDensityPolicy.estimatedCardsHeight(
+            lines: lines, headerHeight: Double(WorkspaceGroupHeaderView.height(scale: CGFloat(scale))),
+            spacing: Double(tabRowSpacing), padding: 16,
+            fallbackCardHeight: SidebarDensityTracker.rememberedCardHeight())
+        let next = SidebarDensityPolicy.density(
+            setting: .resolve(sidebarDensityRaw), current: sidebarDensity,
+            available: available, cardsAvailable: cardsAvailable,
+            shownHeight: Double(stack.frame.height), estimatedCardsHeight: estimate)
+        sidebarState.shownDensity = next
+        guard next != sidebarDensity else { return }
+#if DEBUG
+        dlog("sidebar.density \(sidebarDensity.rawValue)->\(next.rawValue) available=\(Int(available)) cardsAvailable=\(Int(cardsAvailable)) stack=\(Int(stack.frame.height)) estimate=\(Int(estimate ?? -1))")
+#endif
+        SidebarDensityTracker.remember(density: next, cardHeights: tracker.cardHeights,
+                                       fullFooterHeight: tracker.fullFooterHeight,
+                                       fullFooterKinds: tracker.fullFooterKinds)
+        sidebarDensity = next
     }
 
     /// Centers the workspace's card, or its folder header when the folder is collapsed.
@@ -8671,6 +8917,9 @@ struct WorkspaceSidebar: View {
     }
 
     var body: some View {
+        // C11H-238 meter: name what invalidated this body (stdout, meter runs only).
+        let _ = GraphChurnMeter.printsChanges ? Self._printChanges() : ()
+        let _ = GraphChurnMeter.note(.sidebarListBody)
         let workspacesById = Dictionary(uniqueKeysWithValues: workspaceManager.workspaces.map { ($0.id, $0) })
         // Compute chrome-scale tokens once per parent eval. Threaded as a
         // precomputed `let` to TabItemView so its typing-latency hot-path
@@ -8685,6 +8934,8 @@ struct WorkspaceSidebar: View {
         )
         // Shared by every folder header in this projection evaluation.
         let groupPalette = WorkspaceColorSettings.palette()
+        // Schema-2 sidebar values, resolved once per theme version (C11H-144..148).
+        let sidebarStyle = SidebarThemeStyleCache.current(themeManager, colorScheme: colorScheme, windowThemeName: windowThemeName)
 
         VStack(spacing: 0) {
             GeometryReader { proxy in
@@ -8700,7 +8951,7 @@ struct WorkspaceSidebar: View {
                             Spacer()
                                 .frame(height: sidebarTopReservedHeight + firstRowTopInset)
 
-                            groupControls
+                            groupControls(style: sidebarStyle, compact: sidebarDensity == .compact)
 
                             // Eager stacks, never LazyVStack. Cards differ widely in
                             // height, and a lazy stack estimates the unbuilt ones:
@@ -8722,7 +8973,8 @@ struct WorkspaceSidebar: View {
                                         ForEach(WorkspaceSidebarTileRun.pack(groupCoordinator.projection.rows)) { run in
                                             if case .group = run.rows[0] {
                                                 tileRows(run.rows, workspacesById: workspacesById,
-                                                         chromeTokens: chromeTokens, palette: groupPalette)
+                                                         chromeTokens: chromeTokens, palette: groupPalette,
+                                                         style: sidebarStyle)
                                             } else {
                                                 // Every tile is the full card. A fixed-height row
                                                 // proposes its tallest card's height to each cell,
@@ -8730,7 +8982,8 @@ struct WorkspaceSidebar: View {
                                                 ForEach(run.lines(columns: columns)) { line in
                                                     HStack(alignment: .top, spacing: 0) {
                                                         tileRows(line.rows, workspacesById: workspacesById,
-                                                                 chromeTokens: chromeTokens, palette: groupPalette)
+                                                                 chromeTokens: chromeTokens, palette: groupPalette,
+                                                                 style: sidebarStyle)
                                                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                                                         ForEach(line.rows.count..<columns, id: \.self) { _ in
                                                             Color.clear.frame(maxWidth: .infinity).frame(height: 0)
@@ -8746,7 +8999,8 @@ struct WorkspaceSidebar: View {
                                 ForEach(groupCoordinator.projection.rows) { row in
                                     switch row {
                                     case .group(let header):
-                                        groupHeader(header, chromeTokens: chromeTokens, palette: groupPalette)
+                                        groupHeader(header, chromeTokens: chromeTokens, palette: groupPalette,
+                                                    states: sidebarStyle.statePalette)
                                             .overlay(alignment: .topLeading) {
                                                 groupColorBar(
                                                     groupId: header.group.id,
@@ -8755,7 +9009,7 @@ struct WorkspaceSidebar: View {
                                             }
                                     case .workspace(let item):
                                         if let ws = workspacesById[item.workspaceId] {
-                                            workspaceRow(ws, item: item, chromeTokens: chromeTokens)
+                                            workspaceRow(ws, item: item, chromeTokens: chromeTokens, style: sidebarStyle)
                                                 .anchorPreference(key: SidebarWorkspaceRowAnchorKey.self, value: .bounds) { [ws.id: $0] }
                                                 .padding(.leading, item.groupId == nil ? 0 : 12)
                                                 .overlay(alignment: .topLeading) {
@@ -8765,7 +9019,7 @@ struct WorkspaceSidebar: View {
                                                     )
                                                 }
                                                 .overlay(alignment: .bottom) {
-                                                    if item.isLastGroupMember, draggedGroupId != nil,
+                                                    if item.isLastGroupMember,
                                                        dropIndicator?.groupId == item.groupId,
                                                        dropIndicator?.isGroupBody == false, dropIndicator?.edge == .bottom {
                                                         Rectangle().fill(cmuxAccentColor()).frame(height: 2).padding(.horizontal, 6)
@@ -8783,9 +9037,29 @@ struct WorkspaceSidebar: View {
                             // instead of leaving it to SidebarEmptyArea.
                             .fixedSize(horizontal: false, vertical: true)
                             .overlayPreferenceValue(SidebarWorkspaceRowAnchorKey.self) { anchors in
-                                panelDropOverlay(rowAnchors: anchors)
+                                panelDropOverlay(rowAnchors: anchors, cardRadius: sidebarStyle.cardRadius ?? 12)
+                            }
+                            // Each full card's height, so the compact sidebar knows
+                            // when the cards would fit again (C11H-221).
+                            .backgroundPreferenceValue(SidebarWorkspaceRowAnchorKey.self) { anchors in
+                                GeometryReader { rows in
+                                    Color.clear.preference(
+                                        key: SidebarCardHeightsKey.self,
+                                        value: SidebarCardHeights(density: sidebarDensity,
+                                                                  heights: anchors.mapValues { rows[$0].height }))
+                                }
                             }
                             .padding(.vertical, 8)
+                            .background {
+                                GeometryReader { stack in
+                                    Color.clear.preference(
+                                        key: SidebarStackMetricsKey.self,
+                                        value: SidebarStackMetrics(
+                                            frame: stack.frame(in: .named(SidebarDensityTracker.contentSpace)),
+                                            density: sidebarDensity)
+                                    )
+                                }
+                            }
                             // Structural guarantee for the card metaphor.
                             //
                             // A vertical ScrollView does not clamp its rows to the
@@ -8818,6 +9092,13 @@ struct WorkspaceSidebar: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                         .frame(minHeight: proxy.size.height, alignment: .top)
+                        .coordinateSpace(name: SidebarDensityTracker.contentSpace)
+                    }
+                    .background {
+                        GeometryReader { scroll in
+                            Color.clear.preference(key: SidebarScrollTopKey.self,
+                                                   value: scroll.frame(in: .named(SidebarDensityTracker.rootSpace)).minY)
+                        }
                     }
                     // The sidebar is a card rail, not a document; the overlay
                     // scroller renders as a grey bar over the cards (and the
@@ -8871,8 +9152,27 @@ struct WorkspaceSidebar: View {
                 // it and dissolve in its scrim instead of hard-clipping at a
                 // structural boundary.
                 SidebarFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback,
-                              columns: tileColumns)
+                              columns: tileColumns, dense: sidebarDensity == .compact)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        GeometryReader { footer in
+                            Color.clear.preference(
+                                key: SidebarFooterMetricsKey.self,
+                                value: SidebarFooterMetrics(
+                                    frame: footer.frame(in: .named(SidebarDensityTracker.rootSpace)),
+                                    dense: sidebarDensity == .compact))
+                        }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        // Terminal Grid's legend: one line floating in the scrim
+                        // above the foot, so the footer keeps its height.
+                        if sidebarStyle.sidebarLegend {
+                            SidebarThemeLegend(style: sidebarStyle)
+                                .padding(.horizontal, 12)
+                                .offset(y: -16)
+                                .allowsHitTesting(false)
+                        }
+                    }
                     .background {
                         // Solid blur under the controls, fading out over the
                         // cards above. Extends past the footer's top edge via
@@ -8887,8 +9187,34 @@ struct WorkspaceSidebar: View {
             }
         }
         .accessibilityIdentifier("Sidebar")
+        .coordinateSpace(name: SidebarDensityTracker.rootSpace)
+        .onPreferenceChange(SidebarStackMetricsKey.self) { metrics in
+            densityTracker.stack = metrics
+            updateSidebarDensity()
+        }
+        .onPreferenceChange(SidebarScrollTopKey.self) { top in
+            densityTracker.scrollTop = top
+            updateSidebarDensity()
+        }
+        .onPreferenceChange(SidebarFooterMetricsKey.self) { footer in
+            densityTracker.footer = footer
+            updateSidebarDensity()
+        }
+        .onPreferenceChange(SidebarCardHeightsKey.self) { cards in
+            guard let cards, cards.density == .cards else { return }
+            for (id, height) in cards.heights { densityTracker.cardHeights[id] = Double(height) }
+        }
+        .onChange(of: sidebarDensityRaw) { _ in updateSidebarDensity() }
+        // Clearing the last flag can leave every frame where it was; decide again.
+        .onReceive(SidebarDensityTracker.flagKindCounts) { kinds in
+            guard kinds != densityTracker.flagKinds else { return }
+            densityTracker.flagKinds = kinds
+            updateSidebarDensity()
+        }
+        // The row list can settle after the stack already shrank; decide again then.
+        .onChange(of: groupCoordinator.projection.visibleWorkspaceIds) { _ in updateSidebarDensity() }
         .ignoresSafeArea()
-        .background(SidebarBackdrop().ignoresSafeArea())
+        .background(SidebarBackdrop().themeScanlines().ignoresSafeArea())
         .onAppear {
             groupCoordinator.attach(manager: workspaceManager, notificationStore: notificationStore)
             horizontalScrollMonitor.start { [workspaceManager] step in
@@ -8897,6 +9223,7 @@ struct WorkspaceSidebar: View {
                 } else {
                     workspaceManager.selectPreviousWorkspace(cause: "shortcut")
                 }
+                workspaceManager.acknowledgeOperatorOpen(workspaceId: workspaceManager.selectedWorkspaceId)
             }
             draggedWorkspaceId = nil
             draggedGroupId = nil
@@ -8949,7 +9276,12 @@ struct WorkspaceSidebar: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: SidebarDragLifecycleNotification.requestClear)) { notification in
-            guard draggedWorkspaceId != nil || draggedGroupId != nil else { return }
+            guard draggedWorkspaceId != nil || draggedGroupId != nil else {
+                // A drag from another window (C11H-207) may have lit an
+                // indicator here with no local drag state.
+                if dropIndicator != nil { dropIndicator = nil }
+                return
+            }
             let reason = SidebarDragLifecycleNotification.reason(from: notification)
 #if DEBUG
             dlog("sidebar.dragClear tab=\(debugShortSidebarWorkspaceId(draggedWorkspaceId)) reason=\(reason)")
@@ -8960,32 +9292,45 @@ struct WorkspaceSidebar: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var groupControls: some View {
-        Button {
+    /// New Group. A schema-2 theme sets its radius (`geometry.controlRadius`),
+    /// type (`cardLabel`) and, through its card colours, fill, edge and ink.
+    private func groupControls(style: SidebarThemeStyle, compact: Bool = false) -> some View {
+        let radius = style.controlRadius ?? 5
+        let title = draggedWorkspaceId == nil
+            ? String(localized: "workspaceGroup.new", defaultValue: "New Group")
+            : String(localized: "workspaceGroup.drop.ungroup", defaultValue: "Move to Ungrouped")
+        return Button {
             newGroupFocusTarget = WorkspaceGroupEditorFocusTarget.capture()
             showingNewGroup = true
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: draggedWorkspaceId == nil ? "folder.badge.plus" : "tray.and.arrow.down")
+                    .font(.system(size: 12))
                     .frame(width: 18)
-                Text(draggedWorkspaceId == nil
-                    ? String(localized: "workspaceGroup.new", defaultValue: "New Group")
-                    : String(localized: "workspaceGroup.drop.ungroup", defaultValue: "Move to Ungrouped"))
+                Text(verbatim: style.cardLabel.apply(title))
+                    .chromeStyle(style.cardLabel, size: 12)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .font(.system(size: 12))
+            .themedForeground(style.cardText)
             .padding(.horizontal, 12)
-            .frame(height: 30)
+            .frame(height: compact ? 22 : 30)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("WorkspaceGroupNew")
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
+        .background(style.cardFill ?? Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: radius))
         .overlay {
-            if draggedWorkspaceId != nil, let indicator = dropIndicator,
+            if let edge = style.cardBorder {
+                RoundedRectangle(cornerRadius: radius)
+                    .strokeBorder(edge, lineWidth: style.cardBorderPt ?? 1)
+                    .allowsHitTesting(false)
+            }
+        }
+        .overlay {
+            if let indicator = dropIndicator,
                indicator.workspaceId == nil && indicator.groupId == nil {
-                RoundedRectangle(cornerRadius: 5).stroke(cmuxAccentColor(), lineWidth: 2)
+                RoundedRectangle(cornerRadius: radius).stroke(cmuxAccentColor(), lineWidth: 2)
             }
         }
         .onDrop(of: SidebarWorkspaceDragPayload.dropContentTypes, delegate: SidebarWorkspaceDropDelegate(
@@ -9033,16 +9378,19 @@ struct WorkspaceSidebar: View {
     }
 
     private func groupHeader(_ header: WorkspaceGroupSidebarHeader, chromeTokens: ChromeScaleTokens,
-                             palette: [WorkspaceColorEntry]) -> some View {
+                             palette: [WorkspaceColorEntry], states: ThemeStatePalette) -> some View {
         WorkspaceGroupHeaderView(
             group: header.group, summary: header.summary, isActive: header.isActive,
             scale: chromeTokens.multiplier, colorScheme: colorScheme, palette: palette,
+            compact: sidebarDensity == .compact, captain: header.captain, states: states,
             onToggleCollapse: { id in
                 guard let group = workspaceManager.workspaceGroups.first(where: { $0.id == id }) else { return }
                 try? workspaceManager.setWorkspaceGroupCollapsed(id: id, collapsed: !group.isCollapsed)
             },
             onFocus: { id in
                 guard let selected = try? SocketCommandContext.withContext(nil, { try workspaceManager.withWorkspaceSelectionCause("sidebar") { try workspaceManager.focusWorkspaceGroup(id: id) } }) else { return }
+                // C11H-246: a group-name click opens the panel its workspace shows.
+                workspaceManager.acknowledgeOperatorOpen(workspaceId: selected)
                 selectedWorkspaceIds = [selected]
                 lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == selected }
                 selection = .tabs
@@ -9087,7 +9435,8 @@ struct WorkspaceSidebar: View {
                     targetWorkspaceId: nil, targetGroupId: header.group.id, workspaceManager: workspaceManager,
                     draggedWorkspaceId: $draggedWorkspaceId, draggedGroupId: $draggedGroupId,
                     selectedWorkspaceIds: $selectedWorkspaceIds, lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
-                    targetRowHeight: WorkspaceGroupHeaderView.height(scale: chromeTokens.multiplier),
+                    targetRowHeight: WorkspaceGroupHeaderView.height(scale: chromeTokens.multiplier,
+                                                                     compact: sidebarDensity == .compact),
                     dragAutoScrollController: dragAutoScrollController, dropIndicator: $dropIndicator
                 ))
         .padding(.horizontal, 6)
@@ -9097,7 +9446,7 @@ struct WorkspaceSidebar: View {
     /// the cursor turns gold, and releasing moves the panel into that
     /// workspace's focused area. The operator stays where they are, so several
     /// panels can be moved in a row.
-    private func panelDropOverlay(rowAnchors: [UUID: Anchor<CGRect>]) -> some View {
+    private func panelDropOverlay(rowAnchors: [UUID: Anchor<CGRect>], cardRadius: CGFloat) -> some View {
         GeometryReader { proxy in
             let rows = rowAnchors.map { SidebarPanelDropView.Row(workspaceId: $0.key, frame: proxy[$0.value]) }
             ZStack {
@@ -9105,10 +9454,10 @@ struct WorkspaceSidebar: View {
                    let row = rows.first(where: { $0.workspaceId == targetId }) {
                     // The card sits inside the row's 6pt horizontal inset.
                     let card = row.frame.insetBy(dx: 6, dy: 0)
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: cardRadius, style: .continuous)
                         .fill(BrandColors.goldSwiftUI.opacity(0.16))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            RoundedRectangle(cornerRadius: cardRadius, style: .continuous)
                                 .strokeBorder(BrandColors.goldSwiftUI, lineWidth: 2)
                         )
                         .frame(width: card.width, height: card.height)
@@ -9123,7 +9472,8 @@ struct WorkspaceSidebar: View {
         }
     }
 
-    private func workspaceRow(_ ws: Workspace, item: WorkspaceGroupSidebarWorkspaceRow, chromeTokens: ChromeScaleTokens) -> some View {
+    private func workspaceRow(_ ws: Workspace, item: WorkspaceGroupSidebarWorkspaceRow, chromeTokens: ChromeScaleTokens,
+                              style: SidebarThemeStyle) -> some View {
         let index = item.canonicalIndex
         let workspaceCount = workspaceManager.workspaces.count
         let canCloseWorkspace = workspaceCount > 1
@@ -9213,7 +9563,8 @@ struct WorkspaceSidebar: View {
                         : ws.panels[panelId]?.displayTitle,
                     subtitle: showsSidebarNotificationMessage
                         ? titleBarState.description
-                        : nil
+                        : nil,
+                    descriptionUpdatedAt: titleBarState.descriptionUpdatedAt
                 )
                 let attention = ws.attentionSnapshot(panelId: panelId)
                 let activityHelp = ws.resolvedAgentActivityHelp(
@@ -9253,6 +9604,7 @@ struct WorkspaceSidebar: View {
             isActive: isActive,
             worktreeChipRows: worktreeChipRows,
             missionSnapshot: ws.mission,
+            captainSnapshot: ws.captainSummary,
             canCloseWorkspace: canCloseWorkspace,
             accessibilityWorkspaceCount: workspaceCount,
             unreadCount: unreadCount,
@@ -9268,24 +9620,28 @@ struct WorkspaceSidebar: View {
             dropIndicator: $dropIndicator,
             themedBackgroundColor: themedColors.background,
             themedRailColor: themedColors.rail,
+            themedFillCarriesWorkspaceColor: themedColors.fillCarriesWorkspaceColor,
             remoteContextMenuWorkspaceIds: remoteContextMenuTargets.map(\.id),
             allRemoteContextMenuTargetsConnecting: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .connecting },
             allRemoteContextMenuTargetsDisconnected: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .disconnected },
             sidebarFlashSnapshot: ws.sidebarFlashRequest,
             chromeTokens: chromeTokens,
-            tiled: compact
+            tiled: compact,
+            themeStyle: style,
+            density: sidebarDensity
         )
         .equatable()
     }
 
     @ViewBuilder
     private func tileRows(_ rows: [WorkspaceGroupSidebarRow], workspacesById: [UUID: Workspace],
-                          chromeTokens: ChromeScaleTokens, palette: [WorkspaceColorEntry]) -> some View {
+                          chromeTokens: ChromeScaleTokens, palette: [WorkspaceColorEntry],
+                          style: SidebarThemeStyle) -> some View {
         ForEach(rows) { row in
             Group {
                 switch row {
                 case .group(let header):
-                    groupHeader(header, chromeTokens: chromeTokens, palette: palette)
+                    groupHeader(header, chromeTokens: chromeTokens, palette: palette, states: style.statePalette)
                         .overlay(alignment: .topLeading) {
                             groupColorBar(
                                 groupId: header.group.id,
@@ -9294,7 +9650,7 @@ struct WorkspaceSidebar: View {
                         }
                 case .workspace(let item):
                     if let ws = workspacesById[item.workspaceId] {
-                        workspaceRow(ws, item: item, chromeTokens: chromeTokens)
+                        workspaceRow(ws, item: item, chromeTokens: chromeTokens, style: style)
                             .anchorPreference(key: SidebarWorkspaceRowAnchorKey.self, value: .bounds) { [ws.id: $0] }
                             .padding(.leading, item.groupId == nil ? 0 : 12)
                             .overlay(alignment: .topLeading) {
@@ -9304,7 +9660,7 @@ struct WorkspaceSidebar: View {
                                 )
                             }
                             .overlay(alignment: .bottom) {
-                                if item.isLastGroupMember, draggedGroupId != nil,
+                                if item.isLastGroupMember,
                                    dropIndicator?.groupId == item.groupId,
                                    dropIndicator?.isGroupBody == false, dropIndicator?.edge == .bottom {
                                     Rectangle().fill(cmuxAccentColor()).frame(height: 2).padding(.horizontal, 6)
@@ -9793,6 +10149,156 @@ private enum FeedbackComposerClient {
     }
 }
 
+/// C11H-207: watches one drag (a sidebar workspace card or a panel's tab) for
+/// a release outside every c11 window, and then runs that drag's tear-off
+/// (open it in a new window at that point). It polls the mouse button only
+/// while a drag is live, because the drag session swallows the mouse-up an
+/// event monitor would see, and is idle otherwise.
+@MainActor
+final class DragTearOffWatcher {
+    static let shared = DragTearOffWatcher()
+
+    private var timer: Timer?
+    private var keyMonitor: Any?
+    private var action: ((NSPoint) -> Void)?
+    private var label = ""
+    private var startedAt: TimeInterval = 0
+    private var cancelled = false
+
+    /// A newer drag replaces the one being watched.
+    func begin(_ label: String, onReleaseOutside action: @escaping (NSPoint) -> Void) {
+        stop()
+        self.label = label
+        self.action = action
+        startedAt = ProcessInfo.processInfo.systemUptime
+        cancelled = false
+        // Escape cancels the drag; a release after it is not a tear-off.
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { self?.cancelled = true }
+            return event
+        }
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    private func tick() {
+        guard let action else { stop(); return }
+        // The drag session swallows the Escape a key monitor would see, and a
+        // poll can miss a quick tap: any key pressed since the drag began
+        // (Escape cancels the drag) means the release is not a tear-off.
+        let sinceKey = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
+        if sinceKey < ProcessInfo.processInfo.systemUptime - startedAt
+            || CGEventSource.keyState(.combinedSessionState, key: 53) {
+            cancelled = true
+        }
+        if NSEvent.pressedMouseButtons & 1 != 0 {
+            // A drag never lasts this long; give up rather than poll forever.
+            if ProcessInfo.processInfo.systemUptime - startedAt > 120 { stop() }
+            return
+        }
+        let point = NSEvent.mouseLocation
+        let wasCancelled = cancelled
+        let label = self.label
+        stop()
+        guard !wasCancelled, !Self.isOverAppWindow(point) else { return }
+#if DEBUG
+        dlog("drag.tearOff.release kind=\(label) point=\(Int(point.x)),\(Int(point.y))")
+#endif
+        // Let a drop that did land settle first; each action re-checks that
+        // its item is still where the drag found it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { action(point) }
+    }
+
+    /// Over any c11 window on this Space: titled windows (main windows,
+    /// Settings and the rest), child windows such as a folded strip's panel
+    /// sheet, and panels. The drag image is none of these.
+    static func isOverAppWindow(_ point: NSPoint) -> Bool {
+        NSApp.windows.contains { window in
+            window.isVisible && !window.isMiniaturized && window.isOnActiveSpace && window.alphaValue > 0
+                && (window.styleMask.contains(.titled) || window.parent != nil || window is NSPanel)
+                && NSMouseInRect(point, window.frame, false)
+        }
+    }
+
+    private func stop() {
+        timer?.invalidate()
+        timer = nil
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        action = nil
+    }
+}
+
+/// C11H-207: the slot another window's sidebar last showed for a dragged card.
+/// The window a card is dragged out of can come forward at release (AppKit's
+/// deferred window ordering for its mouse-down), over the sidebar the card was
+/// shown landing in; its own panels or sidebar then take the drop. The source
+/// window commits this record instead, when the window that showed it sat above
+/// the source at drag start and the pointer is inside it.
+@MainActor
+enum SidebarForeignHover {
+    struct Record {
+        let workspaceId: UUID
+        let windowId: UUID
+        let groupId: UUID?
+        let before: UUID?
+        let after: UUID?
+    }
+
+    private(set) static var last: Record?
+    /// The c11 main windows stacked above the source window when the drag
+    /// began. Only one of them can be covered when the source comes forward
+    /// at release, so only their records count.
+    private static var windowsAboveSource: [UUID: NSRect] = [:]
+
+    static func beginDrag(sourceWindow: NSWindow?) {
+        last = nil
+        windowsAboveSource = [:]
+        guard let sourceWindow, let app = AppDelegate.shared else { return }
+        for window in NSApp.orderedWindows {
+            if window === sourceWindow { break }
+            if window.isVisible, let id = app.mainWindowId(for: window) {
+                windowsAboveSource[id] = window.frame
+            }
+        }
+    }
+
+    /// Whether the pointer is over a window that sat above the source when the
+    /// drag began: the operator saw that window there, not the source.
+    static func pointerWasOverAnotherWindow(_ pointer: NSPoint) -> Bool {
+        windowsAboveSource.values.contains { NSMouseInRect(pointer, $0, false) }
+    }
+
+    static func note(_ record: Record) { last = record }
+
+    static func reset() { last = nil }
+
+    /// The record for this card, if its window sat above the source when the
+    /// drag began (so the source coming forward at release can cover it) and
+    /// the pointer is inside that window. No timer: a window that was behind
+    /// the source can never qualify, so a drop the operator aimed at the
+    /// source itself is never redirected.
+    static func pending(workspaceId: UUID, pointer: NSPoint) -> Record? {
+        guard let record = last, record.workspaceId == workspaceId else { return nil }
+        guard windowsAboveSource[record.windowId] != nil,
+              let window = AppDelegate.shared?.mainWindow(for: record.windowId),
+              NSMouseInRect(pointer, window.frame, false) else {
+#if DEBUG
+            dlog(
+                "sidebar.foreignHover.decline ws=\(workspaceId.uuidString.prefix(5)) " +
+                "window=\(record.windowId.uuidString.prefix(5)) above=\(windowsAboveSource[record.windowId] != nil ? 1 : 0) " +
+                "aboveCount=\(windowsAboveSource.count)"
+            )
+#endif
+            return nil
+        }
+        return record
+    }
+}
+
 enum SidebarDragLifecycleNotification {
     static let stateDidChange = Notification.Name("cmux.sidebarDragStateDidChange")
     static let requestClear = Notification.Name("cmux.sidebarDragRequestClear")
@@ -10139,6 +10645,7 @@ private final class SidebarDragFailsafeMonitor: ObservableObject {
 
 private struct SidebarExternalDropOverlay: View {
     let draggedWorkspaceId: UUID?
+    let workspaceManager: WorkspaceManager
 
     var body: some View {
         let dragPasteboardTypes = NSPasteboard(name: .drag).types
@@ -10153,7 +10660,10 @@ private struct SidebarExternalDropOverlay: View {
                     .allowsHitTesting(true)
                     .onDrop(
                         of: SidebarWorkspaceDragPayload.dropContentTypes,
-                        delegate: SidebarExternalDropDelegate(draggedWorkspaceId: draggedWorkspaceId)
+                        delegate: SidebarExternalDropDelegate(
+                            draggedWorkspaceId: draggedWorkspaceId,
+                            workspaceManager: workspaceManager
+                        )
                     )
             } else {
                 Color.clear
@@ -10166,6 +10676,7 @@ private struct SidebarExternalDropOverlay: View {
 
 private struct SidebarExternalDropDelegate: DropDelegate {
     let draggedWorkspaceId: UUID?
+    let workspaceManager: WorkspaceManager
 
     func validateDrop(info: DropInfo) -> Bool {
         let hasSidebarPayload = info.hasItemsConforming(to: [SidebarWorkspaceDragPayload.typeIdentifier])
@@ -10199,6 +10710,12 @@ private struct SidebarExternalDropDelegate: DropDelegate {
 #if DEBUG
         dlog("sidebar.dropOutside.updated tab=\(debugShortSidebarWorkspaceId(draggedWorkspaceId)) op=move")
 #endif
+        // A card from another window over these panels would join this window.
+        if let id = SidebarWorkspaceDragPayload.inFlightWorkspaceId,
+           !workspaceManager.workspaces.contains(where: { $0.id == id }),
+           let windowId = AppDelegate.shared?.windowId(for: workspaceManager) {
+            SidebarForeignHover.note(.init(workspaceId: id, windowId: windowId, groupId: nil, before: nil, after: nil))
+        }
         // Explicit move proposal avoids AppKit showing a copy (+) cursor.
         return DropProposal(operation: .move)
     }
@@ -10209,7 +10726,41 @@ private struct SidebarExternalDropDelegate: DropDelegate {
         dlog("sidebar.dropOutside.perform tab=\(debugShortSidebarWorkspaceId(draggedWorkspaceId))")
 #endif
         SidebarDragLifecycleNotification.postClearRequest(reason: "outside_sidebar_drop")
+        commitCrossWindowDropIfAny()
         return true
+    }
+
+    /// C11H-207: a card dropped on this window's panels. From another window,
+    /// it moves into this one (at the end of its lane). From this window, it
+    /// commits the slot another window's sidebar was showing, when this window
+    /// came forward at release over that sidebar (`SidebarForeignHover`).
+    private func commitCrossWindowDropIfAny() {
+        guard let id = SidebarWorkspaceDragPayload.currentId(),
+              let app = AppDelegate.shared,
+              let thisWindowId = app.windowId(for: workspaceManager) else { return }
+        let pointer = NSEvent.mouseLocation
+        let target: (windowId: UUID, groupId: UUID?, before: UUID?, after: UUID?)
+        if !workspaceManager.workspaces.contains(where: { $0.id == id }) {
+            target = (thisWindowId, nil, nil, nil)
+        } else if let hover = SidebarForeignHover.pending(workspaceId: id, pointer: pointer),
+                  hover.windowId != thisWindowId {
+            target = (hover.windowId, hover.groupId, hover.before, hover.after)
+        } else {
+            return
+        }
+        SidebarForeignHover.reset()
+#if DEBUG
+        dlog(
+            "sidebar.crossWindowDrop.viaPanels ws=\(id.uuidString.prefix(5)) " +
+            "from=\(thisWindowId.uuidString.prefix(5)) to=\(target.windowId.uuidString.prefix(5))"
+        )
+#endif
+        DispatchQueue.main.async {
+            _ = app.moveWorkspaceToWindow(
+                workspaceId: id, windowId: target.windowId,
+                groupId: target.groupId, before: target.before, after: target.after
+            )
+        }
     }
 
     private func debugShortSidebarWorkspaceId(_ id: UUID?) -> String {
@@ -10223,12 +10774,14 @@ private struct SidebarFooter: View {
     let onSendFeedback: () -> Void
     /// Sidebar tile columns; the attention buttons take one column each.
     let columns: Int
+    /// Compact cards (C11H-221): one column puts Waiting and Flagged side by side.
+    var dense: Bool = false
 
     var body: some View {
 #if DEBUG
-        SidebarDevFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback, columns: columns)
+        SidebarDevFooter(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback, columns: columns, dense: dense)
 #else
-        SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback, columns: columns)
+        SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback, columns: columns, dense: dense)
             .padding(.horizontal, 10)
             .padding(.top, 4)
             .padding(.bottom, 6)
@@ -10240,11 +10793,20 @@ private struct SidebarFooterButtons: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     let onSendFeedback: () -> Void
     let columns: Int
+    var dense: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SidebarWaitingAgentCluster(columns: columns)
+            SidebarWaitingAgentCluster(columns: columns, dense: dense)
             HStack(spacing: 4) {
+                // c11h: the bottom-left corner fills the screen too.
+                WindowMaximizeButton(
+                    foregroundColor: Color(nsColor: .secondaryLabelColor),
+                    iconSize: 11,
+                    buttonSize: 22,
+                    accessibilityIdentifier: "WindowMaximizeButton.sidebar"
+                )
+                .buttonStyle(SidebarFooterIconButtonStyle())
                 SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
                 UpdatePill(model: updateViewModel)
             }
@@ -11192,45 +11754,151 @@ private struct SidebarHelpMenuButton: View {
 
 /// One column of cards stacks Flagged over Waiting at full width. In Tiles
 /// each button is one tile column wide, on the tiles' grid (6 pt edge, 12 pt
-/// gutter): Waiting first, Flagged beside it, later columns left empty.
+/// gutter): Waiting first, then Flagged, then Chaos (C11H-199). With two
+/// columns, Flagged and Chaos share the second slot: Flagged while any flag is
+/// up (attention outranks play), Chaos otherwise. Later columns stay empty.
+/// Done (C11H-261) sits directly under Waiting in every layout while its
+/// setting is on, lit or not, so turning a count on or off never moves a row.
 private struct SidebarWaitingAgentCluster: View {
     @EnvironmentObject private var notificationStore: TerminalNotificationStore
     @ObservedObject private var attentionIndex = PanelAttentionIndex.shared
+    /// C11H-261: both keys default on, matching `WaitingCheckSettings`.
+    @AppStorage(WaitingCheckSettings.enabledKey) private var waitingCheckEnabled = true
+    @AppStorage(WaitingCheckSettings.showDoneButtonKey) private var showDoneButtonSetting = true
+    @Environment(\.colorScheme) private var colorScheme
+    /// c11 (C11H-197): the hosting window's theme override.
+    @Environment(\.c11WindowThemeName) private var windowThemeName
+    /// The sidebar style's content stamp. Theme versions churn (a Ghostty
+    /// background change bumps one at up to 30 Hz), so the pills follow this
+    /// instead of observing the theme manager, and redraw only when their
+    /// style's content changes.
+    @State private var styleStamp: UInt64 = 0
     let columns: Int
+    var dense: Bool = false
 
     private var display: StatusBarButtonDisplay {
         StatusBarButtonDisplay(unreadCount: notificationStore.unreadCount)
     }
 
+    private var showsDone: Bool { waitingCheckEnabled && showDoneButtonSetting }
+
+    private var doneDisplay: StatusBarButtonDisplay {
+        StatusBarButtonDisplay(unreadCount: notificationStore.doneCount)
+    }
+
+    /// The oldest finished agent's deciding line, read only while Done is lit.
+    private func doneQuote(_ display: StatusBarButtonDisplay) -> String? {
+        guard display.isEnabled,
+              let oldest = notificationStore.oldestDoneNotification() else { return nil }
+        return WaitingCheckJudge.verdict(forNotificationID: oldest.id)?.quote
+    }
+
+    private func doneRow(style: SidebarThemeStyle, dense: Bool = false) -> some View {
+        let done = doneDisplay
+        return DoneAgentRow(display: done, quote: doneQuote(done), style: style, onJump: jumpToDone, dense: dense)
+    }
+
     var body: some View {
+        let _ = styleStamp
+        cluster(style: SidebarThemeStyleCache.current(ThemeManager.shared, colorScheme: colorScheme, windowThemeName: windowThemeName))
+            .onReceive(ThemeManager.shared.$version.receive(on: DispatchQueue.main)) { _ in
+                let stamp = SidebarThemeStyleCache.current(
+                    ThemeManager.shared,
+                    colorScheme: colorScheme,
+                    windowThemeName: windowThemeName
+                ).stamp
+                if stamp != styleStamp { styleStamp = stamp }
+            }
+    }
+
+    /// Named kinds by id, then the generic (purple) button: one button per
+    /// kind with flags up, stacked above the generic one (C11H-224).
+    @ViewBuilder
+    private func flagButtons(style: SidebarThemeStyle, dense: Bool = false) -> some View {
+        VStack(spacing: dense ? 4 : 6) {
+            ForEach(attentionIndex.flagKindSummary.stackOrder) { group in
+                FlaggedAgentsRow(group: group, style: style, onJump: { jumpToNext(of: group) }, dense: dense)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cluster(style: SidebarThemeStyle) -> some View {
         if columns >= 2 {
+            // Several kind buttons stack in the Flagged tile; the other tiles
+            // keep their own height rather than stretching to the stack.
+            // Done stacks under Waiting in Waiting's tile, so the other tiles
+            // keep their own height then too.
+            let stretch: CGFloat? = (attentionIndex.flagKindSummary.groups.count > 1 || showsDone) ? nil : .infinity
             HStack(alignment: .top, spacing: 12) {
-                WaitingAgentRow(display: display, onJump: jump)
-                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                Group {
+                    if showsDone {
+                        VStack(spacing: 6) {
+                            WaitingAgentRow(display: display, style: style, onJump: jump)
+                            doneRow(style: style)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        WaitingAgentRow(display: display, style: style, onJump: jump)
+                    }
+                }
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: stretch)
                 Group {
                     if attentionIndex.flaggedCount > 0 {
-                        FlaggedAgentsRow(count: attentionIndex.flaggedCount, onJump: jump)
+                        flagButtons(style: style)
+                    } else if columns == 2 {
+                        ChaosWizardButton(style: style)
                     } else {
                         Color.clear.frame(height: 0)
                     }
                 }
-                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-                ForEach(2..<columns, id: \.self) { _ in
+                .frame(minWidth: 0, maxWidth: .infinity, maxHeight: stretch)
+                if columns >= 3 {
+                    ChaosWizardButton(style: style)
+                        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: stretch)
+                }
+                ForEach(min(columns, 3)..<columns, id: \.self) { _ in
                     Color.clear.frame(minWidth: 0, maxWidth: .infinity, maxHeight: 0)
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
             // The footer insets 10 pt; tile cards sit 6 pt from the edge.
             .padding(.horizontal, -4)
+        } else if dense {
+            // Compact cards (C11H-221): Waiting and Flagged share one line
+            // when both labels fit, else they stack as thin rows. Done takes
+            // its own thin row under that line (C11H-261).
+            VStack(spacing: 4) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 6) {
+                        WaitingAgentRow(display: display, style: style, onJump: jump, dense: true)
+                            .frame(maxWidth: .infinity)
+                        if attentionIndex.flaggedCount > 0 {
+                            flagButtons(style: style, dense: true)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    VStack(spacing: 4) {
+                        if attentionIndex.flaggedCount > 0 {
+                            flagButtons(style: style, dense: true)
+                        }
+                        WaitingAgentRow(display: display, style: style, onJump: jump, dense: true)
+                    }
+                }
+                if showsDone {
+                    doneRow(style: style, dense: true)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
         } else {
             VStack(spacing: 6) {
                 if attentionIndex.flaggedCount > 0 {
-                    FlaggedAgentsRow(
-                        count: attentionIndex.flaggedCount,
-                        onJump: jump
-                    )
+                    flagButtons(style: style)
                 }
-                WaitingAgentRow(display: display, onJump: jump)
+                WaitingAgentRow(display: display, style: style, onJump: jump)
+                if showsDone {
+                    doneRow(style: style)
+                }
             }
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -11241,11 +11909,37 @@ private struct SidebarWaitingAgentCluster: View {
             AppDelegate.shared?.operatorJumpToLatestUnread()
         }
     }
+
+    /// C11H-261: Done opens the oldest finished agent.
+    private func jumpToDone() {
+        DispatchQueue.main.async {
+            AppDelegate.shared?.operatorJumpToOldestDone()
+        }
+    }
+
+    /// A flag button opens its own kind's next flag, chosen at click time in
+    /// the operator's jump order (C11H-262).
+    private func jumpToNext(of group: FlagKindGroup) {
+        let kindID = group.id
+        DispatchQueue.main.async {
+            AppDelegate.shared?.operatorJumpToFlag(kindID: kindID)
+        }
+    }
 }
 
+/// One flag kind's button (C11H-224). The generic flag keeps the "Flagged
+/// Agents" title and the theme's flag colour; a named kind shows its name in
+/// its registry colour, with black or white ink by contrast. Kinds are flat:
+/// the stack is ordered by kind id, never by priority.
 private struct FlaggedAgentsRow: View {
-    let count: Int
+    let group: FlagKindGroup
+    let style: SidebarThemeStyle
     let onJump: () -> Void
+    /// Half a line beside Waiting in compact mode (C11H-221).
+    var dense: Bool = false
+
+    @State private var isHovering = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private let violet = Color(
         red: 157.0 / 255.0,
@@ -11253,68 +11947,166 @@ private struct FlaggedAgentsRow: View {
         blue: 217.0 / 255.0
     )
 
+    private var kindHex: String? {
+        group.kind?.colorHex(lightBackground: colorScheme == .light)
+    }
+
+    /// Flag colour: a named kind's token, else the theme's `states.flag`, else violet.
+    private var flagColor: Color {
+        if let kindHex, let color = NSColor(hex: kindHex) { return Color(nsColor: color) }
+        return style.stateFlag ?? violet
+    }
+
+    /// An outline pill theme draws the flag as an outline too (C11H-145).
+    private var outlined: Bool { style.effectivePillStyle == .outline }
+
+    /// Ink on the filled colour: a named kind picks black or white by contrast.
+    private var fillInk: Color {
+        if let kindHex { return FlagKindInk.prefersDarkInk(hex: kindHex) ? BrandColors.blackSwiftUI : .white }
+        return style.effectivePillStyle == nil ? BrandColors.blackSwiftUI : (style.pillInk ?? BrandColors.blackSwiftUI)
+    }
+
+    private var ink: Color { outlined ? flagColor : fillInk }
+
+    /// An outline theme fills the badge with the flag colour.
+    private var badgeOutlineInk: Color {
+        kindHex == nil ? (style.stateWaitingInk ?? BrandColors.blackSwiftUI) : fillInk
+    }
+
+    private var title: String {
+        if let label = group.kind?.displayLabel { return label }
+        return dense
+            ? String(localized: "statusBar.flaggedAgents.short", defaultValue: "Flagged")
+            : String(localized: "statusBar.flaggedAgents.title", defaultValue: "Flagged Agents")
+    }
+
+    private var jumpText: String {
+        guard let name = group.kind?.name else {
+            return String(localized: "statusBar.flaggedAgents.next", defaultValue: "Jump to next flagged agent")
+        }
+        return String(localized: "statusBar.flaggedAgents.kindNext", defaultValue: "Jump to next \(name) flag")
+    }
+
     var body: some View {
+        let radius = style.pillRadius ?? 6
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         Button(action: onJump) {
             HStack(spacing: 6) {
-                Text(String(
-                    localized: "statusBar.flaggedAgents.title",
-                    defaultValue: "Flagged Agents"
-                ))
-                .font(.system(size: 11, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                Text(verbatim: style.pill.apply(title))
+                    .chromeStyle(style.pill, size: 11, weight: .semibold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
 
-                Text(verbatim: String(count))
+                Text(verbatim: String(group.count))
                     .font(.system(size: 9, weight: .bold))
                     .monospacedDigit()
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(
-                        Capsule(style: .continuous)
-                            .fill(BrandColors.blackSwiftUI.opacity(0.18))
+                        SidebarPillBadgeShape(radius: style.pillRadius)
+                            .fill(outlined ? flagColor : ink.opacity(0.18))
                     )
+                    .foregroundColor(outlined ? badgeOutlineInk : ink)
                     .accessibilityHidden(true)
 
                 Spacer(minLength: 4)
-                Text(verbatim: "\u{2192}")
-                    .font(.system(size: 13, weight: .medium))
+                if !dense {
+                    Text(verbatim: "\u{2192}")
+                        .font(.system(size: 13, weight: .medium))
+                }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 10)
+            .padding(.vertical, dense ? 6 : 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(violet)
+                shape
+                    .fill(outlined ? (style.pillFillFirst ?? Color.clear) : flagColor)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(violet, lineWidth: 0.75)
+                shape
+                    .stroke(flagColor, lineWidth: outlined ? (style.cardBorderPt ?? 1) : 0.75)
             )
-            .foregroundColor(BrandColors.blackSwiftUI)
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .foregroundColor(ink)
+            .contentShape(shape)
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("SidebarFlaggedAgentsButton")
-        .accessibilityLabel(Text(String(
-            localized: "statusBar.flaggedAgents.accessibility",
-            defaultValue: "Jump to oldest flagged agent"
-        )))
-        .accessibilityValue(Text(verbatim: String(count)))
-        .safeHelp(String(
-            localized: "statusBar.flaggedAgents.accessibility",
-            defaultValue: "Jump to oldest flagged agent"
-        ))
+        .overlay {
+            if style.hoverBrackets, isHovering {
+                SidebarHoverBrackets(color: (style.cardBorderActive ?? style.cardText ?? .primary).opacity(0.78))
+            }
+        }
+        .onHover { isHovering = $0 }
+        .accessibilityIdentifier(group.kind.map { "SidebarFlaggedAgentsButton.\($0.id)" } ?? "SidebarFlaggedAgentsButton")
+        .accessibilityLabel(Text(verbatim: jumpText))
+        .accessibilityValue(Text(verbatim: String(group.count)))
+        .safeHelp(jumpText)
     }
 }
 
 private struct WaitingAgentRow: View {
     let display: StatusBarButtonDisplay
+    let style: SidebarThemeStyle
     let onJump: () -> Void
+    /// Half a line beside Flagged in compact mode (C11H-221).
+    var dense: Bool = false
+
+    @State private var isHovering = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private var isLit: Bool { display.isEnabled }
 
+    /// The theme's pill (C11H-145): filled (a colour or gradient behind dark
+    /// ink) or outline (ink-coloured edge and text). nil draws c11's own pill,
+    /// lit in the waiting colour (C11H-344: waiting is white).
+    private var pillStyle: SidebarThemeStyle.PillStyle? { style.effectivePillStyle }
+
+    /// The lit fill, ink and edge, resolved once per body.
+    private struct LitColors {
+        let fill: Color
+        let ink: Color
+        let edge: Color
+        /// Ink on the outline pill's filled count badge.
+        let badgeInk: Color
+    }
+
+    private func litColors() -> LitColors {
+        let waiting = SidebarWaitingPillColors.resolve(
+            states: style.statePalette,
+            lightSlot: colorScheme == .light,
+            themedPill: pillStyle != nil
+        )
+        let ink: Color
+        switch pillStyle {
+        case nil: ink = waiting.ink
+        case .filled?: ink = style.pillInk ?? waiting.ink
+        case .outline?: ink = style.pillInk ?? waiting.fill
+        }
+        let edge: Color
+        switch pillStyle {
+        case nil: edge = waiting.edge
+        case .filled?: edge = style.pillBorder ?? style.pillFillFirst ?? waiting.fill
+        case .outline?: edge = style.pillBorder ?? ink
+        }
+        return LitColors(fill: waiting.fill, ink: ink, edge: edge, badgeInk: waiting.ink)
+    }
+
+    @ViewBuilder
+    private func pillFill(_ shape: RoundedRectangle, litFill: Color) -> some View {
+        if !isLit {
+            shape.fill(pillStyle == nil ? BrandColors.surfaceSwiftUI : (style.cardFill ?? BrandColors.surfaceSwiftUI))
+        } else if let gradient = style.pillFill, pillStyle != nil {
+            shape.fill(LinearGradient(gradient: gradient, startPoint: .leading, endPoint: .trailing))
+        } else if pillStyle == .outline {
+            shape.fill(Color.clear)
+        } else {
+            shape.fill(litFill)
+        }
+    }
+
     private var label: String {
-        String(localized: "statusBar.waitingAgent.title", defaultValue: "Waiting Agent")
+        dense
+            ? String(localized: "statusBar.waitingAgent.short", defaultValue: "Waiting")
+            : String(localized: "statusBar.waitingAgent.title", defaultValue: "Waiting Agent")
     }
 
     private var shortcutText: String {
@@ -11326,10 +12118,13 @@ private struct WaitingAgentRow: View {
     }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: style.pillRadius ?? 6, style: .continuous)
+        let outlined = pillStyle == .outline
+        let lit = litColors()
         Button(action: onJump) {
             HStack(spacing: 6) {
-                Text(label)
-                    .font(.system(size: 11, weight: .semibold))
+                Text(verbatim: style.pill.apply(label))
+                    .chromeStyle(style.pill, size: 11, weight: .semibold)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
 
@@ -11340,54 +12135,201 @@ private struct WaitingAgentRow: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(
-                            Capsule(style: .continuous)
-                                .fill(BrandColors.blackSwiftUI.opacity(0.18))
+                            SidebarPillBadgeShape(radius: style.pillRadius)
+                                .fill(outlined ? lit.ink : lit.ink.opacity(0.18))
                         )
-                        .foregroundColor(BrandColors.blackSwiftUI)
+                        .foregroundColor(outlined ? lit.badgeInk : lit.ink)
                         .accessibilityHidden(true)
                 }
 
                 Spacer(minLength: 4)
 
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\u{2192}")
-                        .font(.system(size: 13, weight: .medium))
-                    Text(shortcutText)
-                        .font(.system(size: 9, weight: .medium))
-                        .lineLimit(1)
-                        .fixedSize()
-                        .opacity(isLit ? 0.6 : 0.5)
+                if !dense {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\u{2192}")
+                            .font(.system(size: 13, weight: .medium))
+                        Text(shortcutText)
+                            .font(.system(size: 9, weight: .medium))
+                            .lineLimit(1)
+                            .fixedSize()
+                            .opacity(isLit ? 0.6 : 0.5)
+                    }
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 10)
+            .padding(.vertical, dense ? 6 : 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            // Sustained "agent is waiting" lit state is a solid c11-gold
-            // fill with void (black) content — the standard c11 gold button.
-            // Deliberately no motion; the gold does the attention work. Rest
-            // state stays paper-white-on-void with a rule outline.
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isLit ? BrandColors.goldSwiftUI : BrandColors.surfaceSwiftUI)
-            )
+            // Sustained "agent is waiting" lit state is a solid fill in the
+            // waiting colour (white, C11H-344) with its ink. Deliberately no
+            // motion; the inversion from the void rest does the attention
+            // work. Rest state stays paper-white-on-void with a rule outline.
+            // A theme's pill replaces the fill (C11H-145); Outrun's bust rises
+            // behind the text (C11H-148).
+            .background {
+                pillFill(shape, litFill: lit.fill)
+                    .overlay {
+                        if style.bust, isLit {
+                            SidebarWaitingPillBust()
+                                .clipShape(shape)
+                        }
+                    }
+            }
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                shape
                     .stroke(
-                        isLit ? BrandColors.goldSwiftUI : BrandColors.ruleSwiftUI,
-                        lineWidth: isLit ? 0.75 : 1
+                        isLit ? lit.edge : (pillStyle == nil ? BrandColors.ruleSwiftUI : (style.cardBorder ?? BrandColors.ruleSwiftUI)),
+                        lineWidth: isLit ? (outlined ? (style.cardBorderPt ?? 1) : 0.75) : 1
                     )
             )
-            .foregroundColor(isLit ? BrandColors.blackSwiftUI : BrandColors.whiteSwiftUI.opacity(0.4))
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .foregroundColor(isLit
+                ? lit.ink
+                : (pillStyle == nil ? BrandColors.whiteSwiftUI.opacity(0.4) : (style.cardTextDim ?? BrandColors.whiteSwiftUI.opacity(0.4))))
+            .contentShape(shape)
         }
         .buttonStyle(.plain)
         .disabled(!isLit)
+        .overlay {
+            if style.hoverBrackets, isHovering {
+                SidebarHoverBrackets(color: (style.cardBorderActive ?? style.cardText ?? .primary).opacity(0.78))
+            }
+        }
+        .onHover { isHovering = $0 }
         .accessibilityIdentifier("SidebarWaitingAgentButton")
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(display.badgeText ?? "")
         .safeHelp(
             KeyboardShortcutSettings.Action.jumpToUnread.tooltip(label)
         )
+    }
+}
+
+/// C11H-261: agents whose latest turn needs nothing from the operator. Low
+/// priority by design: lit is a grey wash and edge in the theme's card
+/// colours, never gold or the waiting colour; unlit matches Waiting's rest.
+private struct DoneAgentRow: View {
+    let display: StatusBarButtonDisplay
+    /// The oldest done notification's deciding line, when lit.
+    let quote: String?
+    let style: SidebarThemeStyle
+    let onJump: () -> Void
+    /// A thin row under the Waiting line in compact mode (C11H-221).
+    var dense: Bool = false
+
+    @State private var isHovering = false
+
+    private var isLit: Bool { display.isEnabled }
+
+    private var themed: Bool { style.effectivePillStyle != nil }
+    private var outlined: Bool { style.effectivePillStyle == .outline }
+
+    private static let neutralGrey = Color(white: 0.55)
+
+    private var restFill: Color {
+        themed ? (style.cardFill ?? BrandColors.surfaceSwiftUI) : BrandColors.surfaceSwiftUI
+    }
+
+    private var restEdge: Color {
+        themed ? (style.cardBorder ?? BrandColors.ruleSwiftUI) : BrandColors.ruleSwiftUI
+    }
+
+    private var restInk: Color {
+        themed ? (style.cardTextDim ?? BrandColors.whiteSwiftUI.opacity(0.4)) : BrandColors.whiteSwiftUI.opacity(0.4)
+    }
+
+    /// Lit ink: the theme's secondary card text, else a soft grey.
+    private var litInk: Color {
+        themed
+            ? (style.cardTextSecondary ?? style.cardTextDim ?? Self.neutralGrey)
+            : BrandColors.whiteSwiftUI.opacity(0.72)
+    }
+
+    /// Lit edge: the dim text colour reads as grey in every theme.
+    private var litEdge: Color {
+        themed ? (style.cardTextDim ?? style.cardBorder ?? Self.neutralGrey) : BrandColors.dimSwiftUI
+    }
+
+    private var label: String {
+        dense
+            ? String(localized: "statusBar.doneAgent.short", defaultValue: "Done")
+            : String(localized: "statusBar.doneAgent.title", defaultValue: "Done Agent")
+    }
+
+    private var accessibilityLabel: String {
+        String(localized: "statusBar.doneAgent.accessibility", defaultValue: "Jump to oldest finished agent")
+    }
+
+    private var helpText: String {
+        guard isLit else { return label }
+        guard let quote, !quote.isEmpty else { return accessibilityLabel }
+        return String(localized: "statusBar.doneAgent.quoteHelp", defaultValue: "Done: \(quote)")
+    }
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: style.pillRadius ?? 6, style: .continuous)
+        let ink = isLit ? litInk : restInk
+        Button(action: onJump) {
+            HStack(spacing: 6) {
+                Text(verbatim: style.pill.apply(label))
+                    .chromeStyle(style.pill, size: 11, weight: .semibold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+
+                if let badge = display.badgeText {
+                    Text(verbatim: badge)
+                        .font(.system(size: 9, weight: .bold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            SidebarPillBadgeShape(radius: style.pillRadius)
+                                .fill(litInk.opacity(0.18))
+                        )
+                        .foregroundColor(litInk)
+                        .accessibilityHidden(true)
+                }
+
+                Spacer(minLength: 4)
+
+                if !dense {
+                    Text(verbatim: "\u{2192}")
+                        .font(.system(size: 13, weight: .medium))
+                        .opacity(isLit ? 0.8 : 1)
+                }
+            }
+            .padding(.horizontal, 10)
+            // Low priority: a slim row in every layout, under Waiting's full height.
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background {
+                shape
+                    .fill(restFill)
+                    .overlay {
+                        if isLit, !outlined {
+                            shape.fill(litInk.opacity(0.12))
+                        }
+                    }
+            }
+            .overlay(
+                shape.stroke(
+                    isLit ? litEdge : restEdge,
+                    lineWidth: isLit && outlined ? (style.cardBorderPt ?? 1) : 1
+                )
+            )
+            .foregroundColor(ink)
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isLit)
+        .overlay {
+            if style.hoverBrackets, isHovering {
+                SidebarHoverBrackets(color: (style.cardBorderActive ?? style.cardText ?? .primary).opacity(0.78))
+            }
+        }
+        .onHover { isHovering = $0 }
+        .accessibilityIdentifier("SidebarDoneAgentButton")
+        .accessibilityLabel(Text(verbatim: accessibilityLabel))
+        .accessibilityValue(Text(verbatim: display.badgeText ?? ""))
+        .safeHelp(helpText)
     }
 }
 
@@ -11576,12 +12518,13 @@ private struct SidebarDevFooter: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     let onSendFeedback: () -> Void
     let columns: Int
+    var dense: Bool = false
     @AppStorage(DevBuildBannerDebugSettings.sidebarBannerVisibleKey)
     private var showSidebarDevBuildBanner = DevBuildBannerDebugSettings.defaultShowSidebarBanner
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback, columns: columns)
+            SidebarFooterButtons(updateViewModel: updateViewModel, onSendFeedback: onSendFeedback, columns: columns, dense: dense)
             if showSidebarDevBuildBanner {
                 Text(String(localized: "debug.devBuildBanner.title", defaultValue: "THIS IS A DEV BUILD"))
                     .font(.system(size: 11, weight: .semibold))
@@ -11702,14 +12645,17 @@ private struct SidebarEmptyArea: View {
             .contentShape(Rectangle())
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onTapGesture(count: 2) {
-                workspaceManager.addWorkspace(placementOverride: .end)
+                PanelLineage.shared.withOrigin(.operator) {
+                    _ = workspaceManager.addWorkspace(placementOverride: .end)
+                }
                 if let selectedId = workspaceManager.selectedWorkspaceId {
                     selectedWorkspaceIds = [selectedId]
                     lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == selectedId }
                 }
                 selection = .tabs
             }
-            .onDrop(of: SidebarWorkspaceDragPayload.dropContentTypes, delegate: SidebarWorkspaceDropDelegate(
+            .onDrop(of: SidebarWorkspaceDragPayload.dropContentTypes + SidebarGroupDragPayload.dropContentTypes,
+                    delegate: SidebarWorkspaceDropDelegate(
                 targetWorkspaceId: nil,
                 workspaceManager: workspaceManager,
                 draggedWorkspaceId: $draggedWorkspaceId,
@@ -11732,7 +12678,8 @@ private struct SidebarEmptyArea: View {
     }
 
     private var shouldShowTopDropIndicator: Bool {
-        guard draggedWorkspaceId != nil, let indicator = dropIndicator else { return false }
+        // Set only by a workspace drag, from this window or another (C11H-207).
+        guard let indicator = dropIndicator else { return false }
         return indicator.workspaceId == nil && indicator.groupId == nil
     }
 }
@@ -11867,6 +12814,35 @@ enum WorkspacePulseMarkRowMetrics {
 enum ActivityMarkSettings {
     static let staticMarksKey = "staticActivityMarks"
     static let defaultStaticMarks = false
+
+    /// What the tab strip may animate: default lifecycle motion stops for
+    /// Static marks; explicit (flag) motion stops only for Reduce Motion.
+    /// A sidebar mark's motion from its state and the settings. Reduce Motion
+    /// stops every mark, flags included; Static marks stops unflagged marks
+    /// only (flags keep moving, as Settings says).
+    static func sidebarMotion(state: WorkspacePulseState, flagged: Bool, suppressed: Bool,
+                              animationEligible: Bool, sceneActive: Bool, reduceMotion: Bool,
+                              staticMarks: Bool) -> BonsplitActivityMarkMotion? {
+        guard animationEligible, sceneActive, !reduceMotion else { return nil }
+        if flagged {
+            switch state {
+            case .working, .idle, .cold: return .breathe
+            case .waiting: return .binaryFlash
+            }
+        }
+        guard !suppressed, !staticMarks else { return nil }
+        switch state {
+        case .working: return .steppedFill
+        case .waiting: return .easedDip
+        case .idle, .cold: return nil
+        }
+    }
+
+    static func motionPermissions(inputActive: Bool, sceneActive: Bool, reduceMotion: Bool,
+                                  staticMarks: Bool) -> (defaultMotion: Bool, explicitMotion: Bool) {
+        let live = inputActive && sceneActive && !reduceMotion
+        return (live && !staticMarks, live)
+    }
 }
 
 /// Native tooltip/accessibility leaf for an individual sidebar mark.
@@ -11942,17 +12918,15 @@ private struct WorkspacePulseMark: View {
     /// Delegate hops; draws one baseline rule per hop, capped at two.
     let lineageDepth: Int
     let animationEligible: Bool
+    /// The theme's `states.flag` for an unnamed flag; nil is today's violet.
+    var genericFlagColor: Color? = nil
+    /// The theme's `geometry.markRadius` for the mark's cell; nil is square.
+    var markRadius: CGFloat? = nil
 
     @AppStorage(ActivityMarkSettings.staticMarksKey)
     private var staticMarks = ActivityMarkSettings.defaultStaticMarks
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
-    @State private var clockToken: UUID?
-    @State private var visibleWorkingDots = 9
-    @State private var waitingCoreOpacity = 1.0
-    @State private var flaggedWaitingShowsWhite = false
-    @State private var markOpacity = 1.0
-
     private var presentedState: WorkspacePulseState {
         suppressed && !flagged && state == .waiting ? .idle : state
     }
@@ -11961,7 +12935,7 @@ private struct WorkspacePulseMark: View {
     /// (already cache blue for a cache-cold mark). Delegation never recolors;
     /// it draws the baseline.
     private var color: Color {
-        flagged ? (flagColor ?? Self.flaggedColor) : lifecycleColor
+        flagged ? (flagColor ?? genericFlagColor ?? Self.flaggedColor) : lifecycleColor
     }
 
     private var displayedLineageDepth: Int {
@@ -11969,39 +12943,29 @@ private struct WorkspacePulseMark: View {
     }
 
     private var motion: BonsplitActivityMarkMotion? {
-        guard animationEligible, scenePhase == .active, !reduceMotion else { return nil }
-        if flagged {
-            switch presentedState {
-            case .working, .idle, .cold: return .breathe
-            case .waiting: return .binaryFlash
-            }
-        }
-        guard !suppressed, !staticMarks else { return nil }
-        switch presentedState {
-        case .working: return .steppedFill
-        case .waiting: return .easedDip
-        case .idle, .cold: return nil
-        }
+        ActivityMarkSettings.sidebarMotion(state: presentedState, flagged: flagged, suppressed: suppressed,
+                                           animationEligible: animationEligible,
+                                           sceneActive: scenePhase == .active,
+                                           reduceMotion: reduceMotion, staticMarks: staticMarks)
     }
 
-    private var motionSignature: Int {
-        switch motion {
-        case .steppedFill: return 1
-        case .easedDip: return 2
-        case .binaryFlash: return 3
-        case .breathe: return 4
-        case nil: return 0
-        }
+    /// C11H-238: dots, cores and the flagged flash move in Core Animation;
+    /// a breathing mark is hosted in `BonsplitActivityMarkBreathe`. No tick
+    /// writes this view's state.
+    private var layerMotion: BonsplitActivityMarkMotion? {
+        motion == .breathe ? nil : motion
     }
 
     var body: some View {
-        markShape
+        if motion == .breathe {
+            BonsplitActivityMarkBreathe(phaseId: phaseId) {
+                markShape.frame(width: 9, height: 9)
+            }
             .frame(width: 9, height: 9)
-            .opacity(markOpacity)
-            .onAppear { refreshClockSubscription() }
-            .onChange(of: motionSignature) { _, _ in refreshClockSubscription() }
-            .onChange(of: phaseId) { _, _ in refreshClockSubscription() }
-            .onDisappear { unsubscribeFromClock() }
+        } else {
+            markShape
+                .frame(width: 9, height: 9)
+        }
     }
 
     @ViewBuilder
@@ -12037,42 +13001,26 @@ private struct WorkspacePulseMark: View {
         case .working:
             let rows = BonsplitActivityMarkLineage.workingDotRows(depth: depth)
             ZStack {
-                Rectangle()
+                cell
                     .fill(color.opacity(0.25))
-                VStack(spacing: 1) {
-                    ForEach(0..<rows, id: \.self) { row in
-                        HStack(spacing: 1) {
-                            ForEach(0..<3, id: \.self) { column in
-                                let rank = (rows - 1 - row) * 3 + column
-                                Rectangle()
-                                    .fill(color)
-                                    .frame(width: 2, height: 2)
-                                    .opacity(rank < visibleWorkingDots ? 1 : 0)
-                            }
-                        }
-                    }
-                }
+                BonsplitActivityMarkMotionOverlay(
+                    part: .workingDots(rows: rows), color: color, motion: layerMotion, phaseId: phaseId
+                )
             }
 
         case .waiting:
             let coreHeight = BonsplitActivityMarkLineage.waitingCoreHeight(depth: depth)
             ZStack {
-                Rectangle()
+                cell
                     .strokeBorder(color, lineWidth: 1.5)
-                Rectangle()
-                    .fill(color)
-                    .frame(width: 4, height: coreHeight)
-                    .opacity(flagged ? 1 : waitingCoreOpacity)
-                if flagged {
-                    Rectangle()
-                        .fill(Color.white)
-                        .frame(width: 4, height: coreHeight)
-                        .opacity(flaggedWaitingShowsWhite ? 1 : 0)
-                }
+                BonsplitActivityMarkMotionOverlay(
+                    part: .waitingCore(height: coreHeight), color: color,
+                    alternateColor: flagged ? Color.white : nil, motion: layerMotion, phaseId: phaseId
+                )
             }
 
         case .idle:
-            Rectangle()
+            cell
                 .strokeBorder(color, lineWidth: 1)
 
         case .cold:
@@ -12088,42 +13036,28 @@ private struct WorkspacePulseMark: View {
         switch presentedState {
         case .working:
             ZStack {
-                Rectangle()
+                cell
                     .fill(color.opacity(0.25))
                     .frame(width: 9, height: 9)
-                VStack(spacing: 1) {
-                    ForEach(0..<3, id: \.self) { row in
-                        HStack(spacing: 1) {
-                            ForEach(0..<3, id: \.self) { column in
-                                let rank = (2 - row) * 3 + column
-                                Rectangle()
-                                    .fill(color)
-                                    .frame(width: 2, height: 2)
-                                    .opacity(rank < visibleWorkingDots ? 1 : 0)
-                            }
-                        }
-                    }
-                }
+                BonsplitActivityMarkMotionOverlay(
+                    part: .workingDots(rows: 3), color: color, motion: layerMotion, phaseId: phaseId
+                )
+                .frame(width: 9, height: 9)
             }
 
         case .waiting:
             ZStack {
-                Rectangle()
+                cell
                     .strokeBorder(color, lineWidth: 1.5)
-                Rectangle()
-                    .fill(color)
-                    .frame(width: 4, height: 4)
-                    .opacity(flagged ? 1 : waitingCoreOpacity)
-                if flagged {
-                    Rectangle()
-                        .fill(Color.white)
-                        .frame(width: 4, height: 4)
-                        .opacity(flaggedWaitingShowsWhite ? 1 : 0)
-                }
+                BonsplitActivityMarkMotionOverlay(
+                    part: .waitingCore(height: 4), color: color,
+                    alternateColor: flagged ? Color.white : nil, motion: layerMotion, phaseId: phaseId
+                )
+                .frame(width: 9, height: 9)
             }
 
         case .idle:
-            Rectangle()
+            cell
                 .strokeBorder(color, lineWidth: 1)
 
         case .cold:
@@ -12133,79 +13067,11 @@ private struct WorkspacePulseMark: View {
         }
     }
 
-    private func refreshClockSubscription() {
-        unsubscribeFromClock()
-        guard let motion else {
-            resetToStaticState()
-            return
-        }
-        clockToken = BonsplitActivityAnimationClock.shared.subscribe { elapsed in
-            apply(elapsed: elapsed, motion: motion)
-        }
+    /// The mark's 9pt cell: square, or rounded by the theme.
+    private var cell: WorkspacePulseMarkCell {
+        WorkspacePulseMarkCell(radius: markRadius)
     }
 
-    private func unsubscribeFromClock() {
-        guard let clockToken else { return }
-        BonsplitActivityAnimationClock.shared.unsubscribe(clockToken)
-        self.clockToken = nil
-    }
-
-    private func resetToStaticState() {
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            visibleWorkingDots = 9
-            waitingCoreOpacity = 1
-            flaggedWaitingShowsWhite = false
-            markOpacity = 1
-        }
-    }
-
-    private func apply(elapsed: TimeInterval, motion: BonsplitActivityMarkMotion) {
-        switch motion {
-        case .steppedFill:
-            let dots = BonsplitActivityMarkAnimation.visibleWorkingDots(
-                at: elapsed,
-                id: phaseId
-            )
-            guard dots != visibleWorkingDots else { return }
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                visibleWorkingDots = dots
-            }
-
-        case .easedDip:
-            let opacity = BonsplitActivityMarkAnimation.waitingCoreOpacity(
-                at: elapsed,
-                id: phaseId
-            )
-            withAnimation(.linear(duration: BonsplitActivityMarkAnimation.clockInterval)) {
-                waitingCoreOpacity = opacity
-            }
-
-        case .binaryFlash:
-            let showsWhite = BonsplitActivityMarkAnimation.binaryFlashShowsAlternate(
-                at: elapsed,
-                id: phaseId
-            )
-            guard showsWhite != flaggedWaitingShowsWhite else { return }
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                flaggedWaitingShowsWhite = showsWhite
-            }
-
-        case .breathe:
-            let opacity = BonsplitActivityMarkAnimation.breatheOpacity(
-                at: elapsed,
-                id: phaseId
-            )
-            withAnimation(.linear(duration: BonsplitActivityMarkAnimation.clockInterval)) {
-                markOpacity = opacity
-            }
-        }
-    }
 }
 
 /// Joins the workspace pulse card's surface census.
@@ -12261,6 +13127,8 @@ private struct SidebarPanelMetricsReadout: View {
     let surfaceId: UUID?
     let valueColor: Color
     let placeholderColor: Color
+    /// The theme's `cardLabel` style; unset draws today's 9pt mono.
+    var labelStyle: ThemeTextStyle = .unset
 
     /// Null state. Holds the shape of a real reading ("12% 340MB") without
     /// asserting a number. Glyph-only, so it needs no localization.
@@ -12284,8 +13152,8 @@ private struct SidebarPanelMetricsReadout: View {
         let sample = surfaceId.flatMap { sampler.sample(forSurfaceId: $0) }
         HStack(spacing: 0) {
             Spacer(minLength: 0)
-            Text(sample.map(Self.format) ?? Self.placeholder)
-                .font(.system(size: 9, design: .monospaced))
+            Text(verbatim: labelStyle.apply(sample.map(Self.format) ?? Self.placeholder))
+                .chromeStyle(labelStyle, size: 9, design: .monospaced)
                 .monospacedDigit()
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
@@ -12327,20 +13195,26 @@ private struct WorkspaceRowView: View, Equatable {
         lhs.isActive == rhs.isActive &&
         lhs.worktreeChipRows == rhs.worktreeChipRows &&
         lhs.missionSnapshot == rhs.missionSnapshot &&
+        lhs.captainSnapshot == rhs.captainSnapshot &&
         lhs.canCloseWorkspace == rhs.canCloseWorkspace &&
         lhs.accessibilityWorkspaceCount == rhs.accessibilityWorkspaceCount &&
         lhs.unreadCount == rhs.unreadCount &&
         lhs.workspacePulse == rhs.workspacePulse &&
         lhs.rowSpacing == rhs.rowSpacing &&
         lhs.showsWorkspaceId == rhs.showsWorkspaceId &&
-        lhs.themedBackgroundColor?.hexString(includeAlpha: true) == rhs.themedBackgroundColor?.hexString(includeAlpha: true) &&
-        lhs.themedRailColor?.hexString(includeAlpha: true) == rhs.themedRailColor?.hexString(includeAlpha: true) &&
+        // NSColor equality compares colour space and components without
+        // formatting a string per row on every parent evaluation.
+        lhs.themedBackgroundColor == rhs.themedBackgroundColor &&
+        lhs.themedRailColor == rhs.themedRailColor &&
+        lhs.themedFillCarriesWorkspaceColor == rhs.themedFillCarriesWorkspaceColor &&
         lhs.remoteContextMenuWorkspaceIds == rhs.remoteContextMenuWorkspaceIds &&
         lhs.allRemoteContextMenuTargetsConnecting == rhs.allRemoteContextMenuTargetsConnecting &&
         lhs.allRemoteContextMenuTargetsDisconnected == rhs.allRemoteContextMenuTargetsDisconnected &&
         lhs.sidebarFlashSnapshot == rhs.sidebarFlashSnapshot &&
         lhs.chromeTokens == rhs.chromeTokens &&
-        lhs.tiled == rhs.tiled
+        lhs.tiled == rhs.tiled &&
+        lhs.themeStyle == rhs.themeStyle &&
+        lhs.density == rhs.density
     }
 
     // Use plain references instead of @EnvironmentObject to avoid subscribing
@@ -12362,6 +13236,7 @@ private struct WorkspaceRowView: View, Equatable {
     /// Equality snapshot for parent updates. The already-observed workspace
     /// also publishes file edits directly; the body reads its precomputed value.
     let missionSnapshot: WorkspaceMission?
+    let captainSnapshot: WorkspaceCaptainSummary
     let canCloseWorkspace: Bool
     let accessibilityWorkspaceCount: Int
     let unreadCount: Int
@@ -12381,6 +13256,9 @@ private struct WorkspaceRowView: View, Equatable {
     @Binding var dropIndicator: SidebarDropIndicator?
     let themedBackgroundColor: NSColor?
     let themedRailColor: NSColor?
+    /// The themed Solid Fill is built from this workspace's own colour, so the
+    /// card fill already shows it and the identity notch is left off.
+    let themedFillCarriesWorkspaceColor: Bool
     let remoteContextMenuWorkspaceIds: [UUID]
     let allRemoteContextMenuTargetsConnecting: Bool
     let allRemoteContextMenuTargetsDisconnected: Bool
@@ -12390,8 +13268,15 @@ private struct WorkspaceRowView: View, Equatable {
     let chromeTokens: ChromeScaleTokens
     /// In the Tiles grid the card stretches to its row's tallest card.
     var tiled: Bool = false
+    /// Schema-2 sidebar values; `.unset` fields keep today's drawing. Compared by
+    /// its theme stamp in `==`.
+    let themeStyle: SidebarThemeStyle
+    /// C11H-221: the full card, or the two-line compact card.
+    var density: SidebarDensity = .cards
     @State private var isHovering = false
     @State private var rowHeight: CGFloat = 1
+    /// The icon picker's popover, opened from the context menu (C11H-343).
+    @State private var iconPickerRequest: SidebarIconPickerRequest?
 
     @AppStorage("sidebarShowGitBranch") private var sidebarShowGitBranch = true
     @AppStorage(SidebarBranchLayoutSettings.key) private var sidebarBranchVerticalLayout = SidebarBranchLayoutSettings.defaultVerticalLayout
@@ -12464,8 +13349,32 @@ private struct WorkspaceRowView: View, Equatable {
     /// panel bar; muted elsewhere. A custom-tinted selected card keeps its
     /// inverted foreground so the number stays legible on the tint.
     private var workspaceIdColor: Color {
-        guard isActive else { return activeSecondaryColor(0.55) }
-        return usesInvertedActiveForeground ? activePrimaryTextColor : Color(nsColor: BrandColors.gold)
+        guard isActive else { return themeStyle.cardTextSecondary ?? activeSecondaryColor(0.55) }
+        return usesInvertedActiveForeground
+            ? activePrimaryTextColor
+            : (themeStyle.cardAccent ?? Color(nsColor: BrandColors.gold))
+    }
+
+    /// The workspace name in the card's title style. Terminal Grid prefixes the
+    /// tree's root (`┌`) and draws the selected name in its accent.
+    private var workspaceTitleText: Text {
+        workspaceTitleText(size: chromeTokens.sidebarWorkspaceTitle + 1.5)
+    }
+
+    private func workspaceTitleText(size: CGFloat) -> Text {
+        let style = themeStyle.cardTitle
+        let boxDrawing = themeStyle.cardHeader == .boxDrawing
+        let titleColor = boxDrawing && isActive
+            ? (themeStyle.cardAccent ?? themeStyle.cardText ?? .primary)
+            : (themeStyle.cardText ?? .primary)
+        let title = Text(verbatim: style.apply(workspace.title)).foregroundColor(titleColor)
+        let line = boxDrawing
+            ? Text(verbatim: "\u{250C} ")
+                .fontWeight(.regular)
+                .foregroundColor(themeStyle.cardTextDim ?? .secondary)
+                + title
+            : title
+        return line.chromeStyle(style, size: size, weight: titleFontWeight)
     }
 
     private var remoteWorkspaceSidebarText: String? {
@@ -12521,7 +13430,8 @@ private struct WorkspaceRowView: View, Equatable {
         Workspace.resolvedSurfaceTabActivityColors(
             from: colorScheme == .light
                 ? NSColor(calibratedWhite: 0.96, alpha: 1)
-                : NSColor(calibratedWhite: 0.06, alpha: 1)
+                : NSColor(calibratedWhite: 0.06, alpha: 1),
+            states: themeStyle.statePalette
         )
     }
 
@@ -12550,11 +13460,11 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     /// Leaf-isolated 9pt mark matching the Bonsplit surface-tab vocabulary.
-    private func workspacePulseMark(for agent: WorkspacePulseAgent) -> some View {
+    private func workspacePulseMark(for agent: WorkspacePulseAgent, animated: Bool = true) -> some View {
         WorkspacePulseMark(
             state: agent.state,
-            lifecycleColor: agent.markTint == .usageLimit ? .red : agent.showsPromptCacheColor
-                ? Color(nsColor: NSColor(hex: Workspace.promptCacheColdHex(lightBackground: colorScheme == .light))
+            lifecycleColor: agent.markTint == .usageLimit ? (themeStyle.stateUsageLimit ?? .red) : agent.showsPromptCacheColor
+                ? Color(nsColor: NSColor(hex: Workspace.promptCacheColdHex(lightBackground: colorScheme == .light, states: themeStyle.statePalette))
                     ?? .secondaryLabelColor)
                 : workspacePulseColor(for: agent.presentedState),
             flagColor: agent.flagKind.map {
@@ -12565,7 +13475,9 @@ private struct WorkspaceRowView: View, Equatable {
             flagged: agent.flagged,
             suppressed: agent.suppressed,
             lineageDepth: agent.lineageDepth,
-            animationEligible: isActive
+            animationEligible: animated && isActive,
+            genericFlagColor: themeStyle.stateFlag,
+            markRadius: themeStyle.markRadius
         )
     }
 
@@ -12575,21 +13487,106 @@ private struct WorkspaceRowView: View, Equatable {
         width: CGFloat,
         height: CGFloat
     ) -> some View {
-        let mark = workspacePulseMark(for: agent)
-            .frame(width: width, height: height)
+        workspacePulseHelpTarget(for: agent) {
+            workspacePulseMark(for: agent)
+                .frame(width: width, height: height)
+        }
+    }
+
+    /// The tooltip and accessibility of an agent's state, around whatever draws
+    /// it: the mark, a theme's tree glyph, or its LIVE/HOLD tag.
+    @ViewBuilder
+    private func workspacePulseHelpTarget<Content: View>(
+        for agent: WorkspacePulseAgent,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        let lead = content()
         if let activityHelp = agent.activityHelp {
             WorkspacePulseActivityHelpTarget(
                 activityHelp: activityHelp,
                 accessibilityLabel: workspacePulseMarkAccessibilityLabel(agent)
             ) {
-                mark
+                lead
             }
         } else {
-            mark
+            lead
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(workspacePulseMarkAccessibilityLabel(agent)))
                 .accessibilityValue(Text(workspacePulseLabel(for: agent.presentedState)))
         }
+    }
+
+    /// What leads an agent row: the 16pt state mark, or a theme ornament in its
+    /// place (C11H-148). Terminal Grid draws its tree glyph in the mark's slot;
+    /// Big Board's LIVE and HOLD tags take a fixed slot of their own.
+    @ViewBuilder
+    private func workspacePulseRowLead(for agent: WorkspacePulseAgent, index: Int) -> some View {
+        if themeStyle.cardHeader == .boxDrawing {
+            let isLast = index == workspacePulseVisibleAgents.count - 1
+            workspacePulseHelpTarget(for: agent) {
+                Text(verbatim: isLast ? "\u{2514}\u{2500}" : "\u{251C}\u{2500}")
+                    .font(ThemeFontFamily.font(
+                        named: themeStyle.monoFamily ?? "system-mono",
+                        size: chromeTokens.sidebarWorkspaceDetail + 1,
+                        weight: .regular,
+                        defaultDesign: .monospaced
+                    ))
+                    .foregroundColor(themeStyle.cardTextDim ?? Color.secondary.opacity(0.6))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .frame(width: 16, height: 16, alignment: .leading)
+            }
+        } else if themeStyle.stateTags {
+            workspacePulseStateTag(for: agent)
+        } else {
+            workspacePulseMarkTarget(for: agent, width: 16, height: 16)
+        }
+    }
+
+    /// Big Board: LIVE for a working agent, HOLD for one waiting on the operator,
+    /// the mark for every other state (flags keep their mark and colour).
+    @ViewBuilder
+    private func workspacePulseStateTag(for agent: WorkspacePulseAgent) -> some View {
+        let live = String(localized: "sidebar.workspacePulse.stateTag.live", defaultValue: "LIVE")
+        let hold = String(localized: "sidebar.workspacePulse.stateTag.hold", defaultValue: "HOLD")
+        let size = chromeTokens.sidebarWorkspaceAccessory - 1
+        let tag: String? = {
+            guard !agent.flagged else { return nil }
+            switch agent.presentedState {
+            case .working: return live
+            case .waiting: return hold
+            case .idle, .cold: return nil
+            }
+        }()
+        // One slot for every row, as wide as the wider tag in this language, so
+        // a row's text never moves when its agent changes state.
+        let slot = SidebarStateTagMetrics.slotWidth(
+            family: themeStyle.monoFamily, size: size, tracking: size * 0.14, tags: [live, hold])
+        Group {
+            if let tag {
+                let color = workspacePulseColor(for: agent.presentedState)
+                workspacePulseHelpTarget(for: agent) {
+                    Text(verbatim: tag)
+                        .font(ThemeFontFamily.font(
+                            named: themeStyle.monoFamily ?? "system-mono",
+                            size: size,
+                            weight: .semibold,
+                            defaultDesign: .monospaced
+                        ))
+                        .tracking(size * 0.14)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .foregroundColor(color)
+                        .padding(.horizontal, SidebarStateTagMetrics.horizontalPadding)
+                        .padding(.vertical, 1)
+                        .overlay(Rectangle().strokeBorder(color, lineWidth: 1))
+                }
+            } else {
+                workspacePulseMarkTarget(for: agent, width: 16, height: 16)
+            }
+        }
+        .frame(width: slot, alignment: .leading)
+        .frame(minHeight: 16)
     }
 
     private var workspacePulseVisibleAgents: [WorkspacePulseAgent] {
@@ -12629,28 +13626,42 @@ private struct WorkspaceRowView: View, Equatable {
         index: Int
     ) -> some View {
         let context = agent.context
+        let rowStyle = themeStyle.agentRow
+        let rowSize = chromeTokens.sidebarWorkspaceDetail + 1
         let content = HStack(spacing: 7) {
-            workspacePulseMarkTarget(for: agent, width: 16, height: 16)
+            workspacePulseRowLead(for: agent, index: index)
 
             Group {
                 if agent.flagged, let reason = agent.flagReason {
-                    Text(verbatim: agent.flagKind?.displayText(reason: reason) ?? reason)
-                        .fontWeight(.medium)
+                    Text(verbatim: rowStyle.apply(agent.flagKind?.displayText(reason: reason) ?? reason))
+                        .fontWeight(rowStyle.fontWeight ?? .medium)
                 } else if let context {
                     (
-                        Text(verbatim: context.title).fontWeight(.medium)
-                        + Text(verbatim: context.subtitle.map { " · \($0)" } ?? "")
+                        Text(verbatim: rowStyle.apply(context.title)).fontWeight(rowStyle.fontWeight ?? .medium)
+                        + Text(verbatim: context.subtitle.map { rowStyle.apply(" · \($0)") } ?? "")
                     )
                 } else {
-                    Text(verbatim: workspacePulseLabel(for: agent.presentedState))
+                    Text(verbatim: rowStyle.apply(workspacePulseLabel(for: agent.presentedState)))
                 }
             }
-            .font(.system(size: chromeTokens.sidebarWorkspaceDetail + 1))
-            .foregroundColor(index == 0 ? Color.primary.opacity(0.86) : Color.secondary.opacity(0.72))
+            .chromeTextStyle(rowStyle, size: rowSize)
+            .foregroundColor(index == 0
+                ? (themeStyle.cardText ?? Color.primary.opacity(0.86))
+                : (themeStyle.cardTextSecondary ?? Color.secondary.opacity(0.72)))
             .lineLimit(1)
             .truncationMode(.tail)
 
             Spacer(minLength: 0)
+
+            // C11H-278: how long ago the shown description was edited, in a
+            // fixed column every agent row reserves. A child view: it listens
+            // to the coarse clock itself, so this Equatable row never does.
+            DescriptionAgeLabel(
+                updatedAt: agent.flagged && agent.flagReason != nil ? nil : context?.descriptionUpdatedAt,
+                style: .compact,
+                fontSize: chromeTokens.sidebarWorkspaceMetadata,
+                color: themeStyle.cardTextDim ?? .secondary.opacity(0.65)
+            )
         }
 
         if agent.flagged || agent.presentedState == .waiting {
@@ -12677,24 +13688,24 @@ private struct WorkspaceRowView: View, Equatable {
     private var workspacePulseSummaries: some View {
         VStack(alignment: .leading, spacing: 5) {
             if workspacePulseVisibleAgents.isEmpty {
-                Text(String(
+                Text(verbatim: themeStyle.cardLabel.apply(String(
                     localized: "sidebar.workspacePulse.terminalsOnly",
                     defaultValue: "Terminals only · no agent panels"
-                ))
-                .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
-                .foregroundColor(.secondary.opacity(0.65))
+                )))
+                .chromeStyle(themeStyle.cardLabel, size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced)
+                .foregroundColor(themeStyle.cardTextDim ?? .secondary.opacity(0.65))
                 .lineLimit(1)
             } else {
                 ForEach(Array(workspacePulseVisibleAgents.enumerated()), id: \.element.id) { index, agent in
                     workspacePulseSummaryRow(agent, index: index)
                 }
                 if workspacePulseWaitingOverflow > 0 {
-                    Text(String(
+                    Text(verbatim: themeStyle.cardLabel.apply(String(
                         localized: "sidebar.workspacePulse.moreWaiting",
                         defaultValue: "… and \(workspacePulseWaitingOverflow) more"
-                    ))
-                    .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
-                    .foregroundColor(.secondary.opacity(0.62))
+                    )))
+                    .chromeStyle(themeStyle.cardLabel, size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced)
+                    .foregroundColor(themeStyle.cardTextDim ?? .secondary.opacity(0.62))
                     .padding(.leading, 23)
                 }
             }
@@ -12824,28 +13835,41 @@ private struct WorkspaceRowView: View, Equatable {
                 // last kind off it: the counts stay readable, and a card
                 // that lists browsers is exactly the card that needed the
                 // extra room.
-                Text(verbatim: workspacePulseCensusText)
+                Text(verbatim: themeStyle.cardLabel.apply(workspacePulseCensusText))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
+                captainSlot(captain: workspace.captainSummary, ink: nil, scale: chromeTokens.multiplier, width: 76)
             }
 
             workspacePulseMarkRow()
         }
-        .font(.system(size: chromeTokens.sidebarWorkspaceMetadata - 0.5, design: .monospaced))
-        .foregroundColor(.secondary.opacity(0.68))
+        .chromeTextStyle(themeStyle.cardLabel, size: chromeTokens.sidebarWorkspaceMetadata - 0.5, design: .monospaced)
+        .foregroundColor(themeStyle.cardTextDim ?? .secondary.opacity(0.68))
         .padding(.top, 8)
         .overlay(alignment: .top) {
-            Rectangle()
-                .fill(workspacePulseDividerColor.opacity(0.42))
-                .frame(height: 1)
+            workspacePulseRule(color: themeStyle.cardRule ?? workspacePulseDividerColor.opacity(0.42))
         }
         .padding(.top, 10)
     }
 
+    /// The card's horizontal rule; dotted in Terminal Grid's box-drawing cards.
+    @ViewBuilder
+    private func workspacePulseRule(color: Color) -> some View {
+        if themeStyle.cardHeader == .boxDrawing {
+            WorkspaceCardDottedRule(color: color)
+                .frame(height: 1)
+        } else {
+            Rectangle()
+                .fill(color)
+                .frame(height: 1)
+        }
+    }
+
     private func workspacePulseCompositionRail(scale: CGFloat = 1, topPadding: CGFloat = 9) -> some View {
-        GeometryReader { proxy in
+        let shape = WorkspaceCardBarShape(radius: themeStyle.progressRadius)
+        return GeometryReader { proxy in
             let populatedStates = WorkspacePulseState.allCases.filter {
                 workspacePulse.agentCount(for: $0) > 0
             }
@@ -12864,12 +13888,12 @@ private struct WorkspaceRowView: View, Equatable {
                 }
             }
         }
-        .frame(height: 4 * scale)
+        .frame(height: (themeStyle.progressHeightPt ?? 4) * scale)
         .background(
-            Rectangle()
-                .fill(BrandColors.ruleSwiftUI.opacity(workspacePulse.agents.isEmpty ? 0.55 : 0.35))
+            shape
+                .fill(themeStyle.cardProgressTrack ?? BrandColors.ruleSwiftUI.opacity(workspacePulse.agents.isEmpty ? 0.55 : 0.35))
         )
-        .clipShape(Rectangle())
+        .clipShape(shape)
         .padding(.top, topPadding)
         .accessibilityHidden(true)
     }
@@ -12897,8 +13921,15 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private var workspacePulseBaseColor: Color {
+        // A schema-2 active fill wins over the Solid Fill indicator's tint.
+        if usesThemedActiveFill, let fillActive = themeStyle.cardFillActive {
+            return fillActive
+        }
         if let themedBackgroundColor {
             return Color(nsColor: themedBackgroundColor)
+        }
+        if let fill = themeStyle.cardFill {
+            return fill
         }
         if colorScheme == .light {
             return Color(nsColor: NSColor(
@@ -12916,146 +13947,202 @@ private struct WorkspaceRowView: View, Equatable {
         ))
     }
 
-    /// Full-strength workspace identity color for the card outline, or nil
-    /// when the workspace has no identity color of its own (those cards stay
-    /// on the neutral hairline). Prefers the theme's resolved rail color when
-    /// the theme path supplies one, otherwise resolves the user's custom hex
-    /// against the current appearance — deliberately *not* force-brightened
-    /// like `resolvedCustomTabColor`, so the outline stays legible on the
-    /// light card base as well as the void-black one.
-    private var workspaceIdentityOutlineColor: Color? {
-        if let themedRailColor {
-            return Color(nsColor: themedRailColor)
-        }
-        guard let hex = workspace.customColor else { return nil }
-        return WorkspaceColorSettings.displayColor(hex: hex, colorScheme: colorScheme)
-    }
-
-    /// True when the card fill already *is* the workspace color (the
-    /// `.solidFill` indicator style with a custom color). Stacking an inner
-    /// identity ring on an identity-colored fill only muddies the edge, so
-    /// the double border collapses to the selection ring there.
+    /// True when the card fill already *is* the workspace color: the
+    /// `.solidFill` indicator style with a custom color, in a theme whose fill
+    /// is built from that color (Stage 11, c11). A fixed theme fill (Nocturne,
+    /// Big Board) does not carry it, so the notch stays. The notch would only
+    /// repeat the fill otherwise, so it is left off.
     private var cardFillCarriesIdentityColor: Bool {
-        workspace.customColor != nil && themedBackgroundColor != nil
+        workspace.customColor != nil
+            && themedBackgroundColor != nil
+            && themedFillCarriesWorkspaceColor
+            && !usesThemedActiveFill
     }
 
-    private var cardSelectionRingColor: Color {
-        colorScheme == .light
+    /// The selected card draws the theme's `chrome.card.fillActive`.
+    private var usesThemedActiveFill: Bool {
+        isActive && themeStyle.cardFillActive != nil
+    }
+
+    // MARK: Beacon selection
+    //
+    // The card edge has one grammar in every theme. Only the selected card
+    // carries a heavy edge: a 3pt outline, an 8pt bar on the trailing edge
+    // with a pointer into the gutter, a soft glow, and (dark appearance only)
+    // a wash of the same ink over the fill. All of it is drawn in the theme's
+    // selection ink. A workspace's own color never outlines a card; it is a
+    // 4pt notch on the leading edge of every card that has one, selected or
+    // not. Waiting keeps its thin 1.5pt edge. Shape, not hue, says
+    // "selected", so a workspace color can never be mistaken for it.
+
+    /// The theme's selection ink (`chrome.card.borderActive`), else white on
+    /// dark and near-black on light.
+    private var cardSelectionInk: Color {
+        if let themed = themeStyle.cardBorderActive { return themed }
+        return colorScheme == .light
             ? BrandColors.blackSwiftUI.opacity(0.92)
             : BrandColors.whiteSwiftUI
     }
 
-    /// Inner-ring accent for selected workspaces that have no color of their
-    /// own: the c11 brand gold, deepened in light mode so it keeps its bite
-    /// against the parchment card base (the void-black base needs no help).
-    private var cardSelectionAccentColor: Color {
-        colorScheme == .light
-            ? Color(nsColor: NSColor(
-                srgbRed: 0x8F / 255.0,
-                green: 0x77 / 255.0,
-                blue: 0x33 / 255.0,
-                alpha: 1
-            ))
-            : BrandColors.goldSwiftUI
+    static let beaconBarWidth: CGFloat = 8
+    static let beaconNotchWidth: CGFloat = 4
+    static let beaconPointerSize = CGSize(width: 5, height: 12)
+    /// The selected card's corners never round past this.
+    static let beaconMaxCornerRadius: CGFloat = 3
+
+    /// Trailing space every card reserves so content clears the selection
+    /// bar by at least 4pt. Constant per theme and density, never per
+    /// selection, so text does not reflow when the selection moves.
+    var beaconTrailingReserve: CGFloat {
+        let horizontalPadding = density == .compact ? 8 : themeStyle.cardPadding.horizontal
+        return max(0, Self.beaconBarWidth + 4 - horizontalPadding)
     }
 
-    /// Outer ring. Priority: selection, then the live waiting signal, then
-    /// the workspace's own color, then the neutral hairline. Whenever
-    /// selection or waiting claims the outer ring, the workspace color moves
-    /// to the inner ring rather than disappearing.
+    /// The workspace's own color as the leading notch, or nil when it has
+    /// none or the card fill already carries it.
+    private var workspaceIdentityNotchColor: Color? {
+        guard !cardFillCarriesIdentityColor, let hex = workspace.customColor else { return nil }
+        return WorkspaceColorSettings.displayColor(hex: hex, colorScheme: colorScheme)
+    }
+
+    /// Edge color. A theme that draws the card edge (C11H-145) supplies its
+    /// own waiting and plain edges; selection is always the selection ink.
     private var workspacePulseBorderColor: Color {
         if isActive {
-            return cardSelectionRingColor
+            return cardSelectionInk
         }
-        if workspacePulse.waitingCount > 0 {
+        if edgeShowsWaiting {
+            if themeStyle.ownsCardEdge, let waiting = themeStyle.cardBorderWaiting { return waiting }
             return workspacePulseColor(for: .waiting).opacity(0.7)
         }
-        if let workspaceIdentityOutlineColor {
-            return workspaceIdentityOutlineColor
-        }
+        if themeStyle.ownsCardEdge, let border = themeStyle.cardBorder { return border }
         return workspacePulseIdentityColor.opacity(0.32)
     }
 
+    /// Edge widths: selection is at least 3pt in every theme; otherwise the
+    /// theme's `geometry.cardBorderPt`, waiting's 1.5pt, or a 1pt hairline.
     private var workspacePulseBorderLineWidth: CGFloat {
-        if isActive { return 2.5 }
-        if workspacePulse.waitingCount > 0 { return 1.5 }
-        return workspaceIdentityOutlineColor == nil ? 1 : 2
-    }
-
-    /// Inner ring, inset flush against the outer one. Carries the workspace
-    /// color when selection or the waiting signal has claimed the outer ring,
-    /// so a selected card is unmistakably selected *and* still identifiable
-    /// by color at a glance. Selected workspaces with no color of their own
-    /// fall back to the brand gold, so selection always reads as a filled
-    /// double edge rather than a lone outline.
-    ///
-    /// Waiting and selection both land on gold-family hues, so the grammar of
-    /// the card edge is what separates them: gold on the *outermost* edge
-    /// with no white ring means waiting; white on the outermost edge with the
-    /// gold inset *inside* it means selected. The widths reinforce it — the
-    /// selection ring is 2.5pt against waiting's 1.5pt.
-    private var workspacePulseInnerRingColor: Color? {
-        if !cardFillCarriesIdentityColor,
-           let workspaceIdentityOutlineColor,
-           isActive || workspacePulse.waitingCount > 0 {
-            return workspaceIdentityOutlineColor
-        }
-        if isActive, !cardFillCarriesIdentityColor {
-            return cardSelectionAccentColor
-        }
-        return nil
-    }
-
-    /// Keeps the inner ring flush against the outer one whatever width the
-    /// outer ring resolved to, and keeps the two radii concentric.
-    private var workspacePulseInnerRingInset: CGFloat {
-        workspacePulseBorderLineWidth
+        if isActive { return max(3, themeStyle.cardActiveBorderPt ?? 3) }
+        if let width = themeStyle.cardBorderPt { return width }
+        if edgeShowsWaiting { return 1.5 }
+        return 1
     }
 
     private var workspacePulseCardOpacity: Double {
         1
     }
 
+    /// Card corner radius: today's 12, or the theme's `geometry.cardRadius`;
+    /// the selected card squares off to at most 3pt.
+    private var cardCornerRadius: CGFloat {
+        let base = density == .compact ? min(themeStyle.cardRadius ?? 12, 6) : (themeStyle.cardRadius ?? 12)
+        return isActive ? min(base, Self.beaconMaxCornerRadius) : base
+    }
+
+    /// The selected card's glow: the theme's own (`chrome.card.glow`), else
+    /// the selection ink, softer on the light card base.
+    private var beaconGlowColor: Color? {
+        guard isActive else { return nil }
+        if let themed = themeStyle.cardGlow { return themed }
+        return cardSelectionInk.opacity(colorScheme == .light ? 0.36 : 0.68)
+    }
+
+    /// The notch, bar and pointer sit above the card's content, so a header
+    /// band or rule that runs to the card edge passes under them.
+    @ViewBuilder
+    private func workspaceBeaconOverlay() -> some View {
+        let shape = RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+        ZStack {
+            if let notch = workspaceIdentityNotchColor {
+                if isActive {
+                    // Inside the selection edge, so the outline does not cover it.
+                    let inset = workspacePulseBorderLineWidth
+                    Rectangle()
+                        .fill(notch)
+                        .frame(width: Self.beaconNotchWidth)
+                        .padding(.vertical, inset)
+                        .padding(.leading, inset)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                } else {
+                    Rectangle()
+                        .fill(notch)
+                        .frame(width: Self.beaconNotchWidth)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                        .clipShape(shape)
+                }
+            }
+            if isActive {
+                Rectangle()
+                    .fill(cardSelectionInk)
+                    .frame(width: Self.beaconBarWidth)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .clipShape(shape)
+                // The pointer sits in the row's 6pt gutter, aimed at the content.
+                WorkspaceCardBeaconPointer()
+                    .fill(cardSelectionInk)
+                    .frame(width: Self.beaconPointerSize.width, height: Self.beaconPointerSize.height)
+                    .offset(x: Self.beaconPointerSize.width)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
     @ViewBuilder
     private func workspacePulseCardBackground() -> some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        let radius = cardCornerRadius
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let sheen = themeStyle.cardSheen ?? true
+        shape
             .fill(workspacePulseBaseColor)
+            .modifier(WorkspaceCardGlow(color: beaconGlowColor))
             .overlay {
-                RadialGradient(
-                    colors: [
-                        workspacePulseIdentityColor.opacity(colorScheme == .light ? 0.07 : 0.09),
-                        workspacePulseIdentityColor.opacity(0)
-                    ],
-                    center: .topLeading,
-                    startRadius: 0,
-                    endRadius: 180
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .overlay {
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(colorScheme == .light ? 0.22 : 0.025),
-                        Color.clear
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        workspacePulseBorderColor,
-                        lineWidth: workspacePulseBorderLineWidth
+                if sheen {
+                    RadialGradient(
+                        colors: [
+                            workspacePulseIdentityColor.opacity(colorScheme == .light ? 0.07 : 0.09),
+                            workspacePulseIdentityColor.opacity(0)
+                        ],
+                        center: .topLeading,
+                        startRadius: 0,
+                        endRadius: 180
                     )
+                    .clipShape(shape)
+                }
             }
             .overlay {
-                if let workspacePulseInnerRingColor {
-                    let inset = workspacePulseInnerRingInset
-                    RoundedRectangle(cornerRadius: 12 - inset, style: .continuous)
-                        .strokeBorder(workspacePulseInnerRingColor, lineWidth: 2)
-                        .padding(inset)
+                if sheen {
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(colorScheme == .light ? 0.22 : 0.025),
+                            Color.clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .clipShape(shape)
+                }
+            }
+            .overlay {
+                // The wash: dark appearance only; on the light base the ink
+                // would grey the card rather than light it.
+                if isActive, colorScheme != .light {
+                    shape.fill(cardSelectionInk.opacity(0.12))
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                shape.strokeBorder(
+                    workspacePulseBorderColor,
+                    lineWidth: workspacePulseBorderLineWidth
+                )
+            }
+            .overlay {
+                // Outrun's active glow: a one-point ring outside the edge over the bloom.
+                if isActive, let glow = themeStyle.cardGlow {
+                    RoundedRectangle(cornerRadius: radius + 1, style: .continuous)
+                        .strokeBorder(glow, lineWidth: 1)
+                        .padding(-1)
                         .allowsHitTesting(false)
                 }
             }
@@ -13072,17 +14159,17 @@ private struct WorkspaceRowView: View, Equatable {
         if sidebarShowSSH, let remoteWorkspaceSidebarText {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(remoteWorkspaceSidebarText)
-                        .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
-                        .foregroundColor(activeSecondaryColor(0.8))
+                    Text(verbatim: themeStyle.cardLabel.apply(remoteWorkspaceSidebarText))
+                        .chromeStyle(themeStyle.cardLabel, size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced)
+                        .foregroundColor(themeStyle.cardTextSecondary ?? activeSecondaryColor(0.8))
                         .lineLimit(1)
                         .truncationMode(.middle)
 
                     Spacer(minLength: 0)
 
-                    Text(remoteConnectionStatusText)
-                        .font(.system(size: chromeTokens.sidebarWorkspaceAccessory, weight: .medium))
-                        .foregroundColor(activeSecondaryColor(0.58))
+                    Text(verbatim: themeStyle.cardLabel.apply(remoteConnectionStatusText))
+                        .chromeStyle(themeStyle.cardLabel, size: chromeTokens.sidebarWorkspaceAccessory, weight: .medium)
+                        .foregroundColor(themeStyle.cardTextDim ?? activeSecondaryColor(0.58))
                         .lineLimit(1)
                 }
             }
@@ -13142,9 +14229,10 @@ private struct WorkspaceRowView: View, Equatable {
             // inline (an empty container still claims spacing on both sides)
             // and keep the gaps tight.
             HStack(alignment: .center, spacing: 5) {
-                Text(workspace.title)
-                    .font(.system(size: chromeTokens.sidebarWorkspaceTitle + 1.5, weight: titleFontWeight))
-                    .foregroundColor(.primary)
+                if let icon = workspaceIconGlyph {
+                    workspaceIconSlot(icon, titleSize: chromeTokens.sidebarWorkspaceTitle + 1.5)
+                }
+                workspaceTitleText
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
@@ -13154,7 +14242,7 @@ private struct WorkspaceRowView: View, Equatable {
                 if workspace.isPinned {
                     Image(systemName: "diamond.fill")
                         .font(.system(size: chromeTokens.sidebarWorkspaceAccessory + 1, weight: .semibold))
-                        .foregroundColor(.secondary.opacity(0.7))
+                        .foregroundColor(themeStyle.cardTextSecondary ?? .secondary.opacity(0.7))
                 }
 
                 // One fixed slot: the workspace number at rest, the close X
@@ -13170,7 +14258,7 @@ private struct WorkspaceRowView: View, Equatable {
                             Text(verbatim: "WS ").foregroundColor(workspaceIdColor.opacity(0.6))
                             + Text(verbatim: "\(workspace.displayOrdinal)").foregroundColor(workspaceIdColor)
                         )
-                            .font(.system(size: chromeTokens.sidebarWorkspaceDetail, weight: .medium, design: .monospaced))
+                            .chromeStyle(themeStyle.cardLabel, size: chromeTokens.sidebarWorkspaceDetail, weight: .medium, design: .monospaced)
                             .monospacedDigit()
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
@@ -13186,7 +14274,7 @@ private struct WorkspaceRowView: View, Equatable {
                     }) {
                         Image(systemName: "xmark")
                             .font(.system(size: chromeTokens.sidebarWorkspaceAccessory, weight: .medium))
-                            .foregroundColor(activeSecondaryColor(0.7))
+                            .foregroundColor(themeStyle.cardTextSecondary ?? activeSecondaryColor(0.7))
                     }
                     .buttonStyle(.plain)
                     .safeHelp(KeyboardShortcutSettings.Action.closeWorkspace.tooltip(closeWorkspaceTooltip))
@@ -13196,11 +14284,21 @@ private struct WorkspaceRowView: View, Equatable {
                 }
                 .frame(minWidth: 18, minHeight: 19, alignment: .trailing)
             }
+            .modifier(WorkspaceCardHeaderOrnament(
+                header: themeStyle.cardHeader,
+                padding: themeStyle.cardPadding,
+                borderWidth: workspacePulseBorderLineWidth,
+                cornerRadius: cardCornerRadius,
+                rule: themeStyle.cardRule ?? workspacePulseDividerColor.opacity(0.42),
+                band: isActive
+                    ? (themeStyle.cardBorderActive ?? themeStyle.cardAccent ?? BrandColors.goldSwiftUI).opacity(0.08)
+                    : (themeStyle.cardText ?? .primary).opacity(0.025)
+            ))
 
             if !sidebarHideAllDetails, !isMinimalMode, let mission {
                 Text(verbatim: mission.summary)
                     .font(.system(size: chromeTokens.sidebarWorkspaceDetail))
-                    .foregroundColor(activeSecondaryColor())
+                    .foregroundColor(themeStyle.cardTextSecondary ?? activeSecondaryColor())
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .safeHelp(mission.tooltip)
@@ -13221,11 +14319,12 @@ private struct WorkspaceRowView: View, Equatable {
             // `SidebarSurfaceMetricsReadout`.
             SidebarPanelMetricsReadout(
                 surfaceId: workspace.focusedPanelId,
-                valueColor: activeSecondaryColor(0.55),
+                valueColor: themeStyle.cardTextDim ?? activeSecondaryColor(0.55),
                 // `activeSecondaryColor` collapses to `.secondary` on the
                 // non-inverted path, so the null state's dimming has to be
                 // applied explicitly rather than through its opacity arg.
-                placeholderColor: activeSecondaryColor(0.55).opacity(0.45)
+                placeholderColor: (themeStyle.cardTextDim ?? activeSecondaryColor(0.55)).opacity(0.45),
+                labelStyle: themeStyle.cardLabel
             )
 
             // C11-104 — worktree + branch chips. Renders when the master
@@ -13235,8 +14334,9 @@ private struct WorkspaceRowView: View, Equatable {
             if !worktreeChipRows.isEmpty {
                 WorktreeChipsRow(
                     rows: worktreeChipRows,
-                    foreground: activeSecondaryColor(0.85),
-                    secondary: activeSecondaryColor(0.7)
+                    foreground: themeStyle.cardTextSecondary ?? activeSecondaryColor(0.85),
+                    secondary: themeStyle.cardTextSecondary ?? activeSecondaryColor(0.7),
+                    labelStyle: themeStyle.cardLabel
                 )
                 .padding(.top, 1)
             }
@@ -13272,7 +14372,7 @@ private struct WorkspaceRowView: View, Equatable {
                         .foregroundColor(logLevelColor(latestLog.level, isActive: usesInvertedActiveForeground))
                     Text(latestLog.message)
                         .font(.system(size: chromeTokens.sidebarWorkspaceMetadata))
-                        .foregroundColor(activeSecondaryColor(0.8))
+                        .foregroundColor(themeStyle.cardTextSecondary ?? activeSecondaryColor(0.8))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -13286,10 +14386,14 @@ private struct WorkspaceRowView: View, Equatable {
             if detailVisibility.showsProgress, let progress = workspace.progress {
                 SidebarProgressIndicator(
                     progress: progress,
-                    trackColor: activeProgressTrackColor,
+                    trackColor: themeStyle.cardProgressTrack ?? activeProgressTrackColor,
                     fillColor: activeProgressFillColor,
-                    labelColor: activeSecondaryColor(0.6),
-                    labelFontSize: chromeTokens.sidebarWorkspaceProgressLabel
+                    labelColor: themeStyle.cardTextDim ?? activeSecondaryColor(0.6),
+                    labelFontSize: chromeTokens.sidebarWorkspaceProgressLabel,
+                    fillGradient: themeStyle.cardProgress,
+                    barHeight: themeStyle.progressHeightPt,
+                    barRadius: themeStyle.progressRadius,
+                    labelStyle: themeStyle.cardLabel
                 )
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -13330,9 +14434,9 @@ private struct WorkspaceRowView: View, Equatable {
 
             // Ports row
             if detailVisibility.showsPorts, !workspace.listeningPorts.isEmpty {
-                Text(workspace.listeningPorts.map { ":\($0)" }.joined(separator: ", "))
-                    .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
-                    .foregroundColor(activeSecondaryColor(0.75))
+                Text(verbatim: workspace.listeningPorts.map { ":\($0)" }.joined(separator: ", "))
+                    .chromeStyle(themeStyle.cardLabel, size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced)
+                    .foregroundColor(themeStyle.cardTextSecondary ?? activeSecondaryColor(0.75))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -13345,9 +14449,11 @@ private struct WorkspaceRowView: View, Equatable {
         .animation(.easeInOut(duration: 0.2), value: workspace.logEntries.count)
         .animation(.easeInOut(duration: 0.2), value: workspace.progress != nil)
         .animation(.easeInOut(duration: 0.2), value: workspace.metadataBlocks.count)
-        .padding(.horizontal, 13)
-        .padding(.top, 13)
-        .padding(.bottom, 11)
+        .padding(.horizontal, themeStyle.cardPadding.horizontal)
+        // A console header takes half the top padding into its band, so the
+        // card keeps its height (WorkspaceCardHeaderOrnament).
+        .padding(.top, themeStyle.cardHeader == .console ? themeStyle.cardPadding.top / 2 : themeStyle.cardPadding.top)
+        .padding(.bottom, themeStyle.cardPadding.bottom)
     }
 
     var body: some View {
@@ -13357,9 +14463,16 @@ private struct WorkspaceRowView: View, Equatable {
         let accessibilityHintText = String(localized: "sidebar.workspace.accessibilityHint", defaultValue: "Activate to focus this workspace. Drag to reorder, or use Move Up and Move Down actions.")
         let moveUpActionText = String(localized: "sidebar.workspace.moveUpAction", defaultValue: "Move Up")
         let moveDownActionText = String(localized: "sidebar.workspace.moveDownAction", defaultValue: "Move Down")
-        cardContents
+        densityContents
+        .padding(.trailing, beaconTrailingReserve)
         .frame(maxHeight: tiled ? .infinity : nil, alignment: .top)
         .background(workspacePulseCardBackground())
+        .overlay { workspaceBeaconOverlay() }
+        .overlay {
+            if themeStyle.hoverBrackets, isHovering {
+                SidebarHoverBrackets(color: (themeStyle.cardBorderActive ?? themeStyle.cardText ?? .primary).opacity(0.78))
+            }
+        }
         .onChange(of: workspace.sidebarFlashRequest) { _, request in
             guard let request, request.remainingDuration > 0 else { return }
             activeSidebarFlash = request
@@ -13401,7 +14514,7 @@ private struct WorkspaceRowView: View, Equatable {
             }
         }
         .overlay(alignment: .bottom) {
-            if draggedWorkspaceId != nil && dropIndicator?.workspaceId == workspace.id && dropIndicator?.edge == .bottom {
+            if dropIndicator?.workspaceId == workspace.id && dropIndicator?.edge == .bottom {
                 Rectangle().fill(cmuxAccentColor()).frame(height: 2).padding(.horizontal, 8)
             }
         }
@@ -13412,10 +14525,20 @@ private struct WorkspaceRowView: View, Equatable {
             draggedGroupId = nil
             draggedWorkspaceId = workspace.id
             dropIndicator = nil
+            WorkspaceHoverCardController.shared.dismiss()
+            SidebarForeignHover.beginDrag(sourceWindow: AppDelegate.shared?.mainWindow(for: workspaceManager))
+            let draggedId = workspace.id
+            DragTearOffWatcher.shared.begin("workspace") { point in
+                // Released outside every window: no drop handler ran to end
+                // the source sidebar's drag, so end it here.
+                SidebarDragLifecycleNotification.postClearRequest(reason: "released_outside")
+                _ = AppDelegate.shared?.tearOffWorkspaceToNewWindow(workspaceId: draggedId, at: point)
+            }
             return SidebarWorkspaceDragPayload.provider(for: workspace.id)
         }
         .internalOnlyPanelDrag()
-        .onDrop(of: SidebarWorkspaceDragPayload.dropContentTypes, delegate: SidebarWorkspaceDropDelegate(
+        .onDrop(of: SidebarWorkspaceDragPayload.dropContentTypes + SidebarGroupDragPayload.dropContentTypes,
+                delegate: SidebarWorkspaceDropDelegate(
             targetWorkspaceId: workspace.id,
             workspaceManager: workspaceManager,
             draggedWorkspaceId: $draggedWorkspaceId,
@@ -13431,16 +14554,27 @@ private struct WorkspaceRowView: View, Equatable {
             // flash inside it (across all panels). The operator clicked,
             // they're acknowledging — give them the surface clean.
             workspace.cancelAllPersistentFlashes()
+            WorkspaceHoverCardController.shared.dismiss()
             updateSelection()
         }
-        .onHover { hovering in
-            isHovering = hovering
+        .onHover(perform: handleRowHover)
+        .onDisappear(perform: dismissRowHoverCard)
+        .onChange(of: density) { _, newDensity in
+            if newDensity != .compact { dismissRowHoverCard() }
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("sidebar.workspace.\(workspace.id.uuidString)")
         .accessibilityLabel(Text(accessibilityTitle))
         .accessibilityValue(Text(workspace.mission?.paragraph ?? ""))
         .accessibilityHint(Text(accessibilityHintText))
+        .accessibilityActions {
+            if density == .compact {
+                Button(String(localized: "sidebar.summaryCard.toggle",
+                              defaultValue: "Show or hide workspace summary")) {
+                    toggleSummaryCard()
+                }
+            }
+        }
         .accessibilityAction(named: Text(moveUpActionText)) {
             moveBy(-1)
         }
@@ -13448,6 +14582,46 @@ private struct WorkspaceRowView: View, Equatable {
             moveBy(1)
         }
         .contextMenu { workspaceContextMenu }
+        .popover(item: $iconPickerRequest, arrowEdge: .trailing) { request in
+            SidebarIconPicker(
+                title: String(localized: "sidebarIcon.picker.workspaceTitle", defaultValue: "Workspace Icon"),
+                current: workspaceIconGlyph,
+                focusTarget: request.focusTarget,
+                onSubmit: { try applyWorkspaceIcon($0, targetIds: request.targetIds) },
+                onDismiss: { iconPickerRequest = nil }
+            )
+        }
+    }
+
+    /// The workspace's `icon` metadata (`set-workspace-icon`), as drawn.
+    private var workspaceIconGlyph: SidebarIconGlyph? {
+        SidebarIconGlyph.forWorkspaceIcon(workspace.metadata[WorkspaceMetadataKey.icon])
+    }
+
+    /// The icon before the title in a slot of fixed width that adds no height:
+    /// the glyph is an overlay on a 1 pt strip, so an emoji and a symbol take
+    /// the same box and setting one never moves the title or the rows below,
+    /// at any chrome scale.
+    private func workspaceIconSlot(_ glyph: SidebarIconGlyph, titleSize: CGFloat) -> some View {
+        let side = ceil(titleSize * 1.2)
+        return Color.clear
+            .frame(width: side, height: 1)
+            .overlay {
+                SidebarIconGlyphView(glyph: glyph, size: titleSize)
+                    .foregroundColor(themeStyle.cardText ?? .primary)
+                    .frame(width: side, height: side)
+            }
+            .accessibilityHidden(true)
+    }
+
+    /// Writes the same `icon` value `set-workspace-icon` writes, to every target.
+    /// Throws, before writing anything, when the store would refuse the value.
+    private func applyWorkspaceIcon(_ glyph: SidebarIconGlyph?, targetIds: [UUID]) throws {
+        let value = try glyph?.checkedWorkspaceMetadataValue() ?? ""
+        for targetId in targetIds {
+            workspaceManager.workspaces.first(where: { $0.id == targetId })?
+                .setOperatorMetadata([WorkspaceMetadataKey.icon: value])
+        }
     }
 
     private func contextMenuLabel(multi: String, single: String, isMulti: Bool) -> String {
@@ -13595,6 +14769,11 @@ private struct WorkspaceRowView: View, Equatable {
             defaultValue: "Per-workspace accent. Chrome theme (Light/Dark) lives in Settings → Theme."
         ))
 
+        Button(String(localized: "contextMenu.setWorkspaceIcon", defaultValue: "Set Icon…")) {
+            iconPickerRequest = SidebarIconPickerRequest(
+                targetIds: targetIds, focusTarget: WorkspaceGroupEditorFocusTarget.capture())
+        }
+
         Menu(String(localized: "workspaceGroup.moveToGroup", defaultValue: "Move to Group")) {
             Button(String(localized: "workspaceGroup.ungrouped", defaultValue: "Ungrouped")) {
                 for id in contextTargetIds() {
@@ -13712,8 +14891,10 @@ private struct WorkspaceRowView: View, Equatable {
         ) ?? NSColor(hex: hex) ?? .gray
     }
 
+    /// A workspace-edge indicator only comes from a workspace drag, from this
+    /// window or another one (C11H-207), so the indicator alone decides.
     private var showsCenteredTopDropIndicator: Bool {
-        draggedWorkspaceId != nil && dropIndicator?.workspaceId == workspace.id && dropIndicator?.edge == .top
+        dropIndicator?.workspaceId == workspace.id && dropIndicator?.edge == .top
     }
 
     private var accessibilityTitle: String {
@@ -13721,18 +14902,9 @@ private struct WorkspaceRowView: View, Equatable {
     }
 
     private func moveBy(_ delta: Int) {
-        // Re-resolve displayed neighbors from current model state, not a stale
-        // captured index. Other groups may be interleaved in canonical order.
-        let peers = workspaceManager.workspaces.filter {
-            $0.groupId == workspace.groupId && $0.isPinned == workspace.isPinned
-        }
-        guard let source = peers.firstIndex(where: { $0.id == workspace.id }),
-              peers.indices.contains(source + delta) else { return }
-        let target = peers[source + delta].id
-        do {
-            try workspaceManager.moveWorkspaceToGroup(workspaceId: workspace.id, groupId: workspace.groupId,
-                                                       before: delta < 0 ? target : nil, after: delta > 0 ? target : nil)
-        } catch { return }
+        // Re-resolves displayed neighbours from current model state, not a stale
+        // captured index (C11H-342: at the root a step passes a group too).
+        guard workspaceManager.stepWorkspaceInSidebar(workspace.id, by: delta) else { return }
         selectedWorkspaceIds = [workspace.id]
         lastSidebarSelectionIndex = workspaceManager.workspaces.firstIndex { $0.id == workspace.id }
         SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
@@ -13752,8 +14924,6 @@ private struct WorkspaceRowView: View, Equatable {
         let modifiers = NSEvent.modifierFlags
         let isCommand = modifiers.contains(.command)
         let isShift = modifiers.contains(.shift)
-        let wasSelected = workspaceManager.selectedWorkspaceId == workspace.id
-
         if isShift, let rangeIds = WorkspaceGroupSidebarProjection.selectionRange(
             anchor: workspaceManager.selectedWorkspaceId, target: workspace.id, visibleWorkspaceIds: visibleWorkspaceIds
         ) {
@@ -13773,13 +14943,7 @@ private struct WorkspaceRowView: View, Equatable {
         }
 
         lastSidebarSelectionIndex = index
-        SocketCommandContext.withContext(nil) { workspaceManager.selectWorkspace(workspace, cause: "sidebar") }
-        if wasSelected, !isCommand, !isShift {
-            workspaceManager.dismissNotificationOnDirectInteraction(
-                workspaceId: workspace.id,
-                surfaceId: workspaceManager.focusedSurfaceId(for: workspace.id)
-            )
-        }
+        workspaceManager.selectWorkspaceFromSidebarCard(workspace, isCommand: isCommand, isShift: isShift)
         setSelectionToTabs()
     }
 
@@ -14529,10 +15693,49 @@ private struct SidebarMetadataEntryRow: View {
             Text(attributed)
                 .underline(underlined)
                 .foregroundColor(foregroundColor)
+                // C11H-365 (N4): any agent, including one on a linked machine,
+                // can write this text; its links follow the mail drawer's rule.
+                .environment(\.openURL, OpenURLAction { SidebarStatusLinkRule.open($0) })
         } else {
             Text(display)
                 .underline(underlined)
                 .foregroundColor(foregroundColor)
+        }
+    }
+}
+
+/// C11H-365 (N4): a markdown status pill's link follows the mail drawer's
+/// rule (`MailboxDrawerLinkOpener`): a c11 panel link opens in c11, an http(s)
+/// link opens in the default browser, and any other scheme opens nothing. Any
+/// agent can write a pill, including one on a linked machine through the relay.
+@MainActor
+enum SidebarStatusLinkRule {
+    enum Decision: Equatable { case panelLink, web, refused }
+
+    nonisolated static func decision(for url: URL) -> Decision {
+        if PanelLinkTarget.usesScheme(url) { return .panelLink }
+        return MailboxBodyLinks.linkURL(url.absoluteString) == nil ? .refused : .web
+    }
+
+    static func open(_ url: URL) -> OpenURLAction.Result {
+        let href = url.absoluteString
+        switch decision(for: url) {
+        case .panelLink:
+            guard let target = PanelLinkTarget(href) else {
+                PanelLinkActivation.log(target: href, origin: "sidebar_status", activation: "native_click", result: "invalid_target")
+                return .handled
+            }
+            let opened = AppDelegate.shared?.openPanelLink(target) == true
+            PanelLinkActivation.log(target: href, origin: "sidebar_status", activation: "native_click",
+                                    result: opened ? "opened" : "unavailable")
+            return .handled
+        case .web:
+            NSWorkspace.shared.open(url)
+            return .handled
+        case .refused:
+            PanelLinkActivation.log(target: url.scheme.map { $0 + ":" } ?? "", origin: "sidebar_status",
+                                    activation: "native_click", result: "refused_scheme")
+            return .discarded
         }
     }
 }
@@ -14547,6 +15750,11 @@ private struct SidebarProgressIndicator: View {
     let fillColor: Color
     let labelColor: Color
     let labelFontSize: CGFloat
+    /// Schema-2 overrides (C11H-145); nil keeps the 3pt gold capsule.
+    var fillGradient: Gradient? = nil
+    var barHeight: CGFloat? = nil
+    var barRadius: CGFloat? = nil
+    var labelStyle: ThemeTextStyle = .unset
 
     @ObservedObject private var decayClock = SidebarDecayClock.shared
     @AppStorage(SidebarStalenessSettings.staleThresholdKey)
@@ -14587,24 +15795,45 @@ private struct SidebarProgressIndicator: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(trackColor)
-                    Capsule()
-                        .fill(effectiveFillColor)
-                        .frame(width: max(0, geo.size.width * CGFloat(progress.value)))
+                if barRadius == nil {
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(trackColor)
+                        fillBar(Capsule(), width: max(0, geo.size.width * CGFloat(progress.value)))
+                    }
+                } else {
+                    let shape = WorkspaceCardBarShape(radius: barRadius)
+                    ZStack(alignment: .leading) {
+                        shape
+                            .fill(trackColor)
+                        fillBar(shape, width: max(0, geo.size.width * CGFloat(progress.value)))
+                    }
                 }
             }
-            .frame(height: 3)
+            .frame(height: barHeight ?? 3)
 
             if let label = progress.label {
-                Text(label)
-                    .font(.system(size: labelFontSize))
+                Text(verbatim: labelStyle.apply(label))
+                    .chromeStyle(labelStyle, size: labelFontSize)
                     .foregroundColor(labelColor)
                     .lineLimit(1)
             }
         }
         .opacity(decayOpacity)
+    }
+
+    /// The filled part: the theme's gradient while fresh, else the plain fill.
+    @ViewBuilder
+    private func fillBar<S: Shape>(_ shape: S, width: CGFloat) -> some View {
+        if let fillGradient, decayStage != .expired {
+            shape
+                .fill(LinearGradient(gradient: fillGradient, startPoint: .leading, endPoint: .trailing))
+                .frame(width: width)
+        } else {
+            shape
+                .fill(effectiveFillColor)
+                .frame(width: width)
+        }
     }
 }
 
@@ -14941,7 +16170,14 @@ private enum SidebarWorkspaceDragPayload {
     static let dropContentTypes: [UTType] = [dropContentType]
     private static let prefix = "cmux.sidebar-tab."
 
+    /// C11H-207: the workspace of the sidebar drag most recently started in
+    /// any window, so another window's sidebar can plan a drop for it. Preview
+    /// only; a drop confirms against the drag pasteboard (`currentId`).
+    @MainActor static var inFlightWorkspaceId: UUID?
+
+    @MainActor
     static func provider(for workspaceId: UUID) -> NSItemProvider {
+        inFlightWorkspaceId = workspaceId
         let provider = NSItemProvider()
         let payload = "\(prefix)\(workspaceId.uuidString)"
         provider.registerDataRepresentation(forTypeIdentifier: typeIdentifier, visibility: .ownProcess) { completion in
@@ -15237,7 +16473,51 @@ private struct SidebarWorkspaceDropDelegate: DropDelegate {
             dragAutoScrollController.stop()
         }
         // Resolve the current model and payload again; never commit hover state.
-        guard let plan = plan(for: info), validPasteboardSource else { return false }
+        guard let plan = plan(for: info) else { return false }
+        if case .moveWorkspace(let id, let groupId, let before, let after) = plan.command,
+           !workspaceManager.workspaces.contains(where: { $0.id == id }) {
+            // C11H-207: a card from another window. Confirm it against the drag
+            // pasteboard, then move it once this drop returns, so its source
+            // row is not removed under the live drag session.
+            guard SidebarWorkspaceDragPayload.currentId() == id,
+                  let windowId = AppDelegate.shared?.windowId(for: workspaceManager) else { return false }
+#if DEBUG
+            dlog("sidebar.crossWindowDrop.perform ws=\(id.uuidString.prefix(5)) to=\(windowId.uuidString.prefix(5))")
+#endif
+            SidebarDragLifecycleNotification.postClearRequest(reason: "cross_window_drop")
+            SidebarForeignHover.reset()
+            DispatchQueue.main.async {
+                _ = AppDelegate.shared?.moveWorkspaceToWindow(
+                    workspaceId: id, windowId: windowId, groupId: groupId, before: before, after: after
+                )
+            }
+            return true
+        }
+        guard validPasteboardSource else { return false }
+        if case .moveWorkspace(let id, _, _, _) = plan.command,
+           let windowId = AppDelegate.shared?.windowId(for: workspaceManager),
+           let hover = SidebarForeignHover.pending(workspaceId: id, pointer: NSEvent.mouseLocation),
+           hover.windowId != windowId {
+            // This window came forward at release over the sidebar of the
+            // window the card was shown landing in: land it there.
+#if DEBUG
+            dlog("sidebar.crossWindowDrop.viaSourceSidebar ws=\(id.uuidString.prefix(5)) to=\(hover.windowId.uuidString.prefix(5))")
+#endif
+            SidebarForeignHover.reset()
+            DispatchQueue.main.async {
+                _ = AppDelegate.shared?.moveWorkspaceToWindow(
+                    workspaceId: id, windowId: hover.windowId,
+                    groupId: hover.groupId, before: hover.before, after: hover.after
+                )
+            }
+            return true
+        }
+        if case .moveWorkspace = plan.command,
+           SidebarForeignHover.pointerWasOverAnotherWindow(NSEvent.mouseLocation) {
+            // This window came forward at release; the operator saw another
+            // window here, so do not reorder in this one.
+            return false
+        }
         do {
             switch plan.command {
             case .moveWorkspace(let id, let groupId, let before, let after):
@@ -15245,6 +16525,9 @@ private struct SidebarWorkspaceDropDelegate: DropDelegate {
             case .moveGroup(let id, let before, let after):
                 try workspaceManager.reorderWorkspaceGroup(id: id, before: before, after: after)
             }
+#if DEBUG
+            dlog("sidebar.drop \(Self.debugCommand(plan.command)) changed=\(plan.changed)")
+#endif
             // Dragging is structural, not focus intent. Retain multi-selection
             // and refresh its canonical anchor without selecting a workspace.
             selectedWorkspaceIds.formIntersection(Set(workspaceManager.workspaces.map(\.id)))
@@ -15257,28 +16540,70 @@ private struct SidebarWorkspaceDropDelegate: DropDelegate {
         }
     }
 
+#if DEBUG
+    private static func debugCommand(_ command: WorkspaceGroupDropPlanner.Command) -> String {
+        func short(_ id: UUID?) -> String { id.map { String($0.uuidString.prefix(5)) } ?? "-" }
+        switch command {
+        case .moveWorkspace(let id, let groupId, let before, let after):
+            return "ws=\(short(id)) group=\(short(groupId)) before=\(short(before)) after=\(short(after))"
+        case .moveGroup(let id, let before, let after):
+            return "group=\(short(id)) before=\(short(before)) after=\(short(after))"
+        }
+    }
+#endif
+
     private var validPasteboardSource: Bool {
         if let id = draggedGroupId { return SidebarGroupDragPayload.currentId() == id }
         if let id = draggedWorkspaceId { return SidebarWorkspaceDragPayload.currentId() == id }
         return false
     }
 
+    /// C11H-207: a workspace card dragged in from another window's sidebar,
+    /// read from the process-wide in-flight record and confirmed by the drag's
+    /// type. Never written into this window's `draggedWorkspaceId`: that
+    /// change is broadcast, and would clear the source window's drag mid-flight.
+    private func foreignWorkspace(_ info: DropInfo) -> WorkspaceOrderEntry? {
+        guard draggedWorkspaceId == nil, draggedGroupId == nil,
+              info.hasItemsConforming(to: [SidebarWorkspaceDragPayload.typeIdentifier]),
+              let id = SidebarWorkspaceDragPayload.inFlightWorkspaceId,
+              !workspaceManager.workspaces.contains(where: { $0.id == id }),
+              let owner = AppDelegate.shared?.workspaceManagerFor(workspaceId: id),
+              owner !== workspaceManager,
+              let workspace = owner.workspaces.first(where: { $0.id == id }) else { return nil }
+        return WorkspaceOrderEntry(id: id, isPinned: workspace.isPinned)
+    }
+
     private func plan(for info: DropInfo) -> WorkspaceGroupDropPlanner.Plan? {
         guard let windowId = AppDelegate.shared?.windowId(for: workspaceManager) else { return nil }
         let source: WorkspaceGroupDropPlanner.Source
+        var entries = workspaceManager.workspaceOrderEntries
         if let id = draggedGroupId {
             guard info.hasItemsConforming(to: [SidebarGroupDragPayload.typeIdentifier]) else { return nil }
             source = .group(id: id, windowId: windowId)
         } else if let id = draggedWorkspaceId {
             guard info.hasItemsConforming(to: [SidebarWorkspaceDragPayload.typeIdentifier]) else { return nil }
             source = .workspace(id: id, windowId: windowId)
+        } else if let foreign = foreignWorkspace(info) {
+            // Plan as if it already sat where attach puts it (the end of its
+            // pin segment, ungrouped); the commit attaches it there first.
+            entries = WorkspaceGroupDropPlanner.entries(entries, attaching: foreign)
+            source = .workspace(id: foreign.id, windowId: windowId)
         } else { return nil }
         let edge: WorkspaceGroupDropPlanner.Edge = SidebarDropPlanner.edgeForPointer(
             locationY: info.location.y, targetHeight: targetRowHeight ?? 1
         ) == .top ? .top : .bottom
         let target: WorkspaceGroupDropPlanner.Target
         if let id = targetGroupId {
-            target = draggedGroupId == nil ? .groupBody(id) : .groupEdge(groupId: id, edge: edge)
+            if draggedGroupId == nil {
+                // C11H-342: a header's top and (when nothing shows below it)
+                // bottom thirds place the workspace beside the group; the rest joins.
+                let showsMembers = workspaceManager.workspaceGroups.first { $0.id == id }?.isCollapsed == false
+                    && workspaceManager.workspaces.contains { $0.groupId == id }
+                target = WorkspaceGroupDropPlanner.headerTarget(
+                    groupId: id, locationY: info.location.y, height: targetRowHeight ?? 0, showsMembers: showsMembers)
+            } else {
+                target = .groupEdge(groupId: id, edge: edge)
+            }
         } else if let id = targetWorkspaceId {
             guard let workspace = workspaceManager.workspaces.first(where: { $0.id == id }) else { return nil }
             target = workspace.groupId == nil
@@ -15289,12 +16614,19 @@ private struct SidebarWorkspaceDropDelegate: DropDelegate {
         }
         return try? WorkspaceGroupDropPlanner.plan(
             windowId: windowId, groups: workspaceManager.workspaceGroups,
-            workspaces: workspaceManager.workspaceOrderEntries, source: source, target: target
+            workspaces: entries, rootOrder: workspaceManager.workspaceRootOrder, source: source, target: target
         )
     }
 
     private func updatePreview(_ info: DropInfo) {
         guard let plan = plan(for: info) else { dropIndicator = nil; return }
+        if case .moveWorkspace(let id, let groupId, let before, let after) = plan.command,
+           !workspaceManager.workspaces.contains(where: { $0.id == id }),
+           let windowId = AppDelegate.shared?.windowId(for: workspaceManager) {
+            SidebarForeignHover.note(.init(
+                workspaceId: id, windowId: windowId, groupId: groupId, before: before, after: after
+            ))
+        }
         dragAutoScrollController.updateFromDragLocation()
         switch plan.indicator {
         case .groupBody(let id):
@@ -15802,29 +17134,23 @@ private struct SidebarVisualEffectBackground: NSViewRepresentable {
 private struct SidebarBackdrop: View {
     @AppStorage("sidebarTintOpacity") private var sidebarTintOpacity = SidebarTintDefaults.opacity
     @AppStorage("sidebarTintHex") private var sidebarTintHex = SidebarTintDefaults.hex
-    @AppStorage("sidebarTintHexLight") private var sidebarTintHexLight: String?
-    @AppStorage("sidebarTintHexDark") private var sidebarTintHexDark: String?
     @AppStorage("sidebarMaterial") private var sidebarMaterial = SidebarMaterialOption.sidebar.rawValue
     @AppStorage("sidebarBlendMode") private var sidebarBlendMode = SidebarBlendModeOption.withinWindow.rawValue
     @AppStorage("sidebarState") private var sidebarState = SidebarStateOption.followWindow.rawValue
     @AppStorage("sidebarCornerRadius") private var sidebarCornerRadius = 0.0
     @AppStorage("sidebarBlurOpacity") private var sidebarBlurOpacity = 1.0
+    @AppStorage(C11SidebarBackground.storageKey) private var c11SidebarBackgroundDark = C11SidebarBackground.defaultValue.rawValue
     @ObservedObject private var themeManager = ThemeManager.shared
     @Environment(\.colorScheme) private var colorScheme
+    /// c11 (C11H-197): the hosting window's theme override.
+    @Environment(\.c11WindowThemeName) private var windowThemeName
 
     var body: some View {
         let materialOption = SidebarMaterialOption(rawValue: sidebarMaterial)
         let blendingMode = SidebarBlendModeOption(rawValue: sidebarBlendMode)?.mode ?? .behindWindow
         let state = SidebarStateOption(rawValue: sidebarState)?.state ?? .active
-        let resolvedHex: String = {
-            if colorScheme == .dark, let dark = sidebarTintHexDark {
-                return dark
-            } else if colorScheme == .light, let light = sidebarTintHexLight {
-                return light
-            }
-            return sidebarTintHex
-        }()
-        let tintColor = (NSColor(hex: resolvedHex) ?? NSColor(hex: sidebarTintHex) ?? .black).withAlphaComponent(sidebarTintOpacity)
+        // One tint in both appearances. An older per-mode value in defaults is ignored.
+        let tintColor = (NSColor(hex: sidebarTintHex) ?? .black).withAlphaComponent(sidebarTintOpacity)
         let cornerRadius = CGFloat(max(0, sidebarCornerRadius))
         let useLiquidGlass = materialOption?.usesLiquidGlass ?? false
         let useWindowLevelGlass = useLiquidGlass && blendingMode == .behindWindow
@@ -15857,6 +17183,16 @@ private struct SidebarBackdrop: View {
                 Color(nsColor: themeTintOverlay)
             }
             // When material is none or useWindowLevelGlass, render nothing
+            // c11's backdrop (C11H-32, C11H-146): the theme's `[backdrop]` or a
+            // fixed Dark-slot style. An opaque fill sits on top, so the imported
+            // c11 material, tint and theme overlay don't show through.
+            if let backdrop = C11SidebarBackground.backdrop(
+                raw: c11SidebarBackgroundDark,
+                colorScheme: colorScheme,
+                theme: SidebarThemeStyleCache.backdrop(themeManager, colorScheme: colorScheme, windowThemeName: windowThemeName)
+            ) {
+                SidebarBackdropView(style: backdrop)
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
@@ -15866,7 +17202,8 @@ private struct SidebarBackdrop: View {
         let themeColorScheme: ThemeContext.ColorScheme = colorScheme == .dark ? .dark : .light
         let context = themeManager.makeContext(
             workspaceColor: nil,
-            colorScheme: themeColorScheme
+            colorScheme: themeColorScheme,
+            windowThemeName: windowThemeName
         )
         return themeManager.resolve(.sidebar_tintOverlay, context: context)
     }
@@ -16096,5 +17433,1100 @@ extension NSColor {
             return String(format: "#%02X%02X%02X%02X", redByte, greenByte, blueByte, alphaByte)
         }
         return String(format: "#%02X%02X%02X", redByte, greenByte, blueByte)
+    }
+}
+
+
+// MARK: - Compact workspace card (C11H-221)
+//
+// Design: design/minimal-sidebar/DESIGN.md. The sidebar draws today's full
+// cards while every workspace fits, and this two-line card the moment they
+// would scroll. Everything here reads theme roles; nothing is compact-only.
+
+/// Measurements behind the density decision. A plain reference, so a card
+/// growing by a point updates it without re-evaluating the sidebar body.
+final class SidebarDensityTracker {
+    static let rootSpace = "c11.sidebar.root"
+    static let contentSpace = "c11.sidebar.content"
+    static let lastShownKey = "sidebarDensity.lastShown"
+    static let lastCardHeightKey = "sidebarDensity.lastCardHeight"
+    static let lastFullFooterKey = "sidebarDensity.lastFullFooterHeight"
+    static let lastFullFooterKindsKey = "sidebarDensity.lastFullFooterKinds"
+
+    var stack: SidebarStackMetrics?
+    var scrollTop: CGFloat = 0
+    var footer: SidebarFooterMetrics?
+    /// The full-card footer as last measured, and the flag kinds it held.
+    var fullFooterHeight: Double?
+    var fullFooterKinds = 0
+    /// Each workspace's full-card height when last drawn full.
+    var cardHeights: [UUID: Double] = [:]
+
+    /// A new sidebar starts in the density the last one settled on, so a
+    /// laptop window opens compact instead of drawing one frame of full cards.
+    /// Read from defaults once; every flip updates it.
+    static var startDensity: SidebarDensity = initialDensity()
+
+    static func initialDensity(defaults: UserDefaults = .standard) -> SidebarDensity {
+        switch SidebarDensitySetting.resolve(defaults.string(forKey: SidebarDensitySetting.key)) {
+        case .compact: return .compact
+        case .cards: return .cards
+        case .automatic:
+            return defaults.string(forKey: lastShownKey).flatMap(SidebarDensity.init(rawValue:)) ?? .cards
+        }
+    }
+
+    /// The mean full-card height last seen, for cards a new sidebar never drew.
+    static func rememberedCardHeight(defaults: UserDefaults = .standard) -> Double? {
+        let height = defaults.double(forKey: lastCardHeightKey)
+        return height > 0 ? height : nil
+    }
+
+    /// The one-column full footer as last measured, and the flag kinds it held.
+    static func rememberedFullFooter(defaults: UserDefaults = .standard) -> (height: Double, kinds: Int)? {
+        let height = defaults.double(forKey: lastFullFooterKey)
+        return height > 0 ? (height, defaults.integer(forKey: lastFullFooterKindsKey)) : nil
+    }
+
+    /// Written on a density flip only, from the main thread.
+    static func remember(density: SidebarDensity, cardHeights: [UUID: Double],
+                         fullFooterHeight: Double?, fullFooterKinds: Int,
+                         defaults: UserDefaults = .standard) {
+        startDensity = density
+        defaults.set(density.rawValue, forKey: lastShownKey)
+        if !cardHeights.isEmpty {
+            defaults.set(cardHeights.values.reduce(0, +) / Double(cardHeights.count), forKey: lastCardHeightKey)
+        }
+        if let fullFooterHeight {
+            defaults.set(fullFooterHeight, forKey: lastFullFooterKey)
+            defaults.set(fullFooterKinds, forKey: lastFullFooterKindsKey)
+        }
+    }
+
+    /// Flag kinds up, on main, from one shared subscription.
+    @MainActor
+    static let flagKindCounts: AnyPublisher<Int, Never> = PanelAttentionIndex.shared.$snapshots
+        .receive(on: DispatchQueue.main)
+        .map { _ in MainActor.assumeIsolated { PanelAttentionIndex.shared.flagKindSummary.groups.count } }
+        .removeDuplicates()
+        .eraseToAnyPublisher()
+    var flagKinds = -1
+}
+
+/// The footer's frame, tagged with whether it was drawn dense.
+struct SidebarFooterMetrics: Equatable {
+    var frame: CGRect
+    var dense: Bool
+}
+
+struct SidebarFooterMetricsKey: PreferenceKey {
+    static let defaultValue: SidebarFooterMetrics? = nil
+    static func reduce(value: inout SidebarFooterMetrics?, nextValue: () -> SidebarFooterMetrics?) {
+        value = nextValue() ?? value
+    }
+}
+
+/// Every full card's height, tagged with the density it was drawn in.
+struct SidebarCardHeights: Equatable {
+    var density: SidebarDensity
+    var heights: [UUID: CGFloat]
+}
+
+struct SidebarCardHeightsKey: PreferenceKey {
+    static let defaultValue: SidebarCardHeights? = nil
+    static func reduce(value: inout SidebarCardHeights?, nextValue: () -> SidebarCardHeights?) {
+        value = nextValue() ?? value
+    }
+}
+
+/// The workspace stack as drawn, tagged with the density it was drawn in.
+struct SidebarStackMetrics: Equatable {
+    var frame: CGRect
+    var density: SidebarDensity
+}
+
+struct SidebarStackMetricsKey: PreferenceKey {
+    static let defaultValue: SidebarStackMetrics? = nil
+    static func reduce(value: inout SidebarStackMetrics?, nextValue: () -> SidebarStackMetrics?) {
+        value = nextValue() ?? value
+    }
+}
+
+struct SidebarScrollTopKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+
+/// Each compact row's own AppKit view, by workspace, so the hover card can sit
+/// beside it. Held weakly; rows carry no per-row state for it.
+enum SidebarHoverAnchors {
+    private final class WeakView { weak var view: NSView? }
+    private static var views: [UUID: WeakView] = [:]
+
+    static func set(_ view: NSView, for workspaceId: UUID) {
+        let box = views[workspaceId] ?? WeakView()
+        box.view = view
+        views[workspaceId] = box
+        if views.count > 64 { views = views.filter { $0.value.view != nil } }
+    }
+
+    static func view(for workspaceId: UUID) -> NSView? { views[workspaceId]?.view }
+}
+
+private final class SidebarHoverAnchorNSView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+struct SidebarHoverAnchorView: NSViewRepresentable {
+    let workspaceId: UUID
+
+    func makeNSView(context: Context) -> NSView {
+        let view = SidebarHoverAnchorNSView()
+        SidebarHoverAnchors.set(view, for: workspaceId)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        SidebarHoverAnchors.set(nsView, for: workspaceId)
+    }
+}
+
+extension WorkspaceRowView {
+    /// The full card, or the compact card with its summary-card anchor. While
+    /// this workspace's summary card is open, it follows the row's live state.
+    @ViewBuilder
+    var densityContents: some View {
+        if density == .compact {
+            compactCardContents
+                .background(SidebarHoverAnchorView(workspaceId: workspace.id))
+                .onChange(of: workspacePulse) { refreshSummaryCard() }
+                .onChange(of: missionSnapshot) { refreshSummaryCard() }
+                .onChange(of: workspace.captainSummary) { refreshSummaryCard() }
+                .onChange(of: workspace.title) { refreshSummaryCard() }
+                .onChange(of: colorScheme) { refreshSummaryCard() }
+                .onChange(of: themeStyle) { refreshSummaryCard() }
+                .onChange(of: chromeTokens) { refreshSummaryCard() }
+                .onChange(of: isActive) { refreshSummaryCard() }
+        } else {
+            cardContents
+        }
+    }
+
+    func handleRowHover(_ hovering: Bool) {
+        isHovering = hovering
+    }
+
+    /// The info button: opens this workspace's summary card beside the row,
+    /// or closes it when it is already open.
+    func toggleSummaryCard() {
+        WorkspaceHoverCardController.shared.toggle(
+            workspaceId: workspace.id,
+            anchor: SidebarHoverAnchors.view(for: workspace.id),
+            liveKey: summaryLiveKey
+        ) { maxListHeight in AnyView(hoverCardContent(maxListHeight: maxListHeight)) }
+    }
+
+    func refreshSummaryCard() {
+        guard WorkspaceSummaryCardState.shared.shownWorkspaceId == workspace.id else { return }
+        WorkspaceHoverCardController.shared.refresh(workspaceId: workspace.id, liveKey: summaryLiveKey) { maxListHeight in
+            AnyView(hoverCardContent(maxListHeight: maxListHeight))
+        }
+    }
+
+    /// An agent's title and subtitle read now from its panel, not from the
+    /// row's pulse, which follows a description change only after the
+    /// sidebar coordinator's card-context window (C11H-296); the open card
+    /// shows the current one.
+    func liveSummaryContext(_ agent: WorkspacePulseAgent) -> WorkspacePulseAgentContext? {
+        let state = workspace.panelTitleBarState(panelId: agent.surfaceId)
+        let reported = state.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return WorkspacePulseAgentContextProjector.project(
+            title: reported?.isEmpty == false ? state.title : workspace.panels[agent.surfaceId]?.displayTitle,
+            subtitle: state.description,
+            descriptionUpdatedAt: state.descriptionUpdatedAt
+        ) ?? agent.context
+    }
+
+    /// Changes whenever the open card's text would: the controller checks it
+    /// once a second and rebuilds the card only when it moves.
+    func summaryLiveKey() -> Int {
+        var hasher = Hasher()
+        hasher.combine(workspace.title)
+        for agent in workspacePulse.signalAgents.prefix(WorkspaceHoverCard.maximumRows) {
+            let context = liveSummaryContext(agent)
+            hasher.combine(agent.surfaceId)
+            hasher.combine(context?.title)
+            hasher.combine(context?.subtitle)
+            hasher.combine(context?.descriptionUpdatedAt)
+            hasher.combine(PanelAllocationRegistry.shared.record(for: agent.surfaceId)?.number)
+        }
+        return hasher.finalize()
+    }
+
+    func dismissRowHoverCard() {
+        WorkspaceHoverCardController.shared.rowGone(workspaceId: workspace.id)
+    }
+
+    /// Waiting claims the card edge only on the full card; on the compact card
+    /// the number and the marks carry it, so a column of rows stays calm.
+    var edgeShowsWaiting: Bool {
+        density == .cards && workspacePulse.waitingCount > 0
+    }
+
+    var compactCardContents: some View {
+        let scale = chromeTokens.multiplier
+        let signal = workspacePulse.signalAgents
+        let flagAgent = signal.first(where: \.flagged)
+        return VStack(alignment: .leading, spacing: 2 * scale) {
+            HStack(alignment: .center, spacing: 5) {
+                if let icon = workspaceIconGlyph {
+                    workspaceIconSlot(icon, titleSize: chromeTokens.sidebarWorkspaceTitle - 1)
+                }
+                workspaceTitleText(size: chromeTokens.sidebarWorkspaceTitle - 1)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
+                Spacer(minLength: 2)
+                if workspace.isPinned {
+                    Image(systemName: "diamond.fill")
+                        .font(.system(size: chromeTokens.sidebarWorkspaceAccessory, weight: .semibold))
+                        .foregroundColor(themeStyle.cardTextSecondary ?? .secondary.opacity(0.7))
+                }
+                if showsWorkspaceId {
+                    compactWorkspaceNumber(flagAgent: flagAgent)
+                }
+            }
+            .frame(height: 15 * scale)
+
+            compactSignalLine(scale: scale, signal: signal, flagAgent: flagAgent)
+                .frame(height: 13 * scale)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3 * scale)
+    }
+
+    /// `WS N`: the flag's colour while a flag is up, the waiting colour while an
+    /// agent waits on the operator, otherwise the full card's number colour.
+    private func compactWorkspaceNumber(flagAgent: WorkspacePulseAgent?) -> some View {
+        let color: Color = {
+            if let agent = flagAgent { return compactFlagColor(agent) }
+            if workspacePulse.waitingOnOperatorCount > 0 { return workspacePulseColor(for: .waiting) }
+            return workspaceIdColor
+        }()
+        return (
+            Text(verbatim: "WS ").foregroundColor(color.opacity(0.6))
+            + Text(verbatim: "\(workspace.displayOrdinal)").foregroundColor(color)
+        )
+            .chromeStyle(themeStyle.cardLabel, size: chromeTokens.sidebarWorkspaceDetail, weight: .medium, design: .monospaced)
+            .monospacedDigit()
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityHidden(true)
+    }
+
+    /// A named kind's registry colour, else the theme's `states.flag`, else violet.
+    func compactFlagColor(_ agent: WorkspacePulseAgent) -> Color {
+        if let kind = agent.flagKind,
+           let color = NSColor(hex: kind.colorHex(lightBackground: colorScheme == .light)) {
+            return Color(nsColor: color)
+        }
+        return themeStyle.stateFlag ?? Color(nsColor: NSColor(srgbRed: 0x9D / 255, green: 0x8A / 255,
+                                                              blue: 0xD9 / 255, alpha: 1))
+    }
+
+    /// Ink on the band: a named kind picks black or white by contrast; the
+    /// generic flag uses the theme's ink for filled attention colours.
+    private func compactBandInk(_ agent: WorkspacePulseAgent) -> Color {
+        if let kind = agent.flagKind {
+            return FlagKindInk.prefersDarkInk(hex: kind.colorHex(lightBackground: colorScheme == .light))
+                ? BrandColors.blackSwiftUI : .white
+        }
+        return themeStyle.stateWaitingInk ?? BrandColors.blackSwiftUI
+    }
+
+    /// The second line: marks and counts, or, while a flag is up, the same in
+    /// ink on a band of the flag's colour. Same height either way.
+    @ViewBuilder
+    private func compactSignalLine(scale: CGFloat, signal: [WorkspacePulseAgent],
+                                   flagAgent: WorkspacePulseAgent?) -> some View {
+        if let agent = flagAgent {
+            let ink = compactBandInk(agent)
+            HStack(spacing: 5) {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 8 * scale, weight: .bold))
+                    .foregroundColor(ink)
+                    .accessibilityHidden(true)
+                compactAgentCount(ink: ink, scale: scale)
+                captainSlot(captain: workspace.captainSummary, ink: ink, scale: scale, width: 54)
+                compactMarks(ink: ink, agents: signal)
+                compactInfoButton(ink: ink, scale: scale)
+            }
+            .padding(.horizontal, 5)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: (themeStyle.markRadius ?? 1) + 1, style: .continuous)
+                    .fill(compactFlagColor(agent))
+            )
+            .padding(.horizontal, -5)
+        } else {
+            HStack(spacing: 5) {
+                compactAgentCount(ink: nil, scale: scale)
+                captainSlot(captain: workspace.captainSummary, ink: nil, scale: scale, width: 54)
+                compactMarks(ink: nil, agents: signal)
+                compactInfoButton(ink: nil, scale: scale)
+            }
+        }
+    }
+
+    /// A fixed slot in the existing signal/footer line. Presence changes ink
+    /// and text only, never the card height or its count/info/flag controls.
+    private func captainSlot(captain: WorkspaceCaptainSummary, ink: Color?, scale: CGFloat, width: CGFloat) -> some View {
+        let description = captain.accessibilityDescription
+        let label = captain.title ?? captain.address ?? ""
+        let color = ink ?? themeStyle.cardAccent ?? Color(nsColor: .controlAccentColor)
+        return HStack(spacing: 3) {
+            Group {
+                if captain.state == .ambiguous {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10 * scale, weight: .semibold))
+                        .foregroundColor(color)
+                } else {
+                    WorkspaceCaptainHat()
+                        .fill(captain.present ? color : Color.clear)
+                        .overlay(WorkspaceCaptainHat().stroke(color, lineWidth: 1))
+                }
+            }
+            .frame(width: 12 * scale, height: 10 * scale)
+            .accessibilityHidden(true)
+            Text(verbatim: label)
+                .font(.system(size: chromeTokens.sidebarWorkspaceMetadata - 0.5, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundColor(ink ?? themeStyle.cardTextSecondary ?? .secondary)
+        }
+        .frame(width: width * scale, alignment: .leading)
+        // The slot stays reserved but empty when the group header already
+        // shows this Captain: one mark per group, never one per member.
+        .opacity(captain.cardShowsMark ? 1 : 0)
+        .help(captain.cardShowsMark ? description : "")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: description))
+        .accessibilityHidden(!captain.cardShowsMark)
+    }
+
+    /// The agent total, first on the line, in a two-digit slot so the marks
+    /// after it hold still from 0 to 99.
+    private func compactAgentCount(ink: Color?, scale: CGFloat) -> some View {
+        let agents = workspacePulse.agents.count
+        let label = String(localized: "sidebar.compact.agentCount.accessibility",
+                           defaultValue: "\(agents) agents")
+        return Text(verbatim: WorkspacePulseSignalLayout.countText(agents))
+            .chromeStyle(themeStyle.cardLabel, size: chromeTokens.sidebarWorkspaceMetadata,
+                         weight: .semibold, design: .monospaced)
+            .monospacedDigit()
+            .foregroundColor(ink ?? themeStyle.cardTextSecondary ?? .secondary)
+            .opacity(agents == 0 && ink == nil ? 0.5 : 1)
+            .lineLimit(1)
+            .fixedSize()
+            .frame(minWidth: 14 * scale, alignment: .leading)
+            .accessibilityLabel(Text(verbatim: label))
+            .help(label)
+    }
+
+    /// Bottom right: opens the workspace summary card, and closes it again.
+    private func compactInfoButton(ink: Color?, scale: CGFloat) -> some View {
+        WorkspaceSummaryInfoButton(
+            workspaceId: workspace.id,
+            ink: ink,
+            idle: themeStyle.cardTextDim ?? .secondary.opacity(0.65),
+            active: themeStyle.cardText ?? .primary,
+            size: 11 * scale,
+            action: toggleSummaryCard
+        )
+    }
+
+    /// Every agent as a mark, flagged and waiting first; overflow drops from
+    /// the quiet end into a `+N` tail.
+    private func compactMarks(ink: Color?, agents: [WorkspacePulseAgent]) -> some View {
+        GeometryReader { proxy in
+            let visible = WorkspacePulseSignalLayout.visibleCount(total: agents.count,
+                                                                  availableWidth: proxy.size.width)
+            HStack(spacing: WorkspacePulseSignalLayout.markGap) {
+                if agents.isEmpty {
+                    Text(verbatim: "\u{2014}")
+                        .font(.system(size: chromeTokens.sidebarWorkspaceMetadata, design: .monospaced))
+                        .foregroundColor(ink ?? themeStyle.cardTextDim ?? .secondary.opacity(0.65))
+                }
+                ForEach(Array(agents.prefix(visible))) { agent in
+                    if let ink {
+                        WorkspacePulseMark(
+                            state: agent.state, lifecycleColor: ink, flagColor: ink,
+                            phaseId: agent.surfaceId, flagged: agent.flagged,
+                            suppressed: agent.suppressed, lineageDepth: agent.lineageDepth,
+                            animationEligible: false, genericFlagColor: ink,
+                            markRadius: themeStyle.markRadius
+                        )
+                        .frame(width: WorkspacePulseSignalLayout.markSlot, height: 9)
+                    } else {
+                        workspacePulseMarkTarget(for: agent, width: WorkspacePulseSignalLayout.markSlot, height: 9)
+                    }
+                }
+                if visible < agents.count {
+                    Text(verbatim: "+\(agents.count - visible)")
+                        .font(.system(size: chromeTokens.sidebarWorkspaceAccessory, weight: .medium, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundColor(ink?.opacity(0.75) ?? themeStyle.cardTextDim ?? .secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
+        }
+    }
+
+    /// The workspace summary card: the workspace, its whole mission, and up to
+    /// forty agents in signal order with their full subtitles; a click on one
+    /// jumps to its panel the way a `c11://panel` link does. `maxListHeight`
+    /// is set only when the card would not fit the screen; the list scrolls.
+    func hoverCardContent(maxListHeight: CGFloat?) -> some View {
+        let agents = Array(workspacePulse.signalAgents.prefix(WorkspaceHoverCard.maximumRows))
+        let rows = agents.map { agent in
+            let context = liveSummaryContext(agent)
+            return WorkspaceHoverCard.Row(
+                id: agent.surfaceId,
+                number: PanelAllocationRegistry.shared.record(for: agent.surfaceId)?.number,
+                title: context?.title ?? workspacePulseLabel(for: agent.presentedState),
+                subtitle: context?.subtitle,
+                descriptionUpdatedAt: context?.descriptionUpdatedAt,
+                state: workspacePulseLabel(for: agent.presentedState),
+                flagReason: agent.flagged
+                    ? (agent.flagReason.map { agent.flagKind?.displayText(reason: $0) ?? $0 }
+                        ?? agent.flagKind?.displayLabel)
+                    : nil,
+                flagColor: agent.flagged ? compactFlagColor(agent) : nil,
+                mark: AnyView(workspacePulseMark(for: agent, animated: false).frame(width: 9, height: 9))
+            )
+        }
+        return WorkspaceHoverCard(
+            title: workspace.title,
+            number: workspace.displayOrdinal,
+            mission: workspace.mission?.paragraph,
+            captain: workspace.captainSummary,
+            census: workspacePulseCensusText,
+            rows: rows,
+            more: workspacePulse.agents.count - rows.count,
+            fill: workspacePulseBaseColor,
+            style: themeStyle,
+            tokens: chromeTokens,
+            maxListHeight: maxListHeight,
+            onJump: { panelId in
+                WorkspaceHoverCardController.shared.dismiss()
+                _ = AppDelegate.shared?.openPanelLink(.panel(panelId), cause: "sidebar_summary_card")
+            },
+            onClose: { WorkspaceHoverCardController.shared.dismiss() }
+        )
+    }
+}
+
+/// Which workspace's summary card is open, so each row's info button can show
+/// it. Changes only when a card opens or closes.
+@MainActor
+final class WorkspaceSummaryCardState: ObservableObject {
+    static let shared = WorkspaceSummaryCardState()
+    @Published private(set) var shownWorkspaceId: UUID?
+
+    fileprivate func set(_ workspaceId: UUID?) {
+        if shownWorkspaceId != workspaceId { shownWorkspaceId = workspaceId }
+    }
+}
+
+/// The compact card's bottom-right info button. Filled while its card is open.
+private struct WorkspaceSummaryInfoButton: View {
+    let workspaceId: UUID
+    let ink: Color?
+    let idle: Color
+    let active: Color
+    let size: CGFloat
+    let action: () -> Void
+    @ObservedObject private var state = WorkspaceSummaryCardState.shared
+    @State private var hovering = false
+
+    var body: some View {
+        let open = state.shownWorkspaceId == workspaceId
+        let help = open
+            ? String(localized: "sidebar.summaryCard.hide", defaultValue: "Hide workspace summary")
+            : String(localized: "sidebar.summaryCard.show", defaultValue: "Show workspace summary")
+        Button(action: action) {
+            Image(systemName: open ? "info.circle.fill" : "info.circle")
+                .font(.system(size: size, weight: .medium))
+                .foregroundColor(ink ?? (open || hovering ? active : idle))
+                .frame(width: size + 6, height: size + 2)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityLabel(Text(verbatim: help))
+        .accessibilityIdentifier("sidebar.workspace.info.\(workspaceId.uuidString)")
+    }
+}
+
+/// A captain's cap, filled for a held address and outlined for an absent one.
+/// Shared by workspace cards and workspace-group headers.
+struct WorkspaceCaptainHat: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.12, y: rect.minY + rect.height * 0.18))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.12, y: rect.minY + rect.height * 0.18))
+        path.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.2, y: rect.minY + rect.height * 0.68))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.2, y: rect.minY + rect.height * 0.68))
+        path.closeSubpath()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.2, y: rect.minY + rect.height * 0.68))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - rect.width * 0.2, y: rect.minY + rect.height * 0.68),
+                         control: CGPoint(x: rect.midX, y: rect.maxY + rect.height * 0.1))
+        return path
+    }
+}
+
+private struct WorkspaceHoverCard: View {
+    static let maximumRows = 40
+    static let width: CGFloat = 480
+
+    struct Row: Identifiable {
+        let id: UUID
+        let number: Int?
+        let title: String
+        let subtitle: String?
+        /// C11H-278: when the subtitle (the description) was last edited.
+        var descriptionUpdatedAt: Date? = nil
+        let state: String
+        let flagReason: String?
+        let flagColor: Color?
+        let mark: AnyView
+    }
+
+    let title: String
+    let number: Int
+    let mission: String?
+    let captain: WorkspaceCaptainSummary
+    let census: String
+    let rows: [Row]
+    let more: Int
+    let fill: Color
+    let style: SidebarThemeStyle
+    let tokens: ChromeScaleTokens
+    let maxListHeight: CGFloat?
+    let onJump: (UUID) -> Void
+    let onClose: () -> Void
+
+    @State private var hovered: UUID?
+
+    var body: some View {
+        let radius = style.cardRadius ?? 8
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(verbatim: style.cardTitle.apply(title))
+                    .chromeStyle(style.cardTitle, size: tokens.sidebarWorkspaceTitle + 1.5, weight: .semibold)
+                    .foregroundColor(style.cardText ?? .primary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text(verbatim: "WS \(number)")
+                    .chromeStyle(style.cardLabel, size: tokens.sidebarWorkspaceDetail, weight: .medium, design: .monospaced)
+                    .monospacedDigit()
+                    .foregroundColor(style.cardTextDim ?? .secondary)
+                closeButton
+            }
+            if let mission {
+                Text(verbatim: mission)
+                    .font(.system(size: tokens.sidebarWorkspaceDetail + 1))
+                    .foregroundColor(style.cardTextSecondary ?? .secondary)
+                    .lineLimit(8)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if captain.address != nil {
+                Text(verbatim: captain.accessibilityDescription)
+                    .font(.system(size: tokens.sidebarWorkspaceDetail, design: .monospaced))
+                    .foregroundColor(style.cardTextSecondary ?? .secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text(verbatim: style.cardLabel.apply(census))
+                .chromeStyle(style.cardLabel, size: tokens.sidebarWorkspaceMetadata, design: .monospaced)
+                .foregroundColor(style.cardTextDim ?? .secondary)
+                .lineLimit(1)
+            Rectangle()
+                .fill(style.cardRule ?? Color.secondary.opacity(0.25))
+                .frame(height: 1)
+            if let maxListHeight {
+                ScrollView(.vertical) { list }
+                    .frame(height: maxListHeight)
+            } else {
+                list
+            }
+        }
+        .padding(14)
+        .frame(width: Self.width, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(fill))
+        // A translucent card fill (Solid Fill, a theme alpha) must not show the terminal through.
+        .background(RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(Color(nsColor: .windowBackgroundColor)))
+        .overlay(
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(style.cardBorder ?? Color.secondary.opacity(0.35), lineWidth: style.cardBorderPt ?? 1)
+        )
+    }
+
+    private var closeButton: some View {
+        let help = String(localized: "sidebar.summaryCard.close", defaultValue: "Close")
+        return Button(action: onClose) {
+            Image(systemName: "xmark")
+                .font(.system(size: tokens.sidebarWorkspaceDetail - 1, weight: .semibold))
+                .foregroundColor(style.cardTextDim ?? .secondary)
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+        .help(help)
+        .accessibilityLabel(Text(verbatim: help))
+    }
+
+    private var list: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if rows.isEmpty {
+                Text(verbatim: style.cardLabel.apply(String(
+                    localized: "sidebar.workspacePulse.terminalsOnly",
+                    defaultValue: "Terminals only · no agent panels"
+                )))
+                .chromeStyle(style.cardLabel, size: tokens.sidebarWorkspaceMetadata, design: .monospaced)
+                .foregroundColor(style.cardTextDim ?? .secondary)
+            }
+            ForEach(rows) { row in
+                rowView(row)
+            }
+            if more > 0 {
+                Text(verbatim: String(localized: "sidebar.hoverCard.more", defaultValue: "… and \(more) more"))
+                    .font(.system(size: tokens.sidebarWorkspaceDetail))
+                    .foregroundColor(style.cardTextDim ?? .secondary)
+                    .padding(.leading, 21 + numberColumnWidth + 7)
+                    .frame(height: 22)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Five digits of the panel-number font: panel numbers never truncate.
+    private var numberColumnWidth: CGFloat { Self.numberColumnWidth(size: tokens.sidebarWorkspaceMetadata) }
+
+    @MainActor private static var numberColumnWidths: [CGFloat: CGFloat] = [:]
+
+    @MainActor private static func numberColumnWidth(size: CGFloat) -> CGFloat {
+        if let width = numberColumnWidths[size] { return width }
+        let font = NSFont.monospacedSystemFont(ofSize: size, weight: .medium)
+        let width = ceil(("00000" as NSString).size(withAttributes: [.font: font]).width) + 2
+        numberColumnWidths[size] = width
+        return width
+    }
+
+    private func rowView(_ row: Row) -> some View {
+        let jumpHelp = String(localized: "sidebar.hoverCard.jump", defaultValue: "Jump to this agent's panel")
+        let bodySize = tokens.sidebarWorkspaceDetail + 1
+        return Button { onJump(row.id) } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                row.mark
+                    .frame(width: 14, height: 14)
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                Text(verbatim: row.number.map(String.init) ?? "\u{2014}")
+                    .font(.system(size: tokens.sidebarWorkspaceMetadata, weight: .medium, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundColor(style.cardTextDim ?? .secondary)
+                    .lineLimit(1)
+                    .frame(width: numberColumnWidth, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(verbatim: row.title)
+                            .font(.system(size: bodySize, weight: .medium))
+                            .foregroundColor(style.cardText ?? .primary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 4)
+                        // C11H-278: the description's age, a fixed slot
+                        // every row keeps so the state column lines up.
+                        DescriptionAgeLabel(
+                            updatedAt: row.descriptionUpdatedAt,
+                            style: .full,
+                            fontSize: tokens.sidebarWorkspaceMetadata,
+                            color: style.cardTextDim ?? .secondary
+                        )
+                        Text(verbatim: row.state)
+                            .font(.system(size: tokens.sidebarWorkspaceMetadata, design: .monospaced))
+                            .foregroundColor(style.cardTextDim ?? .secondary)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    if let reason = row.flagReason {
+                        Text(verbatim: reason)
+                            .font(.system(size: bodySize, weight: .medium))
+                            .foregroundColor(row.flagColor ?? style.stateFlag ?? .purple)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let subtitle = row.subtitle {
+                        Text(verbatim: subtitle)
+                            .font(.system(size: bodySize - 0.5))
+                            .foregroundColor(style.cardTextSecondary ?? .secondary)
+                            .lineLimit(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .multilineTextAlignment(.leading)
+            .truncationMode(.tail)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill((style.cardText ?? .primary).opacity(hovered == row.id ? 0.08 : 0))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            if inside { hovered = row.id } else if hovered == row.id { hovered = nil }
+        }
+        .help(jumpHelp)
+        .accessibilityLabel(Text(verbatim: [row.title, row.flagReason, row.subtitle].compactMap { $0 }.joined(separator: ", ")))
+        .accessibilityHint(Text(verbatim: jumpHelp))
+        .padding(.horizontal, -6)
+    }
+}
+
+/// A borderless panel that never becomes key, so the open card never takes a
+/// keystroke away from a terminal.
+private final class WorkspaceHoverCardPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
+/// Takes the first click without activating.
+private final class WorkspaceHoverCardHostingView: NSHostingView<AnyView> {
+    required init(rootView: AnyView) {
+        super.init(rootView: rootView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+/// One workspace summary card for the whole app. A compact card's info button
+/// opens it beside that row, and it stays until the same button, its close
+/// button, Escape, a click anywhere outside it and its row, a jump, a drag,
+/// its row scrolling out of view, its window closing, or c11 losing focus
+/// closes it. While open it follows its row and the workspace's live state.
+@MainActor
+final class WorkspaceHoverCardController {
+    static let shared = WorkspaceHoverCardController()
+    static let rowGap: CGFloat = 12
+    static let screenMargin: CGFloat = 8
+    /// Live state rebuilds the card at most this often.
+    static let refreshInterval: TimeInterval = 0.25
+
+    private var panel: NSPanel?
+    private var host: WorkspaceHoverCardHostingView?
+    private weak var anchor: NSView?
+    private var shownWorkspaceId: UUID?
+    private var eventMonitor: Any?
+    private var resignObserver: NSObjectProtocol?
+    private var anchorObservers: [NSObjectProtocol] = []
+    private var pendingRefresh: ((CGFloat?) -> AnyView)?
+    private var refreshScheduled = false
+    private var lastRefresh: TimeInterval = 0
+    /// The open card's current content and its text key, polled once a second
+    /// for what the sidebar does not republish (a panel's description).
+    private var currentContent: ((CGFloat?) -> AnyView)?
+    private var liveKey: (() -> Int)?
+    private var lastLiveKey: Int?
+    private var liveTimer: Timer?
+    /// Bumped on every dismiss, so work queued for an earlier card is dropped.
+    private var generation = 0
+    private weak var observedClip: NSClipView?
+    private var clipPostedBounds = false
+
+    func toggle(workspaceId: UUID, anchor: NSView?, liveKey: @escaping () -> Int,
+                content: @escaping (CGFloat?) -> AnyView) {
+        if shownWorkspaceId == workspaceId {
+            dismiss()
+            return
+        }
+        guard let anchor else { return }
+        if shownWorkspaceId != nil { dismiss() }
+        self.liveKey = liveKey
+        present(workspaceId: workspaceId, anchor: anchor, content: content)
+    }
+
+    /// Rebuilds the open card from the row's current state, coalesced so a
+    /// busy workspace updates it a few times a second at most.
+    func refresh(workspaceId: UUID, liveKey: @escaping () -> Int, content: @escaping (CGFloat?) -> AnyView) {
+        guard shownWorkspaceId == workspaceId else { return }
+        self.liveKey = liveKey
+        pendingRefresh = content
+        guard !refreshScheduled else { return }
+        refreshScheduled = true
+        let wait = max(0, lastRefresh + Self.refreshInterval - ProcessInfo.processInfo.systemUptime)
+        let generation = self.generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.generation == generation else { return }
+                self.refreshScheduled = false
+                guard let content = self.pendingRefresh, let workspaceId = self.shownWorkspaceId,
+                      let anchor = self.anchor else { return }
+                self.pendingRefresh = nil
+                self.present(workspaceId: workspaceId, anchor: anchor, content: content)
+            }
+        }
+    }
+
+    /// Only the row whose card is open can close it by going away.
+    func rowGone(workspaceId: UUID) {
+        if workspaceId == shownWorkspaceId { dismiss() }
+    }
+
+    func dismiss() {
+        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+        eventMonitor = nil
+        anchorObservers.forEach(NotificationCenter.default.removeObserver)
+        anchorObservers = []
+        if clipPostedBounds { observedClip?.postsBoundsChangedNotifications = false }
+        observedClip = nil
+        clipPostedBounds = false
+        generation += 1
+        refreshScheduled = false
+        pendingRefresh = nil
+        liveTimer?.invalidate()
+        liveTimer = nil
+        currentContent = nil
+        liveKey = nil
+        lastLiveKey = nil
+        shownWorkspaceId = nil
+        anchor = nil
+        WorkspaceSummaryCardState.shared.set(nil)
+        guard let panel else { return }
+        panel.parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
+        // Release the card's views, so nothing hidden keeps observing or
+        // animating; on the next turn, because a click in the card itself may
+        // be what dismissed it, and its hosting view is still on the stack.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let panel = self.panel, !panel.isVisible, self.shownWorkspaceId == nil else { return }
+            panel.contentView = nil
+            self.host = nil
+        }
+    }
+
+    /// Opens the card, or updates the open one in place: the same hosting view
+    /// takes the new content, so its scroll position, row highlight and a
+    /// click in progress survive a live update.
+    private func present(workspaceId: UUID, anchor: NSView, content: @escaping (CGFloat?) -> AnyView) {
+        guard let window = anchor.window, window.isVisible, !anchor.visibleRect.isEmpty else {
+            dismiss()
+            return
+        }
+        lastRefresh = ProcessInfo.processInfo.systemUptime
+        currentContent = content
+        lastLiveKey = liveKey?()
+        let panel = self.panel ?? makePanel()
+        let visible = (window.screen ?? NSScreen.main)?.visibleFrame
+        let maxHeight = (visible?.height ?? 900) - 2 * Self.screenMargin
+
+        // Too tall for the screen: measure the card without its list, and let
+        // the list scroll in what remains. Measured off screen, so the live
+        // card is replaced once.
+        var cap: CGFloat?
+        if WorkspaceHoverCardHostingView(rootView: content(nil)).fittingSize.height > maxHeight {
+            let chrome = WorkspaceHoverCardHostingView(rootView: content(0)).fittingSize.height
+            cap = max(0, maxHeight - chrome)
+        }
+        let host: WorkspaceHoverCardHostingView
+        if let existing = self.host, shownWorkspaceId == workspaceId, panel.contentView === existing {
+            existing.rootView = content(cap)
+            host = existing
+        } else {
+            host = WorkspaceHoverCardHostingView(rootView: content(cap))
+            panel.contentView = host
+            self.host = host
+        }
+        panel.appearance = window.effectiveAppearance
+        let size = host.fittingSize
+        if panel.parent !== window {
+            panel.parent?.removeChildWindow(panel)
+            window.addChildWindow(panel, ordered: .above)
+        }
+        panel.level = window.level
+        let isNew = shownWorkspaceId != workspaceId || self.anchor !== anchor
+        self.anchor = anchor
+        shownWorkspaceId = workspaceId
+        position(size: size)
+        panel.orderFront(nil)
+        WorkspaceSummaryCardState.shared.set(workspaceId)
+        installEventMonitor()
+        if isNew { observeAnchor(anchor, window: window) }
+        startLiveTimer()
+    }
+
+    private func startLiveTimer() {
+        guard liveTimer == nil else { return }
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkLiveKey() }
+        }
+        timer.tolerance = 0.3
+        RunLoop.main.add(timer, forMode: .common)
+        liveTimer = timer
+    }
+
+    private func checkLiveKey() {
+        guard let workspaceId = shownWorkspaceId, let anchor, let content = pendingRefresh ?? currentContent,
+              let key = liveKey?(), key != lastLiveKey, !refreshScheduled else { return }
+        pendingRefresh = nil
+        present(workspaceId: workspaceId, anchor: anchor, content: content)
+    }
+
+    /// Beside the row, top edges level, inside the screen.
+    private func position(size: NSSize? = nil) {
+        guard let panel, let anchor, let window = anchor.window else { return }
+        if anchor.visibleRect.isEmpty {
+            // A reflow can hide the row for one layout pass; close only if it
+            // is still hidden once layout settles, and never inside that pass.
+            let generation = self.generation
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.generation == generation, let anchor = self.anchor else { return }
+                    if anchor.window == nil || anchor.visibleRect.isEmpty {
+                        self.dismiss()
+                    } else {
+                        self.position()
+                    }
+                }
+            }
+            return
+        }
+        let size = size ?? panel.frame.size
+        let row = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
+        var origin = NSPoint(x: row.maxX + Self.rowGap, y: row.maxY - size.height)
+        if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+            origin.x = min(origin.x, visible.maxX - size.width - Self.screenMargin)
+            origin.y = max(min(origin.y, visible.maxY - size.height - Self.screenMargin),
+                           visible.minY + Self.screenMargin)
+        }
+        let frame = NSRect(origin: origin, size: size)
+        if panel.frame != frame { panel.setFrame(frame, display: true) }
+    }
+
+    /// The card follows its row while the sidebar scrolls or the window moves
+    /// or resizes, closes when the row scrolls out of view, and closes with
+    /// its window.
+    private func observeAnchor(_ anchor: NSView, window: NSWindow) {
+        anchorObservers.forEach(NotificationCenter.default.removeObserver)
+        anchorObservers = []
+        if clipPostedBounds { observedClip?.postsBoundsChangedNotifications = false }
+        observedClip = nil
+        clipPostedBounds = false
+        let center = NotificationCenter.default
+        let follow: @Sendable (Notification) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated { self?.position() }
+        }
+        if let clip = anchor.enclosingScrollView?.contentView {
+            if !clip.postsBoundsChangedNotifications {
+                clip.postsBoundsChangedNotifications = true
+                clipPostedBounds = true
+            }
+            observedClip = clip
+            anchorObservers.append(center.addObserver(forName: NSView.boundsDidChangeNotification,
+                                                      object: clip, queue: .main, using: follow))
+        }
+        anchor.postsFrameChangedNotifications = true
+        anchorObservers.append(center.addObserver(forName: NSView.frameDidChangeNotification,
+                                                  object: anchor, queue: .main, using: follow))
+        anchorObservers.append(center.addObserver(forName: NSWindow.didResizeNotification,
+                                                  object: window, queue: .main, using: follow))
+        anchorObservers.append(center.addObserver(forName: NSWindow.didMoveNotification,
+                                                  object: window, queue: .main, using: follow))
+        anchorObservers.append(center.addObserver(forName: NSWindow.willCloseNotification,
+                                                  object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dismiss() }
+        })
+    }
+
+    /// A click outside the card and its own row closes it; the row's clicks
+    /// belong to the row (its info button toggles the card, selecting the
+    /// workspace closes it). Escape in the card's window closes it, and the
+    /// key still reaches the terminal unless the pointer is over the card or
+    /// its row, so Escape typed at an agent keeps its meaning. Escape while
+    /// composing text (IME) is left alone.
+    private func installEventMonitor() {
+        guard eventMonitor == nil else { return }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]
+        ) { [weak self] event in
+            let swallow = MainActor.assumeIsolated { () -> Bool in
+                guard let self, let panel = self.panel, panel.isVisible else { return false }
+                if event.type == .keyDown {
+                    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                        .subtracting([.capsLock, .numericPad, .function])
+                    guard event.keyCode == 53, modifiers.isEmpty,
+                          let parent = panel.parent, event.window === parent else { return false }
+                    if let input = parent.firstResponder as? NSTextInputClient, input.hasMarkedText() {
+                        return false
+                    }
+                    let pointer = NSEvent.mouseLocation
+                    let overCard = panel.frame.contains(pointer) || self.anchorScreenRect()?.contains(pointer) == true
+                    self.dismiss()
+                    return overCard
+                }
+                if event.window === panel { return false }
+                if let anchor = self.anchor, event.window === anchor.window {
+                    let point = anchor.convert(event.locationInWindow, from: nil)
+                    if anchor.visibleRect.contains(point) { return false }
+                }
+                self.dismiss()
+                return false
+            }
+            return swallow ? nil : event
+        }
+    }
+
+    private func anchorScreenRect() -> NSRect? {
+        guard let anchor, let window = anchor.window else { return nil }
+        return window.convertToScreen(anchor.convert(anchor.visibleRect, to: nil))
+    }
+
+    private func makePanel() -> NSPanel {
+        let panel = WorkspaceHoverCardPanel(
+            contentRect: NSRect(x: 0, y: 0, width: WorkspaceHoverCard.width, height: 120),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
+        panel.setAccessibilityIdentifier("SidebarWorkspaceSummaryCard")
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dismiss() }
+        }
+        self.panel = panel
+        return panel
     }
 }

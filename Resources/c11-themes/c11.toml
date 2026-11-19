@@ -1,0 +1,79 @@
+# c11: c11's chrome with the Sunset Mall gradient behind the sidebar, as c11
+# ships. Prototype key 4 ("c11 today"). Everything but the backdrop is stage11.
+
+[identity]
+name         = "c11"
+display_name = "c11"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 2
+
+[palette]
+void    = "#0A0C0F"
+surface = "#121519"
+gold    = "#C4A561"
+fog     = "#2A2F36"
+text    = "#E9EAEB"
+textDim = "#8A8F96"
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.gold"
+separator           = "$palette.fog"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$workspaceColor"
+thicknessPt      = 1.5
+inactiveOpacity  = 0.25
+unfocusedOpacity = 0.6
+
+[chrome.sidebar]
+tintOverlay                   = "#00000000"
+tintBase                      = "$background"
+tintBaseOpacity               = 0.18
+activeTabFill                 = "$workspaceColor"
+activeTabFillFallback         = "$surface"
+activeTabRail                 = "$workspaceColor"
+activeTabRailFallback         = "$accent"
+activeTabRailOpacity          = 0.95
+inactiveTabCustomOpacity      = 0.70
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accent"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$workspaceColor.mix($background, 0.65)"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$surface"
+backgroundOpacity   = 0.85
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+
+[chrome.tabBar]
+background       = "$ghosttyBackground"
+divider          = "$separator"
+activeIndicator  = "$workspaceColor"
+
+[chrome.browserChrome]
+background   = "$ghosttyBackground"
+omnibarFill  = "$surface.mix($background, 0.15)"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = false
+
+# Schema 2: only the sidebar backdrop differs from stage11. Cards keep their
+# opaque fills, so text contrast never depends on the backdrop (C11H-32).
+[backdrop]
+kind     = "gradient"
+gradient = "#2D1060 0%, #6B1F8F 42%, #C2307F 72%, #4A1366 100%"

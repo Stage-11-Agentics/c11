@@ -102,6 +102,7 @@ APP="${HOME}/Library/Developer/Xcode/DerivedData/c11-${TAG_SLUG}/Build/Products/
 CLI="${C11_CLI:-${APP}/Contents/Resources/bin/c11}"
 
 [[ "$SOCKET" = /* ]] || die "C11_SOCKET must be absolute"
+[[ "$SOCKET" != "${HOME}/Library/Application Support/c11/c11.sock" ]] || die "c11 socket is forbidden"
 [[ "$SOCKET" != "${HOME}/Library/Application Support/c11/c11.sock" ]] || die "production socket is forbidden"
 [[ "$SOCKET" = "/tmp/c11-debug-${TAG_SLUG}.sock" || "$SOCKET" = /tmp/c11-sandbox-*.sock ]] || \
   die "socket must be the exact tagged socket /tmp/c11-debug-${TAG_SLUG}.sock or a sandbox socket"

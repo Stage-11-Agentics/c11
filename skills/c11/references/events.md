@@ -47,24 +47,30 @@ The taxonomy types below are the closed v2 enum. The envelope fields `workspace`
 
 | `type` | Subject refs | Payload | Notes |
 |--------|--------------|---------|-------|
-| `panel.created` | workspace + panel | `{kind, title?, parent_panel_id}` | A new panel opened. `kind` is terminal / browser / markdown. `parent_panel_id` is its known creator UUID or `null`; roots and unknown creators are explicit. |
+| `panel.created` | workspace + panel | `{kind, title?, parent_panel_id, origin, origin_detail}` | A new panel opened. `kind` is terminal / browser / markdown. `parent_panel_id` is its known creator UUID or `null`; roots and unknown creators are explicit. `origin` is `operator`, `panel`, `app`, `external` or `unknown`; `origin_detail` is the app reason (`launch`, `restore`, `chaos`) or `null`. A panel moved between workspaces keeps its first origin. |
 | `panel.closed` | workspace + panel | — | Panel torn down. |
 | `flash.requested` | workspace + panel | `{request_id, source, requested_at_ms}` | Enabled pulse accepted. Source is `socket`, `panel_link`, `focus`, or `persistent`. Only the initial pulse of a persistent request is recorded; timer repeats animate without new events. |
 | `flash.drawn` | workspace + panel | `{request_id, source, channel, requested_at_ms, drawn_at_ms, latency_ms}` | Visible sidebar renderer actually painted the pulse (`channel: sidebar`). Times are Unix milliseconds; latency uses uptime. Hidden, unmounted, expired or superseded-before-paint rows emit no draw. This is a renderer timestamp, not display scanout or confirmation from the panel's independent renderer. Multiple visible sidebars can each emit this event for the same request ID. |
 | `workspace.reordered` | none (window-scoped) | `{window_id, final_workspace_ids}` | Applied batch order changed. Dry-run, no-op and rejected batches emit nothing. |
+| `display.changed` | — | `{displays, added, removed}` | A display connected or disconnected, or the arrangement, resolution, scale or visible frame (menu bar, Dock) changed. `displays` is the full `display list` shape; `added` / `removed` are display UUIDs (each display's `uuid`). Debounced; an unchanged set emits nothing. |
+| `window.moved` | none (window-scoped) | `{window_id, name, theme, window_number, frame, display, frame_on_display, visible_fraction, state, source, display_changed, previous_display_id}` | A main window settled in a new frame or on a new display (debounced 0.4 s, so a drag emits once). The window fields are the `list-windows --json` shape; frames are global points, top-left origin at the main display. `source` is `socket` for `window move`, else `app` (the operator, or macOS rearranging displays). `previous_display_id` is the prior display's UUID, null on a window's first report. |
 | `area.split` | workspace + area | `{original_area_id, orientation, container_frame, frame, original_frame}` | An area split in two; `area` is the new area. `orientation` is `horizontal` (side by side) or `vertical` (stacked). Frames are `{x, y, width, height}` in window points, top-left origin, or `null` before the workspace was ever laid out. Match a stray divider's x in a portal snapshot against these frames. |
 | `area.closed` | workspace + area | `{last_frame}` | An area closed. `last_frame` is its last known frame in window points, or `null`. |
 | `workspace.selected` | selected workspace | `{previous?, cause, method?, caller_panel_id?}` | Operator selection. `cause` is `sidebar`, `shortcut`, `palette`, `notification`, `jump`, `menu`, `socket`, `close_fallback`, `restore`, or `create`. Socket fields identify the method and calling panel when known. |
 | `workspace.switch_blocked` | requested workspace | `{target, method, caller_panel_id}` | Socket attempt refused before selection changes. `caller_panel_id` is the peer TTY's panel, or the supplied caller UUID when no TTY is available; null means unknown. |
 | `metadata.changed` | workspace + panel | `{scope, key, value?, prior?, source, title_change_count?, last_changed_at?}` | A canonical/non-canonical metadata write landed. `scope` ∈ `panel`\|`area`; `source` is the precedence tier (`explicit`\|`declare`\|`osc`\|`derived`\|`heuristic`). Coalesced OSC title tails add the meaningful change count and the latest change's RFC3339 UTC timestamp. **`progress` is excluded** (flood control); this covers `status`/`title`/`description` (+`role`/`task`/`model`). See [metadata.md](metadata.md). |
+| `metadata.changed` | workspace, no panel | `{scope:"workspace", changed_keys, removed_keys, source, revision, values, prior}` | A workspace JSON transaction or C11.md captain default changed. `source` is the writing tier (`explicit`\|`declare`\|`osc`\|`heuristic`), or `derived` when the C11.md default changes the effective value or provenance. `values` and `prior` include changed canonical keys only; opaque custom values are not copied into history. Read the current object with `get-workspace-metadata`. Session restore, rejected writes, and identical writes emit nothing. |
+| `metadata.changed` | none (no workspace, no panel) | `{scope:"workspace_group", group_id, changed_keys, removed_keys, source, revision, values, prior}` | A workspace group's JSON object changed. `values` and `prior` carry only changed canonical keys, as for workspaces. Read the object with `get-workspace-metadata --group <ref>`. |
 | `liveness.derived` | workspace + panel | `{state}` | Derived agent activity, `state` ∈ `working`\|`idle`. Emitted on an actual derived working↔idle transition, computed from shell-activity ground truth; a settle back to the absent/unknown state emits nothing. |
 | `waiting.entered` | workspace + panel? | — | The "agent is waiting" edge — the unread-notification transition, per workspace. |
 | `waiting.left` | workspace + panel? | — | Paired exit edge for `waiting.entered`. This name stays; it is never `waiting.exited`. |
 | `lifecycle.changed` | workspace + panel | `{panel, agent, from, to, reason}` | One applied journal phase change. `from` is null on the first event. `reason` is `approval`, `question`, `plan_review`, or null. A repeat observation emits nothing. |
-| `flag.raised` | workspace + panel | `{reason, caller_panel_id, by}` | A sticky flag went up. `caller_panel_id` is the UUID of the panel that issued the call (null only for an operator-originated call outside c11); `by` ∈ `operator`\|`agent`. Agent-originated raises without a caller UUID are rejected. |
+| `flag.raised` | workspace + panel | `{reason, caller_panel_id, by, kind?}` | A sticky flag went up. A named flag adds `kind: {id, name, color, emoji}`, the kind as it was at the raise; a generic flag omits `kind`. An edit of a raised flag's reason or kind writes another `flag.raised`. `caller_panel_id` is the UUID of the panel that issued the call (null only for an operator-originated call outside c11); `by` ∈ `operator`\|`agent`. Agent-originated raises without a caller UUID are rejected. |
 | `flag.lowered` | workspace + panel | `{by, answer?, answer_bytes?, text_recorded?}` | Flag cleared. `by` ∈ `operator`\|`agent`; only a successful `feed answer` that lowers its original flag epoch adds `answer`. With text recording on, the answer is retained in local activity history, never in the structural journal. With text off, only `answer_bytes` and `text_recorded: false` remain. Other lower paths omit it; operator dismissal without an answer means *seen and deferred*. |
 | `flag.suppressed` | workspace + panel | `{by, delegated_by?, prior_delegated_by?}` | Routine attention withheld for this panel. This historical event name also records a delegate; `delegated_by` is the new owner panel UUID when known, and `prior_delegated_by` appears when ownership changes. `by` ∈ `operator`\|`agent`\|`c11` (`c11` marks automatic release lifecycle work). Existing consumers keep receiving this one event name. |
 | `flag.unsuppressed` | workspace + panel | `{by, delegated_by?}` | Delegation lifted; routine attention signals resume. `delegated_by` is the former owner UUID when known. `by` ∈ `operator`\|`agent`\|`c11`. Existing consumers keep receiving this one event name. |
+| `notification.flag` | workspace + panel | `{action, cause, identifier, level, sound, sound_source?, sound_requested?, sound_fallback?, kind?, source_host, panel}` | One per change to a flag's system alert. `action` ∈ `posted`\|`replaced`\|`skipped_operator_looking`\|`failed`\|`removed`; `cause` ∈ `raised`\|`revised`\|`lowered`\|`opened`\|`closed`\|`stale_at_launch`; `level` is `time_sensitive`; `sound` is the sound the alert played (`Hero`, `none`, `file:<id>`, ...); `sound_source` ∈ `kind`\|`flag`\|`fallback`; `sound_requested` and `sound_fallback` (`missing_file`\|`unplayable`\|`copy_failed`) appear when a chosen file could not play; `kind` is the flag kind's id; `source_host` is `local` or the machine a relayed raise came from, on removals too (`sound` and `source_host` are `unknown` for an alert an older build left). Carries no reason text. |
+| `notification.routine` | workspace + panel | `{action, channel, identifier, sound, sound_source, sound_requested?, sound_fallback?, panel}` | One per routine system notification. `action` ∈ `posted`\|`failed`; `channel` ∈ `turn_end`\|`needs_you`; `sound` is what it played (`none` at the Quiet stop); `sound_source` ∈ `channel`\|`fallback`\|`level`; the fallback fields as for `notification.flag`. Carries no title or body. |
 | `mailbox.accepted` | workspace | `{id, from, bytes, text_recorded, body?, body_ref?, to?, topic?, reply_to?, in_reply_to?, urgent?, truncated?}` | A mailbox message was accepted onto the bus. `body` is recorded in full up to 256 KiB; larger values carry the first UTF-8-safe 256 KiB and `truncated: true`. |
 | `panel.input_sent` | workspace + panel | `{caller_panel_id, caller_title, target_title, kind, text?, bytes, submitted, text_recorded?, truncated?, queued?}` | A socket send reached or queued input for the target PTY. `kind` is `text` or `key`; `text` is full up to 256 KiB, then UTF-8-safe truncated with `truncated: true`. `queued: true` means the target panel was not attached yet. Caller refs/titles are null when the caller is unknown (outside c11, or the v1 text protocol). |
 | `mailbox.delivered` | workspace + panel? | `{id, recipient, via, sender_panel_id?}` | A mailbox message reached a recipient. `via` is `push`, `drain`, or `inbox`. An `inbox` copy carries `sender_panel_id` when the dispatcher stamped the sending panel. |
@@ -72,10 +78,18 @@ The taxonomy types below are the closed v2 enum. The envelope fields `workspace`
 | `app.relaunched` | — | `{prior_shutdown, prior_launched_at, restarted_at, record, refs}` | Once per launch that followed an earlier run, before any resume decision. `prior_shutdown` is `clean`, `dirty` (a crash) or `unknown`. `refs` maps `window`, `workspace`, `area` and `panel` to `[{old_ref, id}]` from the previous run, so a watcher holding `panel:12` from before the restart finds the same UUID; a crash leaves the refs from its last autosave. `record` is `quit`, `autosave` or null, and `prior_launched_at` is null without one. Resolve the UUID's current ref with `c11 --id-format both tree --json`. |
 | `conversation.resume.mode` | — | `{mode}` | The resolved recovery mode (`clean`, `dirty`, or `no-resume`) once per app launch. |
 | `conversation.resume.decision` | workspace + panel | `{kind, conversation_id, mode, decision, skip_code, reason?}` | One outcome for each restored agent candidate. `decision` is `command` or `skip`; `skip_code` is null for a command. |
+| `conversation.resume.refused` | workspace + panel | `{reason_code, agent_kind, kind, conversation_id, stage}` | A resume refused before any decision, because hc reports an agent still running in the panel's terminal (`reason_code` `live-agent`). No `conversation.resume.decision` follows. `stage` is `plan`, `scrape`, `hc-restore`, `hc-recovery`, `submit` or `cli` (`c11 conversation resume`; a dry run logs nothing). |
 | `conversation.startup_audit` | — | `{mode, outcome, seed_ms, markers_ms, classify_ms, collect_ms_by_kind, commit_ms_by_kind, total_ms, main_seed_wait_ms, panels_by_tier, scrape_dependent_panels, scrape_failures_by_kind}` | Once per launch, after every startup audit phase has finished. `outcome` is `complete` or `scrape_failed`; `panels_by_tier` counts typed agent panels as `causal`, `inferred`, `placeholder`, `none`. A failure is reported here and in skip reasons, never written to refs. |
 | `hang.precursor` | — | `{cause, culprit, count, window_ms, span_ms, durations_ms, fingerprint}` | The main-thread watchdog saw `count` stalls sharing one fingerprint inside `window_ms` — the leading edge of a wedge, emitted before the long stall lands. `durations_ms` are the counted episodes oldest-first; `span_ms` is the wall time the run covered. At most one per fingerprint per window. `runloop-idle` never produces one. |
 | `ask.opened` | workspace + panel | `{kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking}` | A confirmed blocked ask entered the journal fold. Structural fields only: no prompt, options, plan text, or tool command. |
 | `ask.closed` | workspace + panel | `{kind, source, source_rank, opened_at_ms, state, request_id, confirmation, blocking, resolution}` | That ask left the fold. `resolution` is `resumed`, `cancelled`, `unknown`, or null. Still no prompt text. |
+| `terminal.ended_by_signal` | workspace + panel | `{terminal, core_id, signal, signal_name, outcome, agent_kind, found, ended_at}` | C11H-235. A signal c11 did not send (a stray `pkill -f`, a `kill` at the wrong pid) ended a local terminal's root. Exactly one per ended terminal and panel. `outcome` is `kept` (the panel holds a live agent conversation: it stays with Resume conversation, never resumed unasked) or `closed`. `found` is `live` (its attachment saw the end), `hidden` (a panel whose terminal was not attached) or `launch` (found ended at startup). `ended_at` is hc's end time, local ISO-8601; `agent_kind` is null when no agent was in front. |
+| `agent.blocked` | workspace + panel | `{agent, reason, since_ms, source, detail, resets_at_ms, previous_reason}` | C11H-320. An agent's `blocked` verdict (as `c11 fleet` shows it) began, or changed to another reason (`previous_reason`). See [agent edges](#agent-edges). |
+| `agent.unblocked` | workspace + panel | `{agent, reason, since_ms, cleared_by}` | That block ended on evidence. `cleared_by` is `turn_started`, `screen_cleared`, `cleared` (its source no longer reports it) or `gone` (the panel closed or its agent left). |
+| `agent.stalled` | workspace + panel | `{agent, reason, since_ms, detail, threshold_seconds, last_progress_at_ms, turn_ended_at_ms, previous_reason}` | An agent's `stalled` verdict began: `no_progress` or `announced_work`. |
+| `agent.unstalled` | workspace + panel | `{agent, reason, since_ms, cleared_by}` | The stall ended: `progress`, `turn_ended`, `turn_started`, `blocked` or `gone`. |
+| `agent.restore_needs_operator` | workspace + panel | `{agent, state, phase, cause, signal, ended_at_ms, offers_resume, carried}` | After a host end, a seat's agent did not come back and waits for the operator (its restore record's `needs_operator`, as `c11 restore status` and fleet's `restore` show it; `c11 restore run --panel <ref>` brings it back). Once per seat and end per launch; `carried` marks an offer carried over from an earlier launch, announced again after each relaunch. `agent` is the saved conversation's kind. |
+| `terminal.mass_signal_end` | — | `{mass_end_id, count, signals, signal_names, panels, started_at, auto_resume}` | C11H-235. Three or more `kept` ends whose hc end times fall within 5 s of the earliest, emitted once, 2 s after the third; the restore strip then offers Resume all. c11 raises no flag and posts no notification for it. `auto_resume` is the setting at that moment. Never for one or two ends, and never again on a relaunch for the same ends. |
 
 `waiting.entered` and `waiting.left` stay the unread 0↔1 edges. A blocked ask is `lifecycle.changed` with `to` or `from` of `blocked` and the journal waiting reason. `waiting.left` is never renamed. Startup baseline publish, a reason-only change that stays blocked, and `duplicate_evidence` do not emit `lifecycle.changed`. The event log can drop a line; `c11 agents` is the recovery read. Do not rebuild a snapshot by tailing the log.
 
@@ -100,6 +114,7 @@ c11 events tail                       # one-shot: print all events in the curren
 c11 events tail --follow              # keep streaming new events (rotation-aware); -f for short
 c11 events tail --filter type=panel.closed
 c11 events tail --follow --filter supervisor  # lifecycle, permission, interruption and stall edges
+c11 events tail --follow --filter agent --filter workspace=<uuid>  # one ship's agent edges (every filter must pass)
 c11 events tail --since 1200          # start from seq 1200
 c11 events tail --since 10m           # start from ~10 minutes ago (resolved against ts)
 c11 events tail --instance com.stage11.c11-12345   # a specific instance, not newest-by-mtime
@@ -108,7 +123,7 @@ c11 events tail --instance com.stage11.c11-12345   # a specific instance, not ne
 | Flag | Argument | Behavior |
 |------|----------|----------|
 | `--follow` / `-f` | — | Stay attached and stream new lines as they land. Rotation-aware: on a roll it drains the `.1` tail then continues on the fresh file (first line is `log.rotated`). Omit for one-shot drain-and-exit. |
-| `--filter` | `type=<t>` or `supervisor` | Exact type match, or the closed supervisor event set below. |
+| `--filter` | `type=<t>`, `supervisor`, `agent`, `workspace=<uuid>`, `panel=<uuid>` | Repeatable; a line must pass every one. `type=` (or a bare dotted type) is one exact type from the taxonomy above (its v1 spellings too), `supervisor` and `agent` their closed sets, `workspace=` and `panel=` the line's subject. UUIDs only: the log is read without the app, so `workspace:N` cannot resolve. An unknown type, a malformed UUID or any other value is an error, never an empty stream. |
 | `--since` | `<seq>` \| `<duration>` | A bare integer is a `seq` floor (emit `seq ≥ N`); a duration (`10m`, `2h`) is resolved against `ts`. |
 | `--instance` | `<id>` | Read a specific instance log instead of the newest-by-mtime one. |
 
@@ -202,6 +217,44 @@ These are current process-local observations, reset on owner change/close, not a
 crash-durable attention mechanism. `phase` is the journal agent phase; the separate
 legacy `lifecycle_state` key is the panel's rendering state. A hidden panel can be
 render-throttled while its agent is working, blocked, idle, or in error.
+
+### Agent edges
+
+`c11 events tail --follow --filter agent` selects `agent.blocked`,
+`agent.unblocked`, `agent.stalled`, `agent.unstalled` and
+`agent.restore_needs_operator`: one agent's `blocked` and `stalled` verdicts
+starting, changing and ending (and a restored seat left for the operator), computed by the same rules
+`c11 fleet` applies to the same in-memory sources (the screen look, the
+Supervisor, Claude's hook reports, the journal). A watcher follows them to wake
+on a dead seat, then reads `c11 fleet --json --since <fleet_seq>` for the
+details ([fleet fields](api.md#fleet)).
+
+- **When.** c11 evaluates every live local agent panel on the agent detector's
+  10 s sweep and again when a screen sweep finishes, off the main thread. An
+  edge lands within about 10 s of its verdict; a dialog found by the screen
+  sweep, within that sweep.
+- **Unblock needs evidence.** A block read from the screen ends on a fresh look
+  showing a composer, a turn starting, or the panel going; a look that merely
+  went stale (or read unknown) is not an answer, so the block is held. `fleet`
+  can meanwhile show `blocked: null` (no current look) while no
+  `agent.unblocked` has been sent.
+- **Screens need the sweep.** Resume dialogs and limit menus are seen only while
+  the screen sweep runs, which is while `fleet` was read in the last 45 minutes.
+  Hook, journal and Supervisor blocks and both stalls flow without it. Keep a
+  heartbeat fleet read.
+- **After a launch** c11 starts with no edges announced, so it announces every
+  current block and stall again once; `since_ms` keeps when the evidence began,
+  which can predate the launch.
+- **Stalls.** `no_progress` is the Supervisor's own stall (`supervisor.stalled`)
+  named per agent. `announced_work`: the agent's last turn ended announcing work
+  of its own (Claude's Stop listed background tasks, or its final message's
+  last line is its own next step, such as `Let me run the tests.`), no turn
+  started since (Claude's prompt-submit hook reports each start), and `c11.supervisor.stallMinutes` (default 10) passed. A
+  `Needs you:` line, a question, waiting on someone (`Let me know…`, `I'll
+  wait…`) or a scheduled wake (`session_crons`) is not announced work. A blocked
+  agent is never also stalled. Claude only for `announced_work`.
+- Payloads carry codes and times only: no message text and no account.
+  Remote seats (another machine's terminals) are not evaluated yet.
 
 **React to a specific event.** Follow, filter to one type, act per line:
 

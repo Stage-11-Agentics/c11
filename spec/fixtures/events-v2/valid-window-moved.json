@@ -1,0 +1,47 @@
+{
+  "seq": 9,
+  "ts": "2026-11-04T12:00:01.000Z",
+  "type": "window.moved",
+  "instance": "com.stage11.c11.debug.c11-197",
+  "v": 2,
+  "payload": {
+    "window_id": "11111111-1111-4111-8111-111111111111",
+    "name": "c11 Lab",
+    "theme": {
+      "override": "outrun-horizon",
+      "effective": "outrun-horizon"
+    },
+    "window_number": 4211,
+    "frame": {
+      "x": -2560,
+      "y": -271,
+      "width": 1280,
+      "height": 1440
+    },
+    "display": {
+      "display_id": 4,
+      "ref": "display:2",
+      "index": 2,
+      "name": "DELL P2715Q (1)",
+      "uuid": "DBDAE43B-1551-4262-90B2-74C254A7C815"
+    },
+    "frame_on_display": {
+      "x": 0,
+      "y": 0,
+      "width": 1280,
+      "height": 1440
+    },
+    "visible_fraction": 0.5,
+    "state": {
+      "key": false,
+      "main": false,
+      "minimized": false,
+      "fullscreen": false,
+      "on_active_space": true,
+      "visible": true
+    },
+    "source": "socket",
+    "display_changed": true,
+    "previous_display_id": "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+  }
+}

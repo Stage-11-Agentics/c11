@@ -130,12 +130,16 @@ enum UITestLaunchManifest {
 
 @main
 struct cmuxApp: App {
+    // Declared first: stored properties initialize in order, so this runs before
+    // any initializer below reads a setting or a file (C11H-266).
+    private let startupGate: Void = cmuxApp.prepareLaunchEnvironmentAndMigrate()
     @ObservedObject private var focusHistory = FocusHistoryStore.shared
     @StateObject private var workspaceManager: WorkspaceManager
     @StateObject private var notificationStore = TerminalNotificationStore.shared
     @StateObject private var sidebarState = SidebarState()
     @StateObject private var sidebarSelectionState = SidebarSelectionState()
-    private let primaryWindowId = UUID()
+    // c11 (C11H-197): the primary window keeps its UUID across launches.
+    private let primaryWindowId = PrimaryWindowIdentity.launchWindowId()
     @AppStorage(AppearanceSettings.appearanceModeKey) private var appearanceMode = AppearanceSettings.defaultMode.rawValue
     @AppStorage("titlebarControlsStyle") private var titlebarControlsStyle = TitlebarControlsStyle.classic.rawValue
     @AppStorage(ShortcutHintDebugSettings.alwaysShowHintsKey) private var alwaysShowShortcutHints = ShortcutHintDebugSettings.defaultAlwaysShowHints
@@ -201,9 +205,16 @@ struct cmuxApp: App {
         BrowserToolbarAccessorySpacingDebugSettings.resolved(browserToolbarAccessorySpacingRaw)
     }
 
-    init() {
+    /// Runs once, from the first stored property, before every other initializer.
+    private static func prepareLaunchEnvironmentAndMigrate() {
         // First, so every launch-time read below sees MUX11_* fallbacks as C11_*.
         applyC11EnvAliasOverrides()
+        // c11h: after the alias fill, so an inherited MUX11_* identity name
+        // becomes C11_* and is scrubbed with the rest. C11H-34: before anything
+        // reads, mirrors or hands on the environment. A launch from a c11
+        // terminal carries that terminal's identity and the launching agent's
+        // session markers.
+        HCLaunchEnvironmentScrub.scrubProcessEnvironment()
         UITestLaunchManifest.applyIfPresent()
 
         if SocketControlSettings.shouldBlockUntaggedDebugLaunch() {
@@ -213,6 +224,18 @@ struct cmuxApp: App {
         // A duplicate must leave before creating the launch workspace or
         // touching the shared session, shutdown sentinel or control socket.
         AppDelegate.yieldToRunningInstanceIfNeeded()
+
+        // c11 2.0 (C11H-266): carry c11h's or c11 1.x's state over, in the one  // c11-2.0:legacy
+        // instance that stays. Returns only when normal startup may go ahead;
+        // otherwise the migration gate takes over and this process exits.
+        C11MigrationLaunch.bootstrap()
+    }
+
+    init() {
+        // c11h: C11H-203: this install's id may write UserDefaults the first
+        // time it is read; read it here, on main, before an hc session
+        // actor stamps it on a new terminal.
+        _ = HCOwnerLabels.appInstallID
 
         Self.configureGhosttyEnvironment()
 
@@ -228,10 +251,26 @@ struct cmuxApp: App {
         // The initial WorkspaceManager immediately creates a workspace and its
         // terminal. Start recording before those lifecycle edges can be emitted.
         mirrorC11CmuxEnv()
+        #if DEBUG
+        // Before the first dlog: a per-user debug log (or /dev/null), never /tmp.
+        C11UserRuntime.secureDebugLogEnvironment(
+            defaultName: (SocketControlSettings.taggedDebugSocketStem(
+                bundleIdentifier: Bundle.main.bundleIdentifier,
+                environment: ProcessInfo.processInfo.environment
+            ) ?? "c11-debug") + ".log"
+        )
+        #endif
         EventEmitter.shared.start()
         // Reading an uninstalled StateObject re-evaluates its autoclosure.
         // Share one launch instance with SwiftUI and the early delegate wiring.
-        let launchWorkspaceManager = WorkspaceManager()
+        HCBackendComposition.shared.activateOrUnavailable(
+            home: FileManager.default.homeDirectoryForCurrentUser,
+            tag: SocketControlSettings.hcLaunchTag(), inherited: ProcessInfo.processInfo.environment)
+        // C11H-260: the workspace c11 opens at launch is c11's own. A restore
+        // replaces it and its lineage; a fresh start keeps it.
+        let launchWorkspaceManager = PanelLineage.shared.withOrigin(.app(PanelOriginRequest.AppReason.launch)) {
+            WorkspaceManager()
+        }
         _workspaceManager = StateObject(wrappedValue: launchWorkspaceManager)
         // Migrate legacy and old-format socket mode values to the new enum.
         let defaults = UserDefaults.standard
@@ -375,6 +414,11 @@ struct cmuxApp: App {
     }
 
     var body: some Scene {
+        // C11H-238 meter: count app body evaluations (meter runs only).
+        let _ = GraphChurnMeter.note(.appBody)
+        let _ = GraphChurnMeter.observeAppObjects(manager: workspaceManager, sidebar: sidebarState,
+                                                  selection: sidebarSelectionState, notifications: notificationStore,
+                                                  focusHistory: focusHistory)
         WindowGroup {
             ContentView(updateViewModel: appDelegate.updateViewModel, windowId: primaryWindowId)
                 .environmentObject(workspaceManager)
@@ -430,11 +474,19 @@ struct cmuxApp: App {
                 Button(String(localized: "menu.app.checkForUpdates", defaultValue: "Check for Updates…")) {
                     appDelegate.checkForUpdates(nil)
                 }
+                .disabled(!C11Identity.shouldStartSparkleUpdater(
+                    bundleIdentifier: Bundle.main.bundleIdentifier ?? C11Identity.releaseBundleIdentifier,
+                    feedURL: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+                ))
                 InstallUpdateMenuItem(model: appDelegate.updateViewModel)
                 Button(String(localized: "menu.app.reloadConfiguration", defaultValue: "Reload Configuration")) {
                     GhosttyApp.shared.reloadConfiguration(source: "menu.reload_configuration")
                 }
                 .keyboardShortcut(",", modifiers: [.command, .shift])
+                Divider()
+                Button(String(localized: "menu.app.endAllSessions", defaultValue: "End All Sessions…")) {
+                    appDelegate.confirmEndAllSessions()
+                }
             }
 
             CommandMenu(String(localized: "menu.notifications.title", defaultValue: "Notifications")) {
@@ -492,6 +544,13 @@ struct cmuxApp: App {
                         activeWorkspaceManager.addTab()
                     }
                 }
+                // Ticket 12: one item per machine hc has added (the build host); empty
+                // without the hc backend or any added machine.
+                RemoteTerminalMenuItems { machine in
+                    PanelLineage.shared.withOrigin(.operator) {
+                        activeWorkspaceManager.newSurface(onMachine: machine)
+                    }
+                }
             }
 
             // C11-41: Command palettes live in the c11 menu — keeping them out
@@ -527,6 +586,12 @@ struct cmuxApp: App {
             CommandGroup(replacing: .help) {
                 Button(String(localized: "menu.help.about", defaultValue: "About c11")) {
                     showAboutPanel()
+                }
+                // C11H-267: a c11 1.x upgrader's profile names the 2.0 note.
+                Button(WhatsDifferent.audience(origin: C11UpgradeOrigin.current()) == .upgradeFrom1x
+                       ? String(localized: "menu.help.whatsNew2", defaultValue: "What's New in c11 2.0")
+                       : String(localized: "menu.help.whatsDifferent", defaultValue: "What's Different in c11")) {
+                    appDelegate.presentWhatsDifferent()
                 }
             }
 
@@ -928,11 +993,17 @@ struct cmuxApp: App {
                 Divider()
 
                 splitCommandButton(title: String(localized: "menu.workspace.next", defaultValue: "Next Workspace"), shortcut: nextWorkspaceMenuShortcut) {
-                    SocketCommandContext.withContext(nil) { activeWorkspaceManager.selectNextWorkspace(cause: "menu") }
+                    SocketCommandContext.withContext(nil) {
+                        activeWorkspaceManager.selectNextWorkspace(cause: "menu")
+                        activeWorkspaceManager.acknowledgeOperatorOpen(workspaceId: activeWorkspaceManager.selectedWorkspaceId)
+                    }
                 }
 
                 splitCommandButton(title: String(localized: "menu.workspace.previous", defaultValue: "Previous Workspace"), shortcut: prevWorkspaceMenuShortcut) {
-                    SocketCommandContext.withContext(nil) { activeWorkspaceManager.selectPreviousWorkspace(cause: "menu") }
+                    SocketCommandContext.withContext(nil) {
+                        activeWorkspaceManager.selectPreviousWorkspace(cause: "menu")
+                        activeWorkspaceManager.acknowledgeOperatorOpen(workspaceId: activeWorkspaceManager.selectedWorkspaceId)
+                    }
                 }
 
                 Divider()
@@ -942,7 +1013,10 @@ struct cmuxApp: App {
                     Button(String(localized: "menu.workspace.numbered", defaultValue: "Workspace \(number)")) {
                         let manager = activeWorkspaceManager
                         if let targetIndex = WorkspaceShortcutMapper.workspaceIndex(forCommandDigit: number, workspaceCount: manager.workspaces.count) {
-                            SocketCommandContext.withContext(nil) { manager.selectWorkspace(at: targetIndex, cause: "shortcut") }
+                            SocketCommandContext.withContext(nil) {
+                                manager.selectWorkspace(at: targetIndex, cause: "shortcut")
+                                manager.acknowledgeOperatorOpen(workspaceId: manager.selectedWorkspaceId)
+                            }
                         }
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
@@ -993,7 +1067,7 @@ struct cmuxApp: App {
 
                 Menu(String(localized: "menu.pane.newSurface", defaultValue: "New Panel")) {
                     splitCommandButton(title: String(localized: "menu.pane.newTerminal", defaultValue: "New Terminal"), shortcut: newSurfaceMenuShortcut) {
-                        activeWorkspaceManager.newSurface()
+                        activeWorkspaceManager.newSurfaceAskingMachine()
                     }
 
                     splitCommandButton(title: String(localized: "menu.pane.newAgent", defaultValue: "New Agent"), shortcut: newAgentMenuShortcut) {
@@ -1096,7 +1170,9 @@ struct cmuxApp: App {
                 Divider()
 
                 Button(String(localized: "menu.browser.reopenClosed", defaultValue: "Reopen Closed Browser Panel")) {
-                    _ = activeWorkspaceManager.reopenMostRecentlyClosedBrowserPanel()
+                    PanelLineage.shared.withOrigin(.operator) {
+                        _ = activeWorkspaceManager.reopenMostRecentlyClosedBrowserPanel()
+                    }
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
 
@@ -1126,6 +1202,21 @@ struct cmuxApp: App {
 
                 Button(String(localized: "menu.browser.clearHistory", defaultValue: "Clear Browser History")) {
                     BrowserHistoryStore.shared.clearHistory()
+                }
+            }
+
+            // C11H-37: Window ▸ hc Core opens c11-core (c11's own hc core) in a
+            // new terminal of the focused area. The only in-app UI it has.
+            CommandGroup(after: .windowList) {
+                Divider()
+                // c11 (C11H-197): the active window's own name and theme.
+                Button(String(localized: "menu.window.rename", defaultValue: "Rename Window…")) {
+                    AppDelegate.shared?.promptRenameActiveMainWindow()
+                }
+                WindowThemeMenu()
+                Divider()
+                Button(String(localized: "menu.window.hcCore", defaultValue: "hc Core")) {
+                    PanelLineage.shared.withOrigin(.operator) { activeWorkspaceManager.openCoreUtility() }
                 }
             }
     }
@@ -1332,6 +1423,8 @@ struct cmuxApp: App {
     }
 
     private func openNewMarkdownSurface() {
+        let originScope = PanelLineage.shared.enterOrigin(.operator)
+        defer { PanelLineage.shared.exitOrigin(originScope) }
         guard let workspace = activeWorkspaceManager.selectedWorkspace,
               let paneId = workspace.bonsplitController.focusedPaneId
                 ?? workspace.bonsplitController.allPaneIds.first else {
@@ -1373,6 +1466,8 @@ struct cmuxApp: App {
     }
 
     private func performSplitFromMenu(direction: SplitDirection) {
+        let originScope = PanelLineage.shared.enterOrigin(.operator)
+        defer { PanelLineage.shared.exitOrigin(originScope) }
         if AppDelegate.shared?.performSplitShortcut(direction: direction) == true {
             return
         }
@@ -1380,6 +1475,8 @@ struct cmuxApp: App {
     }
 
     private func performBrowserSplitFromMenu(direction: SplitDirection) {
+        let originScope = PanelLineage.shared.enterOrigin(.operator)
+        defer { PanelLineage.shared.exitOrigin(originScope) }
         if AppDelegate.shared?.performBrowserSplitShortcut(direction: direction) == true {
             return
         }
@@ -1405,12 +1502,11 @@ struct cmuxApp: App {
         manager.clearCustomTitle(workspaceId: workspace.id)
     }
 
+    /// C11H-342: one sidebar step, as the row's Move Up/Down actions take
+    /// (an ungrouped workspace passes a group; a member stays in its group).
     private func moveSelectedWorkspace(in manager: WorkspaceManager, by delta: Int) {
-        guard let workspace = manager.selectedWorkspace,
-              let currentIndex = selectedWorkspaceIndex(in: manager, workspaceId: workspace.id) else { return }
-        let targetIndex = currentIndex + delta
-        guard targetIndex >= 0, targetIndex < manager.workspaces.count else { return }
-        _ = manager.reorderWorkspace(workspaceId: workspace.id, toIndex: targetIndex)
+        guard let workspace = manager.selectedWorkspace else { return }
+        guard manager.stepWorkspaceInSidebar(workspace.id, by: delta) else { return }
         manager.selectWorkspace(workspace)
     }
 
@@ -1478,15 +1574,16 @@ struct cmuxApp: App {
 
         Divider()
 
+        // C11H-342: enabled by the same sidebar step the action performs.
         Button(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")) {
             moveSelectedWorkspace(in: manager, by: -1)
         }
-        .disabled(workspaceIndex == nil || workspaceIndex == 0)
+        .disabled(!(workspace.map { manager.canStepWorkspaceInSidebar($0.id, by: -1) } ?? false))
 
         Button(String(localized: "contextMenu.moveDown", defaultValue: "Move Down")) {
             moveSelectedWorkspace(in: manager, by: 1)
         }
-        .disabled(workspaceIndex == nil || workspaceIndex == manager.workspaces.count - 1)
+        .disabled(!(workspace.map { manager.canStepWorkspaceInSidebar($0.id, by: 1) } ?? false))
 
         Button(String(localized: "contextMenu.moveToTop", defaultValue: "Move to Top")) {
             moveSelectedWorkspaceToTop(in: manager)
@@ -1558,10 +1655,19 @@ struct cmuxApp: App {
     @ViewBuilder
     private func splitCommandButton(title: String, shortcut: StoredShortcut, action: @escaping () -> Void) -> some View {
         if let key = shortcut.keyEquivalent {
-            Button(title) { SocketCommandContext.withContext(nil, action) }
+            Button(title) { Self.runOperatorMenuAction(action) }
                 .keyboardShortcut(key, modifiers: shortcut.eventModifiers)
         } else {
-            Button(title) { SocketCommandContext.withContext(nil, action) }
+            Button(title) { Self.runOperatorMenuAction(action) }
+        }
+    }
+
+    /// A menu item the operator chose: no socket context, and panels it
+    /// creates record the operator as their origin (C11H-260).
+    @MainActor
+    private static func runOperatorMenuAction(_ action: () -> Void) {
+        SocketCommandContext.withContext(nil) {
+            PanelLineage.shared.withOrigin(.operator, operation: action)
         }
     }
 
@@ -1732,7 +1838,7 @@ private enum SettingsAboutWindowKind: String, CaseIterable, Identifiable {
         case .settings:
             return String(localized: "settings.title", defaultValue: "c11 Settings")
         case .about:
-            return "About c11"
+            return String(localized: "menu.app.about", defaultValue: "About c11")
         }
     }
 
@@ -1845,7 +1951,7 @@ private struct SettingsAboutTitlebarDebugOptions: Equatable {
         case .about:
             return SettingsAboutTitlebarDebugOptions(
                 overridesEnabled: false,
-                windowTitle: "About c11",
+                windowTitle: String(localized: "menu.app.about", defaultValue: "About c11"),
                 titleVisibility: .hidden,
                 titlebarAppearsTransparent: true,
                 movableByWindowBackground: false,
@@ -3151,6 +3257,10 @@ enum SettingsNavigationTarget: String {
     /// The Agents & Automation page's default-agent / Saved Configs section
     /// (C11-182), the anchor the agent-config editor navigates to.
     case agents
+    /// c11h: the Herder Topography page (the map of machines and their
+    /// herder cores), where Add Machine lives. The panel bar's herder-core
+    /// popover opens it.
+    case machines
 }
 
 enum SettingsNavigationRequest {
@@ -3211,7 +3321,7 @@ private struct AboutPanelView: View {
     private let forkURL = URL(string: "https://github.com/Stage-11-Agentics/c11")
     private let docsURL = URL(string: "https://github.com/Stage-11-Agentics/c11")
 
-    private var version: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
+    private var version: String? { C11BuildIdentity(info: Bundle.main.infoDictionary ?? [:]).versionLine }
     private var build: String? { Bundle.main.infoDictionary?["CFBundleVersion"] as? String }
     private var commit: String? {
         C11BuildIdentity.resolveCommit(
@@ -4064,6 +4174,45 @@ enum QuitWarningSettings {
 
 }
 
+/// C11H-267: Keep Terminals After Quit. On (the default), quitting detaches
+/// terminals and they keep running. Off, an operator's quit ends them and
+/// stops this app's own hc cores, as c11 1.x did. An update or settings
+/// relaunch, a TERM (the installer's update), a logout or a shutdown never
+/// ends them through this switch.
+enum QuitTerminalsSettings {
+    static let keepTerminalsKey = "c11.quit.keepTerminals"
+    static let defaultKeepTerminals = true
+    /// The whole stop (ends, then every shard's core). Quit never waits longer.
+    static let stopSeconds: TimeInterval = 4
+
+    static func keepsTerminals(defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: keepTerminalsKey) == nil ? defaultKeepTerminals : defaults.bool(forKey: keepTerminalsKey)
+    }
+
+    struct TerminationDecision: Equatable {
+        let bypassArmed: Bool
+        let endsTerminals: Bool
+    }
+
+    /// What one quit request does: consumes the relaunch bypass (an update,
+    /// a settings relaunch or a clean restart armed it) and decides whether
+    /// the terminals end. `applicationShouldTerminate` calls this.
+    static func decide(defaults: UserDefaults = .standard, quitReason: OSType?, terminationSignal: Bool,
+                       now: Date = Date()) -> TerminationDecision {
+        let bypass = QuitConfirmationPolicy.consumeBypass(now: now)
+        return TerminationDecision(bypassArmed: bypass, endsTerminals: endsTerminals(
+            keepTerminals: keepsTerminals(defaults: defaults), relaunchBypass: bypass,
+            quitReason: quitReason, terminationSignal: terminationSignal))
+    }
+
+    static func endsTerminals(keepTerminals: Bool, relaunchBypass: Bool, quitReason: OSType?,
+                              terminationSignal: Bool) -> Bool {
+        if keepTerminals || relaunchBypass || terminationSignal { return false }
+        if let quitReason, QuitConfirmationPolicy.systemSessionQuitReasons.contains(quitReason) { return false }
+        return true
+    }
+}
+
 /// Decides whether a quit request asks the operator first. Every quit path
 /// (Cmd+Q, the app menu, the Dock, the menu bar extra, AppleScript) arrives at
 /// `applicationShouldTerminate`, so the decision is made there once.
@@ -4089,6 +4238,12 @@ enum QuitConfirmationPolicy {
 
     static func armBypass(now: Date = Date()) {
         bypassArmedAt = now
+    }
+
+    /// C11H-267: a clean restart (`app.restart`) is the operator's relaunch:
+    /// no prompt, and terminals survive it whatever Keep Terminals After Quit says.
+    static func armForCleanRestart(now: Date = Date()) {
+        armBypass(now: now)
     }
 
     static func consumeBypass(now: Date = Date()) -> Bool {
@@ -4161,7 +4316,8 @@ enum WelcomeSettings {
     ///   TL: initialPanel (terminal, renders `c11 welcome` ASCII)
     ///   TR: browser → stage11.ai
     ///   BL: markdown → bundled welcome.md
-    ///   BR: terminal → attempts `claude --dangerously-skip-permissions` if installed
+    ///   BR: terminal → starts `claude` if installed, asking permission as normal
+    ///   (c11: never skips permissions for a first launch; keep on c11 sync, C11H-130)
     ///
     /// Newly-created terminal panels auto-queue `sendText` before their surfaces
     /// finish initializing and flush on ready, so we can issue commands immediately.
@@ -4174,6 +4330,13 @@ enum WelcomeSettings {
     // seedPanel:)` overload that skips step 2 and reuses the seed panel.
     @MainActor
     static func performQuadLayout(on workspace: Workspace, initialPanel: TerminalPanel) {
+        PanelLineage.shared.inheritingLaunchOrigin(from: initialPanel.id) {
+            performQuadLayoutPanels(on: workspace, initialPanel: initialPanel)
+        }
+    }
+
+    @MainActor
+    private static func performQuadLayoutPanels(on workspace: Workspace, initialPanel: TerminalPanel) {
         let initialPanelId = initialPanel.id
         let welcomeMdPath = Bundle.main.url(forResource: "welcome", withExtension: "md")?.path
 
@@ -4206,8 +4369,11 @@ enum WelcomeSettings {
         }
 
         if let bottomRightPanel {
+            // c11h: a friend's first launch starts Claude with its normal permission prompts,
+            // never --dangerously-skip-permissions (Atin, 2026-11-03, C11H-130). Keep this line
+            // when a c11 sync conflicts here.
             bottomRightPanel.sendText(
-                "command -v claude >/dev/null 2>&1 && claude --dangerously-skip-permissions\n"
+                "command -v claude >/dev/null 2>&1 && claude\n"
             )
         }
 
@@ -4262,6 +4428,16 @@ enum DefaultGridSettings {
     // at the call site post-migration.
     @MainActor
     static func performDefaultGrid(
+        on workspace: Workspace,
+        initialPanel: TerminalPanel
+    ) {
+        PanelLineage.shared.inheritingLaunchOrigin(from: initialPanel.id) {
+            performDefaultGridPanels(on: workspace, initialPanel: initialPanel)
+        }
+    }
+
+    @MainActor
+    private static func performDefaultGridPanels(
         on workspace: Workspace,
         initialPanel: TerminalPanel
     ) {
@@ -4324,24 +4500,30 @@ enum DefaultGridSettings {
 
 enum TelemetrySettings {
     static let sendAnonymousTelemetryKey = "sendAnonymousTelemetry"
-    static let defaultSendAnonymousTelemetry = true
+    static let defaultSendAnonymousTelemetry = false
 
+    /// c11 never starts Sentry or PostHog: they carry c11's project keys, and a
+    /// private fork must not report there. The stored preference is ignored.
+    /// The code paths stay (inherited features) but are unreachable.
     static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
-        if defaults.object(forKey: sendAnonymousTelemetryKey) == nil {
-            return defaultSendAnonymousTelemetry
-        }
-        return defaults.bool(forKey: sendAnonymousTelemetryKey)
+        false
     }
 
     // Freeze telemetry enablement once per launch. Settings changes apply on next restart.
     /// The user's setting as read at launch. The Settings page compares against this.
     static let userEnabledForCurrentLaunch = isEnabled()
 
-    /// The user's setting gated on the running bundle's identity (C11-575).
-    static let launchDecision = TelemetryIdentityGate.decide(
-        bundleIdentifier: Bundle.main.bundleIdentifier,
-        userEnabled: userEnabledForCurrentLaunch
-    )
+    /// Always off in c11, and the log line says why truthfully. `isEnabled` is
+    /// false regardless of the user, so passing it to the gate would log
+    /// `user_opted_out`, claiming a choice the user never made. The gate is
+    /// asked with `userEnabled: true` never; c11's bundle id is not a released
+    /// identity, so the reason is the identity, not the user (C11H-183).
+    static let launchDecision: TelemetryLaunchDecision = {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier, !bundleIdentifier.isEmpty else {
+            return .off(.missingBundleIdentifier)
+        }
+        return .off(.unreleasedIdentity(bundleIdentifier))
+    }()
 
     /// True only for a released channel with the user's consent. Every
     /// Sentry and PostHog path reads this.
@@ -4354,6 +4536,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
     // mirrors the per-pane "A" button so operators learn the correlation at
     // a glance.
     case agents
+    // c11h: where terminals live: each machine's herder core, on one map.
+    case herderTopography
     case appearance
     case workspaceSidebar
     case browser
@@ -4372,6 +4556,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
             return String(localized: "settings.page.general", defaultValue: "General")
         case .agents:
             return String(localized: "settings.page.agents", defaultValue: "Agents")
+        case .herderTopography:
+            return String(localized: "settings.page.herderTopography", defaultValue: "Herder Topography")
         case .appearance:
             return String(localized: "settings.page.appearance", defaultValue: "Appearance")
         case .workspaceSidebar:
@@ -4399,6 +4585,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
             return String(localized: "settings.page.general.helper", defaultValue: "choose the app-level defaults that travel with the room.")
         case .agents:
             return String(localized: "settings.page.agents.helper", defaultValue: "the A button on every area launches an agent. shape what runs and what it knows about c11.")
+        case .herderTopography:
+            return String(localized: "settings.page.herderTopography.helper", defaultValue: "every machine your terminals live on, and how to add another.")
         case .appearance:
             return String(localized: "settings.page.appearance.helper", defaultValue: "tune the room without touching terminal themes.")
         case .workspaceSidebar:
@@ -4427,6 +4615,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         // The visual rhyme between the sidebar nav and the in-pane button
         // teaches the operator what the A button is for.
         case .agents: return "a.circle"
+        case .herderTopography: return "circle.hexagongrid"
         case .appearance: return "paintpalette"
         case .workspaceSidebar: return "sidebar.left"
         case .browser: return "globe"
@@ -4449,6 +4638,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
             return .keyboardShortcuts
         case .agents:
             return .agents
+        case .machines:
+            return .herderTopography
         }
     }
 }
@@ -4461,7 +4652,6 @@ private struct ShortcutSettingsGroup: Identifiable {
 
 struct SettingsView: View {
     private let pickerColumnWidth: CGFloat = 196
-    private let launchPickerColumnWidth: CGFloat = 248
     private let notificationSoundControlWidth: CGFloat = 280
 
     @AppStorage(LanguageSettings.languageKey) private var appLanguage = LanguageSettings.defaultLanguage.rawValue
@@ -4476,6 +4666,8 @@ struct SettingsView: View {
     private var markdownSpawnButtonVisible = PanelTypeAvailability.defaultEnabled
     @AppStorage(PanelOrdinalDisplaySettings.showSurfaceIdsInPanelTitlesKey)
     private var showSurfaceIdsInPanelTitles = PanelOrdinalDisplaySettings.defaultShowSurfaceIds
+    @AppStorage(MachinePickerSettings.askKey)
+    private var askMachineForNewTerminals = MachinePickerSettings.defaultAsk
     @AppStorage(WorkspaceOrdinalDisplaySettings.showWorkspaceIdsKey)
     private var showWorkspaceIdsInSidebar = WorkspaceOrdinalDisplaySettings.defaultShowWorkspaceIds
     @AppStorage(PanelLayoutSettings.modeKey)
@@ -4504,7 +4696,7 @@ struct SettingsView: View {
             set: { activityRetentionDays = $0 }
         )
     }
-    @AppStorage("cmuxPortBase") private var cmuxPortBase = 9100
+    @AppStorage(C11Identity.portBaseDefaultsKey) private var cmuxPortBase = C11Identity.defaultPortBase
     @AppStorage("cmuxPortRange") private var cmuxPortRange = 10
     @AppStorage(BrowserSearchSettings.searchEngineKey) private var browserSearchEngine = BrowserSearchSettings.defaultSearchEngine.rawValue
     @AppStorage(BrowserSearchSettings.searchSuggestionsEnabledKey) private var browserSearchSuggestionsEnabled = BrowserSearchSettings.defaultSearchSuggestionsEnabled
@@ -4522,23 +4714,24 @@ struct SettingsView: View {
     private var browserExternalSchemeAllowlist = ""
     @AppStorage(BrowserInsecureHTTPSettings.allowlistKey) private var browserInsecureHTTPAllowlist = BrowserInsecureHTTPSettings.defaultAllowlistText
     @AppStorage(NotificationSoundSettings.key) private var notificationSound = NotificationSoundSettings.defaultValue
-    @AppStorage(NotificationSoundSettings.customFilePathKey)
-    private var notificationSoundCustomFilePath = NotificationSoundSettings.defaultCustomFilePath
+    // C11H-319: the needs-you sound, apart from the turn-end sound.
+    @AppStorage(NotificationSoundChannel.needsYou.defaultsKey)
+    private var needsYouNotificationSound = NotificationSoundChannel.needsYou.shippedDefault.rawValue
+    // C11H-246: the flag's own sound and the routine notification dial.
+    @AppStorage(FlagSoundSettings.key) private var flagNotificationSound = FlagSoundSettings.defaultValue
+    @AppStorage(NotificationLevel.key) private var notificationLevelRaw = NotificationLevel.defaultLevel.rawValue
     @AppStorage(NotificationSoundSettings.customCommandKey) private var notificationCustomCommand = NotificationSoundSettings.defaultCustomCommand
     @AppStorage(NotificationAreaRingSettings.enabledKey) private var notificationPaneRingEnabled = NotificationAreaRingSettings.defaultEnabled
+    // C11H-262: how Waiting and Flagged pick the next panel.
+    @AppStorage(AttentionJumpOrder.storageKey) private var attentionJumpOrderRaw = AttentionJumpOrder.defaultOrder.rawValue
     @AppStorage(NotificationAreaFlashSettings.enabledKey) private var notificationPaneFlashEnabled = NotificationAreaFlashSettings.defaultEnabled
     @AppStorage(NotificationFlashDurationSettings.storageKey) private var notificationFlashDurationMs: Int = NotificationFlashDurationSettings.defaultMs
     @AppStorage(QuitWarningSettings.warnBeforeQuitKey) private var warnBeforeQuitShortcut = QuitWarningSettings.defaultWarnBeforeQuit
-    @AppStorage(LaunchResumePolicy.defaultsKey)
-    private var launchResumePolicy = LaunchResumePolicy.defaultPolicy.rawValue
-    /// The picker's selection. An outside `defaults write` can leave a typo or
-    /// odd casing; it resolves the way launch reads it, so a tag always matches.
-    private var launchResumePolicySelection: Binding<String> {
-        Binding(
-            get: { LaunchResumePolicy.parse(launchResumePolicy).rawValue },
-            set: { launchResumePolicy = $0 }
-        )
-    }
+    @AppStorage(QuitTerminalsSettings.keepTerminalsKey) private var keepTerminalsAfterQuit = QuitTerminalsSettings.defaultKeepTerminals
+    /// C11H-38: "On launch": always (default), ask, never; same key and values as c11.
+    @AppStorage(LaunchResumePolicy.defaultsKey) private var launchResumePolicy = LaunchResumePolicy.always.rawValue
+    /// C11H-235: resume a mass outside-signal end's agents by itself. Off by default.
+    @AppStorage(HCMassSignalEnd.autoResumeKey) private var massSignalEndAutoResume = false
     @AppStorage(CommandPaletteRenameSelectionSettings.selectAllOnFocusKey)
     private var commandPaletteRenameSelectAllOnFocus = CommandPaletteRenameSelectionSettings.defaultSelectAllOnFocus
     @AppStorage(CommandPaletteSwitcherSearchSettings.searchAllSurfacesKey)
@@ -4553,6 +4746,8 @@ struct SettingsView: View {
     private var staticActivityMarks = ActivityMarkSettings.defaultStaticMarks
     @AppStorage(SidebarWorkspaceDetailSettings.hideAllDetailsKey)
     private var sidebarHideAllDetails = SidebarWorkspaceDetailSettings.defaultHideAllDetails
+    @AppStorage(SidebarDensitySetting.key)
+    private var sidebarDensityRaw = SidebarDensitySetting.defaultValue.rawValue
     @AppStorage(SidebarWorkspaceDetailSettings.showNotificationMessageKey)
     private var sidebarShowNotificationMessage = SidebarWorkspaceDetailSettings.defaultShowNotificationMessage
     @AppStorage(SidebarBranchLayoutSettings.key) private var sidebarBranchVerticalLayout = SidebarBranchLayoutSettings.defaultVerticalLayout
@@ -4579,6 +4774,7 @@ struct SettingsView: View {
     @AppStorage("sidebarTintHexLight") private var sidebarTintHexLight: String?
     @AppStorage("sidebarTintHexDark") private var sidebarTintHexDark: String?
     @AppStorage("sidebarTintOpacity") private var sidebarTintOpacity = SidebarTintDefaults.opacity
+    @AppStorage(C11SidebarBackground.storageKey) private var c11SidebarBackgroundDark = C11SidebarBackground.defaultValue.rawValue
 
     // [TextBox] TextBox Input settings (plan §4.7)
     @AppStorage(TextBoxInputSettings.enterToSendKey) private var textBoxEnterToSend = TextBoxInputSettings.defaultEnterToSend
@@ -4598,15 +4794,9 @@ struct SettingsView: View {
     @State private var socketPasswordDraft = ""
     @State private var socketPasswordStatusMessage: String?
     @State private var socketPasswordStatusIsError = false
-    @State private var notificationCustomSoundStatusMessage: String?
-    @State private var notificationCustomSoundStatusIsError = false
-    @State private var showNotificationCustomSoundErrorAlert = false
-    @State private var notificationCustomSoundErrorAlertMessage = ""
     @State private var telemetryValueAtLaunch = TelemetrySettings.userEnabledForCurrentLaunch
     @State private var showLanguageRestartAlert = false
     @State private var isResettingSettings = false
-    @State private var workspaceDefaultEntries = WorkspaceColorSettings.defaultPaletteWithOverrides()
-    @State private var workspaceCustomColors = WorkspaceColorSettings.customColors()
 
     private var selectedWorkspacePlacement: NewWorkspacePlacement {
         NewWorkspacePlacement(rawValue: newWorkspacePlacement) ?? WorkspacePlacementSettings.defaultPlacement
@@ -4650,17 +4840,6 @@ struct SettingsView: View {
         return String(
             localized: "settings.app.closeWorkspaceOnLastSurfaceShortcut.subtitleOff",
             defaultValue: "If the focused panel is the last one, the close-panel shortcut also closes the workspace."
-        )
-    }
-
-    private var selectedSidebarActiveWorkspaceIndicatorStyle: SidebarActiveWorkspaceIndicatorStyle {
-        SidebarActiveWorkspaceIndicatorSettings.resolvedStyle(rawValue: sidebarActiveWorkspaceIndicatorStyle)
-    }
-
-    private var sidebarIndicatorStyleSelection: Binding<String> {
-        Binding(
-            get: { selectedSidebarActiveWorkspaceIndicatorStyle.rawValue },
-            set: { sidebarActiveWorkspaceIndicatorStyle = $0 }
         )
     }
 
@@ -4736,30 +4915,6 @@ struct SettingsView: View {
         )
     }
 
-    private var settingsSidebarTintLightBinding: Binding<Color> {
-        Binding(
-            get: {
-                Color(nsColor: NSColor(hex: sidebarTintHexLight ?? sidebarTintHex) ?? .black)
-            },
-            set: { newColor in
-                let nsColor = NSColor(newColor)
-                sidebarTintHexLight = nsColor.hexString()
-            }
-        )
-    }
-
-    private var settingsSidebarTintDarkBinding: Binding<Color> {
-        Binding(
-            get: {
-                Color(nsColor: NSColor(hex: sidebarTintHexDark ?? sidebarTintHex) ?? .black)
-            },
-            set: { newColor in
-                let nsColor = NSColor(newColor)
-                sidebarTintHexDark = nsColor.hexString()
-            }
-        )
-    }
-
     private var hasSocketPasswordConfigured: Bool {
         SocketControlPasswordStore.hasConfiguredPassword()
     }
@@ -4792,31 +4947,6 @@ struct SettingsView: View {
 
     private var browserInsecureHTTPAllowlistHasUnsavedChanges: Bool {
         browserInsecureHTTPAllowlistDraft != browserInsecureHTTPAllowlist
-    }
-
-    private var hasCustomNotificationSoundFilePath: Bool {
-        !notificationSoundCustomFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var notificationSoundCustomFileDisplayName: String {
-        guard hasCustomNotificationSoundFilePath else {
-            return String(
-                localized: "settings.notifications.sound.custom.file.none",
-                defaultValue: "No file selected"
-            )
-        }
-        return URL(fileURLWithPath: notificationSoundCustomFilePath).lastPathComponent
-    }
-
-    private var canPreviewNotificationSound: Bool {
-        switch notificationSound {
-        case "none":
-            return false
-        case NotificationSoundSettings.customFileValue:
-            return hasCustomNotificationSoundFilePath
-        default:
-            return true
-        }
     }
 
     private var notificationPermissionStatusText: String {
@@ -4855,123 +4985,6 @@ struct SettingsView: View {
             return String(localized: "settings.notifications.desktop.action.enable", defaultValue: "Enable")
         case .authorized, .denied, .provisional, .ephemeral:
             return String(localized: "settings.notifications.desktop.action.openSettings", defaultValue: "Open Settings")
-        }
-    }
-
-    private func previewNotificationSound() {
-        if notificationSound == NotificationSoundSettings.customFileValue {
-            NotificationSoundSettings.playCustomFileSound(path: notificationSoundCustomFilePath)
-            return
-        }
-        NotificationSoundSettings.previewSound(value: notificationSound)
-    }
-
-    private func notificationCustomSoundIssueMessage(_ issue: NotificationSoundSettings.CustomSoundPreparationIssue) -> String {
-        switch issue {
-        case .emptyPath:
-            return String(
-                localized: "settings.notifications.sound.custom.status.empty",
-                defaultValue: "Choose a custom audio file first."
-            )
-        case .missingFile(let path):
-            let fileName = URL(fileURLWithPath: path).lastPathComponent
-            return String(
-                localized: "settings.notifications.sound.custom.status.missingFilePrefix",
-                defaultValue: "File not found: "
-            ) + fileName
-        case .missingFileExtension(let path):
-            let fileName = URL(fileURLWithPath: path).lastPathComponent
-            return String(
-                localized: "settings.notifications.sound.custom.status.missingExtensionPrefix",
-                defaultValue: "File needs an extension: "
-            ) + fileName
-        case .stagingFailed(_, let details):
-            let prefix = String(
-                localized: "settings.notifications.sound.custom.status.prepareFailed",
-                defaultValue: "Couldn't prepare this file. Try WAV, AIFF, or CAF."
-            )
-            return "\(prefix) (\(details))"
-        }
-    }
-
-    private func notificationCustomSoundReadyStatusMessage(for path: String) -> String {
-        let sourceExtension = URL(fileURLWithPath: path).pathExtension
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        let stagedExtension = NotificationSoundSettings.stagedCustomSoundFileExtension(forSourceExtension: sourceExtension)
-        if !sourceExtension.isEmpty, stagedExtension != sourceExtension {
-            return String(
-                localized: "settings.notifications.sound.custom.status.readyConverted",
-                defaultValue: "Prepared for notifications (converted to CAF)."
-            )
-        }
-        return String(
-            localized: "settings.notifications.sound.custom.status.ready",
-            defaultValue: "Ready for notifications."
-        )
-    }
-
-    private func refreshNotificationCustomSoundStatus(showAlertOnFailure: Bool = false) {
-        guard notificationSound == NotificationSoundSettings.customFileValue else {
-            notificationCustomSoundStatusMessage = nil
-            notificationCustomSoundStatusIsError = false
-            return
-        }
-        let pathSnapshot = notificationSoundCustomFilePath
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = NotificationSoundSettings.prepareCustomFileForNotifications(path: pathSnapshot)
-            DispatchQueue.main.async {
-                guard notificationSound == NotificationSoundSettings.customFileValue else {
-                    notificationCustomSoundStatusMessage = nil
-                    notificationCustomSoundStatusIsError = false
-                    return
-                }
-                guard notificationSoundCustomFilePath == pathSnapshot else { return }
-                switch result {
-                case .success:
-                    notificationCustomSoundStatusMessage = notificationCustomSoundReadyStatusMessage(for: pathSnapshot)
-                    notificationCustomSoundStatusIsError = false
-                case .failure(let issue):
-                    let message = notificationCustomSoundIssueMessage(issue)
-                    notificationCustomSoundStatusMessage = message
-                    notificationCustomSoundStatusIsError = true
-                    if showAlertOnFailure {
-                        notificationCustomSoundErrorAlertMessage = message
-                        showNotificationCustomSoundErrorAlert = true
-                    }
-                }
-            }
-        }
-    }
-
-    private func chooseNotificationSoundFile() {
-        let openPanel = NSOpenPanel()
-        openPanel.canChooseFiles = true
-        openPanel.canChooseDirectories = false
-        openPanel.allowsMultipleSelection = false
-        openPanel.allowedContentTypes = [.audio]
-        openPanel.title = String(
-            localized: "settings.notifications.sound.custom.choose.title",
-            defaultValue: "Choose Notification Sound"
-        )
-        openPanel.prompt = String(
-            localized: "settings.notifications.sound.custom.choose.prompt",
-            defaultValue: "Choose"
-        )
-        guard openPanel.runModal() == .OK, let url = openPanel.url else { return }
-        let selectedPath = url.path
-        switch NotificationSoundSettings.prepareCustomFileForNotifications(path: selectedPath) {
-        case .success:
-            notificationSoundCustomFilePath = selectedPath
-            notificationSound = NotificationSoundSettings.customFileValue
-            notificationCustomSoundStatusMessage = notificationCustomSoundReadyStatusMessage(for: selectedPath)
-            notificationCustomSoundStatusIsError = false
-            previewNotificationSound()
-        case .failure(let issue):
-            let message = notificationCustomSoundIssueMessage(issue)
-            notificationCustomSoundErrorAlertMessage = message
-            showNotificationCustomSoundErrorAlert = true
-            refreshNotificationCustomSoundStatus()
         }
     }
 
@@ -5074,15 +5087,11 @@ struct SettingsView: View {
             browserInsecureHTTPAllowlistDraft = browserInsecureHTTPAllowlist
             browserExternalSchemeAllowlistDraft = BrowserExternalSchemeAllowlistDraft(saved: browserExternalSchemeAllowlist)
             refreshDetectedImportBrowsers()
-            reloadWorkspaceColorSettings()
-            refreshNotificationCustomSoundStatus()
         }
-        .onChange(of: notificationSound) { _, _ in
-            refreshNotificationCustomSoundStatus()
-        }
-        .onChange(of: notificationSoundCustomFilePath) { _, _ in
-            refreshNotificationCustomSoundStatus()
-        }
+        // C11H-319: playback copies follow the sounds in use.
+        .onChange(of: notificationSound) { _, _ in NotificationSoundPlayback.syncInBackground() }
+        .onChange(of: needsYouNotificationSound) { _, _ in NotificationSoundPlayback.syncInBackground() }
+        .onChange(of: flagNotificationSound) { _, _ in NotificationSoundPlayback.syncInBackground() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
             browserExternalSchemeAllowlistDraft.settingsWindowWillClose(notification, stored: browserExternalSchemeAllowlist)
         }
@@ -5098,9 +5107,6 @@ struct SettingsView: View {
         }
         .onReceive(BrowserHistoryStore.shared.$entries) { entries in
             browserHistoryEntryCount = entries.count
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-            reloadWorkspaceColorSettings()
         }
         .confirmationDialog(
             String(localized: "settings.browser.history.clearDialog.title", defaultValue: "Clear browser history?"),
@@ -5139,17 +5145,6 @@ struct SettingsView: View {
             }
             Button(String(localized: "settings.app.language.restartDialog.later", defaultValue: "Later"), role: .cancel) {}
         }
-        .alert(
-            String(
-                localized: "settings.notifications.sound.custom.error.title",
-                defaultValue: "Custom Notification Sound Error"
-            ),
-            isPresented: $showNotificationCustomSoundErrorAlert
-        ) {
-            Button(String(localized: "common.ok", defaultValue: "OK"), role: .cancel) {}
-        } message: {
-            Text(notificationCustomSoundErrorAlertMessage)
-        }
     }
 
     @ViewBuilder
@@ -5159,6 +5154,8 @@ struct SettingsView: View {
             generalSettingsPage
         case .agents:
             agentsSettingsPage
+        case .herderTopography:
+            herderTopographySettingsPage
         case .appearance:
             appearanceSettingsPage
         case .workspaceSidebar:
@@ -5213,29 +5210,47 @@ struct SettingsView: View {
             }
         }
 
-        SettingsSectionHeader(title: String(localized: "settings.section.launchBehavior", defaultValue: "Launch Behavior"))
+        SettingsSectionHeader(title: String(localized: "settings.section.launchBehavior", defaultValue: "Launch"))
         SettingsCard {
             SettingsCardRow(
-                String(localized: "settings.app.onLaunch", defaultValue: "On Launch"),
-                subtitle: launchResumeSubtitle,
-                controlWidth: launchPickerColumnWidth
+                String(localized: "settings.app.onLaunch", defaultValue: "On launch"),
+                subtitle: String(localized: "settings.app.onLaunch.hint",
+                    defaultValue: "Hold Option while c11 starts to choose for one launch."),
+                controlWidth: pickerColumnWidth
             ) {
-                Picker("", selection: launchResumePolicySelection) {
-                    Text(String(localized: "settings.app.onLaunch.resume", defaultValue: "Resume previous session"))
-                        .tag(LaunchResumePolicy.always.rawValue)
-                    Text(String(localized: "settings.app.onLaunch.ask", defaultValue: "Ask which workspaces to resume"))
-                        .tag(LaunchResumePolicy.ask.rawValue)
-                    Text(String(localized: "settings.app.onLaunch.fresh", defaultValue: "Start fresh"))
-                        .tag(LaunchResumePolicy.never.rawValue)
+                Picker("", selection: Binding(
+                    get: {
+                        LaunchResumePolicy(rawValue: launchResumePolicy.trimmingCharacters(in: .whitespaces).lowercased())
+                            .map { $0 == .ask && !LaunchResumePolicy.offersAskOption ? .always : $0 } ?? .always
+                    },
+                    set: { launchResumePolicy = $0.rawValue }
+                )) {
+                    Text(String(localized: "settings.app.onLaunch.always", defaultValue: "Resume previous session"))
+                        .tag(LaunchResumePolicy.always)
+                    if LaunchResumePolicy.offersAskOption {
+                        Text(String(localized: "settings.app.onLaunch.ask", defaultValue: "Ask which workspaces to resume"))
+                            .tag(LaunchResumePolicy.ask)
+                    }
+                    Text(String(localized: "settings.app.onLaunch.never", defaultValue: "Start fresh"))
+                        .tag(LaunchResumePolicy.never)
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .accessibilityIdentifier("SettingsOnLaunchPicker")
             }
 
             SettingsCardDivider()
 
-            SettingsCardNote(String(localized: "settings.app.onLaunch.optionNote", defaultValue: "Hold Option while c11 starts to choose which workspaces to resume for that launch only."))
+            SettingsCardRow(
+                String(localized: "settings.app.massSignalEndAutoResume",
+                    defaultValue: "Resume agents after a mass outside-signal end"),
+                subtitle: String(localized: "settings.app.massSignalEndAutoResume.hint",
+                    defaultValue: "When 3 or more agents' terminals end by a signal from outside c11 within 5 seconds, resume their conversations one by one. Off: they wait for Resume all in the restore strip.")
+            ) {
+                Toggle("", isOn: $massSignalEndAutoResume)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("settings-mass-signal-end-auto-resume")
+            }
         }
 
         SettingsSectionHeader(title: String(localized: "settings.section.quitBehavior", defaultValue: "Quit Behavior"))
@@ -5249,6 +5264,23 @@ struct SettingsView: View {
                 Toggle("", isOn: $warnBeforeQuitShortcut)
                     .labelsHidden()
                     .controlSize(.small)
+            }
+
+            SettingsCardDivider()
+
+            // C11H-267: the switch the c11 2.0 upgrade note names.
+            SettingsCardRow(
+                String(localized: "settings.app.keepTerminalsAfterQuit", defaultValue: "Keep Terminals After Quit"),
+                subtitle: keepTerminalsAfterQuit
+                    ? String(localized: "settings.app.keepTerminalsAfterQuit.on",
+                             defaultValue: "Terminals, agents and jobs keep running after c11 quits, and come back when you open it.")
+                    : String(localized: "settings.app.keepTerminalsAfterQuit.off",
+                             defaultValue: "Quitting c11 ends every terminal on this Mac and the jobs inside them.")
+            ) {
+                Toggle("", isOn: $keepTerminalsAfterQuit)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("settings-keep-terminals-after-quit")
             }
         }
 
@@ -5343,35 +5375,45 @@ struct SettingsView: View {
         }
     }
 
-    private var launchResumeSubtitle: String {
-        switch LaunchResumePolicy.parse(launchResumePolicy) {
-        case .always:
-            return String(localized: "settings.app.onLaunch.subtitleResume", defaultValue: "c11 reopens every workspace from your last session.")
-        case .ask:
-            return String(localized: "settings.app.onLaunch.subtitleAsk", defaultValue: "c11 lists your last session's workspaces and asks which to bring back.")
-        case .never:
-            return String(localized: "settings.app.onLaunch.subtitleFresh", defaultValue: "c11 opens with a new, empty workspace.")
+    /// c11h: Herder Topography. What a herder core is, the map of every
+    /// machine (a gear on each to name, color, update or remove it), Add
+    /// Machine with its help, and whether new terminals ask where to run.
+    @ViewBuilder
+    private var herderTopographySettingsPage: some View {
+        HerderTopographyExplainer()
+
+        SettingsSectionHeader(title: String(localized: "settings.section.topography", defaultValue: "Your Topography"))
+            .id(SettingsNavigationTarget.machines)
+        SettingsCard {
+            HerderTopographyMapSection()
+        }
+
+        SettingsSectionHeader(title: String(localized: "settings.section.newTerminals", defaultValue: "New Terminals"))
+        SettingsCard {
+            // C11H-138: the machine picker on New Terminal and agent launch.
+            SettingsCardRow(
+                String(localized: "settings.machines.ask", defaultValue: "Ask which machine for new terminals"),
+                subtitle: askMachineForNewTerminals
+                    ? String(localized: "settings.machines.ask.subtitleOn", defaultValue: "When another machine is connected, New Terminal and agent launches ask where to run. Press its number to choose; Return picks this Mac.")
+                    : String(localized: "settings.machines.ask.subtitleOff", defaultValue: "New terminals and agents open on this Mac. File > New Terminal on <Machine> still opens one elsewhere.")
+            ) {
+                Toggle("", isOn: $askMachineForNewTerminals)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsAskMachineToggle")
+            }
         }
     }
 
     @ViewBuilder
     private var appearanceSettingsPage: some View {
-        SettingsSectionHeader(title: String(localized: "settings.section.c11Theme", defaultValue: "c11 Theme"))
-        SettingsCard {
-            ThemePickerRow()
-
-            SettingsCardDivider()
-
-            SettingsCardNote(String(localized: "settings.appearance.c11Theme.note", defaultValue: "c11 theme changes app chrome only; Ghostty terminal themes stay untouched."))
-        }
-
-        SettingsSectionHeader(title: String(localized: "settings.section.chromeScale", defaultValue: "App Chrome UI Scale"))
+        SettingsSectionHeader(title: String(localized: "settings.section.interfaceSize", defaultValue: "Interface Size"))
         SettingsCard {
             SettingsPickerRow(
-                String(localized: "settings.chromeScale.title", defaultValue: "App Chrome UI Scale"),
+                String(localized: "settings.interfaceSize.title", defaultValue: "Interface Size"),
                 subtitle: String(
-                    localized: "settings.chromeScale.subtitle",
-                    defaultValue: "Scale c11 sidebar text and the panel bar without changing terminal font size."
+                    localized: "settings.interfaceSize.subtitle",
+                    defaultValue: "How big c11 draws the sidebar and the title bar above each panel: their text, tags and spacing. Terminal text has its own size: Area > Increase Font Size."
                 ),
                 controlWidth: pickerColumnWidth,
                 selection: $chromeScalePresetRaw
@@ -5407,168 +5449,30 @@ struct SettingsView: View {
             }
         }
 
-        SettingsSectionHeader(title: String(localized: "settings.section.workspaceColors", defaultValue: "Workspace Colors"))
+        SettingsSectionHeader(title: String(localized: "settings.section.theme", defaultValue: "Theme"))
         SettingsCard {
-            SettingsPickerRow(
-                String(localized: "settings.workspaceColors.indicator", defaultValue: "Workspace Color Indicator"),
-                controlWidth: pickerColumnWidth,
-                selection: sidebarIndicatorStyleSelection
-            ) {
-                ForEach(SidebarActiveWorkspaceIndicatorStyle.allCases) { style in
-                    Text(style.displayName).tag(style.rawValue)
-                }
-            }
-
-            SettingsCardDivider()
-
-            SettingsCardNote(String(localized: "settings.workspaceColors.paletteNote", defaultValue: "Customize the workspace color palette used by Sidebar > Workspace Color. \"Choose Custom Color...\" entries are persisted below."))
-
-            ForEach(Array(workspaceDefaultEntries.enumerated()), id: \.element.name) { index, entry in
-                if index > 0 {
-                    SettingsCardDivider()
-                }
-                SettingsCardRow(
-                    entry.name,
-                    subtitle: String(localized: "settings.workspaceColors.base", defaultValue: "Base: \(baseWorkspaceColorHex(for: entry.name))")
-                ) {
-                    HStack(spacing: 8) {
-                        ColorPicker(
-                            "",
-                            selection: defaultWorkspaceColorBinding(for: entry.name),
-                            supportsOpacity: false
-                        )
-                        .labelsHidden()
-                        .frame(width: 38)
-
-                        Text(entry.hex)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 76, alignment: .trailing)
-                    }
-                }
-            }
-
-            SettingsCardDivider()
-
-            if workspaceCustomColors.isEmpty {
-                SettingsCardNote(String(localized: "settings.workspaceColors.noCustomColors", defaultValue: "Custom colors: none yet. Use \"Choose Custom Color...\" from a workspace context menu."))
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(String(localized: "settings.workspaceColors.customColors", defaultValue: "Custom Colors"))
-                        .font(.system(size: 13, weight: .semibold))
-
-                    ForEach(workspaceCustomColors, id: \.self) { hex in
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(Color(nsColor: NSColor(hex: hex) ?? .gray))
-                                .frame(width: 11, height: 11)
-
-                            Text(hex)
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundStyle(.secondary)
-
-                            Spacer(minLength: 8)
-
-                            Button(String(localized: "settings.workspaceColors.remove", defaultValue: "Remove")) {
-                                removeWorkspaceCustomColor(hex)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-            }
-
-            SettingsCardDivider()
-
-            SettingsCardRow(
-                String(localized: "settings.workspaceColors.resetPalette", defaultValue: "Reset Palette"),
-                subtitle: String(localized: "settings.workspaceColors.resetPalette.subtitle", defaultValue: "Restore built-in defaults and clear all custom colors.")
-            ) {
-                Button(String(localized: "settings.workspaceColors.resetPalette.button", defaultValue: "Reset")) {
-                    resetWorkspaceColors()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
+            ThemePreviewGallery()
         }
 
-        SettingsSectionHeader(title: String(localized: "settings.section.sidebarTint", defaultValue: "Sidebar Tint"))
+        SettingsSectionHeader(title: String(localized: "settings.section.sidebarAppearance", defaultValue: "Sidebar Appearance"))
         SettingsCard {
+            // c11's Dark-slot sidebar background (C11H-32), stored under a c11-only key.
             SettingsCardRow(
-                String(localized: "settings.sidebarAppearance.tintColorLight", defaultValue: "Light Mode Tint"),
-                subtitle: String(localized: "settings.sidebarAppearance.tintColorLight.subtitle", defaultValue: "Sidebar tint color when using light appearance.")
+                String(localized: "settings.sidebarBackground", defaultValue: "Sidebar Background"),
+                subtitle: String(localized: "settings.sidebarBackground.subtitleOneTheme", defaultValue: "From Theme draws the theme's own background, or Sunset Mall for a theme without one. Sunset Mall and Outrun Horizon replace the theme's background. None always uses the tint."),
+                controlWidth: pickerColumnWidth
             ) {
-                HStack(spacing: 8) {
-                    ColorPicker(
-                        String(localized: "settings.sidebarAppearance.tintColorLight.picker", defaultValue: "Light tint"),
-                        selection: settingsSidebarTintLightBinding,
-                        supportsOpacity: false
-                    )
-                    .labelsHidden()
-                    .frame(width: 38)
-
-                    Text(sidebarTintHexLight ?? String(localized: "settings.sidebarAppearance.defaultLabel", defaultValue: "Default"))
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 76, alignment: .trailing)
+                Picker("", selection: Binding(
+                    get: { C11SidebarBackground.resolve(c11SidebarBackgroundDark).rawValue },
+                    set: { c11SidebarBackgroundDark = $0 }
+                )) {
+                    ForEach(C11SidebarBackground.allCases) { style in
+                        Text(style.label).tag(style.rawValue)
+                    }
                 }
-            }
-
-            SettingsCardDivider()
-
-            SettingsCardRow(
-                String(localized: "settings.sidebarAppearance.tintColorDark", defaultValue: "Dark Mode Tint"),
-                subtitle: String(localized: "settings.sidebarAppearance.tintColorDark.subtitle", defaultValue: "Sidebar tint color when using dark appearance.")
-            ) {
-                HStack(spacing: 8) {
-                    ColorPicker(
-                        String(localized: "settings.sidebarAppearance.tintColorDark.picker", defaultValue: "Dark tint"),
-                        selection: settingsSidebarTintDarkBinding,
-                        supportsOpacity: false
-                    )
-                    .labelsHidden()
-                    .frame(width: 38)
-
-                    Text(sidebarTintHexDark ?? String(localized: "settings.sidebarAppearance.defaultLabel", defaultValue: "Default"))
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 76, alignment: .trailing)
-                }
-            }
-
-            SettingsCardDivider()
-
-            SettingsCardRow(
-                String(localized: "settings.sidebarAppearance.tintOpacity", defaultValue: "Tint Opacity"),
-                subtitle: String(localized: "settings.sidebarAppearance.tintOpacity.subtitle", defaultValue: "How strongly the tint color shows over the sidebar material.")
-            ) {
-                HStack(spacing: 8) {
-                    Slider(value: $sidebarTintOpacity, in: 0...1)
-                        .frame(width: 140)
-                    Text(String(format: "%.0f%%", sidebarTintOpacity * 100))
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 36, alignment: .trailing)
-                }
-            }
-
-            SettingsCardDivider()
-
-            SettingsCardRow(
-                String(localized: "settings.sidebarAppearance.reset", defaultValue: "Reset Sidebar Tint"),
-                subtitle: String(localized: "settings.sidebarAppearance.reset.subtitle", defaultValue: "Restore default sidebar appearance.")
-            ) {
-                Button(String(localized: "settings.sidebarAppearance.reset.button", defaultValue: "Reset")) {
-                    sidebarTintHexLight = nil
-                    sidebarTintHexDark = nil
-                    sidebarTintHex = SidebarTintDefaults.hex
-                    sidebarTintOpacity = SidebarTintDefaults.opacity
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("SettingsSidebarBackgroundPicker")
             }
         }
     }
@@ -5645,6 +5549,28 @@ struct SettingsView: View {
 
         SettingsSectionHeader(title: String(localized: "settings.section.sidebarDetail", defaultValue: "Sidebar Detail"))
         SettingsCard {
+            SettingsPickerRow(
+                String(localized: "settings.app.sidebarDensity", defaultValue: "Sidebar Density"),
+                subtitle: {
+                    switch SidebarDensitySetting.resolve(sidebarDensityRaw) {
+                    case .automatic:
+                        return String(localized: "settings.app.sidebarDensity.subtitleAutomatic", defaultValue: "Full cards while every workspace fits; two-line cards once they would scroll.")
+                    case .compact:
+                        return String(localized: "settings.app.sidebarDensity.subtitleCompact", defaultValue: "Always two-line cards: name, number, agent marks and counts. Hover a card for the rest.")
+                    case .cards:
+                        return String(localized: "settings.app.sidebarDensity.subtitleCards", defaultValue: "Always full cards; the sidebar scrolls when they do not fit.")
+                    }
+                }(),
+                controlWidth: pickerColumnWidth,
+                selection: $sidebarDensityRaw
+            ) {
+                Text(String(localized: "settings.app.sidebarDensity.automatic", defaultValue: "Automatic")).tag(SidebarDensitySetting.automatic.rawValue)
+                Text(String(localized: "settings.app.sidebarDensity.compact", defaultValue: "Compact")).tag(SidebarDensitySetting.compact.rawValue)
+                Text(String(localized: "settings.app.sidebarDensity.cards", defaultValue: "Cards")).tag(SidebarDensitySetting.cards.rawValue)
+            }
+
+            SettingsCardDivider()
+
             SettingsCardRow(
                 String(localized: "settings.app.hideAllSidebarDetails", defaultValue: "Hide All Sidebar Details"),
                 subtitle: sidebarHideAllDetails
@@ -6152,6 +6078,23 @@ struct SettingsView: View {
     private var notificationSettingsPage: some View {
         SettingsSectionHeader(title: String(localized: "settings.section.inAppSignals", defaultValue: "In-App Signals"))
         SettingsCard {
+            SettingsPickerRow(
+                String(localized: "settings.notifications.jumpOrder.title", defaultValue: "Waiting and Flagged Order"),
+                subtitle: String(
+                    localized: "settings.notifications.jumpOrder.subtitle",
+                    defaultValue: "Current workspace first clears the workspace you are in, then moves on. Oldest first goes to the oldest wait anywhere. Flagged buttons follow the same order."
+                ),
+                controlWidth: pickerColumnWidth,
+                selection: $attentionJumpOrderRaw,
+                accessibilityId: "SettingsAttentionJumpOrderPicker"
+            ) {
+                ForEach(AttentionJumpOrder.allCases) { order in
+                    Text(order.displayName).tag(order.rawValue)
+                }
+            }
+
+            SettingsCardDivider()
+
             SettingsCardRow(
                 String(localized: "settings.notifications.paneRing.title", defaultValue: "Unread Area Ring"),
                 subtitle: String(localized: "settings.notifications.paneRing.subtitle", defaultValue: "Rings unread areas in blue.")
@@ -6236,73 +6179,68 @@ struct SettingsView: View {
                     .controlSize(.small)
                 }
             }
+
+            SettingsCardDivider()
+
+            SettingsPickerRow(
+                String(localized: "settings.notifications.level.title", defaultValue: "Notification Level"),
+                subtitle: (NotificationLevel(rawValue: notificationLevelRaw) ?? .normal).summary,
+                controlWidth: pickerColumnWidth,
+                selection: $notificationLevelRaw,
+                accessibilityId: "SettingsNotificationLevelPicker"
+            ) {
+                ForEach(NotificationLevel.allCases, id: \.rawValue) { level in
+                    Text(level.displayLabel).tag(level.rawValue)
+                }
+            }
         }
 
         SettingsSectionHeader(title: String(localized: "settings.section.sound", defaultValue: "Sound"))
         SettingsCard {
+            // C11H-319: one sound per channel, each its own setting.
             SettingsCardRow(
-                String(localized: "settings.notifications.sound.title", defaultValue: "Notification Sound"),
-                subtitle: String(localized: "settings.notifications.sound.subtitle", defaultValue: "Sound played when a notification arrives."),
+                String(localized: "settings.notifications.turnEndSound.title", defaultValue: "Turn End Sound"),
+                subtitle: String(localized: "settings.notifications.turnEndSound.subtitle", defaultValue: "Played when an agent finishes its turn, and for other routine notices."),
                 controlWidth: notificationSoundControlWidth
             ) {
-                VStack(alignment: .trailing, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Picker("", selection: $notificationSound) {
-                            ForEach(NotificationSoundSettings.systemSounds, id: \.value) { sound in
-                                Text(sound.label).tag(sound.value)
-                            }
-                        }
-                        .labelsHidden()
-                        Button {
-                            previewNotificationSound()
-                        } label: {
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 9))
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(!canPreviewNotificationSound)
-                    }
+                NotificationSoundPicker(
+                    value: $notificationSound,
+                    allowsNone: true,
+                    inheritsFlagSound: false,
+                    accessibilityID: "SettingsTurnEndSoundPicker"
+                )
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
 
-                    if notificationSound == NotificationSoundSettings.customFileValue {
-                        HStack(spacing: 6) {
-                            Text(notificationSoundCustomFileDisplayName)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .frame(width: 170, alignment: .trailing)
-                            Button(
-                                String(
-                                    localized: "settings.notifications.sound.custom.choose.button",
-                                    defaultValue: "Choose..."
-                                )
-                            ) {
-                                chooseNotificationSoundFile()
-                            }
-                            .controlSize(.small)
-                            Button(
-                                String(
-                                    localized: "settings.notifications.sound.custom.clear.button",
-                                    defaultValue: "Clear"
-                                )
-                            ) {
-                                notificationSoundCustomFilePath = NotificationSoundSettings.defaultCustomFilePath
-                                refreshNotificationCustomSoundStatus()
-                            }
-                            .controlSize(.small)
-                            .disabled(!hasCustomNotificationSoundFilePath)
-                        }
-                        if let notificationCustomSoundStatusMessage {
-                            Text(notificationCustomSoundStatusMessage)
-                                .font(.system(size: 11))
-                                .foregroundStyle(notificationCustomSoundStatusIsError ? Color.red : Color.secondary)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 260, alignment: .trailing)
-                        }
-                    }
-                }
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.notifications.needsYouSound.title", defaultValue: "Needs You Sound"),
+                subtitle: String(localized: "settings.notifications.needsYouSound.subtitle", defaultValue: "Played when an agent stops on you: a permission prompt, a question, a plan."),
+                controlWidth: notificationSoundControlWidth
+            ) {
+                NotificationSoundPicker(
+                    value: $needsYouNotificationSound,
+                    allowsNone: true,
+                    inheritsFlagSound: false,
+                    accessibilityID: "SettingsNeedsYouSoundPicker"
+                )
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            SettingsCardDivider()
+
+            SettingsCardRow(
+                String(localized: "settings.notifications.flagSound.title", defaultValue: "Flag Sound"),
+                subtitle: String(localized: "settings.notifications.flagSound.subtitleKinds", defaultValue: "Played when an agent raises a flag whose kind has no sound of its own. Flags always sound, at every notification level."),
+                controlWidth: notificationSoundControlWidth
+            ) {
+                NotificationSoundPicker(
+                    value: $flagNotificationSound,
+                    allowsNone: false,
+                    inheritsFlagSound: false,
+                    accessibilityID: "SettingsFlagSoundPicker"
+                )
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
@@ -6487,10 +6425,19 @@ struct SettingsView: View {
         ))
         SettingsCardNote(String(
             localized: "settings.flagKinds.note",
-            defaultValue: "Named flags use a fixed color palette. Existing flags keep the display snapshot they had when raised."
+            defaultValue: "Named flags use a fixed color palette. Existing flags keep the display snapshot they had when raised. A kind with seconds set lowers its flags once you have looked at the panel that long."
         ))
         SettingsCard {
             PanelFlagKindSettingsSection()
+        }
+
+        // C11H-261: Waiting means waiting.
+        SettingsSectionHeader(title: String(
+            localized: "settings.section.waitingCheck",
+            defaultValue: "Waiting check"
+        ))
+        SettingsCard {
+            WaitingCheckSettingsSection()
         }
     }
 
@@ -6612,13 +6559,13 @@ struct SettingsView: View {
         SettingsCard {
             SettingsCardRow(
                 String(localized: "settings.app.telemetry", defaultValue: "Send anonymous telemetry"),
-                subtitle: sendAnonymousTelemetry != telemetryValueAtLaunch
-                    ? String(localized: "settings.app.telemetry.subtitleChanged", defaultValue: "Change takes effect on next launch.")
-                    : String(localized: "settings.dataPrivacy.telemetry.subtitle", defaultValue: "Anonymous crash and usage data leaves this Mac only when this is on.")
+                subtitle: String(localized: "settings.dataPrivacy.telemetry.c11None", defaultValue: "c11 sends no telemetry.")
             ) {
-                Toggle("", isOn: $sendAnonymousTelemetry)
+                Toggle("", isOn: .constant(false))
                     .labelsHidden()
                     .controlSize(.small)
+                    .disabled(true)
+                    .accessibilityIdentifier("SettingsTelemetryToggle")
             }
         }
 
@@ -6800,9 +6747,11 @@ struct SettingsView: View {
         internalBrowserEnabled = PanelTypeAvailability.defaultEnabled
         markdownSurfacesEnabled = PanelTypeAvailability.defaultEnabled
         showSurfaceIdsInPanelTitles = PanelOrdinalDisplaySettings.defaultShowSurfaceIds
+        askMachineForNewTerminals = MachinePickerSettings.defaultAsk
         showWorkspaceIdsInSidebar = WorkspaceOrdinalDisplaySettings.defaultShowWorkspaceIds
         panelLayoutMode = PanelLayoutSettings.defaultMode.rawValue
-        launchResumePolicy = LaunchResumePolicy.defaultPolicy.rawValue
+        launchResumePolicy = LaunchResumePolicy.always.rawValue
+        massSignalEndAutoResume = false
         claudeCodeHooksEnabled = ClaudeCodeIntegrationSettings.defaultHooksEnabled
         sendAnonymousTelemetry = TelemetrySettings.defaultSendAnonymousTelemetry
         recordUsageAnalytics = true
@@ -6823,20 +6772,19 @@ struct SettingsView: View {
         browserInsecureHTTPAllowlist = BrowserInsecureHTTPSettings.defaultAllowlistText
         browserInsecureHTTPAllowlistDraft = BrowserInsecureHTTPSettings.defaultAllowlistText
         notificationSound = NotificationSoundSettings.defaultValue
-        notificationSoundCustomFilePath = NotificationSoundSettings.defaultCustomFilePath
-        notificationCustomSoundStatusMessage = nil
-        notificationCustomSoundStatusIsError = false
-        showNotificationCustomSoundErrorAlert = false
-        notificationCustomSoundErrorAlertMessage = ""
+        needsYouNotificationSound = NotificationSoundChannel.needsYou.shippedDefault.rawValue
+        flagNotificationSound = FlagSoundSettings.defaultValue
         notificationCustomCommand = NotificationSoundSettings.defaultCustomCommand
         notificationPaneRingEnabled = NotificationAreaRingSettings.defaultEnabled
         notificationPaneFlashEnabled = NotificationAreaFlashSettings.defaultEnabled
         warnBeforeQuitShortcut = QuitWarningSettings.defaultWarnBeforeQuit
+        keepTerminalsAfterQuit = QuitTerminalsSettings.defaultKeepTerminals
         commandPaletteRenameSelectAllOnFocus = CommandPaletteRenameSelectionSettings.defaultSelectAllOnFocus
         commandPaletteSearchAllSurfaces = CommandPaletteSwitcherSearchSettings.defaultSearchAllSurfaces
         ShortcutHintDebugSettings.resetVisibilityDefaults()
         alwaysShowShortcutHints = ShortcutHintDebugSettings.defaultAlwaysShowHints
         newWorkspacePlacement = WorkspacePlacementSettings.defaultPlacement.rawValue
+        attentionJumpOrderRaw = AttentionJumpOrder.defaultOrder.rawValue
         workspacePresentationMode = WorkspacePresentationModeSettings.defaultMode.rawValue
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: WorkspaceTitlebarSettings.showTitlebarKey)
@@ -6878,44 +6826,8 @@ struct SettingsView: View {
         textBoxEscapeBehavior = TextBoxInputSettings.defaultEscapeBehavior.rawValue
         textBoxShortcutBehavior = TextBoxInputSettings.defaultShortcutBehavior.rawValue
         WorkspaceColorSettings.reset()
-        reloadWorkspaceColorSettings()
         shortcutResetToken = UUID()
         DispatchQueue.main.async { isResettingSettings = false }
-    }
-
-    private func defaultWorkspaceColorBinding(for name: String) -> Binding<Color> {
-        Binding(
-            get: {
-                let hex = WorkspaceColorSettings.defaultColorHex(named: name)
-                return Color(nsColor: NSColor(hex: hex) ?? .systemBlue)
-            },
-            set: { newValue in
-                let hex = NSColor(newValue).hexString()
-                WorkspaceColorSettings.setDefaultColor(named: name, hex: hex)
-                reloadWorkspaceColorSettings()
-            }
-        )
-    }
-
-    private func baseWorkspaceColorHex(for name: String) -> String {
-        WorkspaceColorSettings.defaultPalette
-            .first(where: { $0.name == name })?
-            .hex ?? "#1565C0"
-    }
-
-    private func removeWorkspaceCustomColor(_ hex: String) {
-        WorkspaceColorSettings.removeCustomColor(hex)
-        reloadWorkspaceColorSettings()
-    }
-
-    private func resetWorkspaceColors() {
-        WorkspaceColorSettings.reset()
-        reloadWorkspaceColorSettings()
-    }
-
-    private func reloadWorkspaceColorSettings() {
-        workspaceDefaultEntries = WorkspaceColorSettings.defaultPaletteWithOverrides()
-        workspaceCustomColors = WorkspaceColorSettings.customColors()
     }
 
     private func saveBrowserExternalSchemeAllowlist() {
@@ -7113,12 +7025,395 @@ extension SettingsPickerRow where ExtraTrailing == EmptyView {
     }
 }
 
+/// C11H-126: the editor for one machine's roster entry, shown by the gear
+/// beside it on the Herder Topography map.
+struct MachineRosterSettingsRow: View {
+    let row: MachineRosterRow
+    let onSave: (String, String, String) -> Void
+    let onRemove: (String) -> Void
+    var hcNote: String? = nil
+    /// Whether the note's row offers Update… (a machine refused for anything
+    /// but a missing core id can only be removed; C11H-359).
+    var offersUpdate = true
+    var onUpdate: () -> Void = {}
+    var onRemoveMachine: () -> Void = {}
+    /// C11H-391: the note's button reads "Link Again…" when only c11h's
+    /// link of this name exists (it opens Add Machine, consent first).
+    var linksAgain = false
+    /// C11H-391: c11h's old link of this name beside c11's own; removing it
+    /// ends only c11h's terminals there.
+    var onRemoveC11hLink: (() -> Void)?
+
+    @State private var name: String
+    @State private var hex: String
+
+    init(row: MachineRosterRow, onSave: @escaping (String, String, String) -> Void, onRemove: @escaping (String) -> Void,
+         hcNote: String? = nil, offersUpdate: Bool = true, onUpdate: @escaping () -> Void = {},
+         onRemoveMachine: @escaping () -> Void = {}, linksAgain: Bool = false,
+         onRemoveC11hLink: (() -> Void)? = nil) {
+        self.row = row
+        self.onSave = onSave
+        self.onRemove = onRemove
+        self.hcNote = hcNote
+        self.offersUpdate = offersUpdate
+        self.onUpdate = onUpdate
+        self.onRemoveMachine = onRemoveMachine
+        self.linksAgain = linksAgain
+        self.onRemoveC11hLink = onRemoveC11hLink
+        _name = State(initialValue: row.entry?.name ?? "")
+        _hex = State(initialValue: row.entry?.color ?? "")
+    }
+
+    private var stateLabel: String {
+        if row.isLocal {
+            return String(localized: "settings.machines.state.thisMac", defaultValue: "This Mac")
+        }
+        guard row.linked else {
+            return String(localized: "settings.machines.state.notLinked", defaultValue: "Not linked")
+        }
+        return row.connected == true
+            ? String(localized: "settings.machines.state.connected", defaultValue: "Connected")
+            : String(localized: "settings.machines.state.disconnected", defaultValue: "Disconnected")
+    }
+
+    private var colorBinding: Binding<Color> {
+        Binding(
+            // An unset color starts opaque: the picker keeps the current
+            // opacity, so a faint placeholder would make every first pick faint.
+            get: { MachineRosterColor.nsColor(hex).map { Color(nsColor: $0) } ?? Color(nsColor: .systemGray) },
+            set: { picked in
+                if let value = MachineRosterColor.hex(from: NSColor(picked)) { hex = value }
+            }
+        )
+    }
+
+    private var isDirty: Bool {
+        name.trimmingCharacters(in: .whitespacesAndNewlines) != (row.entry?.name ?? "")
+            || (MachineRosterColor.normalized(hex) ?? hex.trimmingCharacters(in: .whitespacesAndNewlines)) != (row.entry?.color ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(row.id)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Text(stateLabel)
+                    .font(.caption)
+                    .foregroundStyle(row.linked ? Color.secondary : Color.orange)
+                if let hcNote {
+                    Text(hcNote)
+                        .font(.caption)
+                        .foregroundStyle(Color.orange)
+                        .accessibilityIdentifier("SettingsMachineNeedsUpdate.\(row.id)")
+                }
+                Spacer(minLength: 8)
+                if hcNote != nil, offersUpdate {
+                    Button(linksAgain
+                           ? String(localized: "settings.machines.linkAgain", defaultValue: "Link Again…")
+                           : String(localized: "settings.machines.update", defaultValue: "Update…"), action: onUpdate)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("SettingsMachineUpdate.\(row.id)")
+                }
+                if let onRemoveC11hLink {
+                    Button(String(localized: "settings.machines.removeC11hLink", defaultValue: "Remove c11h's Link…"),
+                           action: onRemoveC11hLink)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("SettingsMachineRemoveC11hLink.\(row.id)")
+                }
+                if row.linked && !row.isLocal {
+                    Button(String(localized: "settings.machines.removeMachine", defaultValue: "Remove…"), action: onRemoveMachine)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("SettingsMachineRemoveMachine.\(row.id)")
+                }
+            }
+            HStack(spacing: 7) {
+                TextField(row.defaultName, text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 120)
+                    .accessibilityLabel(String(localized: "settings.machines.name", defaultValue: "Name"))
+                    .accessibilityIdentifier("SettingsMachineName.\(row.id)")
+                    .onSubmit { onSave(row.id, name, hex) }
+                ColorPicker(String(localized: "settings.machines.color", defaultValue: "Color"), selection: colorBinding, supportsOpacity: true)
+                    .labelsHidden()
+                    .accessibilityIdentifier("SettingsMachineColor.\(row.id)")
+                TextField(String(localized: "settings.machines.hexPlaceholder", defaultValue: "#RRGGBB"), text: $hex)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 96)
+                    .accessibilityLabel(String(localized: "settings.machines.hex", defaultValue: "Hex color"))
+                    .accessibilityIdentifier("SettingsMachineHex.\(row.id)")
+                    .onSubmit { onSave(row.id, name, hex) }
+                Button(String(localized: "settings.machines.save", defaultValue: "Save")) {
+                    onSave(row.id, name, hex)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!isDirty)
+                .accessibilityIdentifier("SettingsMachineSave.\(row.id)")
+                Button(row.linked
+                    ? String(localized: "settings.machines.resetButton", defaultValue: "Reset")
+                    : String(localized: "settings.machines.remove", defaultValue: "Remove")) {
+                    onRemove(row.id)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(row.entry == nil)
+                .accessibilityIdentifier("SettingsMachineReset.\(row.id)")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        // Only a stored change to a field resets that field; a line going up
+        // or down, or a change to the other field, keeps an edit in progress.
+        .onChange(of: row.entry?.name) { updated in name = updated ?? "" }
+        .onChange(of: row.entry?.color) { updated in hex = updated ?? "" }
+    }
+}
+
+/// C11H-261: the waiting check's switches, the Jev key and Jev's health.
+/// Every write happens on main (a SwiftUI action). A toggle posts
+/// `.waitingCheckConfigurationDidChange` so the judge and the sidebar re-read;
+/// the key store posts `.jevKeyDidChange`.
+private struct WaitingCheckSettingsSection: View {
+    @AppStorage(WaitingCheckSettings.enabledKey) private var enabled = true
+    @AppStorage(WaitingCheckSettings.showDoneButtonKey) private var showDoneButton = true
+    @AppStorage(WaitingCheckSettings.jevEnabledKey) private var jevEnabled = true
+    @AppStorage(WaitingCheckSettings.withheldTermsKey) private var withheldTerms = ""
+    @ObservedObject private var judge = WaitingCheckJudge.shared
+
+    @State private var keyDraft = ""
+    @State private var keyStoredInFile = false
+    @State private var keyFromEnvironment = false
+    @State private var keyStatusMessage: String?
+    /// The withheld-terms editor writes here; the setting is committed on
+    /// focus loss, on leaving Settings, or 1 s after the last keystroke.
+    @State private var termsDraft = ""
+    @State private var termsCommit: DispatchWorkItem?
+    @FocusState private var termsFocused: Bool
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private var keyStateText: String {
+        if keyStoredInFile {
+            return String(localized: "settings.waitingCheck.jevKey.saved", defaultValue: "Key saved")
+        }
+        if keyFromEnvironment {
+            return String(localized: "settings.waitingCheck.jevKey.environment", defaultValue: "Using TYPESAFE_API_KEY from the environment")
+        }
+        return String(localized: "settings.waitingCheck.jevKey.none", defaultValue: "No key")
+    }
+
+    private var healthText: String {
+        switch judge.jevHealth {
+        case .off:
+            return String(localized: "settings.waitingCheck.jevHealth.off", defaultValue: "Off")
+        case .noKey:
+            return String(localized: "settings.waitingCheck.jevHealth.noKey", defaultValue: "No key: the Needs you convention still runs")
+        case .live:
+            return String(localized: "settings.waitingCheck.jevHealth.live", defaultValue: "Live")
+        case .failing(let since, let reason):
+            let time = Self.timeFormatter.string(from: since)
+            return String(localized: "settings.waitingCheck.jevHealth.failing", defaultValue: "Failing since \(time): \(reason)")
+        }
+    }
+
+    private var healthIsFailing: Bool {
+        if case .failing = judge.jevHealth { return true }
+        return false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsCardRow(String(localized: "settings.waitingCheck.enabled", defaultValue: "Sort finished agents out of Waiting")) {
+                Toggle("", isOn: $enabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("SettingsWaitingCheckEnabledToggle")
+            }
+            SettingsCardNote(String(
+                localized: "settings.waitingCheck.enabled.note",
+                defaultValue: "Reads each agent's latest reply when its turn ends. A reply whose “Needs you:” line says nothing is finished, not waiting."
+            ))
+
+            SettingsCardDivider()
+
+            SettingsCardRow(String(localized: "settings.waitingCheck.showDoneButton", defaultValue: "Show the Done button")) {
+                Toggle("", isOn: $showDoneButton)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .disabled(!enabled)
+                    .accessibilityIdentifier("SettingsWaitingCheckShowDoneToggle")
+            }
+
+            SettingsCardDivider()
+
+            Text(String(localized: "settings.waitingCheck.jev.heading", defaultValue: "Jev"))
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+
+            SettingsCardRow(String(localized: "settings.waitingCheck.jevEnabled", defaultValue: "Ask Jev when the reply doesn't say")) {
+                Toggle("", isOn: $jevEnabled)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .disabled(!enabled)
+                    .accessibilityIdentifier("SettingsWaitingCheckJevToggle")
+            }
+
+            SettingsCardRow(
+                String(localized: "settings.waitingCheck.jevKey", defaultValue: "TypeSafe API key"),
+                subtitle: keyStateText
+            ) {
+                HStack(spacing: 8) {
+                    SecureField(String(localized: "settings.waitingCheck.jevKey.placeholder", defaultValue: "API key"), text: $keyDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 170)
+                        .accessibilityIdentifier("SettingsWaitingCheckJevKeyField")
+                    Button(String(localized: "settings.waitingCheck.jevKey.save", defaultValue: "Save")) {
+                        saveKey()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("SettingsWaitingCheckJevKeySave")
+                    if keyStoredInFile {
+                        Button(String(localized: "settings.waitingCheck.jevKey.remove", defaultValue: "Remove")) {
+                            removeKey()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("SettingsWaitingCheckJevKeyRemove")
+                    }
+                }
+            }
+            if let keyStatusMessage {
+                Text(keyStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(Color.red)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+            }
+
+            SettingsCardRow(String(localized: "settings.waitingCheck.jevHealth", defaultValue: "Jev status")) {
+                Text(healthText)
+                    .font(.caption)
+                    .foregroundStyle(healthIsFailing ? Color.red : Color.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 280, alignment: .trailing)
+                    .accessibilityIdentifier("SettingsWaitingCheckJevHealth")
+            }
+
+            SettingsCardNote(String(
+                localized: "settings.waitingCheck.jev.note",
+                defaultValue: "Jev reads the end of the agent's screen. With a key set, that text is sent to TypeSafe."
+            ))
+
+            SettingsCardDivider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                SettingsCardRow(
+                    String(localized: "settings.waitingCheck.withheldTerms", defaultValue: "Withhold lines containing"),
+                    subtitle: String(localized: "settings.waitingCheck.withheldTerms.subtitle", defaultValue: "One term per line. A screen line containing any of them is never sent to Jev.")
+                ) {
+                    EmptyView()
+                }
+
+                TextEditor(text: $termsDraft)
+                    .focused($termsFocused)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 60, maxHeight: 120)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                    .accessibilityIdentifier("SettingsWaitingCheckWithheldTerms")
+            }
+        }
+        .onAppear {
+            refreshKeyState()
+            termsDraft = withheldTerms
+        }
+        .onDisappear(perform: commitTerms)
+        .onChange(of: enabled) { _ in postChange() }
+        .onChange(of: showDoneButton) { _ in postChange() }
+        .onChange(of: jevEnabled) { _ in postChange() }
+        .onChange(of: termsDraft) { _ in scheduleTermsCommit() }
+        .onChange(of: termsFocused) { focused in
+            if !focused { commitTerms() }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .jevKeyDidChange)
+                .receive(on: DispatchQueue.main)
+        ) { _ in
+            refreshKeyState()
+        }
+    }
+
+    private func scheduleTermsCommit() {
+        termsCommit?.cancel()
+        let work = DispatchWorkItem { commitTerms() }
+        termsCommit = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+    }
+
+    /// The judge reads the terms when it builds a Jev call, so committing
+    /// needs no notification.
+    private func commitTerms() {
+        termsCommit?.cancel()
+        termsCommit = nil
+        if withheldTerms != termsDraft { withheldTerms = termsDraft }
+    }
+
+    private func refreshKeyState() {
+        let inFile = JevKeyStore.isStoredInFile
+        keyStoredInFile = inFile
+        keyFromEnvironment = !inFile && JevKeyStore.hasKey
+    }
+
+    private func saveKey() {
+        if JevKeyStore.save(keyDraft) {
+            keyDraft = ""
+            keyStatusMessage = nil
+        } else {
+            keyStatusMessage = String(localized: "settings.waitingCheck.jevKey.saveFailed", defaultValue: "Could not save the key.")
+        }
+        refreshKeyState()
+    }
+
+    private func removeKey() {
+        JevKeyStore.clear()
+        keyStatusMessage = nil
+        refreshKeyState()
+    }
+
+    /// Settings actions run on main; the post keeps listeners on main too.
+    private func postChange() {
+        NotificationCenter.default.post(name: .waitingCheckConfigurationDidChange, object: nil)
+    }
+}
+
 private struct PanelFlagKindSettingsSection: View {
     @State private var kinds = PanelFlagKindRegistry.shared.all()
     @State private var newID = ""
     @State private var newName = ""
     @State private var newColor: PanelFlagColorToken = .green
     @State private var newEmoji = ""
+    @State private var newEvaporateSeconds = ""
     @State private var statusMessage: String?
     @State private var statusIsError = false
 
@@ -7127,7 +7422,8 @@ private struct PanelFlagKindSettingsSection: View {
             id: newID,
             name: newName,
             color: newColor,
-            emoji: newEmoji.isEmpty ? nil : newEmoji
+            emoji: newEmoji.isEmpty ? nil : newEmoji,
+            evaporateSeconds: Self.parseEvaporateSeconds(newEvaporateSeconds)
         )
         return candidate.isValid && !kinds.contains(where: { $0.id == candidate.id })
     }
@@ -7163,6 +7459,24 @@ private struct PanelFlagKindSettingsSection: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 70)
                         .accessibilityIdentifier("SettingsFlagKindNewEmoji")
+                    HStack(spacing: 3) {
+                        TextField(
+                            String(localized: "settings.flagKinds.evaporatePlaceholder", defaultValue: "Never"),
+                            text: $newEvaporateSeconds
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .monospacedDigit()
+                        .frame(width: 56)
+                        .accessibilityLabel(String(localized: "settings.flagKinds.evaporate", defaultValue: "Evaporate after seconds"))
+                        .accessibilityIdentifier("SettingsFlagKindNewEvaporate")
+                        Text(String(localized: "settings.flagKinds.secondsUnit", defaultValue: "s"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .help(String(
+                        localized: "settings.flagKinds.evaporateHelp",
+                        defaultValue: "Lower this kind's flags after you look at the flagged panel for this many seconds (1 to 600). Leave blank to keep them until lowered."
+                    ))
                     Button(String(localized: "settings.flagKinds.add", defaultValue: "Add"), action: add)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -7208,13 +7522,23 @@ private struct PanelFlagKindSettingsSection: View {
             id: newID,
             name: newName,
             color: newColor,
-            emoji: newEmoji.isEmpty ? nil : newEmoji
+            emoji: newEmoji.isEmpty ? nil : newEmoji,
+            evaporateSeconds: Self.parseEvaporateSeconds(newEvaporateSeconds)
         ))
         if statusIsError == false {
             newID = ""
             newName = ""
             newEmoji = ""
+            newEvaporateSeconds = ""
         }
+    }
+
+    /// Blank never evaporates. Anything that isn't 1...600 maps to 0, which the
+    /// registry refuses, so the form shows its error instead of dropping it.
+    static func parseEvaporateSeconds(_ text: String) -> Int? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return PanelFlagKind.parseEvaporateSecondsArgument(trimmed) ?? 0
     }
 
     private func save(_ kind: PanelFlagKind) {
@@ -7232,6 +7556,7 @@ private struct PanelFlagKindSettingsSection: View {
     private func remove(_ id: String) {
         do {
             _ = try PanelFlagKindRegistry.shared.remove(id: id)
+            NotificationSoundPlayback.syncInBackground()
             reload()
             statusMessage = PanelFlagKindRegistry.isBuiltIn(id)
                 ? String(localized: "settings.flagKinds.reset", defaultValue: "Built-in kind reset to its default.")
@@ -7252,6 +7577,21 @@ private struct PanelFlagKindSettingsRow: View {
     @State private var name: String
     @State private var color: PanelFlagColorToken
     @State private var emoji: String
+    /// C11H-319: the kind's own sound; "" is the flag sound. Applied on change.
+    @State private var sound: String
+    /// C11H-330: whole seconds, blank for never.
+    @State private var evaporateSeconds: String
+
+    /// When this kind was last raised and how often (C11H-226), so unused
+    /// kinds are easy to spot and prune.
+    private var usageText: String {
+        guard let usage = PanelFlagKindRegistry.shared.usage(id: kind.id) else {
+            return String(localized: "settings.flagKinds.neverRaised", defaultValue: "Never raised")
+        }
+        let when = usage.lastRaisedAt.formatted(date: .abbreviated, time: .shortened)
+        let count = usage.raiseCount
+        return String(localized: "settings.flagKinds.lastRaised", defaultValue: "Last raised \(when) (\(count)×)")
+    }
 
     init(kind: PanelFlagKind, onSave: @escaping (PanelFlagKind) -> Void, onRemove: @escaping (String) -> Void) {
         self.kind = kind
@@ -7260,13 +7600,26 @@ private struct PanelFlagKindSettingsRow: View {
         _name = State(initialValue: kind.name)
         _color = State(initialValue: kind.color)
         _emoji = State(initialValue: kind.emoji ?? "")
+        _sound = State(initialValue: PanelFlagKindRegistry.shared.sound(id: kind.id)?.rawValue ?? "")
+        _evaporateSeconds = State(initialValue: kind.evaporateSeconds.map(String.init) ?? "")
+    }
+
+    private var parsedEvaporateSeconds: Int? {
+        PanelFlagKindSettingsSection.parseEvaporateSeconds(evaporateSeconds)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(kind.id)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text(kind.id)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Text(usageText)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("SettingsFlagKindUsage.\(kind.id)")
+            }
             HStack(spacing: 7) {
                 TextField(String(localized: "settings.flagKinds.namePlaceholder", defaultValue: "Name"), text: $name)
                     .textFieldStyle(.roundedBorder)
@@ -7284,8 +7637,32 @@ private struct PanelFlagKindSettingsRow: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 70)
                     .accessibilityLabel(String(localized: "settings.flagKinds.emoji", defaultValue: "Emoji"))
+                HStack(spacing: 3) {
+                    TextField(
+                        String(localized: "settings.flagKinds.evaporatePlaceholder", defaultValue: "Never"),
+                        text: $evaporateSeconds
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .monospacedDigit()
+                    .frame(width: 56)
+                    .accessibilityLabel(String(localized: "settings.flagKinds.evaporate", defaultValue: "Evaporate after seconds"))
+                    .accessibilityIdentifier("SettingsFlagKindEvaporate.\(kind.id)")
+                    Text(String(localized: "settings.flagKinds.secondsUnit", defaultValue: "s"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .help(String(
+                    localized: "settings.flagKinds.evaporateHelp",
+                    defaultValue: "Lower this kind's flags after you look at the flagged panel for this many seconds (1 to 600). Leave blank to keep them until lowered."
+                ))
                 Button(String(localized: "settings.flagKinds.save", defaultValue: "Save")) {
-                    onSave(PanelFlagKind(id: kind.id, name: name, color: color, emoji: emoji.isEmpty ? nil : emoji))
+                    onSave(PanelFlagKind(
+                        id: kind.id,
+                        name: name,
+                        color: color,
+                        emoji: emoji.isEmpty ? nil : emoji,
+                        evaporateSeconds: parsedEvaporateSeconds
+                    ))
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -7299,6 +7676,17 @@ private struct PanelFlagKindSettingsRow: View {
                 .controlSize(.small)
                 .accessibilityIdentifier("SettingsFlagKindRemove.\(kind.id)")
             }
+            HStack(spacing: 7) {
+                Text(String(localized: "settings.flagKinds.sound", defaultValue: "Sound"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                NotificationSoundPicker(
+                    value: $sound,
+                    allowsNone: true,
+                    inheritsFlagSound: true,
+                    accessibilityID: "SettingsFlagKindSound.\(kind.id)"
+                )
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -7306,6 +7694,151 @@ private struct PanelFlagKindSettingsRow: View {
             name = updated.name
             color = updated.color
             emoji = updated.emoji ?? ""
+            evaporateSeconds = updated.evaporateSeconds.map(String.init) ?? ""
+        }
+        .onChange(of: sound) { updated in
+            let choice = updated.isEmpty ? nil : NotificationSoundChoice(rawValue: updated)
+            guard choice != PanelFlagKindRegistry.shared.sound(id: kind.id) else { return }
+            try? PanelFlagKindRegistry.shared.setSound(id: kind.id, choice)
+            NotificationSoundPlayback.syncInBackground()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: PanelFlagKindRegistry.didChangeNotification)
+            .receive(on: DispatchQueue.main)) { _ in
+            let current = PanelFlagKindRegistry.shared.sound(id: kind.id)?.rawValue ?? ""
+            if current != sound { sound = current }
+        }
+    }
+}
+
+/// C11H-319: one sound picker for a channel or a flag kind: macOS sounds,
+/// imported files, and Choose File to import another
+/// (copied into c11's sound store). For a kind, the first entry is the flag
+/// sound (an empty value).
+private struct NotificationSoundPicker: View {
+    @Binding var value: String
+    let allowsNone: Bool
+    let inheritsFlagSound: Bool
+    let accessibilityID: String
+
+    @State private var importedIDs: [String] = []
+    @State private var importError: String?
+    @State private var importing = false
+
+    private var store: CustomNotificationSoundStore { .shared }
+
+    /// A chosen file that is no longer in the store still shows, so the
+    /// operator sees what falls back.
+    private var missingFileValue: String? {
+        guard value.hasPrefix(NotificationSoundChoice.filePrefix) else { return nil }
+        let id = String(value.dropFirst(NotificationSoundChoice.filePrefix.count))
+        return importedIDs.contains(id) ? nil : value
+    }
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            HStack(spacing: 6) {
+                Picker("", selection: $value) {
+                    if inheritsFlagSound {
+                        Text(String(localized: "notificationSound.choice.flagSound", defaultValue: "Flag Sound")).tag("")
+                    }
+                    if allowsNone {
+                        Text(String(localized: "notificationSound.choice.none", defaultValue: "None")).tag("none")
+                    }
+                    Text(String(localized: "notificationSound.choice.default", defaultValue: "Default")).tag("default")
+                    Divider()
+                    ForEach(NotificationSoundCatalog.systemNames, id: \.self) { name in
+                        Text(name).tag(name)
+                    }
+                    if !importedIDs.isEmpty {
+                        Divider()
+                        ForEach(importedIDs, id: \.self) { id in
+                            Text(store.displayName(for: id) ?? id).tag(NotificationSoundChoice.file(id).rawValue)
+                        }
+                    }
+                    if let missingFileValue {
+                        Text(String(localized: "notificationSound.choice.missingFile", defaultValue: "Missing file")).tag(missingFileValue)
+                    }
+                }
+                .labelsHidden()
+                .accessibilityIdentifier(accessibilityID)
+                Button {
+                    preview()
+                } label: {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 9))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(value == "none")
+                .accessibilityIdentifier("\(accessibilityID).Preview")
+                Button(String(localized: "notificationSound.chooseFile", defaultValue: "Choose File…")) {
+                    chooseFile()
+                }
+                .controlSize(.small)
+                .disabled(importing)
+                .accessibilityIdentifier("\(accessibilityID).ChooseFile")
+            }
+            if let importError {
+                Text(importError)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.red)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 300, alignment: .trailing)
+            }
+        }
+        .onAppear { importedIDs = store.importedIDs() }
+        // A file imported elsewhere (another picker, the CLI) or a value set
+        // from the CLI shows here without reopening Settings.
+        .onChange(of: value) { _ in importedIDs = store.importedIDs() }
+        .onReceive(NotificationCenter.default.publisher(for: CustomNotificationSoundStore.didImportNotification)) { _ in
+            importedIDs = store.importedIDs()
+        }
+    }
+
+    private func preview() {
+        let choice = value.isEmpty
+            ? NotificationSoundChannel.flag.choice(defaults: .standard)
+            : NotificationSoundChoice(rawValue: value)
+        guard let choice else { return }
+        NotificationSoundSettings.previewSound(choice, store: store)
+    }
+
+    /// Runs right after the operator's click; the import runs off main.
+    private func chooseFile() {
+        let openPanel = NSOpenPanel()
+        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = false
+        openPanel.allowsMultipleSelection = false
+        openPanel.allowedContentTypes = [.audio]
+        openPanel.title = String(
+            localized: "settings.notifications.sound.custom.choose.title",
+            defaultValue: "Choose Notification Sound"
+        )
+        openPanel.prompt = String(
+            localized: "settings.notifications.sound.custom.choose.prompt",
+            defaultValue: "Choose"
+        )
+        guard openPanel.runModal() == .OK, let url = openPanel.url else { return }
+        importing = true
+        importError = nil
+        let store = self.store
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = store.importSound(from: url)
+            DispatchQueue.main.async {
+                importing = false
+                switch result {
+                case .success(let id):
+                    importedIDs = store.importedIDs()
+                    value = NotificationSoundChoice.file(id).rawValue
+                    NotificationSoundSettings.previewSound(.file(id), store: store)
+                case .failure(let error):
+                    importError = String(
+                        localized: "notificationSound.importFailed",
+                        defaultValue: "Couldn't use this file: \(error.message)"
+                    )
+                }
+            }
         }
     }
 }
@@ -7400,276 +7933,6 @@ private struct SettingsSidebar: View {
     }
 }
 
-private struct ThemeWindowThumbnail: View {
-    let isDark: Bool
-    var tokens: ChromeThemeTokens? = nil
-
-    var body: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-            let height = geo.size.height
-
-            ZStack {
-                // Wallpaper background — if chrome tokens are supplied, paint those instead
-                // of the generic gradient so the thumbnail previews the bound theme.
-                if let tokens {
-                    LinearGradient(
-                        colors: [
-                            Color(nsColor: tokens.background),
-                            Color(nsColor: tokens.surface)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                } else if isDark {
-                    LinearGradient(
-                        colors: [Color(red: 0.1, green: 0.1, blue: 0.3), Color(red: 0.05, green: 0.05, blue: 0.1)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Path { path in
-                        path.move(to: CGPoint(x: 0, y: height * 0.5))
-                        path.addQuadCurve(to: CGPoint(x: width, y: height), control: CGPoint(x: width * 0.5, y: height * 0.2))
-                        path.addLine(to: CGPoint(x: width, y: 0))
-                        path.addLine(to: CGPoint(x: 0, y: 0))
-                    }
-                    .fill(LinearGradient(colors: [Color(red: 0.2, green: 0.2, blue: 0.6).opacity(0.5), .clear], startPoint: .topLeading, endPoint: .bottomTrailing))
-                } else {
-                    LinearGradient(
-                        colors: [Color(red: 0.6, green: 0.8, blue: 0.95), Color(red: 0.2, green: 0.4, blue: 0.8)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Path { path in
-                        path.move(to: CGPoint(x: 0, y: height * 0.5))
-                        path.addQuadCurve(to: CGPoint(x: width, y: height), control: CGPoint(x: width * 0.5, y: height * 0.2))
-                        path.addLine(to: CGPoint(x: width, y: 0))
-                        path.addLine(to: CGPoint(x: 0, y: 0))
-                    }
-                    .fill(LinearGradient(colors: [Color(red: 0.8, green: 0.9, blue: 1.0).opacity(0.6), .clear], startPoint: .topLeading, endPoint: .bottomTrailing))
-                }
-
-                // Menu bar
-                VStack(spacing: 0) {
-                    HStack {
-                        Image(systemName: "applelogo")
-                            .font(.system(size: max(height * 0.08, 6)))
-                            .foregroundColor(isDark ? .white : .black)
-                            .opacity(0.8)
-                        Spacer()
-                    }
-                    .padding(.horizontal, max(width * 0.04, 4))
-                    .frame(height: max(height * 0.12, 8))
-                    .background(.ultraThinMaterial)
-                    Spacer()
-                }
-
-                // Back window
-                VStack(spacing: 0) {
-                    Rectangle()
-                        .fill(tokens.map { Color(nsColor: $0.surface) }
-                              ?? (isDark ? Color(white: 0.2) : Color(white: 0.9)))
-                        .frame(height: max(height * 0.15, 8))
-                    ZStack(alignment: .top) {
-                        Rectangle()
-                            .fill(tokens.map { Color(nsColor: $0.background) }
-                                  ?? (isDark ? Color(white: 0.15) : Color(white: 0.98)))
-                        RoundedRectangle(cornerRadius: max(width * 0.02, 2), style: .continuous)
-                            .fill(tokens.map { Color(nsColor: $0.accent) } ?? Color.accentColor)
-                            .frame(height: max(height * 0.12, 6))
-                            .padding(max(width * 0.04, 4))
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: max(width * 0.04, 4), style: .continuous))
-                .frame(width: width * 0.65, height: height * 0.45)
-                .shadow(color: .black.opacity(isDark ? 0.4 : 0.15), radius: 4, x: 0, y: 2)
-                .offset(x: -width * 0.08, y: -height * 0.1)
-
-                // Front window with traffic lights
-                VStack(spacing: 0) {
-                    ZStack {
-                        Rectangle()
-                            .fill(tokens.map { Color(nsColor: $0.surface) }
-                                  ?? (isDark ? Color(white: 0.18) : Color(white: 0.92)))
-                        HStack(spacing: max(width * 0.025, 2)) {
-                            Circle().fill(Color(red: 1.0, green: 0.37, blue: 0.34)).frame(width: max(width * 0.04, 3))
-                            Circle().fill(Color(red: 1.0, green: 0.74, blue: 0.18)).frame(width: max(width * 0.04, 3))
-                            Circle().fill(Color(red: 0.15, green: 0.79, blue: 0.25)).frame(width: max(width * 0.04, 3))
-                            Spacer()
-                        }
-                        .padding(.horizontal, max(width * 0.04, 4))
-                    }
-                    .frame(height: max(height * 0.18, 10))
-                    Rectangle()
-                        .fill(tokens.map { Color(nsColor: $0.background) }
-                              ?? (isDark ? Color(white: 0.1) : .white))
-                }
-                .clipShape(RoundedRectangle(cornerRadius: max(width * 0.05, 5), style: .continuous))
-                .shadow(color: .black.opacity(isDark ? 0.5 : 0.2), radius: 6, x: 0, y: 3)
-                .frame(width: width * 0.75, height: height * 0.55)
-                .offset(x: width * 0.12, y: height * 0.2)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-        )
-    }
-}
-
-private struct ThemePickerRow: View {
-    @ObservedObject private var themeManager = ThemeManager.shared
-    @AppStorage(ThemeManager.defaultLightSlotKey) private var activeLight: String = "stage11"
-    @AppStorage(ThemeManager.defaultDarkSlotKey) private var activeDark: String = "stage11"
-
-    private let thumbWidth: CGFloat = 52
-    private let thumbHeight: CGFloat = 38
-    private let slotLabelWidth: CGFloat = 132
-    private let pickerWidth: CGFloat = 150
-
-    private var lightSelection: Binding<String> {
-        Binding(
-            get: { activeLight },
-            set: { newValue in
-                _ = themeManager.setActiveTheme(name: newValue, for: .light)
-            }
-        )
-    }
-
-    private var darkSelection: Binding<String> {
-        Binding(
-            get: { activeDark },
-            set: { newValue in
-                _ = themeManager.setActiveTheme(name: newValue, for: .dark)
-            }
-        )
-    }
-
-    private var lightPreviewTokens: ChromeThemeTokens {
-        ChromeThemeTokens.resolve(
-            for: themeManager.theme(named: activeLight) ?? themeManager.activeLight,
-            scheme: .light
-        )
-    }
-
-    private var darkPreviewTokens: ChromeThemeTokens {
-        ChromeThemeTokens.resolve(
-            for: themeManager.theme(named: activeDark) ?? themeManager.activeDark,
-            scheme: .dark
-        )
-    }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .trailing, spacing: 6) {
-                themeSlotRow(
-                    title: String(localized: "settings.appearance.theme.systemDay", defaultValue: "When the system says day"),
-                    isDark: false,
-                    tokens: lightPreviewTokens,
-                    selection: lightSelection
-                )
-                themeSlotRow(
-                    title: String(localized: "settings.appearance.theme.systemNight", defaultValue: "When the system says night"),
-                    isDark: true,
-                    tokens: darkPreviewTokens,
-                    selection: darkSelection
-                )
-            }
-
-            Spacer(minLength: 8)
-
-            VStack(spacing: 6) {
-                Button {
-                    openThemesFolder()
-                } label: {
-                    Image(systemName: "folder")
-                }
-                .buttonStyle(.borderless)
-                .help(String(localized: "settings.app.theme.openFolder", defaultValue: "Open themes folder"))
-
-                Button {
-                    themeManager.forceReloadUserThemes()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.borderless)
-                .help(String(localized: "settings.app.theme.reload", defaultValue: "Reload themes"))
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func themeSlotRow(
-        title: String,
-        isDark: Bool,
-        tokens: ChromeThemeTokens,
-        selection: Binding<String>
-    ) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: slotLabelWidth, alignment: .trailing)
-
-                ThemeWindowThumbnail(isDark: isDark, tokens: tokens)
-                    .frame(width: thumbWidth, height: thumbHeight)
-
-                themePicker(selection: selection)
-                    .frame(width: pickerWidth)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-
-                HStack(spacing: 8) {
-                    ThemeWindowThumbnail(isDark: isDark, tokens: tokens)
-                        .frame(width: thumbWidth, height: thumbHeight)
-
-                    themePicker(selection: selection)
-                        .frame(width: pickerWidth)
-                }
-            }
-        }
-    }
-
-    private func themePicker(selection: Binding<String>) -> some View {
-        Picker(selection: selection, label: EmptyView()) {
-            ForEach(themeManager.availableThemes, id: \.identity.name) { descriptor in
-                HStack(spacing: 6) {
-                    Text(descriptor.identity.displayName)
-                    if descriptor.warning != nil {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                    }
-                }
-                .tag(descriptor.identity.name)
-            }
-        }
-        .labelsHidden()
-        .pickerStyle(.menu)
-    }
-
-    private func openThemesFolder() {
-        let url = themeManager.userThemesDirectory
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: url.path) {
-            try? fm.createDirectory(at: url, withIntermediateDirectories: true)
-        }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
-    }
-}
-
 private struct ShortcutSettingRow: View {
     let action: KeyboardShortcutSettings.Action
     @State private var shortcut: StoredShortcut
@@ -7719,5 +7982,22 @@ private struct SettingsRootView: View {
 
     private func applyCurrentSettingsWindowStyle(to window: NSWindow) {
         SettingsAboutTitlebarDebugStore.shared.applyCurrentOptions(to: window, for: .settings)
+    }
+}
+
+/// Ticket 12: File > New Terminal on <Machine>, one item per added machine,
+/// disabled while that machine's link is down.
+struct RemoteTerminalMenuItems: View {
+    @ObservedObject var directory = HCMachineDirectory.shared
+    let open: (String) -> Void
+
+    var body: some View {
+        if !directory.entries.isEmpty {
+            Divider()
+            ForEach(directory.entries) { entry in
+                Button(entry.title) { open(entry.machine) }
+                    .disabled(!entry.connected || !entry.usable)
+            }
+        }
     }
 }

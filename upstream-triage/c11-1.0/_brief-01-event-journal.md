@@ -1,6 +1,6 @@
 # Topic 01: Event journal as the source of agent status
 
-**Report path:** `~/Projects/Stage11/code/c11/upstream-triage/c11-1.0/01-event-journal.md`
+**Report path:** `~/src/c11/upstream-triage/c11-1.0/01-event-journal.md`
 
 Atin found this interesting and wants to talk it through.
 

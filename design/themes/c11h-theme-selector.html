@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c11h Theme Selector</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23000000'/%3E%3Cg fill='%23e8e8e8' transform='translate(34.96 387.08) scale(0.35913 -0.35913)'%3E%3Cpath transform='translate(0)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3Cpath transform='translate(600)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+/* Layout: prototype controls on top; the Settings window (left) beside the live c11h window (right).
+   c11h renders dark whatever macOS says, so the page commits to one dark look on purpose. */
+:root {
+  color-scheme: dark;
+  --desk: #161618;          /* the desktop behind the windows */
+  --win: #1e1e20;           /* macOS dark settings window */
+  --win-side: #262628;      /* its sidebar */
+  --card: #2a2a2d;          /* grouped settings card */
+  --rule: #3a3a3e;
+  --text: #ececee;
+  --dim: #9a9aa0;
+  --faint: #6c6c72;
+  --blue: #3d8bfd;          /* macOS control accent */
+  --proto: #f0a640;         /* prototype-only controls, never part of the design */
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--desk); color: var(--text); font: 13px/1.4 var(--ui); padding-block: 16px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* prototype bar */
+.proto { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; border: 1px dashed color-mix(in srgb, var(--proto) 55%, transparent); border-radius: 6px; padding: 8px 12px; margin-bottom: 16px; color: var(--dim); font-size: 12px; }
+.proto b { color: var(--proto); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; font-size: 11px; }
+button:focus-visible, .sw:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+kbd { font: 11px var(--mono); border: 1px solid var(--rule); border-radius: 3px; padding: 0 4px; color: var(--text); }
+
+.stage { max-width: 960px; margin: 0 auto; }
+.proto { max-width: 960px; margin-left: auto; margin-right: auto; }
+@media (max-width: 1100px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+
+/* settings window */
+.win { background: var(--win); border: 1px solid #000; border-radius: 10px; box-shadow: 0 18px 50px rgba(0,0,0,.5); overflow: hidden; display: grid; grid-template-columns: 170px minmax(0, 1fr); height: min(820px, calc(100vh - 96px)); min-height: 520px; }
+@media (max-width: 560px) { .win { grid-template-columns: minmax(0, 1fr); } .wside { display: none; } }
+.wside { background: var(--win-side); padding: 40px 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+.lights { position: absolute; display: flex; gap: 8px; margin: -28px 0 0 6px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; display: block; }
+.lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.navi { padding: 5px 10px; border-radius: 6px; color: var(--dim); }
+.navi.on { background: var(--blue); color: #fff; }
+.wmain { padding: 18px 22px 28px; min-width: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #55555b transparent; }
+.wmain .s { max-width: 64ch; }
+.sizesel { background: #3b3b3f; border: 1px solid #ffffff14; color: var(--text); border-radius: 5px; padding: 3px 8px; font: inherit; flex: none; margin-top: 1px; }
+.wmain h1 { font-size: 15px; font-weight: 600; margin: 0 0 14px; }
+.sechead { font-size: 11px; font-weight: 600; color: var(--dim); margin: 16px 2px 6px; }
+.scard { background: var(--card); border-radius: 8px; border: 1px solid #ffffff0d; }
+.row { padding: 11px 14px; display: flex; gap: 12px; align-items: flex-start; }
+.row + .row, .divider { border-top: 1px solid var(--rule); }
+.row .lbl { flex: 1; min-width: 0; }
+.row .t { font-weight: 500; }
+.row .s { color: var(--dim); font-size: 11.5px; margin-top: 2px; max-width: 52ch; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.gridhead { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px; color: var(--dim); font-size: 11px; font-weight: 600; }
+.iconbtn { background: transparent; border: 0; color: var(--dim); cursor: pointer; font: 12px var(--ui); padding: 2px 4px; border-radius: 4px; }
+.iconbtn:hover { color: var(--text); background: #ffffff10; }
+
+
+/* swatch grid */
+.thumb.crop { display: block; position: relative; grid-template-columns: none; grid-template-rows: none; }
+.cwin.mini { position: absolute; top: 0; left: 0; transform-origin: top left; min-height: 420px; box-shadow: none; border: 0; border-radius: 0; pointer-events: none; }
+.row .s + .swgrid { margin-top: 12px; }
+.swgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px 14px; }
+.sw { background: transparent; border: 0; padding: 0; cursor: pointer; text-align: left; color: var(--text); font: inherit; min-width: 0; }
+.sw .thumb { aspect-ratio: 16 / 10; max-width: 100%; border-radius: 6px; outline: 1px solid #ffffff14; overflow: hidden; display: grid; grid-template-columns: 30% 1fr; grid-template-rows: 18% 1fr; position: relative; }
+.sw[aria-checked="true"] .thumb { outline: 2.5px solid var(--blue); outline-offset: 2px; }
+.sw .nm { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw .pair { display: block; color: var(--faint); font-size: 10.5px; font-family: var(--mono); height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.check { width: 14px; height: 14px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 9px; display: none; place-items: center; flex: none; }
+.sw[aria-checked="true"] .check { display: inline-grid; }
+
+
+
+/* live c11h window */
+.live h2 { font-size: 11px; font-weight: 600; color: var(--dim); margin: 0 0 8px; letter-spacing: .02em; }
+.cwin { border-radius: 10px; overflow: hidden; border: 1px solid #000; box-shadow: 0 18px 50px rgba(0,0,0,.5); display: grid; grid-template-columns: 34% 1fr; grid-template-rows: calc(30px * var(--cs, 1)) 1fr; min-height: 420px; transition: background .2s; }
+.cwin .tb { grid-column: 1 / 3; display: flex; align-items: center; gap: 10px; padding: 0 12px; font: calc(11px * var(--cs, 1)) var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.cwin .tb .lights { position: static; margin: 0 8px 0 0; }
+.cwin .sb { padding: 10px 8px; display: flex; flex-direction: column; gap: 7px; position: relative; overflow: hidden; }
+.cwin .wcard { border-radius: 5px; padding: calc(8px * var(--cs, 1)) 9px; font-size: calc(11.5px * var(--cs, 1)); position: relative; z-index: 1; border: 1px solid transparent; }
+.cwin .wcard .n { font-weight: 600; display: flex; justify-content: space-between; gap: 6px; }
+.cwin .wcard .d { font-size: calc(10.5px * var(--cs, 1)); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cwin .tag { font: calc(9.5px * var(--cs, 1)) var(--mono); letter-spacing: .08em; padding: 1px 5px; border-radius: 3px; }
+.cwin .main { display: flex; flex-direction: column; min-width: 0; }
+.cwin .strip { display: flex; gap: 2px; padding: 5px 6px 0; font-size: calc(11px * var(--cs, 1)); }
+.cwin .strip span { padding: 4px 10px; border-radius: 4px 4px 0 0; white-space: nowrap; }
+.cwin .term { flex: 1; padding: 10px 12px; font: 11.5px/1.55 var(--mono); white-space: pre-wrap; overflow: hidden; }
+.cwin .desc { padding: 5px 12px; font-size: 11px; border-top: 1px solid; }
+.live .cap { color: var(--dim); font-size: 11.5px; margin-top: 10px; max-width: 70ch; }
+.live .cap b { color: var(--text); font-weight: 500; }
+
+/* decisions */
+.notes { max-width: 960px; margin: 18px auto 0; color: var(--dim); }
+.notes summary { cursor: pointer; font-size: 12px; }
+.decided { margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.decided section { border-top: 1px solid var(--rule); padding-top: 10px; min-width: 0; }
+.decided h3 { font-size: 11px; color: var(--dim); font-weight: 600; margin: 0 0 6px; letter-spacing: .02em; }
+.decided ol, .decided ul { margin: 0; padding-left: 18px; color: var(--text); font-size: 12.5px; display: grid; gap: 5px; max-width: 62ch; }
+.decided li span { color: var(--dim); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="proto" role="region" aria-label="Prototype controls">
+  <b>Prototype</b>
+  <span>The Appearance page only. Click a theme or press <kbd>1</kbd>–<kbd>7</kbd>; change Interface Size and every preview redraws.</span>
+</div>
+
+<div class="stage">
+  <div class="win" aria-label="c11h Settings window">
+    <nav class="wside" aria-label="Settings sections">
+      <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div class="navi">General</div>
+      <div class="navi on">Appearance</div>
+      <div class="navi">Sidebar</div>
+      <div class="navi">Machines</div>
+      <div class="navi">Agents</div>
+      <div class="navi">Keyboard Shortcuts</div>
+      <div class="navi">Notifications</div>
+    </nav>
+    <main class="wmain">
+      <h1>Appearance</h1>
+      <div class="sechead">Interface Size</div>
+      <div class="scard"><div class="row"><div class="lbl"><div class="t">Interface Size</div>
+        <div class="s">How big c11h draws the sidebar and the title bar above each panel: their text, tags and spacing. Terminal text has its own size, set from Area &gt; Increase Font Size (⌃⌘=).</div></div>
+        <select class="sizesel" id="size" aria-label="Interface Size">
+          <option value="0.85">Compact</option><option value="1">Default</option><option value="1.25">Large</option><option value="1.55">Extra Large</option>
+        </select></div></div>
+      <div class="sechead">Theme</div>
+      <div class="scard" id="themecard"></div>
+    </main>
+  </div>
+</div>
+
+<details class="notes"><summary>Prototype notes</summary>
+<div class="decided">
+  <section>
+    <h3>DECIDED WITH ATIN</h3>
+    <ol>
+      <li>One theme, day and night. <span>No night theme, no macOS Light/Dark link, no status line. (18:59)</span></li>
+      <li>The picker offers the seven c11h themes, then Your themes from the themes folder. <span>Phosphor, Blueprint, Command Deck, Obsidian, Radical and Spatial leave the app. (15:30)</span></li>
+      <li>Picking a theme also switches the terminal colours when the theme has a matching scheme. <span>Stage 11 and c11h have none and leave the terminal alone. (15:30)</span></li>
+      <li>Appearance is the whole design: Interface Size first, then the theme swatches, bigger, in a page that scrolls. <span>"App Chrome UI Scale" becomes Interface Size with a plain description; Custom keeps its slider. (20:31)</span></li>
+    </ol>
+  </section>
+  <section>
+    <h3>HOW IT BEHAVES</h3>
+    <ul>
+      <li>A pick repaints the window at once and is kept across restarts.</li>
+      <li>Each swatch is the top-left corner of your real window, drawn in that theme with your real workspaces, and redraws when they change while Settings is open.</li>
+      <li><span style="font-family:var(--mono);color:var(--text)">c11h themes set &lt;name&gt;</span> sets the same one theme; <span style="font-family:var(--mono);color:var(--text)">themes get</span> prints it.</li>
+      <li>Today you have Stage 11 by day and Nocturne by night. The upgrade keeps Stage 11, the one you picked last, as the theme.</li>
+    </ul>
+  </section>
+  <section>
+    <h3>YOUR FOLDER TODAY</h3>
+    <ul>
+      <li>Blueprint, Command Deck, Obsidian and Spatial are copies of the retired themes, so they show under Your themes until you move them out.</li>
+      <li>c11h never touches that folder. One line moves them beside the earlier backups: <span style="font-family:var(--mono)">themes.before-h6/</span></li>
+    </ul>
+  </section>
+</div>
+</details>
+
+<script>
+const THEMES = [
+  { id: "stage11", name: "Stage 11", side: "#0A0C0F", chrome: "#121519", card: "#121519", text: "#E9EAEB", dim: "#8A8F96", accent: "#C4A561", attn: "#C4A561", rule: "#2A2F36", pair: null },
+  { id: "c11h", name: "c11h", side: "linear-gradient(180deg,#2D1060 0%,#6B1F8F 42%,#C2307F 72%,#4A1366 100%)", chrome: "#121519", card: "#121519e6", text: "#E9EAEB", dim: "#8A8F96", accent: "#C4A561", attn: "#C2307F", rule: "#2A2F36", pair: null },
+  { id: "nocturne", name: "Nocturne", side: "#050607", chrome: "#07080A", card: "#0B0C0F", text: "#E4E6EA", dim: "#6F747D", accent: "#C9D6EA", attn: "#E0B35A", rule: "#1A1D22", pair: "c11h-nocturne", term: "#07080A" },
+  { id: "bigboard", name: "Big Board", side: "#05070A", chrome: "#05070A", card: "#080B10", text: "#DFE8EE", dim: "#65788A", accent: "#3DDC84", attn: "#FFB224", rule: "#15202B", pair: "c11h-bigboard", term: "#05070A" },
+  { id: "datasheet-mono", name: "Datasheet Mono", side: "#0C0D0F", chrome: "#111214", card: "#1A1B1F", text: "#FFFFFFEB", dim: "#FFFFFF75", accent: "#FFFFFF", attn: "#FF4F1F", rule: "#2C2E33", pair: "c11h-datasheet-mono", term: "#111214" },
+  { id: "terminal-grid", name: "Terminal Grid", side: "#0B0B0C", chrome: "#0B0B0C", card: "#0F0F11", text: "#C8C8C4", dim: "#77787A", accent: "#C8C8C4", attn: "#FF6A1F", rule: "#2A2B2E", pair: "c11h-terminal-grid", term: "#0B0B0C" },
+  { id: "outrun-horizon", name: "Outrun Horizon", side: "linear-gradient(180deg,#26104F 0%,#4A1A82 50%,#E2367F 64%,#FF9F45 69%,#3A1066 71%,#2A0B4C 100%)", chrome: "#0B0716", card: "#0A0618cc", text: "#EEE8FF", dim: "#9D8FC4", accent: "#2DE2E6", attn: "#FF9F45", rule: "#261A44", pair: "c11h-outrun-horizon", term: "#0B0716", grid: true },
+];
+const MINE = [
+  { id: "blueprint", name: "Blueprint", side: "#0B0D10", chrome: "#0F1318", card: "#0F1318", text: "#DDE6EC", dim: "#7C8893", accent: "#5FB3FF", attn: "#E0B84F", rule: "#243038", pair: null, mine: true },
+  { id: "command-deck", name: "Command Deck", side: "#08090C", chrome: "#101319", card: "#101319", text: "#EEF1F4", dim: "#929AA4", accent: "#5EE6CC", attn: "#FFC857", rule: "#28303A", pair: null, mine: true },
+  { id: "obsidian", name: "Obsidian", side: "#05070A", chrome: "#0C1015", card: "#0C1015", text: "#EDEFF0", dim: "#7F8C93", accent: "#3FE0C0", attn: "#D8B65C", rule: "#1E2A33", pair: null, mine: true },
+  { id: "spatial", name: "Spatial", side: "#070A0E", chrome: "#0E1318", card: "#0E1318", text: "#E8ECEF", dim: "#828D97", accent: "#7FD8F5", attn: "#C4A561", rule: "#202A33", pair: null, mine: true },
+];
+const ALL = [...THEMES, ...MINE];
+const byId = id => ALL.find(t => t.id === id);
+const GHOSTTY_DEFAULT = { bg: "#1D1F21", fg: "#C5C8C6" };
+
+// Atin keeps Stage 11 through the upgrade.
+const state = { theme: "stage11", size: 1 };
+try { const v = JSON.parse(localStorage.getItem("c11h-theme-selector-one") || "{}"); if (v.theme && byId(v.theme)) state.theme = v.theme; if ([0.85, 1, 1.25, 1.55].includes(v.size)) state.size = v.size; } catch (e) {}
+const save = () => { try { localStorage.setItem("c11h-theme-selector-one", JSON.stringify(state)); } catch (e) {} };
+const showing = () => byId(state.theme);
+
+// Each swatch is the live c11h window, drawn in that theme and cropped to its top-left corner.
+const MINI_W = 520;              // the mini window's width before scaling
+const CROP_W = 0.48;             // share of that width the swatch shows (title bar + sidebar + a sliver of terminal)
+function thumb(t) {
+  return `<span class="thumb crop" aria-hidden="true"><span class="cwin mini" style="width:${MINI_W}px;background:${t.chrome}">${windowInner(t)}</span></span>`;
+}
+function fitCrops() {
+  document.querySelectorAll(".crop").forEach(c => {
+    const s = c.clientWidth / (MINI_W * CROP_W);
+    c.firstElementChild.style.transform = `scale(${s})`;
+  });
+}
+addEventListener("resize", fitCrops);
+
+function swatches() {
+  const cur = state.theme;
+  const one = t => `<button class="sw" role="radio" aria-checked="${t.id === cur}" data-id="${t.id}" title="${t.name}">
+      ${thumb(t)}
+      <span class="nm"><span class="check">✓</span>${t.name}</span>
+      <span class="pair" title="${t.pair ? "Also sets the terminal to " + t.pair : "Leaves the terminal colours alone"}">${t.pair ? "+ terminal" : "chrome only"}</span>
+    </button>`;
+  return `<div class="swgrid" role="radiogroup" aria-label="c11h themes">${THEMES.map(one).join("")}</div>
+    <div class="gridhead"><span>Your themes</span><span><button class="iconbtn" title="Open themes folder">Open Folder</button><button class="iconbtn" title="Reload themes">Reload</button></span></div>
+    <div class="swgrid" role="radiogroup" aria-label="Your themes">${MINE.map(one).join("")}</div>`;
+}
+
+
+function renderCard() {
+  document.getElementById("themecard").innerHTML = `
+    <div class="row"><div class="lbl">
+      <div class="s">Colours the window, the sidebar and the panel title bars. A theme marked + terminal also sets the terminal colours. Each preview is your own window in that theme.</div>
+      ${swatches()}</div></div>`;
+}
+
+function windowInner(t) {
+  const term = t.pair ? { bg: t.term, fg: t.text } : GHOSTTY_DEFAULT;
+  const sideBg = t.side;
+  const grid = t.grid ? `<div style="position:absolute;left:-40%;right:-40%;bottom:0;height:30%;background:repeating-linear-gradient(90deg,#2DE2E673 0 1px,transparent 1px 22px),repeating-linear-gradient(0deg,#2DE2E673 0 1px,transparent 1px 14px);transform:perspective(120px) rotateX(55deg);transform-origin:bottom"></div>` : "";
+  const card = (n, d, tag, tagc, active) => `<div class="wcard" style="background:${t.card};color:${t.text};border-color:${active ? t.accent : t.rule}">
+      <div class="n"><span>${n}</span>${tag ? `<span class="tag" style="color:${tagc};border:1px solid ${tagc}">${tag}</span>` : ""}</div>
+      <div class="d" style="color:${t.dim}">${d}</div></div>`;
+  return `
+    <div class="tb" style="background:${t.chrome};color:${t.dim};border-bottom:1px solid ${t.rule}"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span style="color:${t.text}">C11H UPDATES</span><span>·</span><span>LAPTOP</span></div>
+    <div class="sb" style="background:${sideBg};border-right:1px solid ${t.rule}">
+      ${grid}
+      ${card("C11H updates", "Theme Selector: prototype with Atin", "LIVE", t.accent, true)}
+      ${card("Constellation", "Waiting on you: merge PR #212", "WAITING", t.attn, false)}
+      ${card("Acetate", "Idle 48m", "", "", false)}
+    </div>
+    <div class="main">
+      <div class="strip" style="background:${t.chrome}">
+        <span style="background:${term.bg};color:${t.text}">369: Theme Selector</span>
+        <span style="color:${t.dim}">352: c11h h6 Lead</span>
+      </div>
+      <div class="term" style="background:${term.bg};color:${term.fg}">$ c11h themes get
+Theme:     ${t.id}
+Terminal:  ${t.pair || "unchanged (no matching scheme)"}
+<span style="color:${t.pair ? t.accent : "#81A2BE"}">$</span> <span style="opacity:.6">▍</span></div>
+      <div class="desc" style="background:${t.chrome};color:${t.dim};border-color:${t.rule}">Building the theme selector; next, ticket the build.</div>
+    </div>`;
+}
+
+function render() {
+  renderCard();
+  document.documentElement.style.setProperty("--cs", state.size);
+  document.getElementById("size").value = String(state.size);
+  fitCrops(); save();
+}
+document.getElementById("size").addEventListener("change", e => { state.size = +e.target.value; render(); });
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("button[data-id]");
+  if (b) { state.theme = b.dataset.id; render(); }
+});
+document.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key >= "1" && e.key <= "7") { state.theme = THEMES[+e.key - 1].id; render(); }
+});
+render();
+</script>
+</body>
+</html>

@@ -8,6 +8,18 @@ struct FeedQuickViewSnapshot: Equatable {
     var now: Date = Date()
     var loading = true
 
+    /// C11H-330: the status line names a flag that evaporated in the last ten
+    /// minutes, so the Feed tells it from one the operator lowered.
+    var evaporatedLine: String? {
+        guard let lowered = projection.flagLowered, lowered.evaporated else { return nil }
+        let ageMs = now.timeIntervalSince1970 * 1000 - Double(lowered.atMs)
+        guard ageMs < 10 * 60 * 1000 else { return nil }
+        return String(
+            format: String(localized: "feed.quick.evaporated", defaultValue: "Evaporated: %@"),
+            lowered.flagText
+        )
+    }
+
     func rows(for filter: FeedQuickViewSelection.Filter) -> [FeedRow] {
         switch filter {
         case .asks: return projection.attentionRows
@@ -124,7 +136,7 @@ struct FeedQuickView: View {
             }
             .padding(.horizontal, 12).frame(height: FeedQuickViewGeometry.header)
             .feedQuickMeasure("header", observer: onLayout)
-            Text(model.status.isEmpty ? " " : model.status)
+            Text(model.status.isEmpty ? (model.snapshot.evaporatedLine ?? " ") : model.status)
                 .font(.caption).foregroundColor(.secondary).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12)
                 .frame(height: FeedQuickViewGeometry.status).accessibilityIdentifier("feed.quick.status")
@@ -256,6 +268,7 @@ struct FeedQuickViewRow: View {
         case .plan: return "list.bullet.clipboard"
         case .permission: return "lock"
         case .turnEnd: return "checkmark.circle"
+        case .show: return "eye"
         case nil: return "flag"
         }
     }
@@ -267,6 +280,7 @@ struct FeedQuickViewRow: View {
         case .plan: return String(localized: "feed.quick.kind.plan", defaultValue: "Plan")
         case .permission: return String(localized: "feed.quick.kind.permission", defaultValue: "Permission")
         case .turnEnd: return String(localized: "feed.quick.kind.turnEnd", defaultValue: "Turn ended")
+        case .show: return String(localized: "feed.quick.kind.show", defaultValue: "Shown")
         case nil: return String(localized: "feed.quick.kind.flag", defaultValue: "Flag")
         }
     }

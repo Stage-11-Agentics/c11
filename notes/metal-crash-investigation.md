@@ -437,7 +437,7 @@ After local validation passes:
 | `./scripts/reload.sh --tag metal-deinit-drain`              | ☑ `** BUILD SUCCEEDED **` |
 | New app binary check                                        | ☑ `c11.debug.dylib` 72 MB built 17:04, contains symbol `_renderer.Metal.deinit` |
 
-Tagged build runs from `/Users/atin/Library/Developer/Xcode/DerivedData/c11-metal-deinit-drain/...`. Socket: `/tmp/c11-debug-metal-deinit-drain.sock`. Debug log: `/tmp/c11-debug-metal-deinit-drain.log`.
+Tagged build runs from `~/Library/Developer/Xcode/DerivedData/c11-metal-deinit-drain/...`. Socket: `/tmp/c11-debug-metal-deinit-drain.sock`. Debug log: `/tmp/c11-debug-metal-deinit-drain.log`.
 
 ---
 
@@ -472,7 +472,7 @@ The dev shim at `/tmp/c11-cli` execs the tagged build's CLI binary, which then c
 
 ```
 $ C11_SOCKET=/tmp/c11-debug-metal-deinit-drain.sock /tmp/c11-cli identify
-{ "socket_path": "/Users/atin/Library/Application Support/c11mux/c11.sock", ... }
+{ "socket_path": "/Users/demo/Library/Application Support/c11mux/c11.sock", ... }
 ```
 
 Expected: identify returns the metal-deinit-drain socket. Actual: returns the prod build's default. This silently misroutes any tagged-build CLI commands to whichever c11 holds the default socket. Should be filed as a separate dev-CLI bug — affects any local validation that needs to target a specific tagged build.
@@ -516,7 +516,7 @@ Symptoms suggest the trigger is *frequent* surface churn. Provisional repro:
 
 ## Useful artifacts on disk
 
-- `/Users/atin/.local/state/ghostty/crash/1a72b541-*.ghosttycrash` — production crash envelope (1.9 MB).
+- `~/.local/state/ghostty/crash/1a72b541-*.ghosttycrash` — production crash envelope (1.9 MB).
 - `/tmp/c11-crash.dmp` — extracted minidump from the production crash.
 - `/tmp/c11-crash-event.json` — extracted Sentry event JSON.
 - `/tmp/c11-frames.txt` — recovered frame addresses (only 2 due to truncated stack).

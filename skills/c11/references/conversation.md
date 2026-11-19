@@ -1,5 +1,27 @@
 # Conversation primitives reference
 
+## Persistent terminals in c11
+
+An hc terminal can remain live while its workspace is hidden and has no native
+surface. Use its lifecycle state; an unavailable lookup means unresolved, not
+ended. Keep its panel UUID and terminal key while it reconnects. Launch never
+sends a resume command into a surviving live or unresolved terminal: eligibility
+requires an authoritative end followed by a confirmed fresh replacement. The one
+exception is an explicit `c11 conversation resume` on a live terminal whose agent
+ended while its shell lives (killed, crashed or quit): it types when hc names the
+shell in front, the prompt is empty (no key since its last empty prompt) and no
+resume was typed at that prompt. Otherwise it refuses with `panel-in-use`; press
+Return on an empty prompt, then ask again.
+
+Restore takes the terminal's screen and history from hc. It does not capture or
+replay a second copy. Live terminals from c11's own session that have no panel
+appear in **Recovered**, retaining their terminal keys and original panel UUIDs
+when unambiguous; a terminal another c11 build labelled as its own (`c11.app`)
+never does. Pending explicit ends stay excluded. A lost terminal host keeps
+its panels visible with a recovery notice; it does not silently close the window.
+Once a fresh shell replaces the ended session, the notice says the previous
+session ended (or clears, when the host-end banner explains it).
+
 ## Lifecycle journal
 
 The journal records structural observations for an exact `(panel UUID, agent kind,
@@ -76,7 +98,7 @@ c11 conversation find [query] [-a] [--limit <n>] [--session <uuid>] [--open] [--
 | `list` | List captured conversations (process-wide; v1 has no per-workspace partitioning). Filter with `--panel`. `--json` for structured output. |
 | `get` | Inspect the active ref + `can_resume` + `diagnostic_reason` for a panel. The debugging entry point. |
 | `clear` | Wipe the panel's conversations. Forces a fresh launch on next workspace open. |
-| `resume` | Recover panels this launch did not resume. Reruns the shared resume decision for every panel the launch skipped (`--all-skipped`) or for one named panel, and types the resume command only into a panel nobody has used since launch (no operator keystroke, shell not running a command). `--dry-run` reports without typing. Each JSON row carries `outcome` (`scheduled`, `would_resume`, `refused`, `skipped`), `skip_code`, `reason`, and the `command`, so a refused panel can still be resumed deliberately with `c11 send`. A scheduled resume is typed after the usual stagger and rechecked then (still untouched, no live writer elsewhere, not already resumed); a later `--dry-run` shows what happened. |
+| `resume` | Recover panels this launch did not resume. Reruns the shared resume decision for every panel the launch skipped (`--all-skipped`) or for one named panel, and types the resume command only into a panel nobody has used since launch (no operator keystroke, shell not running a command), or into a live shell whose agent ended, at an empty prompt (above). `--dry-run` reports without typing. Each JSON row carries `outcome` (`scheduled`, `would_resume`, `refused`, `skipped`, or `kept` when hc reports an agent still running in the panel's terminal, which is checked before any decision and logged as `conversation.resume.refused`), `skip_code`, `reason`, and the `command`, so a refused panel can still be resumed deliberately with `c11 send`. A scheduled resume is typed after the usual stagger and rechecked then (still untouched, no live writer elsewhere, not already resumed); a later `--dry-run` shows what happened. |
 | `find` | Search this Mac's Claude Code and Codex transcripts. See [Find past sessions](#find-past-sessions). |
 
 **Panel resolution.** `claim`, `push`, `tombstone`, `list`, `get`, and `clear` resolve `--panel` from `C11_PANEL_ID` if unset. `resume` needs `--panel` or `--all-skipped` explicitly. `find` does not take `--panel`. **No focused-panel fallback** (the silent-misroute footgun the architecture exists to avoid). If a panel-scoped verb has neither the flag nor the env var, it errors out with `missing_surface`.
@@ -196,6 +218,8 @@ On launch c11 reads a per-bundle dirty/clean **shutdown sentinel** (`~/.c11/runt
 1. **Seed** the store from the last snapshot and seed the per-panel **activity floor** (`last_activity_at`). This step is in memory and is the only one launch blocks main on; every store read that feeds a snapshot waits for it too, so an unseeded store is never persisted.
 2. **Classify.** Codex launch-boundary markers apply first. Dirty launches then check each `.alive`/`.suspended` ref's transcript off the store actor (bytes never read; one walk of `~/.codex/sessions` covers every Codex ref). Verified → `.suspended` with `diagnostic_reason = "crash recovery: transcript verified on disk"`; missing → `.unknown` with `"crash recovery: transcript not found"`. Refs already `.unknown`/`.tombstoned` are untouched, so `/exit`-ended sessions never auto-resume. `app restart --no-resume` marks every ref `.unknown` with reason `app restart --no-resume`, a policy decision that persists. Panels with exact causal refs (hook or runtime capture) decide here and resume; they never wait on a scrape.
 3. **Scrape only what needs it.** Only panels whose ref is missing, a placeholder, or inferred depend on the scraper, and only their kinds are collected (Codex keeps its causal panels in the batch so their ids stay reserved and the same-cwd rule still applies). Each kind scrapes and commits on its own. Such a panel is decided once when its scrape lands (one `conversation.resume.decision`), and the command is typed only if nobody has used the panel since launch (no operator keystroke, and its shell idle at the prompt or not yet started); otherwise it skips with `panel-in-use`.
+
+**An agent that never stopped is never a resume candidate.** Before any decision, c11 asks hc what is in the foreground of the panel's terminal. If hc kept the terminal live with an agent running (after an in-place update, or a relaunch with the core still up), nothing is decided or typed: the panel is kept, one `conversation.resume.refused` event logs it, and the launch strip says "N agents kept running", never "not resumed". A persistent hc terminal is decided by its own recovery once hc reports it ended; it resumes once, into a fresh shell.
 
 **A failed or slow phase writes nothing.** Persisted refs keep their state for the next launch; the failure shows in the skip reason and in the `conversation.startup_audit` event (one per launch: per-phase milliseconds, the main-thread seed wait, panels by evidence tier, scrape failures by kind). A same-id causal report (`capture-runtime`, a SessionStart hook push) on a ref that is not `alive` returns it to `alive`.
 

@@ -1,0 +1,23 @@
+# c11 Datasheet Mono: paired with the Datasheet Mono chrome theme (design/themes/gen-terminal-themes.py)
+palette = 0=#38393b
+palette = 1=#ff6b6b
+palette = 2=#6fcf6f
+palette = 3=#e2c85a
+palette = 4=#7fb0ff
+palette = 5=#f25c8c
+palette = 6=#77c0b7
+palette = 7=#d6d6d6
+palette = 8=#7e7f80
+palette = 9=#fe9692
+palette = 10=#86e685
+palette = 11=#f9df72
+palette = 12=#a4c7ff
+palette = 13=#b48cff
+palette = 14=#8dd7cd
+palette = 15=#fdfdfd
+background = #111214
+foreground = #ececec
+cursor-color = #FFFFFF
+cursor-text = #111214
+selection-background = #464648
+selection-foreground = #ececec

@@ -96,7 +96,7 @@ The current JSON output has no version key. The first downstream consumer (`c11 
 `collectHealthEvents(window:rails:home:)` already takes `home` as a parameter. The runtime test exercises that. What this means in practice:
 
 ```bash
-c11 health --home ~atin/sshfs/laptop2 --since 24h
+c11 health --home ~demo/sshfs/laptop2 --since 24h
 c11 health --home /Volumes/c11-fleet-archive/atin-imac/2026-05-03 --since-boot
 ```
 

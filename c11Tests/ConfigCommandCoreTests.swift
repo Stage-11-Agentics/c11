@@ -310,6 +310,258 @@ final class ConfigCommandCoreTests: XCTestCase {
         let json = all.jsonObject()
         XCTAssertEqual(json["count"] as? Int, 3)
     }
+
+    // MARK: config launch lineage (C11H-236)
+
+    private func lineageSaved(name: String = "Opus", machine: String? = nil) -> SavedAgentConfig {
+        SavedAgentConfig(
+            id: "CFG1",
+            name: name,
+            order: 0,
+            config: AgentLaunchConfig(harness: "claude-code", model: "opus"),
+            machine: machine
+        )
+    }
+
+    private func lineageInputs(
+        placement: ConfigLaunchInputs.Placement = .defaultPlacement,
+        cwd: String? = nil,
+        prompt: String? = nil
+    ) -> ConfigLaunchInputs {
+        ConfigLaunchInputs(nameOrId: "Opus", placement: placement, cwd: cwd, prompt: prompt, json: false)
+    }
+
+    /// `nil` when the builder refused. Callers assert the failure themselves.
+    private func lineageParams(
+        saved: SavedAgentConfig? = nil,
+        placement: ConfigLaunchInputs.Placement = .defaultPlacement,
+        cwd: String? = nil,
+        prompt: String? = nil,
+        socket: [String: Any],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> [String: Any]? {
+        let result = TerminalController.makeConfigLaunchParams(
+            saved: saved ?? lineageSaved(),
+            inputs: lineageInputs(placement: placement, cwd: cwd, prompt: prompt),
+            socketParams: socket
+        )
+        guard case .success(let params) = result else {
+            XCTFail("expected launch params, got \(String(describing: result))", file: file, line: line)
+            return nil
+        }
+        return params
+    }
+
+    func testConfigLaunchFlagParamsMatchLaunchAgentShape() {
+        let withAll = ConfigCommandCore.configLaunchFlagParams(delegated: true, title: "role")
+        XCTAssertNil(withAll["caller_panel_id"], "the caller is attached at the socket call site")
+        XCTAssertEqual(withAll["delegated"] as? Bool, true)
+        XCTAssertEqual(withAll["suppressed"] as? Bool, true)
+        XCTAssertEqual(withAll["title"] as? String, "role")
+
+        let ownerless = ConfigCommandCore.configLaunchFlagParams(delegated: true, title: nil)
+        XCTAssertNil(ownerless["caller_panel_id"])
+        XCTAssertEqual(ownerless["delegated"] as? Bool, true)
+        XCTAssertEqual(ownerless["suppressed"] as? Bool, true)
+        XCTAssertNil(ownerless["title"])
+
+        let plain = ConfigCommandCore.configLaunchFlagParams(delegated: false, title: "")
+        XCTAssertNil(plain["caller_panel_id"])
+        XCTAssertNil(plain["delegated"])
+        XCTAssertNil(plain["suppressed"])
+        XCTAssertEqual(plain["title"] as? String, "")
+    }
+
+    func testConfigLaunchCopiesCallerDelegationAndTitleOntoAgentLaunch() {
+        let caller = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+        // Run.swift adds the caller after this helper, on the socket params.
+        var flags = ConfigCommandCore.configLaunchFlagParams(delegated: true, title: "role")
+        flags["caller_panel_id"] = caller
+        guard let params = lineageParams(socket: flags) else { return }
+        XCTAssertEqual(params["type"] as? String, "claude-code")
+        XCTAssertEqual(params["model"] as? String, "opus")
+        XCTAssertEqual(params["config_id"] as? String, "CFG1")
+        XCTAssertEqual(params["source"] as? String, AgentLaunchSource.socket.rawValue)
+        XCTAssertEqual(params["caller_surface_id"] as? String, caller)
+        XCTAssertNil(params["caller_panel_id"], "agent.launch reads the surface spelling")
+        XCTAssertEqual(params["delegated"] as? Bool, true)
+        XCTAssertEqual(params["suppressed"] as? Bool, true)
+        XCTAssertEqual(params["title"] as? String, "role")
+    }
+
+    func testConfigLaunchWithoutCallerOrFlagsHasNoParent() {
+        guard let params = lineageParams(socket: ["config": "Opus"]) else { return }
+        XCTAssertNil(params["caller_surface_id"])
+        XCTAssertNil(params["delegated"])
+        XCTAssertNil(params["suppressed"])
+        XCTAssertNil(params["title"])
+        XCTAssertEqual(params["config_id"] as? String, "CFG1")
+    }
+
+    func testDelegatedWithoutCallerIsOwnerlessNotAnError() {
+        let flags = ConfigCommandCore.configLaunchFlagParams(delegated: true, title: nil)
+        guard let params = lineageParams(socket: flags) else { return }
+        XCTAssertNil(params["caller_surface_id"])
+        XCTAssertEqual(params["delegated"] as? Bool, true)
+        XCTAssertEqual(params["suppressed"] as? Bool, true)
+    }
+
+    func testCallerSurvivesAnotherWorkspaceAndASavedMachine() {
+        let caller = "11111111-2222-3333-4444-555555555555"
+        guard let params = lineageParams(
+            saved: lineageSaved(name: "Remote", machine: "studio"),
+            placement: .workspace("workspace-b"),
+            socket: [
+                "caller_panel_id": caller,
+                "delegated": true,
+                "suppressed": true,
+                "title": "seat",
+            ]
+        ) else { return }
+        XCTAssertEqual(params["workspace_id"] as? String, "workspace-b")
+        XCTAssertEqual(params["on"] as? String, "studio")
+        XCTAssertEqual(params["caller_surface_id"] as? String, caller)
+        XCTAssertEqual(params["delegated"] as? Bool, true)
+        XCTAssertEqual(params["suppressed"] as? Bool, true)
+        XCTAssertEqual(params["title"] as? String, "seat")
+    }
+
+    func testPaneInAnotherWorkspaceKeepsTheCaller() {
+        guard let params = lineageParams(
+            placement: .pane("area:4"),
+            socket: [
+                "workspace_id": "ws-other",
+                "caller_panel_id": "  caller-1  ",
+            ]
+        ) else { return }
+        XCTAssertEqual(params["pane_id"] as? String, "area:4")
+        XCTAssertEqual(params["workspace_id"] as? String, "ws-other")
+        XCTAssertEqual(params["caller_surface_id"] as? String, "caller-1")
+    }
+
+    func testExplicitOnOverridesSavedMachineAndKeepsTheCaller() {
+        guard let params = lineageParams(
+            saved: lineageSaved(machine: "studio"),
+            socket: ["on": "linuxbox", "caller_surface_id": "caller-1"]
+        ) else { return }
+        XCTAssertEqual(params["on"] as? String, "linuxbox")
+        XCTAssertEqual(params["caller_surface_id"] as? String, "caller-1")
+    }
+
+    func testLocalSavedMachineDoesNotSetOn() {
+        guard let params = lineageParams(
+            saved: lineageSaved(machine: "local"),
+            socket: ["caller_panel_id": "caller-1"]
+        ) else { return }
+        XCTAssertNil(params["on"])
+        XCTAssertEqual(params["caller_surface_id"] as? String, "caller-1")
+    }
+
+    func testNewWorkspaceRefusesARemoteSavedMachine() {
+        let result = TerminalController.makeConfigLaunchParams(
+            saved: lineageSaved(name: "Opus on Studio", machine: "studio"),
+            inputs: lineageInputs(placement: .newWorkspace),
+            socketParams: ["caller_panel_id": "caller-1", "delegated": true]
+        )
+        guard case .failure(let error) = result else {
+            return XCTFail("expected the remote new-workspace refusal, got \(String(describing: result))")
+        }
+        XCTAssertEqual(error, ConfigLaunchParamsError.remoteNewWorkspace(
+            configName: "Opus on Studio", machine: "studio"))
+        XCTAssertEqual(error.code, "invalid_params")
+    }
+
+    func testSuppressedAloneAliasesDelegated() {
+        guard let params = lineageParams(socket: ["suppressed": true]) else { return }
+        XCTAssertEqual(params["delegated"] as? Bool, true)
+        XCTAssertEqual(params["suppressed"] as? Bool, true)
+    }
+
+    func testDisagreeingDelegationBoolsAreForwarded() {
+        guard let params = lineageParams(socket: ["delegated": true, "suppressed": false]) else { return }
+        XCTAssertEqual(params["delegated"] as? Bool, true)
+        XCTAssertEqual(params["suppressed"] as? Bool, false)
+    }
+
+    func testBothFalseDelegationKeysAreOmitted() {
+        guard let params = lineageParams(socket: ["delegated": false, "suppressed": false]) else { return }
+        XCTAssertNil(params["delegated"])
+        XCTAssertNil(params["suppressed"])
+    }
+
+    func testNonBoolDelegationIsForwardedRaw() {
+        guard let params = lineageParams(socket: ["delegated": "yes"]) else { return }
+        XCTAssertEqual(params["delegated"] as? String, "yes")
+        XCTAssertNil(params["suppressed"])
+    }
+
+    func testBlankCallerIsOmittedAndANonUUIDIsForwarded() {
+        guard let blank = lineageParams(socket: ["caller_panel_id": "   "]) else { return }
+        XCTAssertNil(blank["caller_surface_id"])
+        guard let raw = lineageParams(socket: ["caller_panel_id": "not-a-uuid"]) else { return }
+        XCTAssertEqual(raw["caller_surface_id"] as? String, "not-a-uuid")
+    }
+
+    func testCanonicalCallerSurfaceIdWinsOverCallerPanelId() {
+        guard let params = lineageParams(socket: [
+            "caller_surface_id": "surface-id",
+            "caller_panel_id": "panel-id",
+        ]) else { return }
+        XCTAssertEqual(params["caller_surface_id"] as? String, "surface-id")
+    }
+
+    func testNonStringCallerSurfaceIdIsForwardedRaw() {
+        guard let params = lineageParams(socket: [
+            "caller_surface_id": 12,
+            "caller_panel_id": "panel-id",
+        ]) else { return }
+        XCTAssertEqual(params["caller_surface_id"] as? Int, 12)
+    }
+
+    func testEmptyTitleIsCopied() {
+        guard let params = lineageParams(socket: ["title": ""]) else { return }
+        XCTAssertEqual(params["title"] as? String, "")
+    }
+
+    func testPlacementCwdSplitFocusAndWindowStillPassThrough() {
+        guard let params = lineageParams(
+            placement: .pane("area:4"),
+            cwd: "/tmp/work",
+            prompt: "go",
+            socket: [
+                "workspace": "ws-9",
+                "split": "right",
+                "focus": false,
+                "window_id": "window:2",
+                "caller_panel_id": "caller-1",
+            ]
+        ) else { return }
+        XCTAssertEqual(params["pane_id"] as? String, "area:4")
+        XCTAssertEqual(params["workspace_id"] as? String, "ws-9")
+        XCTAssertEqual(params["split"] as? String, "right")
+        XCTAssertEqual(params["cwd"] as? String, "/tmp/work")
+        XCTAssertEqual(params["prompt"] as? String, "go")
+        XCTAssertEqual(params["focus"] as? Bool, false)
+        XCTAssertEqual(params["window_id"] as? String, "window:2")
+        XCTAssertEqual(params["caller_surface_id"] as? String, "caller-1")
+        XCTAssertEqual(params["type"] as? String, "claude-code")
+    }
+
+    func testAgentLaunchParamsCarryNoLineageKeys() {
+        // ChaosCaster calls this mapping, then sets its own caller and title.
+        // The config-launch overlay must not leak into that path.
+        let params = TerminalController.agentLaunchParams(for: lineageSaved(), prompt: "hi")
+        XCTAssertNil(params["caller_surface_id"])
+        XCTAssertNil(params["caller_panel_id"])
+        XCTAssertNil(params["delegated"])
+        XCTAssertNil(params["suppressed"])
+        XCTAssertNil(params["title"])
+        XCTAssertNil(params["on"])
+        XCTAssertEqual(params["type"] as? String, "claude-code")
+        XCTAssertEqual(params["prompt"] as? String, "hi")
+        XCTAssertEqual(params["config_id"] as? String, "CFG1")
+    }
 }
 
 /// Planner-side coverage for the C11-180 `commandOverride` addition.

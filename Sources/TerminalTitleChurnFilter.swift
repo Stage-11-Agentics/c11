@@ -38,7 +38,7 @@ struct TerminalTitleChurnFilter {
         return kept.joined(separator: " ")
     }
 
-    private static func isSpinnerFrame(_ character: Character) -> Bool {
+    static func isSpinnerFrame(_ character: Character) -> Bool {
         guard character.unicodeScalars.count == 1,
               let value = character.unicodeScalars.first?.value else { return false }
         switch value {

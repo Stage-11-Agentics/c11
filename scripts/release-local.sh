@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Production release of c11 without GitHub Actions (the release path, C11-542).
 #
-# Mirrors .github/workflows/release.yml step for step. On Atlas, with
+# Mirrors .github/workflows/release.yml step for step. On the build host, with
 # --host local and C11_SIGNING_KEYCHAIN, it runs end to end there: the build in
 # place, then daemon assets, Sparkle keys, codesign, notarize, staple, DMG,
 # Sparkle appcast, GitHub release, Homebrew cask dispatch and Sentry dSYMs
-# (after publishing), signed from Atlas's release keychain. Without those two,
-# it builds on Atlas over ssh and runs the tail on the calling Mac from its
+# (after publishing), signed from the build host's release keychain. Without those two,
+# it builds on the build host (--host, else C11_REMOTE_HOST: scripts/dev-hosts.sh) over ssh and runs the tail on the calling Mac from its
 # login keychain.
 #
 # gh release create/upload use the REST API, so GitHub Actions billing does
@@ -23,12 +23,12 @@ REPO_SLUG="Stage-11-Agentics/c11"
 SIGNING_IDENTITY="${C11_SIGNING_IDENTITY:-Developer ID Application: Authentic Technologies Inc. (UKQ4QALWD4)}"
 # notarytool keychain profiles for team UKQ4QALWD4, tried in order unless
 # C11_NOTARY_PROFILE names one. acetate-notary is the same team's profile that
-# Hyperion already holds.
+# the operator's laptop already holds.
 NOTARY_PROFILE_CANDIDATES=(c11-notary acetate-notary)
 NOTARY_PROFILE="${C11_NOTARY_PROFILE:-${NOTARY_PROFILE_CANDIDATES[0]}}"
 # The Apple team the release is signed and notarized for, from the identity.
 TEAM_ID="$(sed -nE 's/.*\(([A-Z0-9]{10})\)$/\1/p' <<<"$SIGNING_IDENTITY")"
-# Signing-keychain mode (a release run on Atlas while the operator's Mac
+# Signing-keychain mode (a release run on the build host while the operator's Mac
 # sleeps): the Developer ID identity, the notary profile and the Sparkle key
 # live in a dedicated keychain that is locked at rest. The run takes one
 # launchd unlock lease through the helper and the exit trap locks it again.
@@ -43,7 +43,7 @@ SPARKLE_ACCOUNT="${C11_SPARKLE_ACCOUNT:-c11mux}"
 SPARKLE_PUBLIC_KEY="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
 SPARKLE_FEED_URL="https://github.com/${REPO_SLUG}/releases/latest/download/appcast.xml"
 # DTXcode of the toolchain the release must be built with: Xcode 26.3, which
-# remote-build.sh selects on Atlas for Release builds (SDK macosx26.2). The
+# remote-build.sh selects on the build host for Release builds (SDK macosx26.2). The
 # pin moved from 1640 (Xcode 16.4, which does not launch on macOS 26.2 or
 # later) on Atin's go, 2026-10-31. A real run refuses an app built with any
 # other Xcode; moving the pin is a deliberate SDK change.
@@ -61,7 +61,7 @@ usage() {
 Usage: scripts/release-local.sh [options] <vX.Y.Z>
 
 Builds, signs, notarizes and publishes a c11 release without GitHub Actions.
-The Release build runs on Atlas; everything after it runs here.
+The Release build runs on the build host; everything after it runs here.
 
 Options:
   --dry-run              Run every step up to, not including, notarization.
@@ -74,11 +74,20 @@ Options:
                          keychain profile works before the long build.
   --skip-sentry          Skip the Sentry dSYM upload (it is also skipped when
                          SENTRY_AUTH_TOKEN is unset, as in release.yml).
-  --reuse-build          Reuse the Atlas build already in
+  --reuse-build          Reuse the build-host build already in
                          build-release-local/<tag>/pristine when it was built
                          from this HEAD (rerun the tail after a failure).
-  --host <ssh-host>      Build host (default: atlas). "local" builds in place on
-                         this machine, for a release driven on Atlas itself.
+  --remote-artifacts <dir>
+                         C11H-392: <dir> holds herdr-core and c11 for x86-64
+                         Linux (the pinned hc build and the CLI built for
+                         Linux from this tag). Before signing, the app names
+                         them by hash (scripts/c11-remote-artifacts.sh stamp),
+                         and they are published with the release. Without it
+                         the release refuses to add a Linux machine.
+  --host <ssh-host>      Build host (else C11_REMOTE_HOST, from the environment
+                         or ~/.config/c11/dev-hosts). "local" builds in place
+                         on this machine, for a release driven on the build
+                         host itself.
   -h, --help             Show this help.
 
 Environment overrides: C11_SIGNING_IDENTITY, C11_NOTARY_PROFILE,
@@ -98,8 +107,9 @@ DRY_RUN=0
 SKIP_NOTARIZE_CHECK=0
 SKIP_SENTRY=0
 REUSE_BUILD=0
-HOST="${C11_REMOTE_HOST:-atlas}"
+HOST=""
 TAG=""
+REMOTE_ARTIFACTS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
@@ -107,6 +117,10 @@ while [[ $# -gt 0 ]]; do
     --skip-sentry) SKIP_SENTRY=1; shift ;;
     --reuse-build) REUSE_BUILD=1; shift ;;
     --host) HOST="${2:?--host needs a value}"; shift 2 ;;
+    --remote-artifacts)
+      [[ -d "${2:-}" && -f "$2/herdr-core" && -f "$2/c11" ]] \
+        || { echo "error: --remote-artifacts needs a folder holding herdr-core and c11" >&2; exit 2; }
+      REMOTE_ARTIFACTS="$(cd "$2" && pwd)"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "error: unknown option $1" >&2; usage >&2; exit 2 ;;
     *)
@@ -115,6 +129,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$TAG" ]] || { usage >&2; exit 2; }
+if [[ -z "$HOST" ]]; then
+  # shellcheck source=dev-hosts.sh
+  source "$ROOT/scripts/dev-hosts.sh"
+  HOST="$(c11_dev_host C11_REMOTE_HOST --host)" || exit 2
+fi
 # Only versioned tags take this path; artifact releases (xcframework-*,
 # nightly) never do, so they can never be handed the `latest` slot here.
 if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -235,7 +254,7 @@ if [[ "$PBX_VERSIONS" != "$VERSION" ]]; then
 fi
 
 # The remote daemon assets depend only on the version and tag, so they build
-# here in the background, alongside the Atlas build, and are collected at
+# here in the background, alongside the build-host build, and are collected at
 # their step (which still checks the built app carries this same version).
 DAEMON_DIR="$OUT/remote-daemon-assets"
 DAEMON_LOG="$OUT/remote-daemon-assets.log"
@@ -305,9 +324,9 @@ fi
 # Same decision table as release.yml's "Guard immutable release assets" step,
 # evaluated by the same module (scripts/release_asset_guard.js).
 GUARD_JS='
-const { evaluateReleaseAssetGuard } = require(process.argv[1]);
+const { evaluateReleaseAssetGuard, releaseAssetNames } = require(process.argv[1]);
 const existingAssetNames = JSON.parse(process.argv[2]);
-const r = evaluateReleaseAssetGuard({ existingAssetNames });
+const r = evaluateReleaseAssetGuard({ existingAssetNames, immutableAssetNames: releaseAssetNames({ linux: process.argv[3] === "1" }) });
 console.log(JSON.stringify(r));
 '
 # Prints the release for $TAG as compact JSON, or nothing. Lists releases
@@ -346,7 +365,7 @@ check_guard() {
   RELEASE_ID="$(jq -r .id <<<"$rel")"
   RELEASE_DRAFT="$(jq -r .draft <<<"$rel")"
   names="$(jq -c '[.assets[].name]' <<<"$rel")"
-  state="$(node -e "$GUARD_JS" "$ROOT/scripts/release_asset_guard.js" "$names")" || die "release asset guard failed"
+  state="$(node -e "$GUARD_JS" "$ROOT/scripts/release_asset_guard.js" "$names" "${REMOTE_ARTIFACTS:+1}")" || die "release asset guard failed"
   guard="$(jq -r .guardState <<<"$state")"
   note "Release $TAG exists (id $RELEASE_ID, draft $RELEASE_DRAFT); guard state: $guard"
   case "$guard" in
@@ -392,9 +411,9 @@ step "Guard immutable release assets"
 check_guard preflight
 check_active_runs
 
-# ------------------------------------------------------------ Atlas build --
+# ------------------------------------------------------- build-host build --
 # --host local runs the build in place on this machine (remote-build.sh's
-# local transport), for a release driven on Atlas itself; otherwise the build
+# local transport), for a release driven on the build host itself; otherwise the build
 # host is reached over ssh.
 host_path() { if [[ "$HOST" == "local" ]]; then printf '%s/%s' "$HOME" "$1"; else printf '%s:%s' "$HOST" "$1"; fi; }
 host_rsync() { if [[ "$HOST" == "local" ]]; then rsync "$@"; else rsync -e "ssh -o BatchMode=yes" "$@"; fi; }
@@ -549,6 +568,12 @@ plutil -remove C11RemoteDaemonManifestJSON "$APP_PLIST" >/dev/null 2>&1 || true
 plutil -remove CMUXRemoteDaemonManifestJSON "$APP_PLIST" >/dev/null 2>&1 || true
 plutil -insert C11RemoteDaemonManifestJSON -string "$MANIFEST_JSON" "$APP_PLIST"
 plutil -insert CMUXRemoteDaemonManifestJSON -string "$MANIFEST_JSON" "$APP_PLIST"
+
+if [[ -n "$REMOTE_ARTIFACTS" ]]; then
+  step "Name the Linux machine's hc and relay CLI in the app (C11H-392)"
+  "$ROOT/scripts/c11-remote-artifacts.sh" stamp --app "$APP_PATH" --dir "$REMOTE_ARTIFACTS" \
+    --base "https://github.com/$REPO_SLUG/releases/download/$TAG" || die "could not name the Linux files in the app"
+fi
 
 step "Run CLI version memory guard regression"
 CLI_BINARY="$APP_PATH/Contents/Resources/bin/c11"
@@ -726,9 +751,13 @@ ASSETS=(
   "$DAEMON_DIR/c11d-remote-checksums.txt"
   "$DAEMON_DIR/c11d-remote-manifest.json"
 )
+if [[ -n "$REMOTE_ARTIFACTS" ]]; then
+  ASSETS+=("$REMOTE_ARTIFACTS/assets/herdr-core-linux-x86_64" "$REMOTE_ARTIFACTS/assets/c11-linux-x86_64"
+           "$REMOTE_ARTIFACTS/assets/c11-linux-checksums.txt")
+fi
 for asset in "${ASSETS[@]}"; do [[ -s "$asset" ]] || die "missing asset $asset"; done
 # The upload list must be exactly the guard's immutable asset list.
-EXPECTED_NAMES="$(node -e 'console.log(require(process.argv[1]).IMMUTABLE_RELEASE_ASSETS.slice().sort().join("\n"))' "$ROOT/scripts/release_asset_guard.js")"
+EXPECTED_NAMES="$(node -e 'console.log(require(process.argv[1]).releaseAssetNames({ linux: process.argv[2] === "1" }).sort().join("\n"))' "$ROOT/scripts/release_asset_guard.js" "${REMOTE_ARTIFACTS:+1}")"
 ACTUAL_NAMES="$(for a in "${ASSETS[@]}"; do basename "$a"; done | sort)"
 [[ "$EXPECTED_NAMES" == "$ACTUAL_NAMES" ]] || die "upload list differs from IMMUTABLE_RELEASE_ASSETS"
 

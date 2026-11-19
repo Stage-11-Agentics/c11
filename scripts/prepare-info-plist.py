@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare an app plist; only the production Release identity claims c11 URLs.
+"""Prepare an app plist; only a production Release identity claims its panel-link URLs.
 
 Used as an Xcode input-generation step and after Release-derived rebranding.
 Other schemes and every unrelated plist value are preserved.
@@ -9,14 +9,21 @@ from pathlib import Path
 import plistlib
 
 
+# Each product's own panel-link scheme. The release build claims only its own; the
+# retired line's scheme is never claimed, so its app keeps opening its old links.
+PANEL_LINK_SCHEMES = {'com.stage11.c11': 'c11', 'com.stage11.c11h': 'c11h'}  # c11-2.0:keep
+
+
 def prepare(source, destination, bundle_id=None, configuration='Release'):
     data = plistlib.loads(Path(source).read_bytes())
     identity = bundle_id if bundle_id is not None else data.get('CFBundleIdentifier')
-    if configuration != 'Release' or identity != 'com.stage11.c11':
+    claimed = PANEL_LINK_SCHEMES.get(identity) if configuration == 'Release' else None
+    unclaimed = set(PANEL_LINK_SCHEMES.values()) - {claimed}
+    if unclaimed:
         entries = []
         for entry in data.get('CFBundleURLTypes', []):
             entry = dict(entry)
-            schemes = [s for s in entry.get('CFBundleURLSchemes', []) if s.lower() != 'c11']
+            schemes = [s for s in entry.get('CFBundleURLSchemes', []) if s.lower() not in unclaimed]
             if schemes:
                 entry['CFBundleURLSchemes'] = schemes
                 entries.append(entry)

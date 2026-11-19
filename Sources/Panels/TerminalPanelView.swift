@@ -12,6 +12,8 @@ struct TerminalPanelView: View {
     @AppStorage(ThemeAppStorage.Keys.workspaceFrameEnabled, store: ThemeAppStorage.defaults)
     private var workspaceFrameEnabled = true
     @Environment(\.colorScheme) private var colorScheme
+    /// c11 (C11H-197): the hosting window's theme override.
+    @Environment(\.c11WindowThemeName) private var windowThemeName
     // [TextBox] TextBox Input settings (plan §4.3)
     @AppStorage(TextBoxInputSettings.enterToSendKey)
     private var textBoxEnterToSend = TextBoxInputSettings.defaultEnterToSend
@@ -49,7 +51,8 @@ struct TerminalPanelView: View {
         let context = themeManager.makeContext(
             workspaceColor: owningWorkspace?.customColor,
             colorScheme: colorScheme,
-            isWindowFocused: isWindowFocused
+            isWindowFocused: isWindowFocused,
+            windowThemeName: windowThemeName
         )
 
         let strokeColor: NSColor = themeManager.resolve(.windowFrame_color, context: context) ?? .secondaryLabelColor
@@ -104,6 +107,36 @@ struct TerminalPanelView: View {
         // The TextBox mounts BELOW the terminal view in a SwiftUI VStack — the search overlay
         // stays in the AppKit portal layer (unchanged) and is unaffected by this wrapper.
         VStack(spacing: 0) {
+            if let hostEnd = panel.visibleHCHostEnd {
+                HCHostEndBanner(status: hostEnd,
+                    resume: { owningWorkspace?.resumeHostEndedConversation(panelId: panel.id) },
+                    dismiss: { panel.dismissHCHostEnd() })
+            } else if let notice = panel.hcRestoreNotice {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                    Text(notice.message).frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        panel.dismissHCRestoreNotice()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(String(localized: "terminal.restore.dismissNotice", defaultValue: "Dismiss recovery notice"))
+                }
+                .font(.callout)
+                .padding(10)
+                .background(.thinMaterial)
+                .accessibilityIdentifier({
+                    switch notice {
+                    case .holderLost: return "hc-holder-loss-notice"
+                    case .resourceExhausted: return "hc-resource-exhaustion-notice"
+                    case .previousSessionEnded: return "hc-previous-session-ended-notice"
+                    }
+                }())
+            }
+            if let runtime = panel.hcSession {
+                HCTerminalInputNotice(runtime: runtime)
+            }
             GhosttyTerminalView(
                 terminalSurface: panel.surface,
                 areaId: areaId,
@@ -168,5 +201,58 @@ struct PanelAppearance {
             unfocusedOverlayNSColor: config.unfocusedSplitOverlayFill,
             unfocusedOverlayOpacity: config.unfocusedSplitOverlayOpacity
         )
+    }
+}
+
+/// Observes policy installation independently of terminal rendering updates.
+private struct HCTerminalInputNotice: View {
+    @ObservedObject var runtime: HCPanelSession
+    var body: some View {
+        if let policy = runtime.disconnectedInput {
+            HCDisconnectedInputView(policy: policy)
+        }
+    }
+}
+
+
+/// C11H-196: what ended this panel's session, when (local time), and what c11
+/// is doing about it. A conversation that was not resumed says why and offers
+/// Resume conversation. Fixed layout: two text lines and the buttons, so the
+/// banner never changes height as its phase advances.
+struct HCHostEndBanner: View {
+    let status: HCHostEndStatus
+    let resume: () -> String?
+    let dismiss: () -> Void
+    @State private var refusal: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: status.offersResume ? "exclamationmark.triangle" : "arrow.clockwise")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(status.headline).fontWeight(.semibold)
+                Text(refusal ?? status.detail)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if status.offersResume {
+                Button(String(localized: "terminal.hostEnd.resumeButton", defaultValue: "Resume conversation")) {
+                    refusal = resume()
+                }
+                .accessibilityIdentifier("hc-host-end-resume")
+            }
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "terminal.hostEnd.dismiss", defaultValue: "Dismiss"))
+        }
+        .font(.callout)
+        .padding(10)
+        .background(.thinMaterial)
+        .accessibilityIdentifier("hc-host-end-notice")
+        .onChange(of: status) { _ in refusal = nil }
     }
 }

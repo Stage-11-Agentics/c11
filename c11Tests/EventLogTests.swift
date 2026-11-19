@@ -15,6 +15,12 @@ final class EventLogTests: XCTestCase {
 
     private var tempDir: URL!
 
+    /// Bound for `flush()` in tests whose writer queue does real file work
+    /// (rotation renames, retention scans). The production default is 2 s; a
+    /// `.utility` queue on a loaded build host can take longer, and a timed-out
+    /// flush returns before the writes land. The wait ends as soon as it drains.
+    static let loadedHostDrainTimeout: TimeInterval = 20
+
     override func setUpWithError() throws {
         tempDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("c11-events-tests-\(UUID().uuidString)", isDirectory: true)
@@ -218,7 +224,8 @@ final class EventLogTests: XCTestCase {
 
     func testRotationRollsAndMarksAndRetainsOneGeneration() {
         // Tiny cap forces a roll after a couple of lines.
-        let log = EventLog(url: logURL(), instance: "i", sizeCap: 200)
+        let log = EventLog(url: logURL(), instance: "i", sizeCap: 200,
+                           queueWaitTimeout: Self.loadedHostDrainTimeout)
         for i in 0..<40 {
             log.append(EventEnvelope(type: .surfaceCreated, instance: "i", ts: Date(),
                                      surface: "s\(i)", payload: ["kind": "terminal"]))
@@ -348,6 +355,42 @@ final class EventLogTests: XCTestCase {
         XCTAssertEqual(payload?["prior"] as? String, "idle")
         XCTAssertEqual(payload?["source"] as? String, "explicit")
         XCTAssertEqual(payload?["scope"] as? String, "panel", "the caller's v1 scope is written as v2 `panel`")
+    }
+
+    func testWorkspaceMetadataEventHasNoPanelAndDoesNotCopyOpaqueValues() {
+        let log = EventLog(url: logURL(), instance: "workspace-metadata")
+        EventEmitter.shared.startForTesting(log: log, instance: "workspace-metadata")
+        let workspace = UUID()
+        EventEmitter.shared.emitWorkspaceMetadataChanged(
+            workspace: workspace,
+            changedKeys: ["custom.data", "captain", "description"],
+            removedKeys: ["icon"],
+            source: "explicit", revision: 7,
+            current: ["captain": "project-captain", "custom.data": ["opaque": "do-not-copy"],
+                      "description": String(repeating: "x", count: WorkspaceMetadataValidator.maxDescriptionLen + 1)],
+            prior: ["captain": String(repeating: " ", count: 1024) + "previous-captain",
+                    "icon": "★", "custom.data": "old-opaque"]
+        )
+        EventEmitter.shared.flush()
+        let events = readLines(logURL()).map(parse)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events[0]["type"] as? String, "metadata.changed")
+        XCTAssertEqual(events[0]["workspace"] as? String, workspace.uuidString)
+        XCTAssertNil(events[0]["panel"])
+        let payload = events[0]["payload"] as? [String: Any]
+        XCTAssertEqual(payload?["scope"] as? String, "workspace")
+        XCTAssertEqual(payload?["changed_keys"] as? [String], ["captain", "custom.data", "description"])
+        XCTAssertEqual(payload?["removed_keys"] as? [String], ["icon"])
+        XCTAssertEqual(payload?["revision"] as? Int, 7)
+        let values = payload?["values"] as? [String: Any]
+        let prior = payload?["prior"] as? [String: Any]
+        XCTAssertEqual(values?["captain"] as? String, "project-captain")
+        XCTAssertNil(prior?["captain"], "legacy padding must not bypass the recorded captain limit")
+        XCTAssertEqual(prior?["icon"] as? String, "★")
+        XCTAssertNil(values?["custom.data"])
+        XCTAssertNil(values?["description"], "legacy oversized strings stay out of event history")
+        XCTAssertNil(prior?["custom.data"])
+        XCTAssertFalse(readLines(logURL()).joined().contains("do-not-copy"))
     }
 
     func testPanelInputPayloadRecordsNullCallerAndKeyAttribution() {
@@ -487,7 +530,7 @@ final class EventLogTests: XCTestCase {
         let registration = MailboxNativeDoorbell.Registration(
             id: UUID(), panelID: panel, agentPID: 123, processStart: 456,
             sessionID: "subscription-epoch-is-not-the-Claude-session", route: .claudeInbox,
-            canQueue: false, claudeSessionID: session)
+            canQueue: false, claudeSessionID: session.uuidString)
         let sent = expectation(description: "native offer")
         broker.register(registration, write: { _ in sent.fulfill(); return true }, close: {})
         defer { broker.disconnect(registration) }
@@ -2258,7 +2301,8 @@ extension EventLogTests {
 
     @MainActor
     private func assertRuntimeSurfaceGraphIsNonTransient(injectingForeignTeardown: Bool) async {
-        let log = EventLog(url: logURL(), instance: "synthetic-runtime-guard")
+        let log = EventLog(url: logURL(), instance: "synthetic-runtime-guard",
+                           queueWaitTimeout: Self.loadedHostDrainTimeout)
         let emitter = EventEmitter.shared
         emitter.startForTesting(log: log, instance: "synthetic-runtime-guard")
         let workspace = UUID(), panel = UUID()
@@ -2273,14 +2317,21 @@ extension EventLogTests {
         emitter.noteWorkspaceRuntimeSurfaceCreated(workspace)
         emitter.emitWorkspaceCreated(workspace: workspace, title: "Synthetic real graph", rootDirectory: nil)
         let foreignWorkspace = UUID()
+        let foreignTeardownRan = DispatchSemaphore(value: 0)
+        let teardownWait = Self.loadedHostDrainTimeout
         if injectingForeignTeardown {
             // What a deinit of a leaked Workspace does once the run loop turns.
             DispatchQueue.main.async {
                 EventEmitter.shared.emitWorkspaceClosed(workspace: foreignWorkspace, title: "Leaked by an earlier test",
                                                         remainingPanels: [UUID()])
+                foreignTeardownRan.signal()
             }
         }
         await Task.detached {
+            // Hold the task open until the main turn has run, so the `await`
+            // below always suspends and releases the teardown mid-test. If the
+            // task finished first, `.value` would return without a main turn.
+            if injectingForeignTeardown { _ = foreignTeardownRan.wait(timeout: .now() + teardownWait) }
             EventEmitter.shared.emitMetadataChanged(scope: "panel", workspace: workspace, surface: panel,
                                                     key: "status", value: "Synthetic later real runtime", prior: nil, source: "explicit")
         }.value
@@ -2659,7 +2710,7 @@ extension EventLogTests {
     private func bundledCLIForEventsTail() throws -> URL {
         var url = Bundle(for: Self.self).bundleURL
         for _ in 0..<6 {
-            for name in ["c11 DEV.app", "c11.app"] {
+            for name in ["c11 DEV.app", "c11.app", "c11 DEV.app", "c11.app"] {
                 let cli = url.appendingPathComponent(name + "/Contents/Resources/bin/c11")
                 if FileManager.default.isExecutableFile(atPath: cli.path) { return cli }
             }

@@ -1,0 +1,9 @@
+#!/bin/sh
+# c11-core (C11H-37): c11's own hc core, from any terminal.
+#
+# Runs the `c11` beside this file as the core utility. It talks only to the hc
+# core this c11 build launches (its session and socket, checked against the
+# pin before anything is read), never to c11's app socket, herdr-app's
+# `default` session, or another herdr-core. `c11-core --help` for commands.
+dir="$(cd "$(dirname "$0")" && pwd)"
+C11_INVOKED_AS=c11-core exec "$dir/c11" "$@"

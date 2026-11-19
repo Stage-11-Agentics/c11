@@ -77,6 +77,9 @@ file_receipt.write_text(json.dumps(result))
             workingDirectory: root.path,
             initialEnvironmentOverrides: ["HOME": root.path, "ZDOTDIR": root.path, "SHELL": "/bin/zsh"]
         )
+        // The launcher line waits for the exec shell's native attach here. An hc
+        // terminal gates the same launch on its hc attachment and screen instead.
+        panel.surface.useExecShellForTesting()
         let window = NSWindow(
             contentRect: NSRect(x: -10_000, y: -10_000, width: 800, height: 600),
             styleMask: [.borderless], backing: .buffered, defer: false
@@ -162,7 +165,8 @@ file_receipt.write_text(json.dumps(result))
             }
             try await Task.sleep(nanoseconds: 25_000_000)
         }
-        XCTFail("timed out waiting for real Ghostty fixture receipt: \(url.lastPathComponent)")
+        let present = (try? FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)) ?? []
+        XCTFail("timed out waiting for real Ghostty fixture receipt: \(url.lastPathComponent); present: \(present.sorted())")
         throw NSError(domain: "LaunchPostBootAttachmentTests", code: 1)
     }
 }

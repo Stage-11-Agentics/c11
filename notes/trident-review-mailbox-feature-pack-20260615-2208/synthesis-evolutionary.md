@@ -75,7 +75,7 @@ Leverage = unlock / (cost × risk). **[BOTH]** = both models name it; **[CLAUDE]
 - **Cost:** sweep is ~20 lines, already specified. Receipt is low-medium (`recv --drain` already unlinks; have it append a `delivered` log event).
 - **Risks:** very low for the sweep (dedupe-by-id makes redelivery safe). For receipts, beware scope creep into a full ack/retry protocol — keep it to *observability of consumption*. Critically: "the actor read its mailbox" ≠ "the actor acted." Don't let `delivered` masquerade as `acked`.
 
-### 5. Cross-host / tailnet bridge (Atlas + Hyperion) — **[CLAUDE]**
+### 5. Cross-host / tailnet bridge (the build host + the laptop) — **[CLAUDE]**
 - **Unlocks:** genuinely new capability — the swarm spans machines; the always-on agentic host becomes addressable from the laptop.
 - **Cost:** high. Reopens the deferred security model: `from` is sender-attested, which is fine same-user-same-host and *not* fine across a network boundary.
 - **Risks:** high. Don't do this until stable addressing and a real identity story exist. **Name it, don't build it yet.**

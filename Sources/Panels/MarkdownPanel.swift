@@ -34,6 +34,10 @@ final class MarkdownPanel: Panel, ObservableObject {
         }
     }
 
+    /// C11H-228: the shown address (`c11-show://…`) when this panel shows a
+    /// markdown file from another machine; `filePath` then holds the same key.
+    let remoteShowKey: String?
+
     @Published private(set) var corpusSnapshot = MarkdownCorpusSnapshot.empty
     private(set) var corpusCurrentPath: String?
     private var corpusIndexGeneration: UInt64 = 0
@@ -428,6 +432,7 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     @discardableResult
     func openExternally() -> Bool {
+        guard remoteShowKey == nil else { return false }
         guard let filePath else { return false }
         let fileURL = URL(fileURLWithPath: filePath)
         return NSWorkspace.shared.open(fileURL)
@@ -628,13 +633,16 @@ final class MarkdownPanel: Panel, ObservableObject {
         filePath: String? = nil,
         fragment: String? = nil,
         initialNavigationOrigin: MarkdownNavigationOrigin = .agentCLI,
-        initialNavigationScopeRootPath: String? = nil
+        initialNavigationScopeRootPath: String? = nil,
+        remoteShowKey: String? = nil
     ) {
         self.id = id ?? UUID()
         self.createdAt = createdAt
         self.workspaceId = workspaceId
-        self.filePath = filePath
-        self.displayTitle = Self.titleForFilePath(filePath)
+        self.remoteShowKey = remoteShowKey
+        self.filePath = remoteShowKey ?? filePath
+        // A remote show's key is its address; its title is the file's name.
+        self.displayTitle = Self.titleForFilePath(remoteShowKey.map { URL(string: $0)?.lastPathComponent ?? $0 } ?? filePath)
         self.pendingNavigationFragment = filePath == nil ? nil : fragment
         self.presentation = MarkdownPresentation.lastUsed()
         navigationHistory.reset(
@@ -643,7 +651,11 @@ final class MarkdownPanel: Panel, ObservableObject {
             scopeRootPath: initialNavigationScopeRootPath
         )
 
-        if filePath != nil {
+        if remoteShowKey != nil {
+            // C11H-228: a `c11 show` viewer of a file on another machine. Its
+            // text arrives through `applyExternalContent` from the viewer's
+            // fetcher; there is no local file to read, watch or index.
+        } else if filePath != nil {
             loadFileContent()
             startFileWatcher()
             updateCorpusIndexer(for: filePath)
@@ -708,6 +720,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     }
 
     private func updateCorpusIndexer(for path: String?) {
+        guard remoteShowKey == nil else { return }
         corpusIndexGeneration &+= 1
         let generation = corpusIndexGeneration
         guard !isClosed, let path else {
@@ -749,6 +762,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     // MARK: - File I/O
 
     private func loadFileContent() {
+        guard remoteShowKey == nil else { return }
         guard let filePath else {
             content = ""
             isFileUnavailable = false
@@ -859,6 +873,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     // MARK: - File watcher via DispatchSource
 
     private func startFileWatcher() {
+        guard remoteShowKey == nil else { return }
         guard let filePath else { return }
         let fd = open(filePath, O_EVTONLY)
         guard fd >= 0 else { return }
@@ -909,6 +924,7 @@ final class MarkdownPanel: Panel, ObservableObject {
     /// Each attempt checks if the file has reappeared. Bails out early if
     /// the panel has been closed.
     private func scheduleReattach(attempt: Int) {
+        guard remoteShowKey == nil else { return }
         guard attempt <= Self.maxReattachAttempts else { return }
         watchQueue.asyncAfter(deadline: .now() + Self.reattachDelay) { [weak self] in
             guard let self else { return }
@@ -950,18 +966,6 @@ final class MarkdownPanel: Panel, ObservableObject {
 
 @MainActor
 enum MarkdownReaderShortcutRouter {
-    static func routeNavigationHistory(event: NSEvent, panel: MarkdownPanel?) -> Bool {
-        guard let panel, event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command else {
-            return false
-        }
-        switch event.charactersIgnoringModifiers {
-        case "[": Task { @MainActor [weak panel] in _ = await panel?.navigateBack() }
-        case "]": Task { @MainActor [weak panel] in _ = await panel?.navigateForward() }
-        default: return false
-        }
-        return true
-    }
-
     static func routeOutlineToggle(
         event: NSEvent,
         panel: MarkdownPanel?,

@@ -48,8 +48,11 @@ def main():
     cli = os.environ.get("C11_CLI")
     if not socket_path or not cli:
         raise RuntimeError("Set C11_SOCKET_PATH and C11_CLI to an isolated sandbox/tagged app")
-    production = Path.home() / "Library/Application Support/c11/c11.sock"
-    if Path(socket_path) == production or socket_path == "/tmp/c11-debug.sock":
+    refused = {
+        Path.home() / "Library/Application Support/c11/c11.sock",
+        Path.home() / "Library/Application Support/c11/c11.sock",
+    }
+    if Path(socket_path) in refused or socket_path in {"/tmp/c11-debug.sock", "/tmp/c11-debug.sock"}:
         raise RuntimeError("Refusing the production/untagged socket")
 
     with tempfile.TemporaryDirectory(prefix="c11-263-hooks-") as temporary, cmux(socket_path) as client:

@@ -197,9 +197,9 @@ const S = {
     cur:  { collapsed: 'current', tabs: mk([[150,'Overwatch Assessment','idle'],[137,'Awaiting first task','working'],[160,'Tab Bar QoL','working'],[158,'REPLY-2-DRAFT.md',null],[124,'Ralph DAF Intake','waiting'],[154,'Ralph DAF','flag']]), sel: 150, open: false },
     optA: { collapsed: 'block',   tabs: mk([[150,'Overwatch Assessment','idle'],[137,'Awaiting first task','working'],[160,'Tab Bar QoL','working'],[158,'REPLY-2-DRAFT.md',null],[124,'Ralph DAF Intake','waiting'],[154,'Ralph DAF','flag']]), sel: 150, open: false },
     optB: { collapsed: 'stubs',   tabs: mk([[150,'Overwatch Assessment','idle'],[137,'Awaiting first task','working'],[160,'Tab Bar QoL','working'],[158,'REPLY-2-DRAFT.md',null],[124,'Ralph DAF Intake','waiting'],[154,'Ralph DAF','flag']]), sel: 150, open: false },
-    targetPane: { tabs: mk([[138,'~/Projects/Gregorovich',null],[161,'Awaiting first task','working']]), sel: 161 },
+    targetPane: { tabs: mk([[138,'~/src',null],[161,'Awaiting first task','working']]), sel: 161 },
     liveL: { tabs: mk([[137,'Awaiting first task','working'],[160,'Awaiting first task','working']]), sel: 160 },
-    liveR: { tabs: mk([[138,'~/Projects/Gregorovich',null],[161,'Awaiting first task','working'],[162,'notes.md',null]]), sel: 161 },
+    liveR: { tabs: mk([[138,'~/src',null],[161,'Awaiting first task','working'],[162,'notes.md',null]]), sel: 161 },
   },
   drag: null,     // {from, id}
   hover: null,    // {pane, index}
@@ -283,13 +283,13 @@ function paneHTML(key, opts={}){
   const p = S.panes[key];
   const bar = p.collapsed ? collapsedBar(key) : fullStrip(key);
   const a = p.tabs.find(t=>t.id===p.sel) || p.tabs[0] || {n:'',t:'(empty)'};
-  return `<div class="pane ${opts.unfocused?'unfocused':''}" style="${opts.width?`width:${opts.width}px`:''}"><div class="bar" data-bar="${key}">${bar}</div><div class="body"><b>${esc(a.n+': '+a.t)}</b><br>~/Projects/Stage11/code/c11 ❯ _</div></div>`;
+  return `<div class="pane ${opts.unfocused?'unfocused':''}" style="${opts.width?`width:${opts.width}px`:''}"><div class="bar" data-bar="${key}">${bar}</div><div class="body"><b>${esc(a.n+': '+a.t)}</b><br>~/src/c11 ❯ _</div></div>`;
 }
 
 function frozen(){
   const saveD = S.drag, saveH = S.hover, saveP = {...S.panes};
   S.panes.fz1 = { tabs: mk([[137,'Awaiting first task','working'],[160,'Awaiting first task','working']]), sel: 160 };
-  S.panes.fz2 = { tabs: mk([[137,'Awaiting first task','working'],[160,'Awaiting first task','working'],[138,'~/Projects/Gregorovich',null]]), sel: 160 };
+  S.panes.fz2 = { tabs: mk([[137,'Awaiting first task','working'],[160,'Awaiting first task','working'],[138,'~/src',null]]), sel: 160 };
   S.panes.__src = { tabs: mk([[158,'REPLY-2-DRAFT.md',null]]) };
   S.drag = { from:'__src', id:158 };
   S.hover = { pane:'fz1', index:2 };

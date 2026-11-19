@@ -48,6 +48,8 @@ The roster lists live panels, with journal state where present, plus retained re
 
 After restart, a prior row is a restore candidate with `confirmation: "unconfirmed"` and a disconnected or unknown connection. It is not proof that the process is still live. Do not carry a working clock through the restart gap. Retained evidence may classify the row as a historical candidate, ended, or unknown; coverage loss remains visible.
 
+A resumed or freshly started Claude whose SessionStart comes from the panel's own interactive process (c11 verifies that process behind the hook) reads `idle`, live and confirmed at once: it is at its prompt. That holds after a restart and for a new process resuming a session this c11 already knew (`/exit` then `--resume`, or `c11 restore run`). A start c11 cannot tie to that process (relayed or unverified) reads `unknown` until a turn edge; a `compact` start records nothing. A survivor's row stays disconnected and unconfirmed until its next hook: its derived lifecycle in `c11 fleet` and the sidebar is hc's status for the terminal until then, never the one c11 derived and saved at quit; an activity the agent set itself (`c11 set-metadata`, OSC) keeps its value ([persistence](persistence.md)).
+
 `lifecycle.changed` reports an applied journal phase transition. `waiting.entered` and `waiting.left` remain unread-notification edges and carry no journal reason. Do not treat unread clearing as ask resolution or reconstruct the current roster by replaying the per-instance events file.
 
 ## Provider limits

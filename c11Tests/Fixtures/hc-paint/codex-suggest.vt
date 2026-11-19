@@ -1,0 +1,24 @@
+[!p[?2026l[?9l[?1000l[?1001l[?1002l[?1003l[?1004l[?1005l[?1006l[?1015l[?1016l[?2004l[?1l[?66l[?2031l[?2048l[=0;1u[?1049l[?1047l[?47l[H[2J[?2004h[3g[9GH[17GH[25GH[33GH[41GH[49GH[57GH[65GH[73GH[H
+
+
+
+
+
+
+
+
+
+
+
+
+› explain the guard
+
+• The guard refuses a send while the composer holds a draft.
+
+  It reads the screen around the cursor first.
+
+
+› [0m[2mAsk Codex to do anything[0m
+
+  ~/project · codex stand-in
+  ← for agents · ? for shortcuts[21;3H[0m]2;codex stand-in\[?9001l]7501;state=idle\

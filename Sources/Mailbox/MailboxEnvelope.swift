@@ -113,6 +113,43 @@ struct MailboxEnvelope: Equatable {
         return MailboxEnvelope(raw: object)
     }
 
+    /// c11's relay key (plan ticket 14, bus agreement): the relay writes only
+    /// under `ext.c11h`, and `ext.cbus` stays reserved for the bus.
+    static let relayKey = "c11h"
+
+    /// This envelope as c11's relay carries it from another machine: every
+    /// client `ext` key is dropped except the CLI's sender claim (which the
+    /// dispatcher turns into `c11_sender_panel_id` as for local mail), and
+    /// `ext.c11h` records the origin host, machine and `relay: true`.
+    /// `id` replaces the client's id (C11H-360: relayed ids are minted here).
+    func relayed(originHost: String, machine: String, id: String? = nil) -> MailboxEnvelope {
+        var object = raw
+        if let id { object["id"] = id }
+        var extensionFields: [String: Any] = [:]
+        if let claim = ext?[Self.senderClaimKey] { extensionFields[Self.senderClaimKey] = claim }
+        extensionFields[Self.relayKey] = ["origin_host": originHost, "machine": machine, "relay": true]
+        object["ext"] = extensionFields
+        return MailboxEnvelope(raw: object)
+    }
+
+    /// The machine a relayed envelope came from (`ext.c11h`, written only by
+    /// c11's relay), or nil for local mail. Shared by every frame and mail view.
+    var relayMachine: String? { Self.relayMachine(raw: raw) }
+
+    static func relayMachine(raw: [String: Any]) -> String? {
+        guard let origin = (raw["ext"] as? [String: Any])?[relayKey] as? [String: Any],
+              (origin["relay"] as? Bool) == true || (origin["relay"] as? NSNumber)?.boolValue == true else { return nil }
+        let machine = (origin["machine"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return machine.isEmpty ? "?" : machine
+    }
+
+    /// C11H-360: a sender as people read it: `from`, and for relayed mail the
+    /// machine it came from ("reviewer via studio").
+    static func senderLabel(_ from: String, relayMachine: String?) -> String {
+        guard let relayMachine else { return from }
+        return String(format: String(localized: "mailbox.relay.senderVia", defaultValue: "%1$@ via %2$@"), from, relayMachine)
+    }
+
     /// Delivery keeps its local body, while history consumers honor the durable
     /// opt-out even after the accepted event has aged out of the event log.
     func suppressActivityHistoryText() -> MailboxEnvelope {

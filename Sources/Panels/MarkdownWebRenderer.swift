@@ -377,12 +377,44 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
 
     func cancelReadyAndRenderedWait(_ id: UUID) {
         renderWaiters.removeValue(forKey: id)
+        revisionWaiters.removeValue(forKey: id)
+    }
+
+    /// C11H-228: waits until the panel's content as it is now has rendered
+    /// (its own revision, not an earlier one), or fails with the render.
+    private var revisionWaiters: [UUID: (target: Int, completion: (Bool) -> Void)] = [:]
+
+    /// The revision that carries the panel's current content: the one loaded
+    /// now, or the next load when the panel's text has not been sent yet.
+    func currentContentRevision() -> Int {
+        let content = restoreContentBeforeReload ?? panel?.content
+        return loadedContent != nil && loadedContent == content ? revision : revision + 1
+    }
+
+    @discardableResult
+    func whenCurrentContentRendered(_ completion: @escaping (Bool) -> Void) -> UUID? {
+        guard !closed, !failure, panel != nil else {
+            completion(false)
+            return nil
+        }
+        let target = currentContentRevision()
+        if ready, let rendered = renderedRevision, rendered >= target {
+            completion(true)
+            return nil
+        }
+        let id = UUID()
+        revisionWaiters[id] = (target, completion)
+        return id
     }
 
     private func resolveRenderWaiters(success: Bool) {
         let waiters = Array(renderWaiters.values)
         renderWaiters.removeAll()
         waiters.forEach { $0(success) }
+        // A failed render settles every content wait; a success only those it reaches.
+        let due = revisionWaiters.filter { !success || $0.value.target <= (renderedRevision ?? -1) }
+        for (id, _) in due { revisionWaiters.removeValue(forKey: id) }
+        due.values.forEach { $0.completion(success) }
     }
 
     /// Updates the query cache and notifies watches from a native-initiated
@@ -667,7 +699,10 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                 let modifiers = body["modifiers"] as? [String: Bool] ?? [:]
                 let position = (body["position"] as? [String: Any]).flatMap { MarkdownReadingPosition(state: $0) }
                 guard body["localOnly"] as? Bool != true else { break }
-                _ = routeLink(href, modifiers: modifiers, position: position)
+                // A link the operator clicked in the document (C11H-260).
+                _ = PanelLineage.shared.withOrigin(.operator) {
+                    routeLink(href, modifiers: modifiers, position: position)
+                }
             }
         case "peek":
             guard let requestID = body["id"] as? Int, requestID >= 0 else { return }
@@ -840,7 +875,8 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
         source panel: MarkdownPanel,
         navigationToken: Int
     ) -> Task<Void, Never> {
-        Task { @MainActor [weak panel] in
+        let creation = PanelLineage.shared.captureCreation()
+        return Task { @MainActor [weak panel] in
             guard let panel,
                   case .ready(let path, _, _, let scopeRootPath) = await panel.prepareDocumentLink(target),
                   panel.isCurrentNavigation(navigationToken),
@@ -849,14 +885,16 @@ final class MarkdownWebRenderer: NSObject, ObservableObject, WKNavigationDelegat
                     preferredWorkspaceId: panel.workspaceId
                   )?.workspace,
                   let pane = workspace.paneId(forPanelId: panel.id) else { return }
-            _ = workspace.newMarkdownPanel(
-                inPane: pane,
-                filePath: path,
-                fragment: fragment,
-                focus: true,
-                initialNavigationOrigin: .documentLink,
-                initialNavigationScopeRootPath: scopeRootPath
-            )
+            _ = PanelLineage.shared.replay(creation) {
+                workspace.newMarkdownPanel(
+                    inPane: pane,
+                    filePath: path,
+                    fragment: fragment,
+                    focus: true,
+                    initialNavigationOrigin: .documentLink,
+                    initialNavigationScopeRootPath: scopeRootPath
+                )
+            }
         }
     }
 

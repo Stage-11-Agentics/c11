@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import CryptoKit
 import Foundation
+import Darwin
 import Bonsplit
 import WebKit
 
@@ -307,6 +308,11 @@ extension TerminalController {
                     result = .err(code: "invalid_state", message: "Duplicate is only available for browser panels", data: nil)
                     return
                 }
+                // C11H-353: a `c11 show` viewer is never copied into an ordinary panel.
+                guard browserPanel.showViewer == nil else {
+                    result = .err(code: ShowSpec.Code.displayOnly, message: "A show viewer is display only and cannot be duplicated", data: nil)
+                    return
+                }
 
                 let targetIndex = insertionIndexToRight(anchorBonsplitTabId: anchorBonsplitTabId, inPane: paneId)
                 guard let newPanel = PanelLineage.shared.withCreator(v2UUID(params, "caller_panel_id"), operation: {
@@ -457,6 +463,7 @@ extension TerminalController {
             "refs": result.refs
         ]
         if let out = result.outPath { payload["out_path"] = out }
+        if let outError = result.outError { payload["out_error"] = outError }
         return .ok(payload)
     }
 
@@ -475,6 +482,8 @@ extension TerminalController {
     /// Returns `{ resolution: "unique"|"ambiguous"|"unresolved",
     /// target_workspace_id?, target_workspace_ref?, surface_ids?, candidates }`.
     private func v2MailboxResolve(params: [String: Any]) -> V2CallResult {
+        if params["to_captain"] as? Bool == true { return v2MailboxResolveCaptain(params: params) }
+
         guard let to = v2String(params, "to"), !to.isEmpty else {
             return .err(code: "invalid_to", message: "to is required", data: nil)
         }
@@ -562,11 +571,71 @@ extension TerminalController {
         }
     }
 
+    /// Exact captain routing needs current topology. Unlike normal name mail,
+    /// it never chooses a local-first match or accepts an environment workspace.
+    private func v2MailboxResolveCaptain(params: [String: Any]) -> V2CallResult {
+        guard params["to"] == nil, params["workspace"] == nil, params["workspace_id"] == nil,
+              params["sender_workspace_id"] == nil,
+              let context = SocketCommandContext.current,
+              let claimed = context.callerPanelId,
+              let app = AppDelegate.shared,
+              let located = app.workspaceContainingPanel(panelId: claimed) else {
+            return .err(code: "captain_caller_unverified", message: String(localized: "mailbox.captain.callerUnverified",
+                defaultValue: "Captain routing requires a verified live calling panel; no envelope was written."), data: nil)
+        }
+        let callerWorkspace = located.workspace
+        let verified: Bool
+        if context.relayMachine != nil {
+            // Only the authenticated relay executor sets this context field;
+            // its policy replaces every caller alias with the verified panel.
+            verified = true
+        } else if let key = HCProcessAdmission.shared.panelIdentity(claimed)?.key
+            ?? context.hcInventory?.panelBindings[claimed] {
+            verified = MailboxCaptainCaller.verify(
+                panel: claimed, key: key, peerPID: context.callerPID,
+                inventory: context.hcInventory, admitted: context.verifiedHCTerminal
+            )
+        } else if let device = context.callerTTYDevice,
+                  let tty = callerWorkspace.panelTTYNames[claimed],
+                  let panelDevice = TerminalPIDResolver.ttyDevice(for: tty) {
+            verified = UInt32(bitPattern: panelDevice) == device
+        } else { verified = false }
+        guard verified else {
+            return .err(code: "captain_caller_unverified", message: String(localized: "mailbox.captain.callerUnverified",
+                defaultValue: "Captain routing requires a verified live calling panel; no envelope was written."), data: nil)
+        }
+        // Capture now, never the coalesced presentation cache. Includes every
+        // window and raw mailbox.address, without title/role interpretation.
+        // The caller's workspace resolves its own captain first, then its group's.
+        let summary = WorkspaceCaptainCoordinator.captureCurrent().summary(for: callerWorkspace.id)
+        switch WorkspaceCaptainMailRoute.route(summary, workspaceGroupID: callerWorkspace.groupId) {
+        case .failure(let code, let message, let data):
+            return .err(code: code, message: message, data: data)
+        case .holder(let address, let holder, let scope):
+            let surfaces = app.mailboxAddressableSurfaces()
+            let sender = PanelMetadataStore.shared.getMetadata(workspaceId: callerWorkspace.id, surfaceId: claimed).metadata
+            var payload: [String: Any] = [
+                "resolution": "unique", "captain": address,
+                "requested_recipient": "panel:" + address,
+                "caller_panel_id": claimed.uuidString,
+                "sender_workspace_id": callerWorkspace.id.uuidString,
+                "sender_title": sender[MetadataKey.title] as? String ?? "",
+                "sender_mailbox_address": sender[MetadataKey.mailboxAddress] ?? NSNull(),
+                "target_workspace_id": holder.workspaceID.uuidString,
+                "target_workspace_ref": v2Ref(kind: .workspace, uuid: holder.workspaceID),
+                "panel_ids": [holder.panelID.uuidString],
+                "recipients": [mailboxRecipientPayload(panelID: holder.panelID, surfaces: surfaces, expectedSession: nil)]
+            ]
+            payload.merge(scope) { current, _ in current }
+            return .ok(payload)
+        }
+    }
+
     /// Called on main: capability checks inspect the current native route and
     /// panel kind; the identity itself comes only from authenticated capture.
     private func mailboxRecipientPayload(panelID: UUID, surfaces: [MailboxGlobalResolver.PanelRecord],
                                          expectedSession: String?) -> [String: Any] {
-        MailboxPanelResolver.recipientPayload(
+        var payload = MailboxPanelResolver.recipientPayload(
             panelID: panelID, surfaces: surfaces,
             sharedOwner: ConversationStorePanelRefCache.shared.mailboxOwner(surfaceId: panelID),
             expectedSession: expectedSession
@@ -575,6 +644,14 @@ extension TerminalController {
             return workspace?.mailboxDoorbellUnavailableReason(surfaceId: ownerID)
                 ?? (workspace == nil ? "target_gone" : nil)
         }
+        // C11H-371: a relayed caller learns no other panel's session, nor
+        // the panels that share it.
+        if let scope = SocketCommandContext.current?.relayReadScope,
+           payload["panel_id"] as? String != scope.panel.uuidString {
+            payload.removeValue(forKey: "session_id")
+            payload.removeValue(forKey: "shared_inboxes")
+        }
+        return payload
     }
 
     private func v2SettingsOpen(params: [String: Any]) -> V2CallResult {
@@ -587,6 +664,9 @@ extension TerminalController {
             navigationTarget = nil
         case SettingsNavigationTarget.keyboardShortcuts.rawValue:
             navigationTarget = .keyboardShortcuts
+        case SettingsNavigationTarget.machines.rawValue:
+            // c11h: the Herder Topography page.
+            navigationTarget = .machines
         default:
             return .err(code: "invalid_params", message: "Unknown settings target", data: ["target": targetRaw ?? ""])
         }
@@ -753,6 +833,17 @@ extension TerminalController {
             // Agent chip resolution.
             let chipDict: [String: Any] = self.resolveAgentChipDict(workspace: ws)
             out["agent_chip"] = chipDict
+            // C11H-278: each panel's description and when it was last edited.
+            let now = Date()
+            out["descriptions"] = ws.sidebarDescriptionEntries().map { entry -> [String: Any] in
+                var item: [String: Any] = [
+                    "panel_id": entry.panelId.uuidString,
+                    "panel_ref": v2Ref(kind: .surface, uuid: entry.panelId),
+                    "description": entry.description,
+                ]
+                item.merge(Workspace.descriptionAgeFields(updatedAt: entry.updatedAt, now: now)) { _, new in new }
+                return item
+            }
             // Exact snapshot includes AppKit window geometry and is read-only.
             out["layout"] = AppDelegate.shared?.sidebarLayout(for: workspaceManager)
 
@@ -762,5 +853,40 @@ extension TerminalController {
             return .err(code: "not_found", message: "Workspace not found", data: nil)
         }
         return .ok(out)
+    }
+}
+
+/// Bind an HC socket peer to the claimed panel's exact terminal. Admission
+/// proves membership of this app; captain routing additionally proves which
+/// panel, using current kernel identities and the admitted inventory revision.
+enum MailboxCaptainCaller {
+    static func verify(panel: UUID, key: HCTerminalKey, peerPID: Int32?, inventory: HCInventorySnapshot?,
+                       admitted: HCVerifiedTerminal?, uid: UInt32 = getuid(), process: (Int32) -> HCLocalProcess? = HCLocalProcess.read) -> Bool {
+        guard let admitted, admitted.key == key, admitted.peerIdentity.pid == peerPID,
+              let inventory, inventory.isReady(for: key),
+              inventory.panelBindings[panel] == key,
+              (inventory.isMerged ? inventory.shardCoreIDs.values.contains(key.owningCoreID)
+                : inventory.buildIdentity?.coreID == key.owningCoreID),
+              let record = inventory.records[key], record.state == .running,
+              record.machineAvailability == .local, let rootPID = record.pid,
+              rootPID == admitted.rootIdentity.pid,
+              let peerPID, let peer = process(peerPID)?.identity,
+              peer == admitted.peerIdentity else { return false }
+        var current = peer.pid
+        var childStart = peer.startTimeMicroseconds
+        for _ in 0..<128 {
+            guard let facts = process(current), facts.identity.startTimeMicroseconds <= childStart else { return false }
+            if current == rootPID {
+                guard facts.admitsAsTerminalRoot(uid: uid), facts.identity == admitted.rootIdentity,
+                      record.localProcessIdentity == nil || record.localProcessIdentity == facts.identity,
+                      process(peer.pid)?.identity == peer,
+                      process(rootPID)?.identity == facts.identity else { return false }
+                return true
+            }
+            guard facts.uid == uid, facts.parentPID > 1, facts.parentPID != current else { return false }
+            childStart = facts.identity.startTimeMicroseconds
+            current = facts.parentPID
+        }
+        return false
     }
 }

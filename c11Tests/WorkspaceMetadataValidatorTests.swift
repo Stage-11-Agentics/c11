@@ -97,37 +97,17 @@ final class WorkspaceMetadataValidatorTests: XCTestCase {
         }
     }
 
-    func testRejectsCustomValueOverMaxLen() {
-        let value = String(repeating: "a", count: WorkspaceMetadataValidator.maxCustomValueLen + 1)
-        XCTAssertThrowsError(try WorkspaceMetadataValidator.validate(key: "note", value: value)) { err in
-            XCTAssertEqual(
-                err as? WorkspaceMetadataValidator.ValidationError,
-                .valueTooLong(key: "note", limit: WorkspaceMetadataValidator.maxCustomValueLen)
-            )
-        }
+    func testCustomValuesUseObjectCapRatherThanLegacyStringCap() throws {
+        XCTAssertNoThrow(try WorkspaceMetadataValidator.validate(key: "note", value: String(repeating: "a", count: 4096)))
+        XCTAssertNoThrow(try WorkspaceMetadataValidator.validate(key: "custom", value: ["nested": [true, false]]))
+        XCTAssertThrowsError(try WorkspaceMetadataValidator.validate(key: "icon", value: 7))
     }
 
-    func testCapacityAcceptsCanonicalPlusCustomAtLimit() throws {
-        var map: [String: String] = [
-            WorkspaceMetadataKey.description: "desc",
-            WorkspaceMetadataKey.icon: "🦊"
-        ]
-        for i in 0..<WorkspaceMetadataValidator.maxCustomKeys {
-            map["custom_\(i)"] = "value"
-        }
-        XCTAssertNoThrow(try WorkspaceMetadataValidator.validateCapacity(after: map))
-    }
-
-    func testCapacityRejectsOverCustomKeyLimit() {
-        var map: [String: String] = [:]
-        for i in 0..<(WorkspaceMetadataValidator.maxCustomKeys + 1) {
-            map["custom_\(i)"] = "value"
-        }
-        XCTAssertThrowsError(try WorkspaceMetadataValidator.validateCapacity(after: map)) { err in
-            XCTAssertEqual(
-                err as? WorkspaceMetadataValidator.CapacityError,
-                .tooManyKeys(limit: WorkspaceMetadataValidator.maxCustomKeys)
-            )
+    func testCaptainNormalizesOnlySurroundingSpacesAndKeepsAddressOpaque() throws {
+        XCTAssertEqual(try WorkspaceMetadataValidator.normalizedCaptain("  agent:Captain@Case/1  "), "agent:Captain@Case/1")
+        XCTAssertNoThrow(try WorkspaceMetadataValidator.normalizedCaptain(String(repeating: "é", count: 128)))
+        for invalid: Any in ["", "  ", "agent\n", "agent\tname", String(repeating: "é", count: 129), 42, NSNull()] {
+            XCTAssertThrowsError(try WorkspaceMetadataValidator.normalizedCaptain(invalid))
         }
     }
 }

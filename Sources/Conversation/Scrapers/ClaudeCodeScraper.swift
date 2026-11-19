@@ -322,6 +322,15 @@ protocol ConversationFilesystem: Sendable {
     /// can't be read. A protocol-extension default returns nil so existing
     /// stat-only mocks keep compiling (they simply provide no cwd recovery).
     func readSessionHead(atPath path: String, maxBytes: Int) -> String?
+
+    /// C11H-196: the same bounded read, every line within `maxBytes` (a
+    /// Claude transcript's first records carry no `cwd`). Callers extract only
+    /// `cwd`. Default nil, so stat-only mocks recover nothing.
+    func readSessionPrefix(atPath path: String, maxBytes: Int) -> String?
+
+    /// C11H-196: a file's modification time (stat only), so host-end resumes
+    /// go most recently active first. Default nil.
+    func modificationDate(atPath path: String) -> Date?
 }
 
 extension ConversationFilesystem {
@@ -350,6 +359,10 @@ extension ConversationFilesystem {
     /// means a filesystem that opts out of head reads degrades to the prior
     /// no-cwd-recovery behaviour (candidate `cwd == nil`), never worse.
     func readSessionHead(atPath path: String, maxBytes: Int) -> String? { nil }
+
+    func readSessionPrefix(atPath path: String, maxBytes: Int) -> String? { nil }
+
+    func modificationDate(atPath path: String) -> Date? { nil }
 }
 
 /// Answers every exact-id lookup under one root from a single filename walk,
@@ -389,6 +402,12 @@ final class SessionNameIndexFilesystem: ConversationFilesystem, @unchecked Senda
     func readSessionHead(atPath path: String, maxBytes: Int) -> String? {
         base.readSessionHead(atPath: path, maxBytes: maxBytes)
     }
+
+    func readSessionPrefix(atPath path: String, maxBytes: Int) -> String? {
+        base.readSessionPrefix(atPath: path, maxBytes: maxBytes)
+    }
+
+    func modificationDate(atPath path: String) -> Date? { base.modificationDate(atPath: path) }
 }
 
 struct ConversationFilesystemEntry: Sendable, Equatable {
@@ -484,6 +503,17 @@ struct DefaultConversationFilesystem: ConversationFilesystem {
             lineData = data
         }
         return String(decoding: lineData, as: UTF8.self)
+    }
+
+    func modificationDate(atPath path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+    }
+
+    func readSessionPrefix(atPath path: String, maxBytes: Int) -> String? {
+        guard maxBytes > 0, let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: maxBytes), !data.isEmpty else { return nil }
+        return String(decoding: data, as: UTF8.self)
     }
 
     func listDirectoryByMtime(

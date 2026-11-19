@@ -13,6 +13,7 @@ import plistlib
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -20,11 +21,17 @@ import time
 import uuid
 
 SUBMODULES = ("ghostty", "vendor/bonsplit")
+# The build host's working folder, under its home: mirrors, per-tag checkouts, artifacts, gates.jsonl.
+BUILD_DIR = "c11-builds"
 # Host mirror name -> checkout path; the host keeps one bare mirror per repository.
 REPOS = {"parent": "", "ghostty": "ghostty", "vendor-bonsplit": "vendor/bonsplit"}
 EXCLUDED = (".git", ".lattice", ".etch", "DerivedData", "build", "build-*",
             "GhosttyKit.xcframework", "ghostty/zig-out", "ghostty/.zig-cache",
             "c11d/zig-out", "c11d/.zig-cache", "web/node_modules")
+# The build host's free-space floor for a new tag lives in atlas_build_slots.py (--tag-floor).
+# This variable replaces the floor for one deliberate build; every use is logged.
+FLOOR_OVERRIDE_ENV = "C11_BUILD_HOST_FLOOR_GIB"
+TAG_FLOOR_REFUSED = 73
 
 
 class ToolchainError(ValueError):
@@ -37,6 +44,85 @@ def run(args, cwd=None, **kwargs):
 
 def git(root, *args):
     return run(["git", "-C", root, *args], stdout=subprocess.PIPE).stdout.decode().strip()
+
+
+def c11_user_runtime_dir():
+    """c11's per-user folder, resolved as scripts/lib/c11-user-paths.sh does: C11_DEV_RUNTIME_DIR
+    when set (tests' own roots), else DARWIN_USER_TEMP_DIR plus c11. Never $TMPDIR."""
+    override = os.environ.get("C11_DEV_RUNTIME_DIR")
+    if override:
+        return Path(override.rstrip("/") or "/")
+    try:
+        temp = os.confstr(65537)  # _CS_DARWIN_USER_TEMP_DIR, what `getconf DARWIN_USER_TEMP_DIR` prints
+    except (ValueError, OSError):
+        temp = None
+    if not temp or not temp.startswith("/"):
+        temp = str(Path.home() / "Library/Caches")
+    return Path(temp.rstrip("/")) / "c11"
+
+
+def ensure_private_dir(path):
+    """Creates `path` 0700, or verifies it is a real folder this user owns and sets it 0700."""
+    if not os.path.lexists(path):
+        previous = os.umask(0o077)
+        try:
+            Path(path).mkdir(mode=0o700, parents=True, exist_ok=True)
+        finally:
+            os.umask(previous)
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+            raise PermissionError(f"{path} is not a folder this user owns")
+        if stat.S_IMODE(info.st_mode) != 0o700:
+            os.fchmod(descriptor, 0o700)
+    finally:
+        os.close(descriptor)
+
+
+def write_private_line(path, value, uid):
+    """Writes one line 0600 as c11_private_write does: an entry another uid owns, or a folder,
+    is refused; anything else at `path` (a link included) is replaced by the rename, never
+    written through. Returns whether it wrote."""
+    path = Path(path)
+    try:
+        info = os.lstat(path)
+        if info.st_uid != uid or stat.S_ISDIR(info.st_mode):
+            return False
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return False
+    try:
+        descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".c11-write.")
+    except OSError:
+        return False
+    try:
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write(value + "\n")
+        os.replace(temporary, path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        return False
+    return True
+
+
+def publish_cli_pointer(cli_path, runtime_dir=None, legacy=Path("/tmp/c11-last-cli-path"), uid=None):
+    """Points the dev shim (`c11-dev`) at a just-installed CLI, as reload.sh does: the per-user
+    pointer first, then the old /tmp one its older readers use (C11H-364 L21). `uid` is the
+    owner an existing pointer must have (tests inject another). A refusal skips that copy."""
+    owner = os.getuid() if uid is None else uid
+    folder = Path(runtime_dir) if runtime_dir is not None else c11_user_runtime_dir()
+    written = []
+    try:
+        ensure_private_dir(folder)
+    except OSError:
+        folder = None
+    for path in ([folder / "c11-last-cli-path"] if folder is not None else []) + [Path(legacy)]:
+        if write_private_line(path, str(cli_path), owner):
+            written.append(path)
+    return written
 
 
 def digest(path):
@@ -75,7 +161,39 @@ def entry(root, name):
             "mode": path.stat().st_mode & 0o777}
 
 
+# c11LogicTests sets TEST_HOST empty. c11Tests points TEST_HOST at the app
+# binary. c11UITests is a UI-test bundle (TEST_TARGET_NAME = c11). Any other
+# target selects scheme c11-unit, which includes c11Tests and launches the app.
+LOGIC_TEST_TARGET = "c11LogicTests"
+HOST_APP_TEST_TARGETS = frozenset({"c11Tests", "c11UITests"})
+
+
+def only_testing_selectors(extra):
+    return [arg.split(":", 1)[1] for arg in extra if arg.startswith("-only-testing:")]
+
+
+def apply_host_test_policy(args):
+    """--mode test runs c11LogicTests only. A host-app selector is refused before shipping."""
+    if getattr(args, "mode", None) != "test":
+        return
+    selectors = only_testing_selectors(args.extra)
+    refused = [selector for selector in selectors if selector.split("/", 1)[0] != LOGIC_TEST_TARGET]
+    if refused:
+        listed = ", ".join("-only-testing:" + selector for selector in refused)
+        hosts = ", ".join(sorted(HOST_APP_TEST_TARGETS))
+        raise ValueError(
+            f"--mode test refuses {listed}: a host-app selector launches the app on the host. "
+            f"Only {LOGIC_TEST_TARGET} runs through this route ({hosts} need the app). "
+            "Guests have no Xcode, so host classes are compile-only on hosts "
+            "(--mode test-build compiles them and runs nothing). "
+            "Prove host behavior in a sandbox guest: scripts/sandbox-up.sh, then scripts/sandbox-tests-v2.sh."
+        )
+    if not selectors:
+        args.extra = ["-only-testing:" + LOGIC_TEST_TARGET, *list(args.extra)]
+
+
 def snapshot(root, payload, args, held=None):
+    apply_host_test_policy(args)
     held = held or {}
     head = git(root, "rev-parse", "HEAD")
     modules = {}
@@ -116,7 +234,7 @@ def snapshot(root, payload, args, held=None):
         if kind:
             bundles[repo] = kind
     test_scheme = selected_test_scheme(args.extra)
-    selectors = [arg.split(":", 1)[1] for arg in args.extra if arg.startswith("-only-testing:")]
+    selectors = only_testing_selectors(args.extra)
     selected_test_targets = {selector.split("/", 1)[0] for selector in selectors}
     host_quarantine = []
     if args.mode == "test" and not args.no_host_quarantine:
@@ -165,8 +283,8 @@ def read_host_test_quarantine(root):
 
 
 def selected_test_scheme(extra):
-    selectors = [arg.split(":", 1)[1] for arg in extra if arg.startswith("-only-testing:")]
-    if selectors and all(selector.startswith("c11LogicTests") for selector in selectors):
+    selectors = only_testing_selectors(extra)
+    if selectors and all(selector.startswith(LOGIC_TEST_TARGET) for selector in selectors):
         return "c11-logic"
     return "c11-unit"
 
@@ -194,7 +312,7 @@ def bundle(repo, path, held):
 @contextlib.contextmanager
 def mirror_lock(repo):
     """Hold the host's lock for one repository mirror; the kernel drops it if the process dies."""
-    mirrors = Path.home() / "c11-builds" / "mirrors"
+    mirrors = Path.home() / BUILD_DIR / "mirrors"
     mirrors.mkdir(parents=True, exist_ok=True)
     with (mirrors / (repo + ".lock")).open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -214,7 +332,7 @@ def ready_mirror(mirror, subpath):
     staging = mirror.with_name(mirror.name + ".init")
     shutil.rmtree(staging, ignore_errors=True)
     run(["git", "init", "--quiet", "--bare", staging])
-    for checkout in sorted((Path.home() / "c11-builds").glob("*/source")):
+    for checkout in sorted((Path.home() / BUILD_DIR).glob("*/source")):
         repo = checkout / subpath
         head = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "HEAD"],
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.decode().strip()
@@ -243,7 +361,7 @@ class Transport:
 
     The local form runs the same command strings from $HOME, the directory an ssh
     session starts in, and maps host:path to $HOME/path. A release driven on the
-    build host itself (Atlas, with its signing keychain) needs no ssh hop and no
+    build host itself (with its signing keychain) needs no ssh hop and no
     authorized_keys entry, and still enters remote() and its admission slots."""
 
     def __init__(self, host):
@@ -276,6 +394,66 @@ def held_heads(transport):
     response = run(transport.command(shlex.join(["python3", "-", "--held-heads"])), cwd=transport.cwd(),
                    input=Path(__file__).read_bytes(), stdout=subprocess.PIPE)
     return json.loads(response.stdout)
+
+
+def floor_override():
+    """C11_BUILD_HOST_FLOOR_GIB as GiB, or None when unset; anything but a number >= 0 is refused."""
+    raw = os.environ.get(FLOOR_OVERRIDE_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        value = -1.0
+    if not (value >= 0 and value != float("inf")):
+        raise ValueError(f"{FLOOR_OVERRIDE_ENV} takes a number of GiB, 0 or more (got {raw!r})")
+    return value
+
+
+def log_floor_override(root, tag, floor):
+    """Print and append one line per override, as the shareable override does; unlogged, it does not proceed."""
+    path = Path.home() / ".local/state/c11/build-host-floor-overrides.log"
+    try:
+        head = git(root, "rev-parse", "--short", "HEAD")
+    except (OSError, subprocess.CalledProcessError):
+        head = "unknown"
+    line = (f"{datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')} context=remote-build "
+            f"tag={tag} head={head} floor_gib={floor:.10g}")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as log:
+            log.write(line + "\n")
+    except OSError as error:
+        raise OSError(f"{FLOOR_OVERRIDE_ENV} override not logged ({error}), so it does not proceed") from error
+    print(f"[remote-build] build-host floor overridden to {floor:.10g} GiB for tag {tag} (logged to {path})",
+          file=sys.stderr, flush=True)
+
+
+def start_tag_floor(transport, root, tag_slug, floor):
+    """Start the host's new-tag floor check: the requester's own atlas_build_slots.py, run from stdin.
+    Returns None when it can't start; the build then goes ahead without it."""
+    command = ["python3", "-", "--tag-floor", tag_slug]
+    if floor is not None:
+        command += ["--floor-gib", f"{floor:.10g}"]
+    try:
+        with (root / "scripts" / "atlas_build_slots.py").open("rb") as script:
+            return subprocess.Popen(transport.command(shlex.join(command)), cwd=transport.cwd(), stdin=script,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError as error:
+        print(f"[remote-build] could not start the build host's floor check: {error}", file=sys.stderr)
+        return None
+
+
+def finish_tag_floor(probe):
+    """Wait for the floor check and pass its text through; returns its exit code (0 when it never started)."""
+    if probe is None:
+        return 0
+    out, err = probe.communicate()
+    sys.stdout.write(out.decode(errors="replace"))
+    sys.stdout.flush()
+    sys.stderr.write(err.decode(errors="replace"))
+    sys.stderr.flush()
+    return probe.returncode
 
 
 def mirror_head(payload, manifest, repo, sha):
@@ -410,7 +588,7 @@ def append_gate_record(manifest, result, *, started):
         "started": started,
         "test_args": manifest["test_args"],
     }
-    path = Path.home() / "c11-builds" / "gates.jsonl"
+    path = Path.home() / BUILD_DIR / "gates.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as gates:
         fcntl.flock(gates.fileno(), fcntl.LOCK_EX)
@@ -422,7 +600,10 @@ def remote(payload, locked=False):
     invocation_started = time.monotonic()
     invocation_started_at = datetime.now().astimezone().isoformat()
     manifest = json.loads((payload / "identity.json").read_text())
-    base = Path.home() / "c11-builds" / manifest["slug"]
+    # Xcode tracks output paths textually. After a build-cache directory moves
+    # behind a symlink, mixing aliases can delete freshly produced libraries as
+    # stale outputs. Use one physical spelling for source, products and logs.
+    base = (Path.home() / BUILD_DIR / manifest["slug"]).resolve()
     artifacts = base / "artifacts" / manifest["invocation"]
     artifacts.mkdir(parents=True, exist_ok=True)
     if not locked:
@@ -437,7 +618,7 @@ def remote(payload, locked=False):
                                     runner, "--remote-locked", payload], env=slot_env)
         except OSError as error:
             code = 4
-            print(f"[remote-build] could not start Atlas admission: {error}", file=sys.stderr)
+            print(f"[remote-build] could not start build-host admission: {error}", file=sys.stderr)
         try:
             result = json.loads((artifacts / "result.json").read_text())
         except (OSError, ValueError):
@@ -510,13 +691,19 @@ def remote(payload, locked=False):
         env["C11_BUILD_LOCK_LABEL"] = "remote:" + manifest["slug"]
         mode = manifest["mode"]
         tag = manifest["tag"]
-        if mode == "test":
+        if mode == "ghosttykit":
+            command = [sys.executable, source / "scripts/build-ghosttykit-admitted.py", artifacts]
+            app = None
+        elif mode in ("test", "test-build"):
             env["C11_TEST_DERIVED_DATA"] = str(base / "derived-test")
             env["C11_TEST_SCHEME"] = manifest.get("test_scheme", "c11-unit")
             if env["C11_TEST_SCHEME"] == "c11-logic":
                 env["C11_TEST_PARALLEL_WORKERS"] = "8"
             # Selected tests must execute, not default to the build action.
-            command = [source / "scripts/test-unit-local.sh", "test", *manifest["test_args"]]
+            # test-build compiles every test target and launches nothing: host
+            # tests may not start an app on the host (CLAUDE.md, Testing).
+            action = "build-for-testing" if mode == "test-build" else "test"
+            command = [source / "scripts/test-unit-local.sh", action, *manifest["test_args"]]
             app = None
         else:
             if mode == "debug":
@@ -572,6 +759,14 @@ def remote(payload, locked=False):
         if mode == "test":
             require_test_success(build_log, source, env)
             result["tests"] = "ok"
+        if mode == "test-build" and "** TEST BUILD SUCCEEDED **" not in build_log:
+            raise ValueError("build-for-testing exited 0 without ** TEST BUILD SUCCEEDED **")
+        if mode == "ghosttykit":
+            if not re.search(r"C11_GHOSTTY_TEST_OK tests=[1-9][0-9]*\b", build_log):
+                raise ValueError("Ghostty kit build did not verify native tests")
+            result["tests"] = "ok"
+            result["kit"] = "GhosttyKit.xcframework.tar.gz"
+            result["kit_sha256"] = digest(artifacts / result["kit"])
         if app:
             if not app.is_dir():
                 raise ValueError("successful build did not produce the requested app")
@@ -601,10 +796,35 @@ def client(args):
         host = args.host
         transport = Transport(host)
         started = time.monotonic()
-        manifest = snapshot(root, payload, args, held_heads(transport))
+        floor = getattr(args, "floor_gib", None)
+        if floor is not None:
+            log_floor_override(root, slug(args.tag), floor)
+        # The floor check shares the held-heads round trip and ends before anything is
+        # bundled, copied or built for this tag, so a refused new tag leaves no folder on the host.
+        # Only the held-heads probe's shared upkeep runs beside it: a missing or broken mirror is
+        # initialized, as on every build.
+        probe = start_tag_floor(transport, root, slug(args.tag), floor)
+        refused = (f"[remote-build] refused: the build host is under its free-space floor for new tag "
+                   f"{args.tag}; nothing was copied for this tag")
+        try:
+            held = held_heads(transport)
+        except Exception:
+            if finish_tag_floor(probe) == TAG_FLOOR_REFUSED:
+                print(refused, file=sys.stderr)
+                return TAG_FLOOR_REFUSED
+            raise
+        floor_code = finish_tag_floor(probe)
+        if floor_code == TAG_FLOOR_REFUSED:
+            print(refused, file=sys.stderr)
+            return TAG_FLOOR_REFUSED
+        if floor_code:
+            # A broken check never stops the fleet: only its refusal (73) does.
+            print(f"[remote-build] the build host's floor check failed (exit {floor_code}); "
+                  "building without it", file=sys.stderr, flush=True)
+        manifest = snapshot(root, payload, args, held)
         for name in ("remote_build.py", "host_test_quarantine.py", "atlas_build_slots.py", "with-build-lock.sh"):
             shutil.copy2(root / "scripts" / name, payload / name)
-        relative = f"c11-builds/{manifest['slug']}/incoming/{manifest['invocation']}"
+        relative = f"{BUILD_DIR}/{manifest['slug']}/incoming/{manifest['invocation']}"
         run(transport.command(shlex.join(["mkdir", "-p", relative])), cwd=transport.cwd())
         run([*transport.rsync("-a"), str(payload) + "/", transport.location(relative) + "/"])
         sent = sum(f.stat().st_size for f in payload.rglob("*") if f.is_file() and not f.is_symlink())
@@ -613,14 +833,14 @@ def client(args):
               flush=True)
         command = shlex.join(["python3", relative + "/remote_build.py", "--remote", relative])
         print(f"[remote-build] host={host} tag={args.tag} invocation={manifest['invocation']} head={manifest['head']}", flush=True)
-        print(f"[remote-build] remote log: ~/c11-builds/{manifest['slug']}/artifacts/{manifest['invocation']}/build.log", flush=True)
+        print(f"[remote-build] remote log: ~/{BUILD_DIR}/{manifest['slug']}/artifacts/{manifest['invocation']}/build.log", flush=True)
         process = subprocess.run(transport.command(command), cwd=transport.cwd(),
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(process.stdout, end="", flush=True)
         local = root / "build-remote" / manifest["invocation"]
         local.mkdir(parents=True)
         (local / "transport.log").write_text(process.stdout)
-        remote_artifacts = f"c11-builds/{manifest['slug']}/artifacts/{manifest['invocation']}/"
+        remote_artifacts = f"{BUILD_DIR}/{manifest['slug']}/artifacts/{manifest['invocation']}/"
         retrieved = subprocess.run([*transport.rsync("-az"), transport.location(remote_artifacts), str(local) + "/"])
         print(f"[remote-build] logs and identity: {local}")
         if process.returncode:
@@ -634,10 +854,18 @@ def client(args):
             raise ValueError("remote result/source identity mismatch")
         if result["compile"] != "ok" or (args.mode == "test" and result["tests"] != "ok"):
             raise ValueError("remote build/test result failed")
+        if args.mode == "test-build":
+            print("C11_REMOTE_OK compile=ok tests=not-run (build-for-testing; nothing launched)")
+            return 0
         if args.mode == "test":
             print("C11_REMOTE_OK compile=ok tests=ok quarantined=%d" %
                   sum(1 for item in result.get("host_test_quarantine", [])
                       if item.get("auto_skipped")))
+            return 0
+        if args.mode == "ghosttykit":
+            if result["tests"] != "ok" or digest(local / result["kit"]) != result["kit_sha256"]:
+                raise ValueError("retrieved Ghostty kit verification failed")
+            print(f"GHOSTTYKIT_PATH={local / result['kit']}\nC11_REMOTE_OK compile=ok tests=ok")
             return 0
         app = local / result["app"]
         if digest(app / "Contents/MacOS/c11") != result["executable_sha256"]:
@@ -673,14 +901,7 @@ def client(args):
         (local / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         if args.mode == "debug":
             # Publish the convenience CLI pointer only after a complete artifact replace.
-            pointer = Path("/tmp/c11-last-cli-path")
-            staged_pointer = pointer.with_name(pointer.name + "-" + manifest["invocation"])
-            try:
-                staged_pointer.write_text(str(destination / "Contents/Resources/bin/c11") + "\n")
-                staged_pointer.chmod(0o600)
-                staged_pointer.replace(pointer)
-            except OSError:
-                staged_pointer.unlink(missing_ok=True)
+            publish_cli_pointer(destination / "Contents/Resources/bin/c11")
         print(f"APP_PATH={destination}\nC11_REMOTE_OK compile=ok tests=na")
         if args.launch:
             run([root / "scripts/launch-tagged-automation.sh", args.tag, "--qa", "fresh"])
@@ -694,9 +915,12 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] in ("--remote", "--remote-locked"):
         return remote(Path(sys.argv[2]).resolve(), locked=sys.argv[1] == "--remote-locked")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default=os.environ.get("C11_REMOTE_HOST", "atlas"))
+    parser.add_argument("--host", help="ssh host to build on (else C11_REMOTE_HOST, from the environment or "
+                                       "~/.config/c11/dev-hosts)")
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--mode", choices=("debug", "test", "release"), default="debug")
+    parser.add_argument("--mode", choices=("debug", "test", "test-build", "release", "ghosttykit"), default="debug",
+                        help="test runs c11LogicTests only and refuses a host-app selector; "
+                             "test-build compiles the test targets (build-for-testing) and runs nothing")
     parser.add_argument("--no-host-quarantine", action="store_true",
                         help="run quarantined c11Tests and c11LogicTests methods from the shared inventory")
     parser.add_argument("--launch", action="store_true", help="launch a returned Debug app with QA fresh")
@@ -708,6 +932,10 @@ def main():
         args.extra.pop(0)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", args.tag):
         parser.error("tag must be 1–64 letters, digits, dots, underscores or hyphens")
+    if not args.host:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from dev_hosts import dev_host
+        args.host = dev_host("C11_REMOTE_HOST", "--host")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9@._-]*", args.host):
         parser.error("invalid SSH host")
     if args.launch and args.mode != "debug":
@@ -716,6 +944,12 @@ def main():
         parser.error("extra arguments require --mode test")
     if args.mode != "release" and (args.clean or args.wmo or args.universal):
         parser.error("--clean/--wmo/--universal require --mode release")
+    # Refuse a host-app selector before client() stages or sends anything.
+    apply_host_test_policy(args)
+    try:
+        args.floor_gib = floor_override()
+    except ValueError as error:
+        parser.error(str(error))
     return client(args)
 
 

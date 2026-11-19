@@ -196,6 +196,59 @@ final class HealthIPSParserTests: XCTestCase {
                        "malformed timestamp must fall back to mtime (which is 'now') silently")
     }
 
+    // c11-2.0:begin-keep (the retired c11h line is the foreign one here)
+    func testScanIPSIgnoresForeignTopLevelAndForeignBundleDirectories() throws {
+        let tmp = try makeTempHome()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let reports = tmp.appendingPathComponent("Library/Logs/DiagnosticReports", isDirectory: true)
+        let foreignDir = reports.appendingPathComponent("com.stage11.c11h", isDirectory: true)
+        let ownDir = reports.appendingPathComponent("com.stage11.c11.debug.foo", isDirectory: true)
+        try FileManager.default.createDirectory(at: foreignDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: ownDir, withIntermediateDirectories: true)
+        let body = Data("{\"bundleID\":\"com.stage11.c11h\",\"bug_type\":\"309\"}\n".utf8)
+        try body.write(to: reports.appendingPathComponent("c11h-review-fixture.ips"))
+        try body.write(to: reports.appendingPathComponent("c11mux-review-fixture.ips"))
+        try body.write(to: reports.appendingPathComponent("c11-review-fixture.ips"))
+        try body.write(to: foreignDir.appendingPathComponent("Crash.ips"))
+        try body.write(to: ownDir.appendingPathComponent("Crash.ips"))
+
+        let paths = scanIPS(home: tmp.path, since: .distantPast).map(\.path)
+        XCTAssertEqual(paths.filter { $0.contains("c11-review-fixture.ips") }.count, 1)
+        XCTAssertEqual(paths.filter { $0.contains("/com.stage11.c11.debug.foo/") }.count, 1)
+        XCTAssertTrue(paths.allSatisfy { !$0.contains("c11h-review-fixture.ips") && !$0.contains("c11mux-review-fixture.ips") })
+        XCTAssertTrue(paths.allSatisfy { !$0.contains("/com.stage11.c11h/") })
+    }
+    // c11-2.0:end-keep
+
+    // c11-2.0:begin-keep (the retired c11h line is the foreign one here)
+    func testTopLevelIPSNamesStayInsideC11() {
+        for name in [
+            "c11.ips",
+            "c11-2026-05-03-151900.ips",
+            "c11.runtime.ips",
+            "c11 fallback.ips",
+            "com.stage11.c11.ips",
+            "com.stage11.c11.debug.foo.ips",
+            "Crash-com.stage11.c11-2026.ips",
+        ] {
+            XCTAssertTrue(isC11TopLevelIPSFileName(name), name)
+        }
+        for name in [
+            "c11h.ips",
+            "c11h-2026-05-03-151900.ips",
+            "c11mux.ips",
+            "c11mux-review.ips",
+            "cmux.ips",
+            "com.stage11.c11h.ips",
+            "com.stage11.c11h.debug.ips",
+            "com.stage11.c11hh.ips",
+            "notes.ips",
+        ] {
+            XCTAssertFalse(isC11TopLevelIPSFileName(name), name)
+        }
+    }
+    // c11-2.0:end-keep
+
     func testScanIPSGracefulOnMissingDirectory() {
         let events = scanIPS(home: "/nonexistent/path-that-cannot-exist-1234", since: Date.distantPast)
         XCTAssertTrue(events.isEmpty)

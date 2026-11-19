@@ -58,7 +58,7 @@ fi
 copy_paths=(tests_v2)
 [[ -d "$REPO_ROOT/tests/fixtures" ]] && copy_paths+=(tests/fixtures)
 rel_out=".c11-sandbox/out/${run_id}/suite-src"
-ssh_host="$(sandbox_host_name)"
+ssh_host="$(sandbox_host_name)" || exit 2
 if [[ "$ssh_host" != "local" ]]; then
   ssh -o BatchMode=yes -o ConnectTimeout=25 -o LogLevel=ERROR "$ssh_host" \
     "rm -rf \"\$HOME/${rel_out}\" && mkdir -p \"\$HOME/${rel_out}\""

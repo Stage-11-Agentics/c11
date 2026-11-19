@@ -6,6 +6,320 @@ import XCTest
 @testable import c11
 #endif
 
+/// These tests exercise the once-per-terminal and guard bookkeeping against a
+/// fake attachment, so they send straight to it. Production never does: it
+/// uses the runtime overload, which the input-fault tests below cover.
+extension HCConversationResumeSubmission {
+    @MainActor
+    fileprivate func submit(
+        panelID: UUID, attachment: any HCAttachment, attemptEpoch: Date? = nil, text: String, submitReturn: Bool,
+        permitsResume: @escaping @MainActor @Sendable () -> Bool,
+        screenGuard: @escaping HCInputGuard, returnGuard: @escaping HCInputGuard
+    ) async -> HCInputOutcome {
+        await submit(panelID: panelID, attachment: attachment, attemptEpoch: attemptEpoch, text: text, submitReturn: submitReturn,
+            permitsResume: permitsResume, screenGuard: screenGuard, returnGuard: returnGuard,
+            send: { await attachment.submit($0) })
+    }
+}
+
+final class HCConversationRecoveryTests: XCTestCase {
+    private let key = HCTerminalKey(owningCoreID: "test-core", localAddress: "1")
+
+    func testRecoveryRequiresAuthoritativeEndForPersistentIdentity() {
+        let panelID = UUID()
+        let identity = HCPanelIdentity(panelID: panelID, key: key)
+        let saved: Set<UUID> = [panelID]
+        let revision = HCRevision(connectionGeneration: 1, sequence: 1)
+        let lifecycle: [HCLifecycle] = [
+            .new, .live(HCTerminalRecord(key: key, state: .running)),
+            .unresolved(identity, .connectionLost),
+            .ended(HCEndEvidence(id: UUID(), key: key, revision: revision, kind: .postAdoptionAbsence))
+        ]
+        XCTAssertFalse(HCConversationRecoveryPolicy.permitsDeadProcessRecovery(
+            surfaceID: panelID.uuidString, savedPersistentPanels: saved, lookup: { _ in nil }))
+        for (index, state) in lifecycle.enumerated() {
+            let allowed = HCConversationRecoveryPolicy.permitsDeadProcessRecovery(
+                surfaceID: panelID.uuidString, savedPersistentPanels: saved,
+                lookup: { _ in .init(identity: identity, lifecycle: state, creation: nil) })
+            XCTAssertEqual(allowed, index == 3)
+        }
+        let fallback = HCPanelIdentity(panelID: panelID, persistence: .nonpersistent)
+        XCTAssertTrue(HCConversationRecoveryPolicy.permitsDeadProcessRecovery(
+            surfaceID: panelID.uuidString, savedPersistentPanels: saved,
+            lookup: { _ in .init(identity: fallback, lifecycle: .new, creation: nil) }))
+    }
+
+    @MainActor
+    func testResumeRefusesSurvivorAndRechecksBeforeInput() async {
+        let sender = HCConversationResumeSubmission()
+        let attachment = ResumeAttachment(key: key)
+        var allowed = false
+        _ = await sender.submit(panelID: UUID(), attachment: attachment, text: "resume", submitReturn: true,
+            permitsResume: { allowed }, screenGuard: { _ in true }, returnGuard: { _ in true })
+        XCTAssertEqual(attachment.requests.count, 0)
+        allowed = true
+        attachment.beforeGuard = { allowed = false }
+        _ = await sender.submit(panelID: UUID(), attachment: attachment, text: "resume", submitReturn: true,
+            permitsResume: { allowed }, screenGuard: { _ in true }, returnGuard: { _ in true })
+        XCTAssertEqual(attachment.writes, 0)
+    }
+
+    @MainActor
+    func testResumeWritesOncePerTerminalEvenAfterUncertainTransmission() async {
+        let sender = HCConversationResumeSubmission()
+        let first = ResumeAttachment(key: key)
+        first.uncertain = true
+        for _ in 0..<2 {
+            _ = await sender.submit(panelID: UUID(), attachment: first, text: "claude --resume exact", submitReturn: true,
+                permitsResume: { true }, screenGuard: { _ in true }, returnGuard: { _ in true })
+        }
+        XCTAssertEqual(first.requests.count, 1)
+        XCTAssertEqual(first.writes, 1)
+        XCTAssertEqual(first.requests.first?.source, .resume)
+        XCTAssertEqual(first.requests.first?.submitReturn, true)
+        let second = ResumeAttachment(key: .init(owningCoreID: "test-core", localAddress: "2"))
+        _ = await sender.submit(panelID: UUID(), attachment: second, text: "claude --resume exact", submitReturn: true,
+            permitsResume: { true }, screenGuard: { _ in true }, returnGuard: { _ in true })
+        XCTAssertEqual(second.writes, 1)
+    }
+
+    /// C11H-272: a live shell an agent left takes one resume per empty
+    /// prompt, uncertain writes included; a newer prompt takes its own. The
+    /// replacement terminal's once-only attempt is a separate one.
+    @MainActor
+    func testLiveShellResumeIsOncePerEmptyPrompt() async {
+        let sender = HCConversationResumeSubmission()
+        let shell = ResumeAttachment(key: key)
+        shell.uncertain = true
+        let first = Date(timeIntervalSince1970: 1_000)
+        for _ in 0..<2 {
+            _ = await sender.submit(panelID: UUID(), attachment: shell, attemptEpoch: first, text: "codex resume --yolo x",
+                submitReturn: true, permitsResume: { true }, screenGuard: { _ in true }, returnGuard: { _ in true })
+        }
+        XCTAssertEqual(shell.writes, 1, "the same prompt never takes a second resume")
+        let outcome = await sender.submit(panelID: UUID(), attachment: shell, attemptEpoch: first.addingTimeInterval(60),
+            text: "codex resume --yolo x", submitReturn: true,
+            permitsResume: { true }, screenGuard: { _ in true }, returnGuard: { _ in true })
+        XCTAssertEqual(shell.writes, 2, "a newer empty prompt takes its own: \(outcome)")
+        _ = await sender.submit(panelID: UUID(), attachment: shell, text: "codex resume --yolo x", submitReturn: true,
+            permitsResume: { true }, screenGuard: { _ in true }, returnGuard: { _ in true })
+        XCTAssertEqual(shell.writes, 3, "the replacement route keeps its own once-only attempt")
+    }
+
+    @MainActor
+    func testZeroByteRefusalPermitsExplicitRetryWithNewGuard() async {
+        let sender = HCConversationResumeSubmission()
+        let attachment = ResumeAttachment(key: key)
+        _ = await sender.submit(panelID: UUID(), attachment: attachment, text: "resume", submitReturn: true,
+            permitsResume: { true }, screenGuard: { _ in false }, returnGuard: { _ in true })
+        XCTAssertEqual(attachment.writes, 0)
+        _ = await sender.submit(panelID: UUID(), attachment: attachment, text: "resume", submitReturn: true,
+            permitsResume: { true }, screenGuard: { _ in true }, returnGuard: { _ in true })
+        XCTAssertEqual(attachment.requests.count, 2)
+        XCTAssertEqual(attachment.writes, 1)
+    }
+
+    @MainActor
+    func testResumeRechecksBeforeReturnAndDoesNotReplayPartialWrite() async {
+        let sender = HCConversationResumeSubmission()
+        let attachment = ResumeAttachment(key: key)
+        var allowed = true
+        attachment.beforeReturn = { allowed = false }
+        _ = await sender.submit(panelID: UUID(), attachment: attachment, text: "resume", submitReturn: true,
+            permitsResume: { allowed }, screenGuard: { _ in true }, returnGuard: { _ in true })
+        XCTAssertEqual(attachment.writes, 1)
+        XCTAssertEqual(attachment.returns, 0)
+        allowed = true
+        attachment.beforeReturn = nil
+        _ = await sender.submit(panelID: UUID(), attachment: attachment, text: "resume", submitReturn: true,
+            permitsResume: { allowed }, screenGuard: { _ in true }, returnGuard: { _ in true })
+        XCTAssertEqual(attachment.requests.count, 1)
+    }
+
+
+    /// Startup replacement publishes ended, creationPending, then a bound
+    /// replacement while the conversation audit is still running. Recovery
+    /// must still know which ended terminal it answers to at every step.
+    func testEndedSourceSurvivesReplacementAdvancingPastEnded() {
+        let panelID = UUID()
+        defer { HCPanelRestoreState.shared.remove(panelID: panelID) }
+        let revision = HCRevision(connectionGeneration: 1, sequence: 1)
+        let proof = HCEndEvidence(id: UUID(), key: key, revision: revision, kind: .finished, hcReason: "holder_lost")
+        let identity = HCPanelIdentity(panelID: panelID, key: key)
+        HCPanelRestoreState.shared.seed(identity)
+        HCPanelRestoreState.shared.publish(identity: identity, lifecycle: .ended(proof))
+        func source() -> HCRecoveryEndedProof.Source? {
+            let entry = HCPanelRestoreState.shared.entry(for: panelID)
+            return HCRecoveryEndedProof.source(lifecycle: entry?.lifecycle ?? .new, creation: entry?.creation)
+        }
+        func alive() -> Bool {  // liveness: Quit and no-resume bulk mutations
+            HCConversationRecoveryPolicy.permitsDeadProcessRecovery(
+                surfaceID: panelID.uuidString, savedPersistentPanels: [panelID])
+        }
+        func policy() -> Bool {  // late audit commit for the old conversation
+            HCConversationRecoveryPolicy.permitsRecoveryCommit(
+                surfaceID: panelID.uuidString, savedPersistentPanels: [panelID])
+        }
+        XCTAssertEqual(source(), .init(key: key, replacementStarted: false))
+        XCTAssertTrue(policy())
+        XCTAssertTrue(alive(), "an ended terminal is dead")
+
+        let creationID = UUID()
+        HCPanelRestoreState.shared.recordCreation(panelID: panelID, creationID: creationID, replacing: proof)
+        HCPanelRestoreState.shared.publish(identity: identity, lifecycle: .unresolved(identity, .creationPending))
+        XCTAssertEqual(source(), .init(key: key, replacementStarted: true),
+                       "the replaced end evidence is lost while creation is pending")
+        XCTAssertTrue(policy(), "a slow verdict commit is refused once the replacement started")
+        XCTAssertFalse(alive(), "past provenance made a replacement terminal count as dead")
+
+        let replacementKey = HCTerminalKey(owningCoreID: "test-core", localAddress: "2")
+        let record = HCTerminalRecord(key: replacementKey, state: .running,
+            labels: ["c11.creation": creationID.uuidString], pid: 4242)
+        HCPanelRestoreState.shared.publish(
+            identity: HCPanelIdentity(panelID: panelID, key: replacementKey, persistence: .persistent,
+                creationID: creationID, origin: .fresh),
+            lifecycle: .live(record))
+        XCTAssertEqual(source(), .init(key: key, replacementStarted: true),
+                       "the bound replacement forgot which terminal it replaced")
+        XCTAssertTrue(policy())
+        XCTAssertFalse(alive(), "a live replacement agent counts as dead")
+    }
+
+    func testEndedSourceNeverCoversSurvivorsFreshTerminalsOrRejectedCreation() {
+        let panelID = UUID()
+        defer { HCPanelRestoreState.shared.remove(panelID: panelID) }
+        let identity = HCPanelIdentity(panelID: panelID, key: key)
+        let record = HCTerminalRecord(key: key, state: .running, pid: 1)
+        // A restored survivor: live, never ended, no creation.
+        XCTAssertNil(HCRecoveryEndedProof.source(lifecycle: .live(record), creation: nil))
+        // A brand-new terminal replaces no end evidence.
+        let fresh = HCCreationProvenance(creationID: UUID(), replaces: nil, outcome: .bound, boundKey: key)
+        XCTAssertNil(HCRecoveryEndedProof.source(lifecycle: .live(record), creation: fresh))
+        // A keyless end proof cannot name a terminal.
+        let keyless = HCEndEvidence(id: UUID(), key: nil, creationID: UUID(),
+            revision: HCRevision(connectionGeneration: 1, sequence: 1), kind: .finished)
+        XCTAssertNil(HCRecoveryEndedProof.source(lifecycle: .ended(keyless), creation: nil))
+        // A creation refused before transmission replaced nothing.
+        let proof = HCEndEvidence(id: UUID(), key: key,
+            revision: HCRevision(connectionGeneration: 1, sequence: 1), kind: .finished)
+        let rejected = HCCreationProvenance(creationID: UUID(), replaces: proof, outcome: .rejected, boundKey: nil)
+        XCTAssertNil(HCRecoveryEndedProof.source(lifecycle: .unresolved(identity, .creationPending), creation: rejected))
+        // The current end wins over an older retained replacement.
+        let newer = HCEndEvidence(id: UUID(), key: HCTerminalKey(owningCoreID: "test-core", localAddress: "9"),
+            revision: HCRevision(connectionGeneration: 1, sequence: 2), kind: .finished)
+        let retained = HCCreationProvenance(creationID: UUID(), replaces: proof, outcome: .bound, boundKey: key)
+        XCTAssertEqual(HCRecoveryEndedProof.source(lifecycle: .ended(newer), creation: retained),
+                       .init(key: newer.key!, replacementStarted: false))
+    }
+
+
+    /// A replacement attempt that throws before any terminal exists (a relaunch
+    /// whose surface has no launch spec or window yet) must not consume the
+    /// ended key; one that startup already began must keep its plan.
+    func testFailedReplacementReleasesTheEndedKeyUnlessOneIsUnderway() {
+        let proof = HCEndEvidence(id: UUID(), key: key,
+            revision: HCRevision(connectionGeneration: 1, sequence: 1), kind: .finished, hcReason: "server_stop")
+        let ended = HCRecoveryEndedProof.source(lifecycle: .ended(proof), creation: nil)
+        XCTAssertTrue(HCRecoveryEndedProof.shouldReleasePlanAfterFailedReplacement(endedKey: key, current: ended),
+                      "a failed attempt before any terminal exists consumed the ended key")
+        let creation = HCCreationProvenance(creationID: UUID(), replaces: proof, outcome: .attempted, boundKey: nil)
+        let underway = HCRecoveryEndedProof.source(lifecycle: .unresolved(HCPanelIdentity(panelID: UUID(), key: key),
+            .creationPending), creation: creation)
+        XCTAssertFalse(HCRecoveryEndedProof.shouldReleasePlanAfterFailedReplacement(endedKey: key, current: underway),
+                       "startup's own replacement was abandoned")
+        XCTAssertTrue(HCRecoveryEndedProof.shouldReleasePlanAfterFailedReplacement(endedKey: key, current: nil))
+        let other = HCEndEvidence(id: UUID(), key: HCTerminalKey(owningCoreID: "test-core", localAddress: "9"),
+            revision: HCRevision(connectionGeneration: 1, sequence: 2), kind: .finished)
+        XCTAssertTrue(HCRecoveryEndedProof.shouldReleasePlanAfterFailedReplacement(
+            endedKey: key, current: HCRecoveryEndedProof.source(lifecycle: .ended(other), creation: nil)))
+    }
+
+    /// C11H-205: End All ends this install's terminals, never one another
+    /// install labelled (a staging build here, another Mac's on Studio).
+    func testEndAllLeavesAnotherInstallsTerminalsRunning() {
+        let mine = "mine-install", theirs = "staging-install"
+        let ownLocal = HCTerminalRecord(key: HCTerminalKey(owningCoreID: "test-core", localAddress: "t1"), state: .running,
+            labels: [HCOwnerLabels.app: mine])
+        let legacyLocal = HCTerminalRecord(key: HCTerminalKey(owningCoreID: "test-core", localAddress: "t2"), state: .running)
+        let stagingLocal = HCTerminalRecord(key: HCTerminalKey(owningCoreID: "test-core", localAddress: "t3"), state: .running,
+            labels: [HCOwnerLabels.app: theirs])
+        let ownAtlas = HCTerminalRecord(key: HCTerminalKey(owningCoreID: "studio", localAddress: "t4"), state: .running,
+            labels: [HCOwnerLabels.app: mine], machineName: "studio", machineAvailability: .connected)
+        let otherMacAtlas = HCTerminalRecord(key: HCTerminalKey(owningCoreID: "studio", localAddress: "t5"), state: .running,
+            machineName: "studio", machineAvailability: .connected)
+        let records = [ownLocal, legacyLocal, stagingLocal, ownAtlas, otherMacAtlas]
+        let revision = HCRevision(connectionGeneration: 1, sequence: 1)
+        let targets = HCEndAllTargets.identities(panels: [],
+            inventory: HCInventorySnapshot(readiness: .ready(revision), revision: revision,
+                records: Dictionary(uniqueKeysWithValues: records.map { ($0.key, $0) })), appInstallID: mine)
+        XCTAssertEqual(Set(targets.compactMap(\.key)), [ownLocal.key, legacyLocal.key, ownAtlas.key])
+    }
+
+    func testEndAllIncludesInventoryOnlySessionsAndDeduplicatesExactKeys() {
+        let visible = HCPanelIdentity(panelID: UUID(), key: key)
+        let duplicate = HCPanelIdentity(panelID: UUID(), key: key)
+        let unresolved = HCPanelIdentity(panelID: UUID())
+        let orphanKey = HCTerminalKey(owningCoreID: "test-core", localAddress: "2")
+        let endedKey = HCTerminalKey(owningCoreID: "test-core", localAddress: "3")
+        let records = [HCTerminalRecord(key: key, state: .running),
+            HCTerminalRecord(key: orphanKey, state: .running, labels: ["c11.panel": visible.panelID.uuidString]),
+            HCTerminalRecord(key: endedKey, state: .finished)]
+        let revision = HCRevision(connectionGeneration: 1, sequence: 1)
+        let targets = HCEndAllTargets.identities(panels: [visible, duplicate, unresolved],
+            inventory: HCInventorySnapshot(readiness: .ready(revision), revision: revision,
+                records: Dictionary(uniqueKeysWithValues: records.map { ($0.key, $0) })))
+        XCTAssertEqual(targets.count, 3)
+        XCTAssertEqual(Set(targets.compactMap(\.key)), [key, orphanKey])
+        XCTAssertTrue(targets.contains(unresolved))
+        XCTAssertEqual(Set(targets.map(\.panelID)).count, 3)
+        let bound = HCEndAllTargets.identities(panels: [unresolved],
+            inventory: HCInventorySnapshot(readiness: .ready(revision), revision: revision,
+                records: [orphanKey: records[1]], panelBindings: [unresolved.panelID: orphanKey]))
+        XCTAssertEqual(bound.count, 1)
+        XCTAssertEqual(bound.first?.key, orphanKey)
+        let replacement = HCPanelIdentity(panelID: unresolved.panelID, creationID: UUID())
+        let pendingReplacement = HCEndAllTargets.identities(panels: [replacement],
+            inventory: HCInventorySnapshot(readiness: .ready(revision), revision: revision,
+                records: [orphanKey: records[1]], panelBindings: [unresolved.panelID: orphanKey]))
+        XCTAssertEqual(pendingReplacement.first?.panelID, replacement.panelID)
+        XCTAssertNil(pendingReplacement.first?.key, "An old binding cannot resolve the pending replacement end")
+        XCTAssertEqual(pendingReplacement.count, 2, "End the known orphan and keep the unresolved creation intent")
+    }
+
+    @MainActor
+    private final class ResumeAttachment: HCAttachment, HCInputPort {
+        nonisolated let key: HCTerminalKey
+        nonisolated let generation: UInt64 = 1
+        nonisolated var input: any HCInputPort { self }
+        var requests: [HCInputRequest] = []
+        var writes = 0
+        var returns = 0
+        var uncertain = false
+        var beforeGuard: (() -> Void)?
+        var beforeReturn: (() -> Void)?
+        init(key: HCTerminalKey) { self.key = key }
+        func submit(_ request: HCInputRequest) async -> HCInputOutcome {
+            requests.append(request)
+            beforeGuard?()
+            let receipt = HCScreenReceipt(revision: .init(attachmentGeneration: generation, displayGeneration: 1),
+                parsedOutputWatermark: 1, columns: 80, rows: 24)
+            guard request.screenGuard?(receipt) == true else { return .refused(.guardRefused) }
+            writes += 1
+            beforeReturn?()
+            let returned = request.submitReturn && request.returnGuard?(receipt) == true
+            if returned { returns += 1 }
+            let result = HCWriteReceipt(operationID: request.operationID, attachmentGeneration: generation,
+                bodyBytesWritten: request.payload.count, returnWritten: returned)
+            return uncertain || (request.submitReturn && !returned) ? .uncertain(result) : .written(result)
+        }
+        nonisolated func screenCurrent(after revision: HCDisplayRevision) async -> HCScreenReceipt? { nil }
+        nonisolated func updateDisplay(_ display: HCDisplayState) async -> HCControlOutcome { .written }
+        nonisolated func detach() {}
+        nonisolated func receiveRaw(_ bytes: Data, kind: HCRawInputKind, generation: UInt64) {}
+        nonisolated func invalidate(generation: UInt64, reason: HCInputRefusal) {}
+    }
+}
+
 /// C11-468 (logic-only, member of `c11LogicTests`). The startup conversation
 /// audit decides resume per panel: exact causal refs never wait on, or lose
 /// state to, a scrape; a failed or slow phase writes nothing.
@@ -191,6 +505,169 @@ final class StartupConversationAuditTests: XCTestCase {
     }
 
     // MARK: - Acceptance
+
+    func testFreshLaunchQuitPreservesPersistentAgentWithoutRestoreSnapshot() async {
+        let store = ConversationStore()
+        let audit = StartupConversationAudit()
+        audit.beginWithoutAudit(mode: .clean, store: store, permitsDeadProcessRecovery: { _ in false })
+        await audit.awaitSeeded()
+        _ = await store.push(surfaceId: "fresh", kind: "claude-code", id: uuid(0xC1, 79), source: .hook)
+        await store.suspendAllAlive()
+        let records = await store.snapshot()
+        XCTAssertEqual(records["fresh"]?.active?.state, .alive)
+    }
+
+    /// hc's inventory is authoritative even when transcripts cannot be
+    /// verified. Neither a dirty launch nor a clean Quit ends these agents.
+    func testPersistentClaudeAndCodexStayAliveAcrossDirtyAuditAndQuit() async {
+        let panels = [claudePanel(80), codexPanel(80)]
+        let store = ConversationStore()
+        var env = environment(store: store, scrapers: [], filesystem: MockFS(), report: ReportBox())
+        env.permitsDeadProcessRecovery = { _ in false }
+        let audit = StartupConversationAudit()
+        audit.begin(mode: .dirty, snapshot: snapshot(panels), environment: env)
+        _ = await audit.awaitReport()
+        await store.suspendAllAlive()
+        let records = await store.snapshot()
+        for panel in panels {
+            XCTAssertEqual(records[panel.id.uuidString]?.active, panel.ref)
+        }
+    }
+
+    /// Real policy, real restore state, real store. `replaces` is kept for the
+    /// replacement's whole lifetime, so the policy must never read it as
+    /// "dead": old terminal ended, replacement bound, resumed agent alive.
+    private func seedReplacement(_ panel: Panel, bound: Bool) async -> ConversationStore {
+        let panelID = panel.id
+        let oldKey = HCTerminalKey(owningCoreID: "test-core", localAddress: "old")
+        let newKey = HCTerminalKey(owningCoreID: "test-core", localAddress: "new")
+        let proof = HCEndEvidence(id: UUID(), key: oldKey,
+            revision: HCRevision(connectionGeneration: 1, sequence: 1), kind: .finished, hcReason: "server_stop")
+        let identity = HCPanelIdentity(panelID: panelID, key: oldKey)
+        HCPanelRestoreState.shared.seed(identity)
+        HCPanelRestoreState.shared.publish(identity: identity, lifecycle: .ended(proof))
+        let creationID = UUID()
+        HCPanelRestoreState.shared.recordCreation(panelID: panelID, creationID: creationID, replacing: proof)
+        if bound {
+            HCPanelRestoreState.shared.publish(
+                identity: HCPanelIdentity(panelID: panelID, key: newKey, persistence: .persistent,
+                    creationID: creationID, origin: .fresh),
+                lifecycle: .live(HCTerminalRecord(key: newKey, state: .running,
+                    labels: ["c11.creation": creationID.uuidString], pid: 4242)))
+        } else {
+            HCPanelRestoreState.shared.publish(identity: identity,
+                lifecycle: .unresolved(identity, .creationPending))
+        }
+        let saved: Set<UUID> = [panelID]
+        let store = ConversationStore()
+        _ = await store.seed(from: [panelID.uuidString: PanelConversations(active: panel.ref)],
+            permitsDeadProcessRecovery: { HCConversationRecoveryPolicy.permitsDeadProcessRecovery(
+                surfaceID: $0, savedPersistentPanels: saved) },
+            permitsRecoveryCommit: { HCConversationRecoveryPolicy.permitsRecoveryCommit(
+                surfaceID: $0, savedPersistentPanels: saved) })
+        return store
+    }
+
+    func testLiveReplacementAgentIsNeverSuspendedByQuitOrNoResume() async {
+        let panel = claudePanel(86)
+        defer { HCPanelRestoreState.shared.remove(panelID: panel.id) }
+        let store = await seedReplacement(panel, bound: true)
+        await store.suspendAllAlive()
+        var records = await store.snapshot()
+        XCTAssertEqual(records[panel.id.uuidString]?.active, panel.ref,
+                       "clean Quit suspended an agent that is still running in its replacement terminal")
+        await store.markAllUnknown()
+        records = await store.snapshot()
+        XCTAssertEqual(records[panel.id.uuidString]?.active, panel.ref,
+                       "no-resume marked a live replacement agent unknown")
+    }
+
+    /// The reason the retained evidence exists: a slow audit must still be able
+    /// to settle the OLD conversation while its replacement is being created.
+    func testDelayedAuditStillCommitsWhileTheReplacementIsBeingCreated() async {
+        let panel = claudePanel(87)
+        defer { HCPanelRestoreState.shared.remove(panelID: panel.id) }
+        let store = await seedReplacement(panel, bound: false)
+        let verdicts = ConversationStore.crashTranscriptVerdicts(
+            for: await store.snapshot(), registry: .v1, filesystem: MockFS())
+        await store.applyCrashTranscriptVerdicts(verdicts)
+        let records = await store.snapshot()
+        XCTAssertNotEqual(records[panel.id.uuidString]?.active?.state, .alive,
+                          "the delayed audit verdict was refused while the replacement was pending")
+    }
+
+    func testPersistentReconciliationPrecedesCrashClassification() async {
+        final class Lifecycle: @unchecked Sendable {
+            private let lock = NSLock()
+            private var ended = false
+            func confirmEnd() { lock.lock(); ended = true; lock.unlock() }
+            func permitsRecovery() -> Bool { lock.lock(); defer { lock.unlock() }; return ended }
+        }
+        let panel = claudePanel(81)
+        let lifecycle = Lifecycle()
+        let store = ConversationStore()
+        var env = environment(store: store, scrapers: [], filesystem: filesystem(for: [panel]), report: ReportBox())
+        env.permitsDeadProcessRecovery = { _ in lifecycle.permitsRecovery() }
+        env.reconcilePersistentTerminals = { lifecycle.confirmEnd() }
+        let audit = StartupConversationAudit()
+        audit.begin(mode: .dirty, snapshot: snapshot([panel]), environment: env)
+        _ = await audit.awaitReport()
+        let records = await store.snapshot()
+        XCTAssertEqual(records[panel.id.uuidString]?.active?.state, .suspended)
+        XCTAssertTrue(isCommand(decision(panel, in: records, mode: .dirty)))
+    }
+
+    func testUnresolvedPersistentRefSurvivesNoResumeAndLateVerdict() async {
+        let panel = claudePanel(82)
+        let store = ConversationStore()
+        _ = await store.seed(from: [panel.id.uuidString: PanelConversations(active: panel.ref)],
+                             permitsDeadProcessRecovery: { _ in false })
+        let verdicts = ConversationStore.crashTranscriptVerdicts(
+            for: await store.snapshot(), registry: .v1, filesystem: MockFS())
+        await store.markAllUnknown(reason: "app restart --no-resume")
+        await store.applyCrashTranscriptVerdicts(verdicts)
+        let records = await store.snapshot()
+        XCTAssertEqual(records[panel.id.uuidString]?.active, panel.ref,
+                       "uncertain inventory is never proof of a dead process")
+    }
+
+    func testLateScrapeCannotReplacePersistentConversation() async throws {
+        let panel = Panel(kind: "codex", cwd: "/work/survivor", ref: ConversationRef(
+            kind: "codex", id: uuid(0xC1, 83), cwd: "/work/survivor",
+            capturedAt: Date().addingTimeInterval(-600), capturedVia: .scrape, state: .alive))
+        let store = ConversationStore()
+        _ = await store.seed(from: [panel.id.uuidString: PanelConversations(active: panel.ref)],
+                             permitsDeadProcessRecovery: { _ in false })
+        let scraper = SlowScraper(kind: "codex", delay: 0, preset: [
+            ScrapeCandidate(id: uuid(0xC1, 84), filePath: "/work/new.jsonl",
+                            mtime: Date(), size: 4096, cwd: panel.cwd)
+        ])
+        let pipeline = ScrapeCapturePipeline(scrapers: ConversationScraperRegistry(scrapers: [scraper]), strategies: .v1)
+        let contexts = ConversationSnapshotCaptureScope(snapshot: snapshot([panel])).scrapeContexts
+        let batch = try await pipeline.collectCandidateBatch(contexts: contexts)
+        _ = await store.applyScrapeBatch(batch, pipeline: pipeline, isStartupRecovery: true)
+        let records = await store.snapshot()
+        XCTAssertEqual(records[panel.id.uuidString]?.active, panel.ref)
+        // This batch really can replace the inferred ref during ordinary
+        // live discovery; only the startup-recovery commit must hold it.
+        _ = await store.applyScrapeBatch(batch, pipeline: pipeline)
+        let liveRecords = await store.snapshot()
+        XCTAssertEqual(liveRecords[panel.id.uuidString]?.active?.id, uuid(0xC1, 84))
+    }
+
+    func testLateCrashVerdictCannotOverwriteSameConversationNewCausalReport() async {
+        let panel = claudePanel(85)
+        let store = ConversationStore()
+        _ = await store.seed(from: [panel.id.uuidString: PanelConversations(active: panel.ref)])
+        let verdicts = ConversationStore.crashTranscriptVerdicts(
+            for: await store.snapshot(), registry: .v1, filesystem: MockFS())
+        _ = await store.push(surfaceId: panel.id.uuidString, kind: panel.kind,
+                             id: panel.ref!.id, source: .hook, cwd: panel.cwd,
+                             capturedAt: Date().addingTimeInterval(1))
+        await store.applyCrashTranscriptVerdicts(verdicts)
+        let records = await store.snapshot()
+        XCTAssertEqual(records[panel.id.uuidString]?.active?.state, .alive)
+    }
 
     /// The 2026-10-21 shape: 24 Claude hook refs, 6 Codex runtime refs and 2
     /// placeholders on a dirty restore, with every scraper slower than the old

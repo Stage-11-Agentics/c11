@@ -20,7 +20,7 @@ final class JournalStoreTests: XCTestCase {
         let store = try JournalStore(layout: layout, clock: { 1000 })
         let draft = JournalTestData.draft(.questionRequested)
         let receipt = try store.append(draft: draft, context: JournalContext(eligible: true)).receipt
-        XCTAssertTrue(JournalSpool(layout: layout).write(JournalTestData.draft(.turnStarted)))
+        XCTAssertTrue(JournalTestData.spool(layout).write(JournalTestData.draft(.turnStarted)))
         XCTAssertEqual(try store.readPage(after: 0).count, 1)
         XCTAssertNotNil(try store.current(owner: draft.owner!))
 

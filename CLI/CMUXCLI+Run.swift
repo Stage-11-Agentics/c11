@@ -17,21 +17,19 @@ extension CMUXCLI {
 
     func run() throws {
         let processEnv = ProcessInfo.processInfo.environment
-        let envSocketPath: String? = {
-            for key in ["C11_SOCKET", "C11_SOCKET_PATH", "CMUX_SOCKET_PATH", "CMUX_SOCKET"] {
-                guard let raw = processEnv[key] else { continue }
-                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    return trimmed
-                }
-            }
-            return nil
-        }()
+        // C11H-282: c11's own socket is used, another product's is skipped, and
+        // any other path is kept and refused at connect, never swapped silently.
+        let envOverride = CLISocketEnvironmentOverride.read(processEnv)
+        let envSocketPath = envOverride.ownPath
         var socketPath = envSocketPath ?? CLISocketPathResolver.defaultSocketPath
         var socketPathSource: CLISocketPathSource
-        if let envSocketPath {
-            socketPathSource = CLISocketPathResolver.isImplicitDefaultPath(envSocketPath) ? .implicitDefault : .environment
-        } else {
+        switch envOverride {
+        case .own(_, let path):
+            socketPathSource = CLISocketPathResolver.isImplicitDefaultPath(path) ? .implicitDefault : .environment
+        case .foreign(_, let path):
+            socketPath = path
+            socketPathSource = .refusedEnvironment
+        case .none:
             socketPathSource = .implicitDefault
         }
         var jsonOutput = false
@@ -94,6 +92,11 @@ extension CMUXCLI {
             }
             break
         }
+        // `--socket` is an explicit choice and takes any path; only a refused
+        // variable that is still in charge is refused.
+        if socketPathSource == .refusedEnvironment, let message = envOverride.refusalMessage {
+            SocketClient.refusedEnvironmentSocket = (path: socketPath, message: message)
+        }
 
         guard index < args.count else {
             print(usage())
@@ -116,18 +119,20 @@ extension CMUXCLI {
                   ) else { return }
             let priorDeadline = SocketClient.processDeadline
             defer { SocketClient.processDeadline = priorDeadline }
-            SocketClient.processDeadline = Date().addingTimeInterval(1)
-            let client = SocketClient(path: socketPath)
-            client.usesSingleLineResponses = true
-            defer { client.close() }
-            do {
+            ClaudeMailboxCommand.run(binding: binding) {
+                SocketClient.processDeadline = Date().addingTimeInterval(1)
+                let client = SocketClient(path: socketPath)
+                client.usesSingleLineResponses = true
+                defer { client.close() }
                 try client.connect()
-                try authenticateClientIfNeeded(client, explicitPassword: socketPasswordArg, socketPath: socketPath)
-                SocketClient.processDeadline = priorDeadline
-                try ClaudeMailboxCommand.run(binding: binding, descriptor: client.takeConnectedDescriptor())
-            } catch {
-                // No hook error banner, and no raw input, token, or transcript
-                // contents enter a diagnostic. The app owns fallback logging.
+                do {
+                    try authenticateClientIfNeeded(client, explicitPassword: socketPasswordArg, socketPath: socketPath)
+                } catch let error as CLIError where error.message.hasPrefix("ERROR:") {
+                    // A definitive password refusal needs a new launch/config;
+                    // transport loss during authentication may reconnect.
+                    throw ClaudeMailboxCommand.ConnectionFailure.retired
+                }
+                return try client.takeConnectedDescriptor()
             }
             return
         }
@@ -164,6 +169,13 @@ extension CMUXCLI {
         let isSendText = ["send", "send-panel", "paste"].contains(command)
         let sendWantsHelp = isSendText && commandArgs.prefix(while: { $0 != "--" })
             .contains(where: { $0 == "--help" || $0 == "-h" })
+        // C11H-176: a remote terminal's launch line claims its relay
+        // credential here, before its login shell. Internal; never in the
+        // guide. Prints the export line or nothing, and always succeeds.
+        if command == "relay-pickup", C11RelayCLI.isActive {
+            if let line = C11RelayCLI.pickup() { print(line) }
+            return
+        }
         // Guide (including its help) is bundled, offline content. Socket
         // discovery probes listeners, so return before resolving any path.
         if command == "guide" {
@@ -281,7 +293,9 @@ extension CMUXCLI {
             socketPath: socketPath,
             processEnv: processEnv
         )
-        let resolvedSocketPath = CLISocketPathResolver.resolve(
+        // C11H-16: a relay terminal reaches c11 through its machine's hc core.
+        // No socket on this machine is discovered or reported.
+        let resolvedSocketPath = C11RelayCLI.current?.hcSocket ?? CLISocketPathResolver.resolve(
             requestedPath: socketPath,
             source: socketPathSource,
             environment: processEnv
@@ -325,6 +339,9 @@ extension CMUXCLI {
         if command != "rpc",
            command != "__tmux-compat",
            command != "claude-teams",
+           // hc's words are hc's grammar: a child's `--help` or `-h` after `run` is
+           // an argument to forward, and `c11 hc --help` is HCCoreCommand's own help.
+           command != "hc",
            (!isSendText || sendWantsHelp),
            hasSubcommandHelp {
             if dispatchSubcommandHelp(
@@ -335,7 +352,7 @@ extension CMUXCLI {
             ) {
                 return
             }
-            print("Unknown command '\(command)'. Run 'c11 help' to see available commands.")
+            print(CLIUnknownCommand.hint(command: command, version: bundledCLIIdentity().shortVersion, tool: CLIInvokedName.current))
             return
         }
 
@@ -444,6 +461,20 @@ extension CMUXCLI {
             return
         }
 
+        // C11H-332: `c11 machine audit` reads c11's audit log file directly,
+        // so it works with c11 closed, like `events`. `machine link` runs here
+        // in this process and talks only to c11's hc core, never the app's
+        // socket, so its consent and its --yes refusal come before any socket.
+        if command == "machine", (commandArgs.first?.lowercased() ?? "") == "audit" {
+            try runMachineAudit(Array(commandArgs.dropFirst()), json: jsonOutput || commandArgs.contains("--json"))
+            return
+        }
+        if command == "machine", (commandArgs.first?.lowercased() ?? "") == "link" {
+            try runMachineLink(commandArgs, json: jsonOutput || commandArgs.contains("--json"),
+                               socketPath: resolvedSocketPath, socketPassword: socketPasswordArg)
+            return
+        }
+
         // Capture the original event identity before any socket operation. Offline retry
         // and online append use this same structural draft, never raw hook input.
         let journalHookInput: String? = command == "claude-hook"
@@ -493,7 +524,7 @@ extension CMUXCLI {
         }
 
         let client = SocketClient(path: resolvedSocketPath)
-        if resolvedSocketPath != socketPath {
+        if resolvedSocketPath != socketPath, !C11RelayCLI.isActive {
             cliTelemetry.breadcrumb(
                 "socket.path.autodiscovered",
                 data: [
@@ -505,6 +536,16 @@ extension CMUXCLI {
                 resolvedPath: resolvedSocketPath,
                 environment: processEnv
             )
+        }
+        // Managed hc commands route by their own session, not by workspace.
+        // Keep initial socket/auth failures inside their retry-safety report.
+        if command == "hc" {
+            defer { client.close() }
+            try HCCoreCommand.run(arguments: commandArgs, client: client) {
+                try client.connect()
+                try authenticateClientIfNeeded(client, explicitPassword: socketPasswordArg, socketPath: resolvedSocketPath)
+            }
+            return
         }
         // C11-257: a process that may claim mailbox mail at a turn boundary
         // bounds every socket request it makes (auth and probes included) to
@@ -591,7 +632,7 @@ extension CMUXCLI {
         // Hooks keep their socket budget: the app follows the panel each hook
         // names, and turn-boundary drains find a moved inbox themselves.
         // Commands that never default to the caller's workspace skip it.
-        if !["claude-hook", "ping", "capabilities", "rpc", "history", "agents", "fleet", "link"].contains(command),
+        if !["claude-hook", "ping", "capabilities", "rpc", "history", "agents", "fleet", "link", "show"].contains(command),
            !Self.isMailboxHookDrain(command: command, commandArgs: commandArgs),
            Self.followCallerPanelWorkspace(client: client) == .connectionSuspect {
             client.close()
@@ -612,7 +653,7 @@ extension CMUXCLI {
             return
         }
         if command == "fleet" {
-            try runFleetCommand(client: client, jsonOutput: jsonOutput)
+            try runFleetCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
             return
         }
 
@@ -695,23 +736,17 @@ extension CMUXCLI {
             print(jsonString(formatIDs(response, mode: idFormat)))
 
         case "list-windows":
-            let response = try sendV1Command("list_windows", client: client)
-            if jsonOutput {
-                let windows = parseWindows(response)
-                let payload = windows.map { item -> [String: Any] in
-                    var dict: [String: Any] = [
-                        "index": item.index,
-                        "id": item.id,
-                        "key": item.key,
-                        "workspace_count": item.workspaceCount,
-                    ]
-                    dict["selected_workspace_id"] = item.selectedWorkspaceId ?? NSNull()
-                    return dict
-                }
-                print(jsonString(payload))
-            } else {
-                print(response)
-            }
+            // c11 (C11H-197): the v2 list, with name, theme, display and frame.
+            // Its JSON always carried the window UUID; keep both ids and refs
+            // unless --id-format asks otherwise.
+            try runListWindows(client: client, jsonOutput: jsonOutput, idFormat: idFormatArg == nil ? .both : idFormat)
+
+        case "window":
+            try runWindowCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput,
+                                 idFormat: idFormat, idFormatExplicit: idFormatArg != nil)
+
+        case "display":
+            try runDisplayCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
         case "current-window":
             let response = try sendV1Command("current_window", client: client)
@@ -837,13 +872,14 @@ extension CMUXCLI {
                     for ws in workspaces {
                         let selected = (ws["selected"] as? Bool) == true
                         let handle = textHandle(ws, idFormat: idFormat)
-                        let title = (ws["title"] as? String) ?? ""
+                        // C11H-359: a title can come from another machine; controls print as `\xHH`.
+                        let title = HCCoreUtility.printable((ws["title"] as? String) ?? "")
                         let remoteTag: String = {
                             guard let remote = ws["remote"] as? [String: Any],
                                   (remote["enabled"] as? Bool) == true else {
                                 return ""
                             }
-                            let state = (remote["state"] as? String) ?? "unknown"
+                            let state = HCCoreUtility.printable((remote["state"] as? String) ?? "unknown")
                             return "  [ssh:\(state)]"
                         }()
                         let prefix = selected ? "* " : "  "
@@ -916,6 +952,10 @@ extension CMUXCLI {
                 client: client,
                 jsonOutput: jsonOutput
             )
+
+        case "restore" where CMUXCLI.isHostEndRestoreCommand(commandArgs):
+            // C11H-196: `c11 restore status|run`, the restore after a host end.
+            try runRestore(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
 
         case "restore":
             // CMUX-37 Phase 1: `c11 restore <snapshot-id|path>`. Reads
@@ -1059,7 +1099,7 @@ extension CMUXCLI {
                     for surface in surfaces {
                         let selected = (surface["selected"] as? Bool) == true
                         let handle = textHandle(surface, idFormat: idFormat)
-                        let title = (surface["title"] as? String) ?? ""
+                        let title = HCCoreUtility.printable((surface["title"] as? String) ?? "")
                         let prefix = selected ? "* " : "  "
                         let selTag = selected ? "  [selected]" : ""
                         print("\(prefix)\(handle)  \(title)\(selTag)")
@@ -1112,8 +1152,12 @@ extension CMUXCLI {
             // (or omitting the flag) keeps the default: the workspace root,
             // else the parent surface's cwd. Resolved relative to the CLI's
             // cwd; validated server-side.
+            // --on <machine> runs the terminal on another hc machine; its --cwd
+            // is a path there, sent verbatim.
+            let machine = remoteMachineOption(createArgs)
+            if let on = optionValue(createArgs, name: "--on") { params["on"] = on }
             if let cwd = cwd?.trimmingCharacters(in: .whitespaces), !cwd.isEmpty {
-                params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : resolvePath(cwd)
+                params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : (machine != nil ? cwd : resolvePath(cwd))
             }
             // --allow-undersized (alias --force) bypasses the size-aware split policy
             // for this one call.
@@ -1230,7 +1274,10 @@ extension CMUXCLI {
             if let v = optionValue(commandArgs, name: "--task") { params["task"] = v }
             if let v = optionValue(commandArgs, name: "--title") { params["title"] = v }
             if let launchPrompt { params["prompt"] = launchPrompt }
-            if let v = optionValue(commandArgs, name: "--cwd") { params["cwd"] = resolvePath(v) }
+            if let on = optionValue(commandArgs, name: "--on") { params["on"] = on }
+            if let v = optionValue(commandArgs, name: "--cwd") {
+                params["cwd"] = remoteMachineOption(commandArgs) != nil ? v : resolvePath(v)
+            }
             if !launchEnv.isEmpty { params["env"] = launchEnv }
             if launchNewWorkspace {
                 params["new_workspace"] = true
@@ -1241,8 +1288,27 @@ extension CMUXCLI {
                 let paneId = try normalizePaneHandle(launchPaneRaw, client: client, workspaceHandle: wsId)
                 if let paneId { params["area_id"] = paneId }
             }
+            // C11H-199: --split puts the agent in a new area beside the target area.
+            if let split = optionValue(commandArgs, name: "--split") {
+                guard ["right", "down", "left", "up"].contains(split.lowercased()) else {
+                    throw CLIError(message: "launch-agent: --split must be right, down, left or up (got: \(split))")
+                }
+                guard !launchNewWorkspace else {
+                    throw CLIError(message: "launch-agent: --split is not supported with --new-workspace")
+                }
+                params["split"] = split.lowercased()
+            }
             if commandArgs.contains("--no-focus") { params["focus"] = false }
-            let launchPayload = try client.sendV2(method: "agent.launch", params: params)
+            // Pathfinder: --wait-ready <seconds> blocks until c11's launch
+            // watch decides (ready, failed, needs_operator, quiet) or time is up.
+            var waitReadySeconds: Double?
+            if let raw = optionValue(commandArgs, name: "--wait-ready") {
+                guard let seconds = Double(raw), seconds > 0, seconds <= 600 else {
+                    throw CLIError(message: "launch-agent: --wait-ready expects seconds between 1 and 600 (got: \(raw))")
+                }
+                waitReadySeconds = seconds
+            }
+            var launchPayload = try client.sendV2(method: "agent.launch", params: params)
             // Accept --json in trailing position too (the documented form);
             // the global parser only consumes it before the subcommand.
             let launchJSONOut = jsonOutput || commandArgs.contains("--json")
@@ -1263,7 +1329,80 @@ extension CMUXCLI {
                     FileHandle.standardError.c11SafeWrite(Data(("warning: " + warning + "\n").utf8))
                 }
             }
+            var launchVerdict: [String: Any]?
+            if let waitReadySeconds,
+               let surfaceId = (launchPayload["panel_id"] as? String) ?? (launchPayload["surface_id"] as? String) {
+                let verdict = waitForLaunchVerdict(client: client, surfaceId: surfaceId, seconds: waitReadySeconds)
+                launchPayload["launch_watch"] = verdict
+                launchVerdict = verdict
+            }
             printV2Payload(launchPayload, jsonOutput: launchJSONOut, idFormat: idFormat, fallbackText: v2OKSummary(launchPayload, idFormat: idFormat, kinds: ["panel", "area", "workspace"]))
+            if let launchVerdict {
+                let verdict = launchVerdict["verdict"] as? String ?? "timeout"
+                if !launchJSONOut {
+                    let message = launchVerdict["message"] as? String
+                    print("startup: \(verdict)" + (message.map { ": \($0)" } ?? ""))
+                }
+                // 0 ready; 1 failed; 4 needs the operator; 5 quiet or timed out.
+                switch verdict {
+                case "ready": break
+                case "failed": exit(1)
+                case "needs_operator": exit(4)
+                default: exit(5)
+                }
+            }
+
+        // C11H-246: the operator's routine notification dial. A flag is never
+        // dialed. Agents change it only when the operator asks.
+        case "notify-level":
+            let (levelJSON, levelArgs) = parseBoolFlag(commandArgs, name: "--json")
+            guard levelArgs.count <= 1 else {
+                throw CLIError(message: "Usage: c11 notify-level [silent|quiet|normal|chatty] [--json]")
+            }
+            let payload: [String: Any]
+            if let stop = levelArgs.first {
+                payload = try client.sendV2(method: "notification.level.set", params: ["level": stop])
+            } else {
+                payload = try client.sendV2(method: "notification.level.get", params: [:])
+            }
+            if jsonOutput || levelJSON {
+                printV2Payload(payload, jsonOutput: true, idFormat: idFormat, fallbackText: "OK")
+            } else {
+                let level = payload["level"] as? String ?? "normal"
+                print(levelArgs.isEmpty ? level : "Notification level: \(level). Flags always break through.")
+            }
+
+        // C11H-319: the operator's three sounds (turn end, needs you, flag).
+        // Agents change them only when the operator asks.
+        case "notify-sound":
+            let (soundJSON, soundArgs) = parseBoolFlag(commandArgs, name: "--json")
+            let usage = "Usage: c11 notify-sound [turn-end|needs-you|flag [<sound>|<path>]] [--json]"
+            guard soundArgs.count <= 2 else { throw CLIError(message: usage) }
+            let payload: [String: Any]
+            if soundArgs.count == 2 {
+                payload = try client.sendV2(method: "notification.sound.set", params: [
+                    "channel": soundArgs[0],
+                    "sound": Self.absoluteSoundArgument(soundArgs[1]),
+                ])
+            } else {
+                payload = try client.sendV2(method: "notification.sound.get", params: [:])
+            }
+            if jsonOutput || soundJSON {
+                printV2Payload(payload, jsonOutput: true, idFormat: idFormat, fallbackText: "OK")
+            } else {
+                var channels = payload["channels"] as? [[String: Any]] ?? []
+                if let only = soundArgs.first?.lowercased().replacingOccurrences(of: "_", with: "-") {
+                    channels = channels.filter { ($0["channel"] as? String) == only }
+                    if channels.isEmpty { throw CLIError(message: usage) }
+                }
+                for channel in channels {
+                    let name = channel["channel"] as? String ?? ""
+                    let sound = channel["sound"] as? String ?? ""
+                    let label = channel["label"] as? String ?? sound
+                    let shown = label == sound ? sound : "\(sound) (\(label))"
+                    print("\(name)\t\(shown)")
+                }
+            }
 
         case "flag-kind":
             guard let subcommand = commandArgs.first?.lowercased() else {
@@ -1276,14 +1415,27 @@ extension CMUXCLI {
                 method = "flag.kind.list"
             case "set":
                 method = "flag.kind.set"
-                for name in ["--id", "--name", "--color"] {
+                // C11H-319: `--id` with `--sound` alone changes only that
+                // kind's sound; `--sound flag` returns it to the flag sound.
+                let sound = optionValue(commandArgs, name: "--sound")
+                let definesKind = ["--name", "--color", "--emoji", "--evaporate-seconds"].contains { optionValue(commandArgs, name: $0) != nil }
+                let required = definesKind || sound == nil ? ["--id", "--name", "--color"] : ["--id"]
+                for name in required {
                     guard let value = optionValue(commandArgs, name: name),
                           !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                        throw CLIError(message: "flag-kind set requires --id, --name, and --color")
+                        throw CLIError(message: "flag-kind set requires --id, --name, and --color (or --id and --sound)")
                     }
                     params[String(name.dropFirst(2))] = value
                 }
                 if let emoji = optionValue(commandArgs, name: "--emoji") { params["emoji"] = emoji }
+                if let sound { params["sound"] = Self.absoluteSoundArgument(sound) }
+                // C11H-330: a kind set replaces the kind, so leaving this out clears it.
+                if let raw = optionValue(commandArgs, name: "--evaporate-seconds") {
+                    guard let seconds = PanelFlagKind.parseEvaporateSecondsArgument(raw) else {
+                        throw CLIError(message: "--evaporate-seconds must be a whole number from 1 to 600")
+                    }
+                    params["evaporate_seconds"] = seconds
+                }
             case "rm":
                 method = "flag.kind.rm"
                 guard let id = optionValue(commandArgs, name: "--id"),
@@ -1309,19 +1461,166 @@ extension CMUXCLI {
                         let color = kind["color"] as? String ?? ""
                         let emoji = kind["emoji"] as? String ?? ""
                         let source = (kind["built_in"] as? Bool ?? false) ? "built-in" : "custom"
-                        print([id, name, color, emoji, source].filter { !$0.isEmpty }.joined(separator: "\t"))
+                        // C11H-319: the kind's own sound, or what it inherits.
+                        let sound = (kind["sound"] as? String).map { "sound \($0)" }
+                            ?? (kind["effective_sound"] as? String).map { "sound \($0) (flag sound)" } ?? ""
+                        let evaporates = (kind["evaporate_seconds"] as? NSNumber).map { "evaporates after \($0.intValue)s" } ?? ""
+                        // C11H-226: when the kind was last raised, in local time.
+                        let count = (kind["raise_count"] as? NSNumber)?.intValue ?? 0
+                        var raised = "never raised"
+                        if let stamp = kind["last_raised_at"] as? String,
+                           let date = ISO8601DateFormatter().date(from: stamp) {
+                            let local = DateFormatter()
+                            local.dateFormat = "yyyy-MM-dd HH:mm"
+                            raised = "last raised \(local.string(from: date)), \(count)x"
+                        }
+                        print([id, name, color, emoji, source, evaporates, sound, raised].filter { !$0.isEmpty }.joined(separator: "\t"))
                     }
                 }
             } else if subcommand == "set" {
-                let id = params["id"] as? String ?? ""
-                let name = params["name"] as? String ?? ""
-                print("Saved flag kind \(id) (\(name))")
+                let kind = payload["kind"] as? [String: Any] ?? [:]
+                let id = kind["id"] as? String ?? params["id"] as? String ?? ""
+                let name = kind["name"] as? String ?? params["name"] as? String ?? ""
+                let sound = (kind["sound"] as? String) ?? "the flag sound"
+                let evaporates = (kind["evaporate_seconds"] as? NSNumber).map { "; evaporates after \($0.intValue)s of focus" } ?? ""
+                print("Saved flag kind \(id) (\(name)), sound: \(sound)\(evaporates)")
             } else if payload["reset_to_default"] as? Bool == true {
                 print("Reset built-in flag kind to its default")
             } else if payload["removed"] as? Bool == true {
                 print("Removed flag kind")
             } else {
                 print("No flag kind with that id")
+            }
+
+        case "chaos":
+            // C11H-199: the Chaos Wizard. draw shows a draw; cast launches it.
+            let subcommand = commandArgs.first?.lowercased() ?? ""
+            if subcommand.isEmpty || subcommand == "help" {
+                print(subcommandUsage("chaos") ?? "")
+                break
+            }
+            guard subcommand == "draw" || subcommand == "cast" else {
+                throw CLIError(message: "chaos requires draw or cast (see: c11 chaos --help)")
+            }
+            var params: [String: Any] = [:]
+            if let mode = optionValue(commandArgs, name: "--mode") { params["mode"] = mode.lowercased() }
+            if let seed = optionValue(commandArgs, name: "--seed") { params["seed"] = seed }
+            if commandArgs.contains("--prompts") { params["prompts"] = true }
+            if commandArgs.contains("--dry-run") { params["dry_run"] = true }
+            // Four launches can outlast the default deadline.
+            let payload = try client.sendV2(method: "chaos.\(subcommand)", params: params, deadline: .custom(60))
+            let chaosStopped: CLIError? = (payload["error"] as? [String: Any]).map { error in
+                let launched = (payload["launched"] as? [Any])?.count ?? 0
+                let total = (payload["pieces"] as? [Any])?.count ?? 0
+                return CLIError(message: "chaos cast stopped after \(launched) of \(total) pieces: \(error["message"] as? String ?? "unknown error")")
+            }
+            if jsonOutput || commandArgs.contains("--json") {
+                printV2Payload(payload, jsonOutput: true, idFormat: idFormat, fallbackText: "OK")
+                if let chaosStopped { throw chaosStopped }
+                break
+            }
+            let mode = payload["mode"] as? String ?? "two"
+            let seed = payload["seed"] as? String ?? ""
+            print("Chaos \(mode), seed \(seed)")
+            if let run = payload["run"] as? String { print("Run: \(run)") }
+            for piece in payload["pieces"] as? [[String: Any]] ?? [] {
+                let index = piece["index"] as? Int ?? 0
+                let title = piece["title"] as? String ?? ""
+                let premise = piece["premise"] as? String ?? ""
+                let medium = piece["medium"] as? String ?? ""
+                let constraint = piece["constraint"] as? String ?? ""
+                let agent = piece["agent"] as? String ?? ""
+                print("\(index). \(title): \(premise)")
+                print("   \(medium) · \(constraint) · \(agent)")
+                if let prompt = piece["prompt"] as? String {
+                    print(prompt.split(separator: "\n", omittingEmptySubsequences: false).map { "   | \($0)" }.joined(separator: "\n"))
+                }
+            }
+            if let workspace = payload["workspace_id"] as? String {
+                let launched = (payload["launched"] as? [Any])?.count ?? 0
+                print("Cast \(launched) agent\(launched == 1 ? "" : "s") into workspace \(workspace)")
+            }
+            for warning in payload["warnings"] as? [String] ?? [] { print("warning: \(warning)") }
+            if let chaosStopped { throw chaosStopped }
+
+        case "machine":
+            // C11H-126: the machine roster behind the where-it-runs chip.
+            guard let subcommand = commandArgs.first?.lowercased() else {
+                throw CLIError(message: "machine requires list, set, rm, link, unlink, or audit")
+            }
+            let machineJSON = jsonOutput || commandArgs.contains("--json")
+            if subcommand == "unlink" {
+                try runMachineUnlink(commandArgs, json: machineJSON, client: client, idFormat: idFormat)
+                break
+            }
+            let method: String
+            var params: [String: Any] = [:]
+            func requiredID() throws -> String {
+                guard let id = optionValue(commandArgs, name: "--id"),
+                      !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw CLIError(message: "machine \(subcommand) requires --id <machine>; 'local' is this Mac")
+                }
+                return id
+            }
+            switch subcommand {
+            case "list":
+                method = "machine.list"
+            case "set":
+                method = "machine.set"
+                params["id"] = try requiredID()
+                let name = optionValue(commandArgs, name: "--name")
+                let color = optionValue(commandArgs, name: "--color")
+                let clearName = commandArgs.contains("--clear-name")
+                let clearColor = commandArgs.contains("--clear-color")
+                if name != nil && clearName {
+                    throw CLIError(message: "machine set: --name and --clear-name cannot be combined")
+                }
+                if color != nil && clearColor {
+                    throw CLIError(message: "machine set: --color and --clear-color cannot be combined")
+                }
+                if let name { params["name"] = name } else if clearName { params["name"] = NSNull() }
+                if let color { params["color"] = color } else if clearColor { params["color"] = NSNull() }
+                guard params["name"] != nil || params["color"] != nil else {
+                    throw CLIError(message: "machine set requires --name, --color, --clear-name, or --clear-color")
+                }
+            case "rm":
+                method = "machine.rm"
+                params["id"] = try requiredID()
+            default:
+                throw CLIError(message: "machine requires list, set, rm, link, unlink, or audit")
+            }
+            let payload = try client.sendV2(method: method, params: params)
+            if jsonOutput || commandArgs.contains("--json") {
+                printV2Payload(payload, jsonOutput: true, idFormat: idFormat, fallbackText: "OK")
+            } else if subcommand == "list" {
+                let machines = payload["machines"] as? [[String: Any]] ?? []
+                for machine in machines {
+                    let id = machine["id"] as? String ?? ""
+                    let shown = machine["display_name"] as? String ?? ""
+                    let color = machine["color"] as? String ?? "-"
+                    let state: String
+                    if machine["local"] as? Bool == true {
+                        state = "this-mac"
+                    } else if machine["linked"] as? Bool != true {
+                        state = "not-linked"
+                    } else {
+                        state = machine["connected"] as? Bool == true ? "connected" : "disconnected"
+                    }
+                    print([id, shown, color, state].joined(separator: "\t"))
+                }
+                if payload["hc_inventory"] as? String == "pending" {
+                    FileHandle.standardError.c11SafeWrite(Data("note: hc's machine list is not loaded yet; linked machines may be missing\n".utf8))
+                }
+            } else if subcommand == "set" {
+                let id = payload["id"] as? String ?? ""
+                let machine = payload["machine"] as? [String: Any] ?? [:]
+                let name = machine["name"] as? String ?? "(default name)"
+                let color = machine["color"] as? String ?? "(no color)"
+                print("Saved machine \(id): \(name), \(color)")
+            } else if payload["removed"] as? Bool == true {
+                print("Removed machine from the roster")
+            } else {
+                print("No roster entry for that machine")
             }
 
         case "raise-flag", "lower-flag", "delegate", "undelegate", "suppress", "unsuppress":
@@ -1430,6 +1729,16 @@ extension CMUXCLI {
                 throw CLIError(message: "config: '\(cfgSub)' should have been handled app-down; this is a bug")
             }
             var (cfgParams, cfgJSON) = try buildConfigLaunchParams(subArgs: Array(commandArgs.dropFirst()))
+            // Same caller rule as launch-agent: a live panel UUID is the parent;
+            // no C11_PANEL_ID launches with no parent. A mismatched or non-UUID
+            // panel env throws here, before the socket send. --delegated without
+            // a caller is not a CLI error (launch-agent records an ownerless delegate).
+            let callerPanelId = try resolveCallingSurface(
+                environment: ProcessInfo.processInfo.environment
+            )
+            if let callerPanelId {
+                cfgParams["caller_panel_id"] = callerPanelId
+            }
             if client.scopedWindow != nil {
                 if let workspace = cfgParams["workspace"] as? String {
                     cfgParams["workspace"] = try resolveWorkspaceId(workspace, client: client)
@@ -1467,8 +1776,10 @@ extension CMUXCLI {
             if let profile { params["profile"] = profile }
             // --cwd <path> wins over the workspace root for a terminal surface.
             // Resolved relative to the CLI's cwd; validated server-side.
+            let machine = remoteMachineOption(createArgs)
+            if let on = optionValue(createArgs, name: "--on") { params["on"] = on }
             if let cwd = cwd?.trimmingCharacters(in: .whitespaces), !cwd.isEmpty {
-                params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : resolvePath(cwd)
+                params["cwd"] = cwd.lowercased() == "inherit" ? "inherit" : (machine != nil ? cwd : resolvePath(cwd))
             }
             if noFocus { params["focus"] = false }
             try addCallingPanel(to: &params)
@@ -1486,8 +1797,18 @@ extension CMUXCLI {
             if let wsId { params["workspace_id"] = wsId }
             let sfId = try normalizeSurfaceHandle(surfaceRaw, client: client, workspaceHandle: wsId)
             if let sfId { params["panel_id"] = sfId }
-            let payload = try client.sendV2(method: "panel.close", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat))
+            if let expectedTitle = optionValue(commandArgs, name: "--expect-title") {
+                params["expected_title"] = expectedTitle
+            }
+            var payload = try client.sendV2(method: "panel.close", params: params)
+            // C11H-24: an hc panel's close ends its session; report how it ended.
+            let endedPanelId = (payload["session_end"] as? String) == "requested"
+                ? ((payload["panel_id"] as? String) ?? (payload["surface_id"] as? String))
+                : nil
+            let endRows = try hcSessionEndRows(panelIds: endedPanelId.map { [$0] } ?? [], client: client)
+            if !endRows.isEmpty { payload["session_end_outcomes"] = endRows }
+            let summary = closePanelOKSummary(payload, idFormat: idFormat)
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: hcSessionEndText(summary, rows: endRows, idFormat: idFormat))
 
         case "area-confirm":
             // Present a confirmation dialog anchored on a specific panel and wait for
@@ -1667,8 +1988,10 @@ extension CMUXCLI {
                     for surface in surfaces {
                         let focused = (surface["focused"] as? Bool) == true
                         let handle = textHandle(surface, idFormat: idFormat)
-                        let sType = (surface["type"] as? String) ?? ""
-                        let title = (surface["title"] as? String) ?? ""
+                        // C11H-359: a title and a flag can come from another machine;
+                        // controls print as `\xHH`.
+                        let sType = HCCoreUtility.printable((surface["type"] as? String) ?? "")
+                        let title = HCCoreUtility.printable((surface["title"] as? String) ?? "")
                         let prefix = focused ? "* " : "  "
                         let focusTag = focused ? "  [focused]" : ""
                         let titlePart = title.isEmpty ? "" : "  \"\(title)\""
@@ -1680,7 +2003,7 @@ extension CMUXCLI {
                             let name = (kind?["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
                             let label = [emoji, name].compactMap { $0 }.joined(separator: " ")
                             let detail = label.isEmpty ? reason : "\(label): \(reason)"
-                            print("     ⚑ \(detail)")
+                            print("     ⚑ \(HCCoreUtility.printable(detail))")
                         }
                     }
                 }
@@ -1727,8 +2050,11 @@ extension CMUXCLI {
             var params: [String: Any] = [:]
             let wsId = try normalizeWorkspaceHandle(workspaceRaw, client: client)
             if let wsId { params["workspace_id"] = wsId }
-            let payload = try client.sendV2(method: "workspace.close", params: params)
-            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: v2OKSummary(payload, idFormat: idFormat, kinds: ["workspace"]))
+            var payload = try client.sendV2(method: "workspace.close", params: params)
+            // C11H-24: closing a workspace ends its hc sessions; report each.
+            let endRows = try hcSessionEndRows(panelIds: (payload["session_end_panel_ids"] as? [String]) ?? [], client: client)
+            if !endRows.isEmpty { payload["session_end_outcomes"] = endRows }
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: hcSessionEndText(v2OKSummary(payload, idFormat: idFormat, kinds: ["workspace"]), rows: endRows, idFormat: idFormat))
 
         case "select-workspace":
             guard let workspaceRaw = optionValue(commandArgs, name: "--workspace") else {
@@ -1871,7 +2197,42 @@ extension CMUXCLI {
                 let draftLength = debugString(payload["draft_length"]) ?? "null"
                 let source = debugString(payload["source"]) ?? "null"
                 let observedAt = debugString(payload["observed_at_ms"]) ?? "null"
-                print("input_state: \(state) draft_length: \(draftLength) source: \(source) observed_at_ms: \(observedAt)")
+                let dialogKind = debugString(payload["dialog_kind"]) ?? "null"
+                print("input_state: \(state) draft_length: \(draftLength) dialog_kind: \(dialogKind) source: \(source) observed_at_ms: \(observedAt)")
+            }
+
+        case "retry-input":
+            // C11H-124: resume a panel whose input paused after an interruption.
+            let (wsRaw, rem0) = parseOption(commandArgs, name: "--workspace")
+            let (tabValues, rem2) = parseRepeatedOption(rem0, name: "--panel")
+            let retryJSON = jsonOutput || rem2.contains("--json")
+            let trailing = rem2.filter { $0 != "--json" }
+            guard trailing.isEmpty else {
+                throw CLIError(message: String(format: String(
+                    localized: "cli.retry_input.arguments",
+                    defaultValue: "retry-input: unexpected arguments: %@"
+                ), trailing.joined(separator: " ")))
+            }
+            guard tabValues.count <= 1 else {
+                throw CLIError(message: String(localized: "cli.retry_input.duplicate_tab", defaultValue: "retry-input: pass --panel once"))
+            }
+            let explicitPanel = try requireNonEmptyHandle(tabValues.first, flag: "--panel", command: "retry-input")
+            guard let explicitPanel else {
+                throw CLIError(message: String(localized: "cli.retry_input.tab_required", defaultValue: "retry-input requires --panel <id|ref>"))
+            }
+            let workspaceArg = wsRaw ?? envWorkspaceForPanelTarget(explicitPanel)
+            var params: [String: Any] = [:]
+            let workspaceID = try normalizeWorkspaceHandle(workspaceArg, client: client)
+            if let workspaceID { params["workspace_id"] = workspaceID }
+            guard let panelID = try normalizeSurfaceHandle(explicitPanel, client: client, workspaceHandle: workspaceID) else {
+                throw CLIError(message: String(localized: "cli.retry_input.tab_required", defaultValue: "retry-input requires --panel <id|ref>"))
+            }
+            params["panel_id"] = panelID
+            let payload = try client.sendV2(method: "panel.retry_input", params: params)
+            if retryJSON {
+                printV2Payload(payload, jsonOutput: true, idFormat: idFormat, fallbackText: "")
+            } else if payload["recovered"] as? Bool == true {
+                print(String(format: String(localized: "cli.retry_input.recovered", defaultValue: "Input resumed. Clear the line with send-key --panel %@ ctrl+u if it holds a half-typed message."), explicitPanel))
             }
 
         case "read-screen":
@@ -2021,6 +2382,11 @@ extension CMUXCLI {
             let workspaceArg = notifyWsFlag ?? (windowId == nil ? envWorkspaceForPanelTarget(surfaceArg) : nil)
 
             var params: [String: Any] = ["title": title, "subtitle": subtitle, "body": body]
+            // C11H-319: an agent stopped on the operator plays the needs-you
+            // sound; anything else plays the turn-end sound.
+            if hasFlag(commandArgs, name: "--needs-you") {
+                params["origin"] = "needs_you"
+            }
             if let payload = nonEmptyEnv("C11_CODEX_NOTIFY_PAYLOAD_B64") {
                 params["legacy_codex_notify_payload_b64"] = payload
                 // The interactive Codex's own PID (inherited from its c11
@@ -2081,7 +2447,8 @@ extension CMUXCLI {
                 }
                 print(jsonString(payload))
             } else {
-                print(response)
+                // C11H-359: one notification per line; any other control prints as `\xHH`.
+                print(HCCoreUtility.printable(response, keepLineFeeds: true))
             }
 
         case "clear-notifications":
@@ -2320,6 +2687,8 @@ extension CMUXCLI {
                 try runClaudeHook(commandArgs: commandArgs, client: client, telemetry: cliTelemetry, rawInput: journalHookInput ?? "", journalDraft: journalHookDraft, socketCeiling: priorProcessDeadline)
                 cliTelemetry.breadcrumb("claude-hook.completed")
             } catch let error as CLIError where isAdvisoryHookConnectivityError(error)
+                || error.message.hasPrefix("hc_inventory_pending:")
+                || error.message.hasPrefix("ERROR: hc_inventory_pending:")
                 || error.message == SocketClient.commandTimedOutMessage {
                 // claude-hook is advisory — it signals c11 about Claude Code
                 // lifecycle events (prompt submitted, notification, etc.) so
@@ -2433,6 +2802,10 @@ extension CMUXCLI {
         case "markdown-content":
             try runMarkdownGetContentCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
 
+        // C11H-228: show a file or URL to the operator from any machine.
+        case "show":
+            try runShowCommand(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat)
+
         // c11 chrome theme commands.
         case "themes":
             try runUiThemes(
@@ -2451,6 +2824,29 @@ extension CMUXCLI {
 
         case "panel-color":
             try runSurfaceColor(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput)
+
+        case "hc-diagnostics":
+            try runHCDiagnostics(client: client, jsonOutput: jsonOutput)
+
+        // C11H-37: open c11-core (c11's own hc core) in a new terminal panel.
+        // The panel is an ordinary hc terminal; the utility itself never uses
+        // this socket.
+        case "core":
+            let tool = resolvedExecutableURL()?.deletingLastPathComponent().appendingPathComponent("c11-core").path ?? "c11-core"
+            let quoted = "'" + tool.replacingOccurrences(of: "'", with: "'\\''") + "'"
+            var params: [String: Any] = [:]
+            if let initialInput = try resolvedCreateInput(raw: quoted + " watch", panelType: nil) { params["initial_input"] = initialInput }
+            if let wsId = try normalizeWorkspaceHandle(workspaceFromArgsOrEnv(commandArgs, windowOverride: windowId), client: client) {
+                params["workspace_id"] = wsId
+            }
+            try addCallingPanel(to: &params)
+            let payload = try client.sendV2(method: "panel.create", params: params)
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: createOKSummary(payload, idFormat: idFormat, kinds: ["panel", "area", "workspace"]))
+
+        // The existing-connection hc adapter (Resources/bin/hc execs `c11 hc`).
+        // Its words are hc's grammar, so they are forwarded as given.
+        case "hc":
+            try HCCoreCommand.run(arguments: commandArgs, client: client)
 
         // C11-13 Stage 2: inter-agent mailbox (send/recv/trace/tail + helpers).
         case "mailbox":
@@ -2471,7 +2867,11 @@ extension CMUXCLI {
             )
 
         default:
-            print(usage())
+            // The hint comes first and the usage after it, both on stderr: an
+            // agent that read a newer c11 skill needs the pointer, not a wall of text.
+            FileHandle.standardError.c11SafeWrite(Data((
+                CLIUnknownCommand.hint(command: command, version: bundledCLIIdentity().shortVersion, tool: CLIInvokedName.current) + "\n"
+                + usage() + "\n").utf8))
             throw CLIError(message: "Unknown command: \(command)")
         }
     }

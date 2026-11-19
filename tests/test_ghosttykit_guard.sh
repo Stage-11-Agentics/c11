@@ -28,6 +28,7 @@ cp "$ROOT_DIR/scripts/reloads.sh" "$REPO_DIR/scripts/reloads.sh"
 cp "$ROOT_DIR/scripts/reloadp.sh" "$REPO_DIR/scripts/reloadp.sh"
 cp "$ROOT_DIR/scripts/test-unit-local.sh" "$REPO_DIR/scripts/test-unit-local.sh"
 cp "$ROOT_DIR/scripts/test-unit.sh" "$REPO_DIR/scripts/test-unit.sh"
+cp -R "$ROOT_DIR/scripts/lib" "$REPO_DIR/scripts/lib"
 chmod +x "$REPO_DIR/scripts/"*.sh
 
 git -C "$REPO_DIR/ghostty" init -q

@@ -758,6 +758,80 @@ final class MailboxPanelMailTests: XCTestCase {
         XCTAssertNil(MailboxPanelMail.Header(raw: ["from": "x", "ext": ["other": "y"]]).senderPanel)
     }
 
+    /// C11H-360 (L7): relayed mail carries its machine into the mail views,
+    /// and an unstamped relayed sender never shares a local sender's row.
+    func testRelayedMailNamesItsMachineAndKeepsItsOwnRow() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let relay: [String: Any] = ["ext": ["c11h": ["origin_host": "demo-mac-studio", "machine": "studio", "relay": true]]]
+        let localURL = try receive(ulid(now - 200), from: "reviewer", stamp: nil, body: "local words")
+        let relayedURL = try receive(ulid(now - 100), from: "reviewer", stamp: nil, body: "remote words", fields: relay)
+
+        let local = MailboxPanelMail.message(at: localURL, isUnread: true, arrivedAt: nil)
+        let relayed = MailboxPanelMail.message(at: relayedURL, isUnread: true, arrivedAt: nil)
+        XCTAssertNil(local.relayMachine)
+        XCTAssertEqual(relayed.relayMachine, "studio")
+        XCTAssertNil(MailboxPanelMail.Header(raw: ["from": "reviewer"]).relayMachine)
+        XCTAssertEqual(MailboxPanelMail.Header(raw: relay.merging(["from": "reviewer"]) { a, _ in a }).relayMachine, "studio")
+        XCTAssertNil(MailboxPanelMail.Header(raw: ["from": "reviewer", "ext": ["c11h": ["machine": "x", "relay": false]]]).relayMachine)
+
+        let localKey = try XCTUnwrap(MailboxPanelMail.peerKey(of: local))
+        let relayedKey = try XCTUnwrap(MailboxPanelMail.peerKey(of: relayed))
+        XCTAssertNotEqual(localKey, relayedKey)
+        XCTAssertTrue(MailboxPanelMail.belongs(relayed, to: relayedKey))
+        XCTAssertFalse(MailboxPanelMail.belongs(relayed, to: localKey))
+        XCTAssertFalse(MailboxPanelMail.belongs(local, to: relayedKey))
+        let index = conversationIndex()
+        XCTAssertEqual(Set(index.conversations.map(\.key)), [localKey, relayedKey])
+        XCTAssertEqual(index.conversation(relayedKey)?.label, MailboxEnvelope.senderLabel("reviewer", relayMachine: "studio"))
+        XCTAssertTrue(MailboxEnvelope.senderLabel("reviewer", relayMachine: "studio").contains("studio"))
+        XCTAssertEqual(MailboxEnvelope.senderLabel("reviewer", relayMachine: nil), "reviewer")
+    }
+
+    /// C11H-360 (L7): Insights groups, filters and ranks a relayed sender
+    /// apart from a local sender with the same `from`, and never resolves the
+    /// relayed one to a panel by its name.
+    func testInsightsKeepARelayedSenderApartFromALocalOne() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let relay: [String: Any] = ["ext": ["c11h": ["origin_host": "demo-mac-studio", "machine": "studio", "relay": true]]]
+        try receive(ulid(now - 300), from: "reviewer", stamp: nil, body: "local one")
+        try receive(ulid(now - 200), from: "reviewer", stamp: nil, read: true, body: "local two")
+        try receive(ulid(now - 100), from: "reviewer", stamp: nil, body: "remote words", fields: relay)
+
+        let insights = MailboxPanelMail.insights(inbox: inbox, mailboxesRoot: root, now: now)
+        let relayed = MailboxEnvelope.senderLabel("reviewer", relayMachine: "studio")
+        XCTAssertNotEqual(relayed, "reviewer")
+        XCTAssertEqual(Set(insights.senders.top.map(\.name)), ["reviewer", relayed])
+        XCTAssertEqual(insights.senders.top.first { $0.name == "reviewer" }?.count, 2)
+        XCTAssertEqual(insights.senders.top.first { $0.name == relayed }?.count, 1)
+
+        let remoteSlice = MailboxPanelMail.slice(insights, filter: MailboxPanelMail.InsightsFilter(from: relayed))
+        XCTAssertEqual(remoteSlice.count, 1)
+        XCTAssertEqual(remoteSlice.messages.map(\.header.relayMachine), ["studio"])
+        XCTAssertEqual(Set(remoteSlice.senders.top.map(\.name)), ["reviewer", relayed], "the sender ranking ignores its own filter")
+        let localSlice = MailboxPanelMail.slice(insights, filter: MailboxPanelMail.InsightsFilter(from: "reviewer"))
+        XCTAssertEqual(localSlice.count, 2)
+        XCTAssertTrue(localSlice.messages.allSatisfy { $0.header.relayMachine == nil })
+        XCTAssertEqual(MailboxPanelMail.busiestSenders(insights), ["reviewer"], "a relayed from is never resolved to a local panel")
+    }
+
+    /// C11H-360 (L7): a stamped relayed conversation names its machine.
+    func testStampedRelayedConversationNamesItsMachine() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let linked = UUID(), local = UUID()
+        try write(["from": "reviewer", "body": "remote words",
+                   "ext": [MailboxEnvelope.senderPanelKey: linked.uuidString.lowercased(),
+                           "c11h": ["origin_host": "demo-mac-studio", "machine": "studio", "relay": true]]],
+                  id: ulid(now - 100))
+        try receive(ulid(now - 200), from: "reviewer", stamp: local, body: "local words")
+        let index = conversationIndex()
+        let remote = try XCTUnwrap(index.conversation(.panel(linked)))
+        XCTAssertEqual(remote.label, MailboxEnvelope.senderLabel("reviewer", relayMachine: "studio"))
+        XCTAssertEqual(remote.relayMachine, "studio")
+        let mine = try XCTUnwrap(index.conversation(.panel(local)))
+        XCTAssertEqual(mine.label, "reviewer")
+        XCTAssertNil(mine.relayMachine)
+    }
+
     func testConversationsGroupReceivedMailByTheSenderStamp() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let captain = UUID(), reviewer = UUID()

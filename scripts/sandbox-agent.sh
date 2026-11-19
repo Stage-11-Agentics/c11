@@ -70,8 +70,8 @@ focus on, the machine where this script is invoked.
 Credentials never touch this machine. They are exported on the Tart host,
 sent to the guest on SSH stdin, and written there as mode 600 files. The
 golden image is never booted or written. Overwatch's seat.sh is read from
-C11_SANDBOX_SEAT_SH on the Tart host (default
-~/Projects/Stage11/code/overwatch/launcher/seat.sh). C11_SANDBOX_CLAUDE_ACCOUNT
+C11_SANDBOX_SEAT_SH on the Tart host (from the environment or ~/.config/c11/dev-hosts;
+a leading ~/ is the Tart host's home; default ~/src/overwatch/launcher/seat.sh). C11_SANDBOX_CLAUDE_ACCOUNT
 names the Claude call-sign (default: seat.sh's).
 EOF
 }
@@ -92,12 +92,13 @@ sandbox_validate_kinds() {
 # These scripts run as `zsh -s` with the script on stdin, so any child that might
 # read stdin gets </dev/null, or it would swallow the rest of the script.
 sandbox_agent_host_prelude() {
-  printf 'seat_sh=%q\n' "${C11_SANDBOX_SEAT_SH:-}"
+  printf 'seat_sh=%q\n' "$(c11_dev_host C11_SANDBOX_SEAT_SH 2>/dev/null || true)"
   printf 'claude_account=%q\n' "${C11_SANDBOX_CLAUDE_ACCOUNT:-}"
   # Goes to the Tart host on SSH stdin with the rest of this script, never argv.
   printf 'openrouter_key=%q\n' "${C11_SANDBOX_OPENROUTER_KEY:-}"
   cat <<'ZSH'
-[[ -n "$seat_sh" ]] || seat_sh="$HOME/Projects/Stage11/code/overwatch/launcher/seat.sh"
+[[ -n "$seat_sh" ]] || seat_sh="$HOME/src/overwatch/launcher/seat.sh"
+[[ "$seat_sh" != "~/"* ]] || seat_sh="$HOME/${seat_sh#\~/}"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
 lib_dir=/usr/local/libexec/c11-sandbox
 
@@ -630,7 +631,7 @@ for k in \$kinds; do print -r -- "\${cred[\$k]}"; done \
 # 5. A secret-free record for verify-clean.
 # Repeated stages merge: every kind, Claude account and credential ever staged
 # in this clone stays listed, so verify-clean searches for all of them.
-golden_disk="\$HOME/.tart/vms/\$golden/disk.img"
+golden_disk="\$HOME/.tart/vms/\$(run_image "\$run_id")/disk.img"
 record="\$root/runs/\$run_id/agents.env"
 KINDS="" CLAUDE_ACCOUNTS="" FINGERPRINTS="" GOLDEN_DISK_MTIME=""
 [[ -f "\$record" ]] && source "\$record"
@@ -898,7 +899,7 @@ else
 fi
 if [[ -z "\${FINGERPRINTS// /}" ]]; then
   print -r -- "credentials=none (controlled provider; no token exported or staged)"
-  golden_disk="\$HOME/.tart/vms/\$golden/disk.img"
+  golden_disk="\$HOME/.tart/vms/\$(run_image "\$run_id")/disk.img"
   [[ -f "\$golden_disk" && "\$(stat -f %m "\$golden_disk")" == "\$GOLDEN_DISK_MTIME" ]] || die "golden disk changed or is missing"
   print -r -- "golden_disk_mtime=unchanged since stage"
   if [[ "\$control" == 1 ]]; then
@@ -963,7 +964,7 @@ if [[ "\$control" == 1 ]]; then
     *) print -r -- "control_clone_disk=error (scan exit \$rc)"; exit 1 ;;
   esac
 fi
-golden_disk="\$HOME/.tart/vms/\$golden/disk.img"
+golden_disk="\$HOME/.tart/vms/\$(run_image "\$run_id")/disk.img"
 [[ -f "\$golden_disk" ]] || die "golden disk not found at \$golden_disk"
 mtime="\$(stat -f %m "\$golden_disk")"
 if [[ "\$mtime" == "\$GOLDEN_DISK_MTIME" ]]; then

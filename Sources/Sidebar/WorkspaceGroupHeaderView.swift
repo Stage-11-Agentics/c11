@@ -11,6 +11,15 @@ struct WorkspaceGroupHeaderView: View, Equatable {
     var horizontalPadding: CGFloat = 8
     var colorScheme: ColorScheme = .light
     var palette: [WorkspaceColorEntry] = WorkspaceColorSettings.defaultPalette
+    /// One line beside compact workspace cards (C11H-221): the counts move up
+    /// beside the name and the badge row goes.
+    var compact: Bool = false
+    /// The group's own Captain (C11H-299). Its mark sits in a fixed slot on the
+    /// name row, always reserved, so a Captain arriving or leaving moves nothing
+    /// and the badge row keeps its width at the narrowest sidebar.
+    var captain: WorkspaceCaptainSummary = .unset
+    /// The active theme's `[states]`, for the waiting count's colour.
+    var states: ThemeStatePalette = .unset
     let onToggleCollapse: (UUID) -> Void
     let onFocus: (UUID) -> Void
     let onRename: (UUID, String) throws -> Void
@@ -34,9 +43,21 @@ struct WorkspaceGroupHeaderView: View, Equatable {
             && lhs.isActive == rhs.isActive && lhs.scale == rhs.scale
             && lhs.horizontalPadding == rhs.horizontalPadding
             && lhs.colorScheme == rhs.colorScheme && lhs.palette == rhs.palette
+            && lhs.compact == rhs.compact && lhs.captain == rhs.captain
+            && lhs.states == rhs.states
     }
 
-    static func height(scale: CGFloat = 1) -> CGFloat { 52 * scale }
+    static func height(scale: CGFloat = 1, compact: Bool = false) -> CGFloat { (compact ? 32 : 52) * scale }
+
+    private var waitingTint: Color { Self.waitingTint(colorScheme: colorScheme, states: states) }
+
+    /// The waiting count in the waiting colour for this slot, on the header's
+    /// opaque surface: the theme's `[states]`, else c11's (C11H-344: white on
+    /// dark, near-black on light).
+    static func waitingTint(colorScheme: ColorScheme, states: ThemeStatePalette) -> Color {
+        let hex = Workspace.resolvedSurfaceTabActivityColors(lightBackground: colorScheme == .light, states: states).waitingHex
+        return Color(nsColor: hex.flatMap(NSColor.init(hex:)) ?? .labelColor)
+    }
 
     private var tint: Color {
         if summary.flaggedCount > 0 {
@@ -69,11 +90,11 @@ struct WorkspaceGroupHeaderView: View, Equatable {
         // Two fixed rows keep the full-size name useful in a narrow sidebar.
         // Every attention slot remains present at zero, during hover and at 99+.
         VStack(spacing: 2 * scale) {
-            HStack(spacing: 5 * scale) {
+            HStack(spacing: (compact ? 4 : 5) * scale) {
                 Button { onToggleCollapse(group.id) } label: {
                     Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
                         .font(.system(size: 10 * scale, weight: .semibold))
-                        .frame(width: 20 * scale, height: 24 * scale)
+                        .frame(width: (compact ? 16 : 20) * scale, height: 24 * scale)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -81,10 +102,10 @@ struct WorkspaceGroupHeaderView: View, Equatable {
                 .accessibilityValue(Text(verbatim: group.name))
                 .help(collapseLabel)
 
-                Image(systemName: workspaceGroupSymbolName(group.icon))
-                    .font(.system(size: 13 * scale))
+                SidebarIconGlyphView(glyph: SidebarIconGlyph.forGroupIcon(group.icon) ?? .symbol("folder.fill"),
+                                     size: 13 * scale)
                     .foregroundColor(tint)
-                    .frame(width: 18 * scale, height: 24 * scale)
+                    .frame(width: (compact ? 14 : 18) * scale, height: 24 * scale)
                     .accessibilityHidden(true)
 
                 Button { onFocus(group.id) } label: {
@@ -103,6 +124,21 @@ struct WorkspaceGroupHeaderView: View, Equatable {
                     : String(localized: "workspaceGroup.accessibility.focus", defaultValue: "Focus a workspace in this group.")))
                 .help(group.name)
 
+                if compact {
+                    // One fixed attention slot keeps the name readable in a narrow
+                    // sidebar: flags when any are up, else waiting.
+                    if summary.flaggedCount > 0 {
+                        badge("flag.fill", count: summary.flaggedCount, color: tint, width: 32,
+                              label: String(localized: "workspaceGroup.flaggedCount", defaultValue: "\(summary.flaggedCount) flagged panels"))
+                    } else {
+                        badge("hourglass", count: summary.waitingCount, color: waitingTint, width: 32,
+                              label: String(localized: "workspaceGroup.waitingCount", defaultValue: "\(summary.waitingCount) waiting panels"))
+                    }
+                }
+
+                captainSlot
+
+                if !compact || group.isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 9 * scale))
                     .foregroundColor(.secondary)
@@ -110,10 +146,11 @@ struct WorkspaceGroupHeaderView: View, Equatable {
                     .frame(width: 12 * scale, height: 24 * scale)
                     .accessibilityHidden(!group.isPinned)
                     .accessibilityLabel(Text(String(localized: "workspaceGroup.pinned", defaultValue: "Pinned group")))
+                }
 
                 Menu { menuContent } label: {
                     Image(systemName: "ellipsis")
-                        .frame(width: 22 * scale, height: 24 * scale)
+                        .frame(width: (compact ? 18 : 22) * scale, height: 24 * scale)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -123,12 +160,13 @@ struct WorkspaceGroupHeaderView: View, Equatable {
                 .help(String(localized: "workspaceGroup.actions", defaultValue: "Group actions"))
             }
 
+            if !compact {
             HStack(spacing: 3 * scale) {
                 badge("square.stack", count: summary.memberCount, color: .secondary,
                       label: String(localized: "workspaceGroup.memberCount", defaultValue: "\(summary.memberCount) workspaces"))
                 badge("flag.fill", count: summary.flaggedCount, color: tint,
                       label: String(localized: "workspaceGroup.flaggedCount", defaultValue: "\(summary.flaggedCount) flagged panels"))
-                badge("hourglass", count: summary.waitingCount, color: .orange,
+                badge("hourglass", count: summary.waitingCount, color: waitingTint,
                       label: String(localized: "workspaceGroup.waitingCount", defaultValue: "\(summary.waitingCount) waiting panels"))
                 badge("envelope.badge", count: summary.unreadCount, color: .accentColor,
                       label: String(localized: "workspaceGroup.unreadCount", defaultValue: "\(summary.unreadCount) unread notifications"))
@@ -136,10 +174,11 @@ struct WorkspaceGroupHeaderView: View, Equatable {
             }
             .padding(.leading, 25 * scale)
             .frame(height: 18 * scale)
+            }
         }
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, 4 * scale)
-        .frame(height: Self.height(scale: scale))
+        .frame(height: Self.height(scale: scale, compact: compact))
         .background(RoundedRectangle(cornerRadius: 5 * scale)
             .fill(isActive ? Color.accentColor.opacity(colorScheme == .dark ? 0.20 : 0.12) : Color.clear))
         // Semantic text needs an opaque matching surface even when the sidebar
@@ -162,9 +201,11 @@ struct WorkspaceGroupHeaderView: View, Equatable {
                     onDismiss: { self.editor = nil }
                 )
             case .icon:
-                WorkspaceGroupIconEditor(initialIcon: group.icon, focusTarget: editorFocusTarget,
-                                         onSubmit: { try onSetIcon(group.id, $0) },
-                                         onDismiss: { self.editor = nil })
+                SidebarIconPicker(title: String(localized: "workspaceGroup.iconTitle", defaultValue: "Group Icon"),
+                                  current: SidebarIconGlyph.forGroupIcon(group.icon),
+                                  focusTarget: editorFocusTarget,
+                                  onSubmit: { try onSetIcon(group.id, $0?.groupValue) },
+                                  onDismiss: { self.editor = nil })
             case .error:
                 VStack(alignment: .leading, spacing: 12) {
                     Text(verbatim: actionError ?? "")
@@ -180,7 +221,35 @@ struct WorkspaceGroupHeaderView: View, Equatable {
         }
     }
 
-    private func badge(_ symbol: String, count: Int, color: Color, label: String) -> some View {
+    /// One mark for the whole group: filled while one open panel holds the
+    /// address, hollow when nobody does, a warning glyph for several holders.
+    /// Fixed width and height in every state, transparent when unset; the
+    /// holder's title and address are in the tooltip and accessibility text.
+    private var captainSlot: some View {
+        let description = captain.accessibilityDescription
+        let color = Color(nsColor: .controlAccentColor)
+        return Group {
+            if captain.state == .ambiguous {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10 * scale, weight: .semibold))
+                    .foregroundColor(color)
+            } else {
+                WorkspaceCaptainHat()
+                    .fill(captain.present ? color : Color.clear)
+                    .overlay(WorkspaceCaptainHat().stroke(color, lineWidth: 1))
+                    .frame(width: 12 * scale, height: 10 * scale)
+            }
+        }
+        .frame(width: 14 * scale, height: 24 * scale)
+        .opacity(captain.address == nil ? 0 : 1)
+        .help(description)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: description))
+        .accessibilityHidden(captain.address == nil)
+        .accessibilityIdentifier("workspace-group-captain-\(group.id.uuidString)")
+    }
+
+    private func badge(_ symbol: String, count: Int, color: Color, width: CGFloat = 37, label: String) -> some View {
         HStack(spacing: 3 * scale) {
             Image(systemName: symbol)
                 .font(.system(size: 9 * scale))
@@ -189,10 +258,10 @@ struct WorkspaceGroupHeaderView: View, Equatable {
                  ? String(localized: "workspaceGroup.countOverflow", defaultValue: "99+") : String(count))
                 .font(.system(size: 10 * scale, weight: .medium))
                 .monospacedDigit()
-                .frame(width: 22 * scale, alignment: .leading)
+                .frame(width: (width - 15) * scale, alignment: .leading)
         }
         .foregroundColor(count > 0 ? color : .secondary.opacity(0.65))
-        .frame(width: 37 * scale, height: 18 * scale, alignment: .leading)
+        .frame(width: width * scale, height: 18 * scale, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
         .help(label)
@@ -351,80 +420,4 @@ struct WorkspaceGroupNameEditor: View {
             onDismiss()
         } catch { errorMessage = error.localizedDescription }
     }
-}
-
-private struct WorkspaceGroupIconEditor: View {
-    let initialIcon: String?
-    let focusTarget: WorkspaceGroupEditorFocusTarget?
-    let onSubmit: (String?) throws -> Void
-    let onDismiss: () -> Void
-
-    @State private var draft = ""
-    @State private var errorMessage: String?
-    @FocusState private var fieldFocused: Bool
-
-    private var trimmed: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var valid: Bool {
-        trimmed.isEmpty || NSImage(systemSymbolName: trimmed, accessibilityDescription: nil) != nil
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "workspaceGroup.iconTitle", defaultValue: "Group Icon")).font(.headline)
-            HStack {
-                Image(systemName: workspaceGroupSymbolName(trimmed)).frame(width: 24, height: 24)
-                    .accessibilityHidden(true)
-                TextField(String(localized: "workspaceGroup.iconName", defaultValue: "SF Symbol name"), text: $draft)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($fieldFocused)
-                    .onSubmit { submit() }
-            }
-            Text(verbatim: errorMessage ?? (valid ? " " : String(localized: "workspaceGroup.invalidIcon", defaultValue: "Enter a valid SF Symbol name.")))
-                .foregroundColor(.red)
-                .font(.caption)
-                .frame(height: 36, alignment: .topLeading)
-                .accessibilityHidden(errorMessage == nil && valid)
-            HStack {
-                Button(String(localized: "workspaceGroup.cancel", defaultValue: "Cancel"), action: onDismiss)
-                    .keyboardShortcut(.cancelAction)
-                Button(String(localized: "workspaceGroup.clearIcon", defaultValue: "Clear Icon")) {
-                    draft = ""
-                    submit()
-                }
-                Spacer()
-                Button(String(localized: "workspaceGroup.save", defaultValue: "Save")) { submit() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!valid)
-            }
-        }
-        .padding(16)
-        .frame(width: 320)
-        .onAppear { draft = initialIcon ?? ""; fieldFocused = false }
-        .task {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                DispatchQueue.main.async { continuation.resume() }
-            }
-            guard !Task.isCancelled else { return }
-            fieldFocused = true
-        }
-        .onExitCommand(perform: onDismiss)
-        .onDisappear {
-            fieldFocused = false
-            focusTarget?.restore()
-        }
-    }
-
-    private func submit() {
-        guard valid else { return }
-        do {
-            try onSubmit(trimmed.isEmpty ? nil : trimmed)
-            onDismiss()
-        } catch { errorMessage = error.localizedDescription }
-    }
-}
-
-private func workspaceGroupSymbolName(_ raw: String?) -> String {
-    guard let raw, !raw.isEmpty,
-          NSImage(systemSymbolName: raw, accessibilityDescription: nil) != nil else { return "folder.fill" }
-    return raw
 }

@@ -24,7 +24,7 @@ enum MailboxBodyLinks {
 
     private static let titleLimit = 512
     private static let hrefLimit = 2048
-    private static let barePrefixes = ["c11://", "http://", "https://"]
+    private static let barePrefixes = ["c11://", "c11h://", "http://", "https://"] // c11-2.0:keep (hidden alias)
     /// Characters that end a bare URL's run.
     private static let bareTerminators: Set<Character> = ["<", ">", "\"", "`"]
     /// Trailing characters left out of a bare URL: sentence punctuation and

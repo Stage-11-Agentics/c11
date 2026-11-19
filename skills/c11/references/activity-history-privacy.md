@@ -26,6 +26,15 @@ after the accepted event leaves the retained log or recording text is re-enabled
 Recipients still receive the original body; this preference does not redact the
 message being delivered. Delivery extension fields are otherwise preserved. Sender-supplied reserved markers are normalized to c11’s acceptance decision. Outbox and processing text is hidden until acceptance. If a required marker cannot be persisted, the undelivered processing envelope remains for manual recovery; c11 records a metadata-only failure and does not automatically retry.
 
+`c11 fleet` shows each Claude agent's final message (`last_message`, at most
+300 characters, from Claude's own Stop hook, on this Mac or through the relay
+from a linked machine) and a failed turn's provider
+sentence (`last_turn_stop.text`). Both live only in c11's memory, never in the
+activity log or on disk, and are dropped when the panel closes or c11 quits.
+With **Keep message and input text** off they keep a character count and no
+text. Switching it off takes effect at once: text already kept is dropped from
+memory and no longer shown.
+
 The full log kill switch remains a defaults key, documented in the
 [events reference](events.md). There is no full kill-switch Settings control.
 These controls do not change an agent's transcript storage or the independent

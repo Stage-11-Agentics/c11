@@ -172,7 +172,7 @@ def require_bounded_growth(label: str, registered_bytes: int, scaling_bytes: int
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cli", required=True, help="tagged Atlas bundle CLI executable")
+    parser.add_argument("--cli", required=True, help="tagged build-host bundle CLI executable")
     parser.add_argument("--support", type=Path,
                         default=Path.home() / "Library/Application Support")
     parser.add_argument("--bundle-id", help="optional isolated bundle namespace")

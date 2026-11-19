@@ -185,7 +185,10 @@ final class MailboxDispatcher {
         nativeRoute: String? = nil,
         nativeFailure: String? = nil,
         recipientPanel: UUID? = nil,
-        nativeState: String? = nil
+        nativeState: String? = nil,
+        hold: String? = nil,
+        holdSince: Date? = nil,
+        why: String? = nil
     ) {
         // A held/skipped envelope has not selected a delivery route yet.
         let attempted = outcome == .doorbell || outcome == .doorbellFailed
@@ -202,15 +205,19 @@ final class MailboxDispatcher {
                 nativeRoute: attempted ? nativeRoute : nil,
                 nativeFailure: attempted ? nativeFailure : nil,
                 recipientPanel: recipientPanel,
-                nativeState: attempted ? nativeState : nil
+                nativeState: attempted ? nativeState : nil,
+                hold: attempted ? nil : hold,
+                holdSince: attempted ? nil : holdSince,
+                why: why
             )
         )
     }
 
     /// One line per held-composer look, so the watch is visible in the log.
-    func logStdinRecheck(id: String, recipient: String, reason: String, nextMs: Int, recipientPanel: UUID? = nil) {
+    func logStdinRecheck(id: String, recipient: String, reason: String, nextMs: Int, recipientPanel: UUID? = nil,
+                         hold: String? = nil, holdSince: Date? = nil) {
         log.append(.doorbellRecheck(id: id, recipient: recipient, reason: reason, nextMs: nextMs,
-                                    recipientPanel: recipientPanel))
+                                    recipientPanel: recipientPanel, hold: hold, holdSince: holdSince))
     }
 
     /// The stdin push could not claim an envelope; it stays in the inbox.
@@ -391,7 +398,8 @@ final class MailboxDispatcher {
             replyTo: envelope.replyTo,
             inReplyTo: envelope.inReplyTo,
             urgent: envelope.urgent,
-            textRecorded: textRecorded
+            textRecorded: textRecorded,
+            relayMachine: envelope.relayMachine
         )
         // The operator may turn text off after the initial snapshot. The
         // emitter's decision is authoritative and must outlive its event.
@@ -506,7 +514,16 @@ final class MailboxDispatcher {
         // Same matcher the cross-workspace resolver uses, so local delivery
         // agrees with global routing on who `to` resolves to (precedence
         // address > role > title; `panel:`/`role:` qualifiers honored).
-        let requested = MailboxMatcher.select(MailboxAddress.parse(to), from: all, identity: { $0.identity })
+        let address = MailboxAddress.parse(to)
+        let requested = MailboxMatcher.select(address, from: all, identity: { $0.identity })
+        // C11H-360: a linked-machine panel never answers to a name a panel on
+        // this Mac answers to, in this workspace (the matcher) or any other.
+        // `id:<uuid>` names one panel exactly and is never a shared name.
+        let exactPanel: Bool = { if case .id = address { return true }; return false }()
+        if !exactPanel, !requested.isEmpty, requested.allSatisfy({ $0.identity.isLinked }),
+           resolver.localAnswersAnywhere(address) {
+            return []
+        }
         var seen = Set<UUID>()
         return requested.map { resolver.canonicalRecipient($0) }.filter { seen.insert($0.surfaceId).inserted }
     }
@@ -556,6 +573,16 @@ final class MailboxDispatcher {
                 surface: recipient.surfaceId,
                 via: "inbox",
                 senderPanel: envelope.senderPanelId
+            )
+            // C11H-246: at Chatty, a delivered envelope also posts a plain
+            // banner (the dial is read off main; the post hops to main only
+            // when it applies).
+            TerminalNotificationStore.noteMailDelivered(
+                workspaceId: recipient.inboxWorkspaceId ?? workspaceId,
+                surfaceId: recipient.surfaceId,
+                recipient: recipient.displayName,
+                // C11H-360: a relayed sender's banner names its machine.
+                sender: MailboxEnvelope.senderLabel(envelope.from, relayMachine: envelope.relayMachine)
             )
             return true
         } catch {

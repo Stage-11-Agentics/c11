@@ -1,0 +1,78 @@
+# Big Board — mission control's wall. Green for running, amber for waiting,
+# near-black console cards. The colour register of c11h-themes.html theme 7.
+# Not expressible here: tracked mono caps, LIVE/HOLD tags, the titlebar clock.
+
+[identity]
+name         = "bigboard"
+display_name = "Big Board"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 1
+
+[palette]
+void    = "#05070A"
+surface = "#080B10"
+raised  = "#0F1721"
+rule    = "#15202B"
+text    = "#DFE8EE"
+textDim = "#65788A"
+green   = "#3DDC84"   # live
+amber   = "#FFB224"   # hold / needs you
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.green"
+accentAlt           = "$palette.amber"
+separator           = "$palette.rule"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$accent"
+thicknessPt      = 1.0
+inactiveOpacity  = 0.25
+unfocusedOpacity = 0.5
+
+[chrome.sidebar]
+tintOverlay                   = "$background"
+tintBase                      = "$background"
+tintBaseOpacity               = 1.0
+activeTabFill                 = "$palette.raised"
+activeTabFillFallback         = "$palette.raised"
+activeTabRail                 = "$accent"
+activeTabRailFallback         = "$accent"
+activeTabRailOpacity          = 1.0
+inactiveTabCustomOpacity      = 0.6
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accentAlt"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$separator"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$background"
+backgroundOpacity   = 1.0
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+
+[chrome.tabBar]
+background      = "$background"
+activeFill      = "$palette.raised"
+divider         = "$separator"
+activeIndicator = "$accent"
+
+[chrome.browserChrome]
+background  = "$background"
+omnibarFill = "$surface"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = false

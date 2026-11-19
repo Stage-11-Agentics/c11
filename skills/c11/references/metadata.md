@@ -1,10 +1,11 @@
-# c11 Per-Panel Metadata
+# c11 Panel and Workspace Metadata
 
 Every panel in c11 carries an open-ended JSON metadata blob. Agents read and write it over the socket. c11 stores it, renders a narrow set of **canonical keys** in the sidebar and title bar, and leaves everything else opaque for consumers (Lattice, internal dashboards, future Stage 11 tooling). This is the transport — and the vocabulary — that lets a spike's agents speak to the room they are working in.
 
 ## Contents
 
 - [Delivery model](#delivery-model)
+- [Workspace metadata and captains](#workspace-metadata-and-captains)
 - [Canonical keys](#canonical-keys)
 - [CLI](#cli)
 - [Socket methods](#socket-methods)
@@ -16,16 +17,119 @@ Every panel in c11 carries an open-ended JSON metadata blob. Agents read and wri
 
 - **Pull-on-demand reads.** Consumers fetch the blob when they want the current state; there is no socket push/subscribe. Changes to evented keys (e.g. `status`) also land as `metadata.changed` on the file-first events stream (`c11 events tail` — see [events.md](events.md)) for consumers that prefer to follow along.
 - **Live blob and workspace snapshots.** The blob lives on the panel model in the running c11 process. Workspace snapshots persist the values `PersistedMetadata` keeps: derived keys are dropped except `activity`, which is retained so restore can seed the live projection. Consumers that need history beyond those snapshots own it.
-- **Per-panel.** Keyed by the panel UUID. No workspace- or window-scoped metadata in v1.
+- **Per-panel.** Keyed by the panel UUID. Workspace metadata uses a separate object and the workspace commands below; a `--workspace` qualifier on `set-metadata` still selects the workspace containing a panel or area.
 - **64 KiB cap** on the serialized `metadata` object per panel. Writes that would exceed the cap return `payload_too_large`. Store large payloads externally (S3, Lattice attachments) and put a reference in the blob.
 
 `get-metadata` also projects the direct creator as `parent_panel_id` (UUID or
 `null`), `parent_panel_ref` (current panel ref or `null`), and
-`parent_panel_title` (last known title or `null`). These values belong to
+`parent_panel_title` (last known title or `null`), and who made the panel as
+`panel_origin` (`operator`, `panel`, `app`, `external` or `unknown`) with
+`panel_origin_detail` (the app reason: `launch`, `restore` or `chaos`,
+else `null`). These values belong to
 app-level panel lineage, not the metadata blob or workspace snapshot. They are
 read-only: writes through `set-metadata` or `clear-metadata` return
 `lineage_read_only`. Use [`c11 family`](api.md#spatial-layout-c11-tree) to
 read the full family.
+
+## Workspace metadata and captains
+
+Each workspace also carries a persisted JSON object. Writes are capped at 64 KiB. Read and
+write it with `get-workspace-metadata`, `set-workspace-metadata` and
+`clear-workspace-metadata`, or the corresponding `workspace.get_metadata`,
+`workspace.set_metadata` and `workspace.clear_metadata` socket methods. Supply
+`--workspace <ref>` or run inside the workspace; there is no selected-workspace
+fallback. Existing positional string writes remain supported.
+
+```bash
+c11 set-workspace-metadata --workspace <ref> captain project-captain
+c11 set-workspace-metadata --workspace <ref> --json '{"build":{"ready":true},"count":3}'
+c11 get-workspace-metadata --workspace <ref> --sources
+c11 clear-workspace-metadata --workspace <ref> --key captain
+```
+
+The object accepts all JSON value types for custom keys. `description` and
+`icon` retain their string limits. `icon` is one emoji or `sf:<symbol>`; the
+sidebar card draws it before the workspace name, a symbol as the symbol and any
+other text as its first character only (`rocket` draws `r`); `captain` is a nonempty single-line mailbox
+address string, trimmed, at most 256 UTF-8 bytes. It is case-sensitive. Clear a
+captain with the clear command; a blank string is refused. Reads can filter with
+repeated `--key`. `--type`, `--source` and `--mode merge|replace` follow the panel
+commands. Replace and clear-all require `source=explicit`. Lower-precedence
+writes return `applied=false` for each rejected key. Source records and their
+last-changed timestamps survive relaunch; an identical write preserves them.
+Older session snapshots retain every stored workspace string unchanged.
+
+The workspace root's `C11.md` can supply the default:
+
+```markdown
+**Captain.** `project-captain`
+```
+
+Alternatively, use `**Captain:**`, `**Captain**:`, or a `## Captain` heading
+followed by one address line. Values may be bare or wrapped in one backtick
+pair; only that one surrounding pair is removed. The first valid marked
+declaration outside comments, fences and quotations wins. An unmarked prose
+line starting `Captain:` does not declare metadata and can supply fallback
+mission prose.
+Workspaces sharing a root share this default. An explicit per-workspace value
+wins; clearing it reveals the latest file value. The file default reports
+`source=derived` and is recomputed, never saved as an explicit override. Remote
+and rootless workspaces use explicit metadata; c11 does not read a remote path
+on the local machine or fetch C11.md over a link.
+
+A workspace group carries the same kind of object, so one Captain can serve every
+member of the group (see below). A panel is a captain when its `mailbox.address`
+equals any workspace's resolved Captain or any workspace group's `captain`,
+including workspaces and groups in other windows. `is_captain` on tree/fleet
+panel nodes and `captain_present` on workspace and group records are derived
+fields, not metadata declarations. An open panel holds the address regardless of its agent
+phase; presence does not promise that its transport can ring. Multiple holders
+are reported as ambiguous. See [mailbox](mailbox.md) for `--to-captain` and
+[sidebar](sidebar.md) for the outline and empty-hat mark.
+
+### Group metadata and the group Captain
+
+A workspace group has the same JSON object as a workspace: the same 64 KiB cap,
+keys, validation, source precedence (`explicit` > `declare` > `osc` > `heuristic`;
+`derived` belongs to c11) and merge/replace/clear behavior. The commands are the
+same three, with `--group <workspace_group:N|UUID>` instead of `--workspace`; the
+two flags are exclusive. A `workspace_group:N` ref resolves in `--window` (default:
+the caller's window); a UUID needs no window.
+
+```bash
+c11 set-workspace-metadata --group workspace_group:1 captain acme-captain
+c11 get-workspace-metadata --group workspace_group:1 --sources
+c11 clear-workspace-metadata --group workspace_group:1 --key captain
+```
+
+A group has no root directory, so it has no C11.md default: its `captain` is
+authored metadata only. Any source but `derived` may write it, under the same
+precedence; nothing supplies a default when it is unset.
+
+**Resolution.** A workspace's Captain is its own effective `captain` (explicit,
+else its root's C11.md line). Only when that is unset does its group's `captain`
+apply. A group never overrides a member that declares its own Captain, including
+through C11.md; to make such a member follow the group, set the member's `captain`
+explicitly to the group's address. A workspace's own `metadata.captain` stays its
+own key, so it can differ from the resolved Captain that tree and fleet report.
+
+**Lifecycle.** A workspace that joins a group (add, move into, or a cross-window drag
+into one) and has no Captain of its own starts resolving the group's. On leaving
+(remove, move out or to another group) it falls back to its own key, else none.
+Deleting or ungrouping a group deletes its object, Captain included; nothing is
+copied to members. Groups are window-local: moving a workspace to another window
+drops its membership, so it stops inheriting. The holder panel may sit in any
+window or workspace, and presence is instance-wide. A group's object is saved with
+the session and restored with the group; closing a window discards its groups and
+their objects.
+
+A group with a Captain and no members still marks its holder as a captain.
+
+Workspace changes emit `metadata.changed` with `scope=workspace`. Events carry
+changed/removed key names, source and revision, plus bounded canonical values;
+custom JSON and legacy values outside today's canonical limits remain pull-on-demand. A group's object emits the same event with `scope=workspace_group`. Failed and identical writes emit
+nothing. `tree --json` includes each workspace's complete `metadata` and
+`metadata_sources` objects.
 
 ## Canonical keys
 

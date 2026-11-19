@@ -56,6 +56,13 @@ enum PromptCacheReport: Equatable, Sendable {
 
 /// Validates the `agent.prompt_cache.report` params. Pure: no clocks or stores.
 enum PromptCacheReportParser {
+    /// C11H-320 PR 3: a reported context window and, when the reporter named
+    /// it (the statusline's `model.id`), the model it belongs to.
+    struct ContextWindow: Equatable, Sendable {
+        let tokens: Int
+        let model: String?
+    }
+
     struct Failure: Error, Equatable {
         let message: String
     }
@@ -75,8 +82,13 @@ enum PromptCacheReportParser {
     static let callerPanelKeys = spellings(of: "caller_surface_id")
 
     static let payloadKeys = ["request", "prompt_cache", "reset", "unknown"]
-    /// Top-level keys: the panel (any accepted spelling) and exactly one payload.
-    static let allowedKeys = Set(panelKeys + callerPanelKeys + payloadKeys)
+    /// C11H-320 PR 3: Claude's statusline `context_window` object may ride
+    /// beside any payload; only its `context_window_size` is kept.
+    static let contextWindowKey = "context_window"
+    static let maxContextWindow = 100_000_000
+    /// Top-level keys: the panel (any accepted spelling), exactly one payload,
+    /// and optionally the context window.
+    static let allowedKeys = Set(panelKeys + callerPanelKeys + payloadKeys + [contextWindowKey])
     /// Epoch milliseconds before 2001: a caller sent seconds.
     static let minimumEpochMilliseconds: Double = 1_000_000_000_000
 
@@ -84,7 +96,8 @@ enum PromptCacheReportParser {
         [canonical] + (LegacyWireAliases.paramSources.first { $0.target == canonical }?.sources ?? [])
     }
 
-    static func parse(_ params: [String: Any], now: Date) -> Result<(panelId: UUID, report: PromptCacheReport), Failure> {
+    static func parse(_ params: [String: Any], now: Date)
+        -> Result<(panelId: UUID, report: PromptCacheReport, contextWindow: ContextWindow?), Failure> {
         if let unexpected = params.keys.filter({ !allowedKeys.contains($0) }).sorted().first {
             return .failure(Failure(message: "unknown parameter '\(unexpected)'"))
         }
@@ -102,6 +115,27 @@ enum PromptCacheReportParser {
         guard payloads.count == 1 else {
             return .failure(Failure(message: "exactly one of request, prompt_cache, reset or unknown is required"))
         }
+        var contextWindow: ContextWindow?
+        if let raw = params[contextWindowKey], !(raw is NSNull) {
+            guard let object = raw as? [String: Any] else {
+                return .failure(Failure(message: "context_window must be an object"))
+            }
+            if let size = object["context_window_size"], !(size is NSNull) {
+                guard let value = number(size), value >= 1, value <= Double(maxContextWindow),
+                      value == value.rounded() else {
+                    return .failure(Failure(message: "context_window.context_window_size must be a whole number of tokens from 1 to \(maxContextWindow)"))
+                }
+                var model: String?
+                if let rawModel = object["model"], !(rawModel is NSNull) {
+                    guard let text = (rawModel as? String)?.trimmingCharacters(in: .whitespaces), !text.isEmpty,
+                          text.count <= maxIdentifierLength else {
+                        return .failure(Failure(message: "context_window.model must be a model id of at most \(maxIdentifierLength) characters"))
+                    }
+                    model = text
+                }
+                contextWindow = ContextWindow(tokens: Int(value), model: model)
+            }
+        }
         let report: Result<PromptCacheReport, Failure>
         switch payloads[0] {
         case "request": report = parseRequest(params["request"], now: now)
@@ -109,7 +143,7 @@ enum PromptCacheReportParser {
         case "reset": report = parseReset(params["reset"], now: now)
         default: report = parseUnknown(params["unknown"])
         }
-        return report.map { (panelId: panelId, report: $0) }
+        return report.map { (panelId: panelId, report: $0, contextWindow: contextWindow) }
     }
 
     private static func parseRequest(_ raw: Any?, now: Date) -> Result<PromptCacheReport, Failure> {
@@ -288,16 +322,85 @@ final class PromptCacheReportStore: @unchecked Sendable {
         /// An implicit cache (no published lifetime) has shown a read, so the
         /// provider caches and its later requests count as cache evidence.
         var implicitCacheSeen = false
+        /// C11H-320 PR 3: the harness's own context window, when its reporter
+        /// sends one (Claude's statusline `context_window_size`). It belongs
+        /// to one model: a model switch, or a request naming another model,
+        /// drops it; the slot goes with the agent.
+        var harnessWindow: HarnessWindow? = nil
+        /// The model the last request report named.
+        var lastRequestModel: String? = nil
+    }
+
+    struct HarnessWindow: Equatable, Sendable {
+        let tokens: Int
+        /// The model it was reported for: the report's, else the request's,
+        /// else the transcript's at that moment. Nil: unknown, so unused.
+        let model: String?
+        /// The transcript's model epoch when it arrived (`TranscriptSignals`).
+        let epoch: Int?
+        let at: Date
+    }
+
+    /// What the transcript said about the panel's model when a report arrived.
+    struct ModelEvidence: Equatable, Sendable {
+        var model: String? = nil
+        var epoch: Int? = nil
+
+        init(model: String? = nil, epoch: Int? = nil) {
+            self.model = model
+            self.epoch = epoch
+        }
+
+        /// The transcript's word: an epoch counts only once it has named a
+        /// model, so a window that arrives before that has none and is unused.
+        init(signals: TranscriptSignals?) {
+            model = signals?.model
+            epoch = signals?.model == nil ? nil : signals?.modelEpoch
+        }
+    }
+
+    static func modelKey(_ model: String) -> String { TranscriptSignals.modelKey(model) }
+
+    /// Apply the window rules to a slot: a model switch or a request for
+    /// another model drops the window; a reported window installs, bound to
+    /// the model it names, else the request's, else the last request's, else
+    /// the transcript's, and to the transcript's epoch. Pure.
+    static func applyWindow(_ slot: inout Slot, report: PromptCacheReport,
+                            window: PromptCacheReportParser.ContextWindow?, at: Date,
+                            evidence: ModelEvidence = ModelEvidence()) {
+        var requestModel: String?
+        switch report {
+        case .reset(.modelSwitch, _):
+            slot.harnessWindow = nil
+        case .request(let request):
+            if let model = request.model {
+                requestModel = model
+                let held = slot.harnessWindow?.model ?? slot.lastRequestModel
+                if let held, modelKey(held) != modelKey(model) { slot.harnessWindow = nil }
+                slot.lastRequestModel = model
+            }
+        default:
+            break
+        }
+        if let window {
+            slot.harnessWindow = HarnessWindow(
+                tokens: window.tokens,
+                model: window.model ?? requestModel ?? slot.lastRequestModel ?? evidence.model,
+                epoch: evidence.epoch, at: at)
+        }
     }
 
     private let lock = NSLock()
     private var slots: [UUID: Slot] = [:]
 
     @discardableResult
-    func record(_ report: PromptCacheReport, panelId: UUID, receivedAt: Date = Date()) -> Slot {
+    func record(_ report: PromptCacheReport, panelId: UUID, receivedAt: Date = Date(),
+                contextWindow: PromptCacheReportParser.ContextWindow? = nil,
+                evidence: ModelEvidence = ModelEvidence()) -> Slot {
         lock.lock()
         defer { lock.unlock() }
-        let slot = Self.fold(slots[panelId], report, receivedAt: receivedAt)
+        var slot = Self.fold(slots[panelId], report, receivedAt: receivedAt)
+        Self.applyWindow(&slot, report: report, window: contextWindow, at: receivedAt, evidence: evidence)
         slots[panelId] = slot
         if slots.count > Self.capacity,
            let oldest = slots.min(by: { $0.value.receivedAt < $1.value.receivedAt })?.key {
@@ -493,13 +596,19 @@ extension TerminalController {
     nonisolated static func promptCacheReportResult(
         params: [String: Any],
         store: PromptCacheReportStore,
-        now: Date
+        now: Date,
+        modelEvidence: (UUID) -> PromptCacheReportStore.ModelEvidence = { panel in
+            .init(signals: AgentModelDetector.shared.signals(forSurface: panel))
+        }
     ) -> V2CallResult {
         switch PromptCacheReportParser.parse(params, now: now) {
         case .failure(let failure):
             return .err(code: "invalid_params", message: failure.message, data: nil)
         case .success(let parsed):
-            let slot = store.record(parsed.report, panelId: parsed.panelId, receivedAt: now)
+            // Only a report with a window needs the transcript's word on its model.
+            let evidence = parsed.contextWindow == nil ? .init() : modelEvidence(parsed.panelId)
+            let slot = store.record(parsed.report, panelId: parsed.panelId, receivedAt: now,
+                                    contextWindow: parsed.contextWindow, evidence: evidence)
             var result: [String: Any] = [
                 "panel_id": parsed.panelId.uuidString,
                 "state": PromptCacheReportStore.stateWord(slot, now: now),

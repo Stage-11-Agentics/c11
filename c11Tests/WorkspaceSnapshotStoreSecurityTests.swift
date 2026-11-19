@@ -194,4 +194,67 @@ final class WorkspaceSnapshotStoreSecurityTests: XCTestCase {
             XCTAssertEqual(err.code, "snapshot_not_found")
         }
     }
+
+    // MARK: - C11H-364 L15: snapshots are private files in a private folder
+
+    private func mode(_ url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue
+    }
+
+    func testDefaultWriteTightensStoreFolderAndWritesFile0600() throws {
+        let previousUmask = umask(mode_t(0o022))
+        defer { _ = umask(previousUmask) }
+        XCTAssertEqual(chmod(currentDir.path, mode_t(0o755)), 0)
+
+        let url = try makeStore().writeToDefaultDirectory(makeEnvelope(snapshotId: "01KQ0PRIVATE00000000000001"))
+
+        XCTAssertEqual(try mode(currentDir), 0o700)
+        XCTAssertEqual(try mode(url), 0o600)
+    }
+
+    func testSetWriteMakesSetsFolder0700AndFile0600() throws {
+        let previousUmask = umask(mode_t(0o022))
+        defer { _ = umask(previousUmask) }
+        let set = WorkspaceSnapshotSetFile(
+            version: 1,
+            setId: "01KQ0PRIVATESET00000000001",
+            createdAt: Date(timeIntervalSince1970: 1_745_000_000),
+            c11Version: "security+0",
+            selectedWorkspaceIndex: 0,
+            snapshots: []
+        )
+
+        let url = try makeStore().writeSet(set)
+
+        XCTAssertEqual(try mode(currentDir), 0o700)
+        XCTAssertEqual(try mode(url.deletingLastPathComponent()), 0o700)
+        XCTAssertEqual(try mode(url), 0o600)
+    }
+
+    func testExplicitOutIntoNonEmptyFolderIsRefusedAndKeepsContents() throws {
+        let out = tmpRoot.appendingPathComponent("chosen", isDirectory: true)
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        let keep = out.appendingPathComponent("keep.txt")
+        try Data("operator".utf8).write(to: keep)
+
+        XCTAssertThrowsError(try makeStore().write(makeEnvelope(snapshotId: "01KQ0PRIVATE00000000000002"), to: out))
+        XCTAssertEqual(try Data(contentsOf: keep), Data("operator".utf8))
+    }
+
+    func testExplicitOutKeepsOperatorFolderModeAndWritesFile0600() throws {
+        let previousUmask = umask(mode_t(0o022))
+        defer { _ = umask(previousUmask) }
+        let chosen = tmpRoot.appendingPathComponent("Desktop", isDirectory: true)
+        try FileManager.default.createDirectory(at: chosen, withIntermediateDirectories: true)
+        XCTAssertEqual(chmod(chosen.path, mode_t(0o755)), 0)
+
+        let url = try makeStore().write(
+            makeEnvelope(snapshotId: "01KQ0PRIVATE00000000000003"),
+            to: chosen.appendingPathComponent("ws.json")
+        )
+
+        XCTAssertEqual(try mode(chosen), 0o755)
+        XCTAssertEqual(try mode(url), 0o600)
+    }
 }

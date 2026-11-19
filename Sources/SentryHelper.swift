@@ -13,7 +13,7 @@ final class CrashDiagnostics: NSObject, MXMetricManagerSubscriber {
     private let logDir: URL = {
         let base = FileManager.default
             .urls(for: .libraryDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Logs/c11/metrickit", isDirectory: true)
+            .appendingPathComponent("Logs/\(C11Identity.logsDirectoryName)/metrickit", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base
     }()
@@ -341,7 +341,7 @@ enum LaunchSentinel {
 
     private static func sessionsDirectory() -> URL {
         let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.stage11.c11"
+        let bundleID = Bundle.main.bundleIdentifier ?? C11Identity.releaseBundleIdentifier
         return cache
             .appendingPathComponent(bundleID, isDirectory: true)
             .appendingPathComponent("sessions", isDirectory: true)

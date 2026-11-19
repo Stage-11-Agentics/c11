@@ -32,7 +32,7 @@ struct ClaudeHookSessionRecord: Codable {
     var startedAt: TimeInterval
     var updatedAt: TimeInterval
 
-    /// On-disk keys of `~/.cmuxterm/claude-hook-sessions.json`, pinned so renaming a
+    /// On-disk keys of `~/.c11/claude-hook-sessions.json`, pinned so renaming a
     /// Swift property (e.g. `surfaceId`) never changes the file format.
     private enum CodingKeys: String, CodingKey {
         case sessionId = "sessionId"
@@ -53,10 +53,15 @@ struct ClaudeHookSessionStoreFile: Codable {
 }
 
 final class ClaudeHookSessionStore {
-    private static let defaultStatePath = "~/.cmuxterm/claude-hook-sessions.json"
+    static func defaultStateFile(home: URL) -> URL {
+        C11Identity.claudeHookStateFile(home: home)
+    }
     private static let maxStateAgeSeconds: TimeInterval = 60 * 60 * 24 * 7
 
     private let statePath: String
+    /// The default `~/.c11` folder is tightened to 0700; an operator's
+    /// `CMUX_CLAUDE_HOOK_STATE_PATH` folder only gets its missing parts.
+    private let tightensStateFolder: Bool
     let fileManager: FileManager
     private let decoder = JSONDecoder()
     let encoder = JSONEncoder()
@@ -74,8 +79,11 @@ final class ClaudeHookSessionStore {
         if let overridePath = processEnv["CMUX_CLAUDE_HOOK_STATE_PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !overridePath.isEmpty {
             self.statePath = NSString(string: overridePath).expandingTildeInPath
+            self.tightensStateFolder = false
         } else {
-            self.statePath = NSString(string: Self.defaultStatePath).expandingTildeInPath
+            let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            self.statePath = Self.defaultStateFile(home: home).path
+            self.tightensStateFolder = true
         }
         self.fileManager = fileManager
         self.encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -197,6 +205,7 @@ final class ClaudeHookSessionStore {
     }
 
     private func withLockedState<T>(_ body: (inout ClaudeHookSessionStoreFile) throws -> T) throws -> T {
+        try ensureStateFolder()
         let lockPath = statePath + ".lock"
         let fd = open(lockPath, O_CREAT | O_RDWR, mode_t(S_IRUSR | S_IWUSR))
         if fd < 0 {
@@ -229,10 +238,18 @@ final class ClaudeHookSessionStore {
 
     private func saveUnlocked(_ state: ClaudeHookSessionStoreFile) throws {
         let stateURL = URL(fileURLWithPath: statePath)
-        let parentURL = stateURL.deletingLastPathComponent()
-        try fileManager.createDirectory(at: parentURL, withIntermediateDirectories: true, attributes: nil)
         let data = try encoder.encode(state)
-        try data.write(to: stateURL, options: .atomic)
+        // Agent text: folder 0700, file 0600 (C11H-364 L18).
+        try PrivateFileWriter.writePrivateStore(data, to: stateURL, tightenFolder: tightensStateFolder)
+    }
+
+    private func ensureStateFolder() throws {
+        let folder = URL(fileURLWithPath: statePath).deletingLastPathComponent()
+        if tightensStateFolder {
+            try PrivateFileWriter.ensurePrivateDirectory(at: folder, allowOwnSymlink: true)
+        } else {
+            try PrivateFileWriter.createMissingPrivateDirectories(at: folder)
+        }
     }
 
     private func pruneExpired(_ state: inout ClaudeHookSessionStoreFile) {

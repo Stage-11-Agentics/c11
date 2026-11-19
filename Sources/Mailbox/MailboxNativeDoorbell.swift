@@ -18,24 +18,27 @@ final class MailboxNativeDoorbell {
         let agentPID: pid_t
         let processStart: UInt64
         let sessionID: String
-        let claudeSessionID: UUID?
         let route: Route
         let canQueue: Bool
         let supportsAttemptReplay: Bool
+        let claudeSessionID: String?
+        let bridgeProcessStart: UInt64?
         let supportsInlineMail: Bool
 
         init(id: UUID, panelID: UUID, agentPID: pid_t, processStart: UInt64, sessionID: String,
-             route: Route, canQueue: Bool, supportsAttemptReplay: Bool = false, claudeSessionID: UUID? = nil,
+             route: Route, canQueue: Bool, supportsAttemptReplay: Bool = false,
+             claudeSessionID: String? = nil, bridgeProcessStart: UInt64? = nil,
              supportsInlineMail: Bool = false) {
             self.id = id
             self.panelID = panelID
             self.agentPID = agentPID
             self.processStart = processStart
             self.sessionID = sessionID
-            self.claudeSessionID = claudeSessionID
             self.route = route
             self.canQueue = canQueue
             self.supportsAttemptReplay = supportsAttemptReplay
+            self.claudeSessionID = claudeSessionID
+            self.bridgeProcessStart = bridgeProcessStart
             self.supportsInlineMail = supportsInlineMail
         }
 
@@ -62,7 +65,7 @@ final class MailboxNativeDoorbell {
     struct FailureDiagnostic {
         let deliveryID: UUID
         let panelID: UUID
-        let claudeSessionID: UUID?
+        let claudeSessionID: String?
         let reason: String
 
         init?(registration: Registration, deliveryID: UUID, failure: String) {
@@ -80,7 +83,7 @@ final class MailboxNativeDoorbell {
 
         var payload: [String: Any] {
             ["delivery_id": deliveryID.uuidString, "panel_id": panelID.uuidString,
-             "claude_session_id": claudeSessionID.map { $0.uuidString as Any } ?? NSNull(),
+             "claude_session_id": claudeSessionID.map { $0 as Any } ?? NSNull(),
              "route": Route.claudeInbox.rawValue, "reason": reason]
         }
     }
@@ -368,8 +371,72 @@ final class MailboxNativeDoorbell {
         return listeners[panelID]?.registration
     }
 
-    func register(_ registration: Registration, write: @escaping ([String: Any]) -> Bool, close: @escaping () -> Void) {
+    /// C11H-184: an acceptance a Claude bridge carried across a reconnect, for
+    /// an inline delivery this process never sent or no longer holds (a c11
+    /// relaunch while Claude held the text). It names the envelopes; the
+    /// panel's workspace claims those still unread in that panel's inbox.
+    var carriedAcceptance: (Registration, [String]) -> Void = { registration, ids in
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                AppDelegate.shared?.workspaceContainingPanel(panelId: registration.panelID)?.workspace
+                    .claimCarriedInlineMailbox(registration: registration, ids: ids)
+            }
+        }
+    }
+
+    /// C11H-184: a reconnected Claude bridge still holds inline mail an
+    /// earlier c11 process sent it (`holding`). The panel's workspace keeps
+    /// those envelopes out of new offers until they are confirmed or the hold
+    /// ends, so Claude is not handed them twice.
+    var carriedHold: (Registration, [String]) -> Void = { registration, ids in
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                AppDelegate.shared?.workspaceContainingPanel(panelId: registration.panelID)?.workspace
+                    .noteCarriedInlineHold(registration: registration, ids: ids)
+            }
+        }
+    }
+
+    /// Tests replace this to fire the deadline in order. Production arms the
+    /// utility queue at dispatch, independent of the serial writer.
+    var armDeadline: (TimeInterval, @escaping () -> Void) -> Void = { timeout, fire in
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: fire)
+    }
+
+    /// Envelope ids an inline frame or a carried acceptance may name: ULIDs,
+    /// at most one batch's worth. Anything else names nothing.
+    static func inlineIDs(_ value: Any?) -> [String]? {
+        guard let values = value as? [String], (1...1_024).contains(values.count),
+              values.allSatisfy({ $0.range(of: MailboxEnvelope.ulidPattern, options: .regularExpression) != nil })
+        else { return nil }
+        return values
+    }
+
+    private func holds(_ registration: Registration, requestID: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard let listener = listeners[registration.panelID], listener.registration.id == registration.id else { return false }
+        return listener.pending[requestID] != nil
+    }
+
+    @discardableResult
+    func register(_ registration: Registration, write: @escaping ([String: Any]) -> Bool, close: @escaping () -> Void) -> Bool {
         lock.lock()
+        if let current = listeners[registration.panelID]?.registration,
+           current.route == .claudeInbox, registration.route == .claudeInbox,
+           current.agentPID == registration.agentPID, current.processStart == registration.processStart,
+           let currentBirth = current.bridgeProcessStart, let incomingBirth = registration.bridgeProcessStart,
+           incomingBirth < currentBirth {
+            // /clear can create a second SessionStart hook while the app is
+            // down. Kernel hook births, not reconnect arrival order, decide
+            // which original session binding is current for this harness.
+            lock.unlock()
+            // This stream was never installed, so no delivery can interleave.
+            // Complete the bounded retirement write on the socket worker
+            // before its caller closes the original descriptor on return.
+            _ = write(["type": "replaced"])
+            close()
+            return false
+        }
         let old = listeners.updateValue(Listener(registration: registration, write: write, close: close), forKey: registration.panelID)
         lock.unlock()
         // Never call consumer closures or write a socket while holding the lock.
@@ -383,6 +450,7 @@ final class MailboxNativeDoorbell {
             }
             for request in old.pending.values where !request.failed { request.reply(.failed("native_replaced"), {}) }
         }
+        return true
     }
 
     func disconnect(_ registration: Registration) {
@@ -407,7 +475,7 @@ final class MailboxNativeDoorbell {
     /// registration cannot race ahead of accepted-ID coverage.
     @discardableResult
     func deliver(_ registration: Registration, timeout: TimeInterval = 2, attemptID: UUID? = nil,
-                 inlineText: String? = nil, diagnostic: ((FailureDiagnostic) -> Void)? = nil,
+                 inlineText: String? = nil, inlineIDs: [String] = [], diagnostic: ((FailureDiagnostic) -> Void)? = nil,
                  reply: @escaping (Result, @escaping () -> Void) -> Void) -> UUID {
         let requestID = UUID()
         lock.lock()
@@ -420,7 +488,7 @@ final class MailboxNativeDoorbell {
         lock.unlock()
         // A stalled peer must not postpone another panel's two-second bound.
         // The timer is independent of the serial writer and starts at dispatch.
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) { [self] in
+        armDeadline(timeout) { [self] in
             resolve(registration, requestID: requestID, result: .failed("native_timeout"))
         }
         io.async { [self] in
@@ -432,7 +500,11 @@ final class MailboxNativeDoorbell {
             guard shouldSend else { return }
             var frame: [String: Any] = ["type": "deliver", "delivery_id": requestID.uuidString,
                                         "text": inlineText ?? MailboxDoorbell.text]
-            if inlineText != nil { frame["inline"] = true }
+            if inlineText != nil {
+                frame["inline"] = true
+                // A bridge that outlives this process reports these back (C11H-184).
+                if !inlineIDs.isEmpty { frame["ids"] = inlineIDs }
+            }
             if let attemptID { frame["attempt_id"] = attemptID.uuidString }
             if !listener.write(frame) {
                 resolve(registration, requestID: requestID, result: .failed("native_write_failed"))
@@ -514,11 +586,16 @@ final class MailboxNativeDoorbell {
             if registration.route == .opencodePlugin,
                frame["disposition"] as? String == "already_admitted" {
                 resolve(registration, requestID: requestID, result: .alreadyAdmitted)
+            } else if frame["carried"] as? Bool == true, registration.route == .claudeInbox,
+                      registration.supportsInlineMail, !holds(registration, requestID: requestID) {
+                if let ids = Self.inlineIDs(frame["ids"]) { carriedAcceptance(registration, ids) }
             } else {
                 resolve(registration, requestID: requestID, result: .accepted(late: false))
             }
         case "queued" where registration.supportsInlineMail:
             resolve(registration, requestID: requestID, result: .queued)
+        case "holding" where registration.route == .claudeInbox && registration.supportsInlineMail:
+            if let ids = Self.inlineIDs(frame["ids"]) { carriedHold(registration, ids) }
         case "rejected":
             let reason = (frame["reason"] as? String).flatMap {
                 Self.namedRejections.contains($0) || ($0 == "refused" && registration.route == .claudeInbox)
@@ -560,21 +637,19 @@ extension TerminalController {
         } else {
             supportsAttemptReplay = false
         }
-        let claudeSessionID: UUID?
+        let claudeSessionID: String?
         if let rawSession = params["claude_session_id"] {
-            guard route == .claudeInbox, let rawSession = rawSession as? String,
-                  let session = UUID(uuidString: rawSession) else {
+            guard route == .claudeInbox, let session = rawSession as? String, UUID(uuidString: session) != nil else {
                 _ = Self.writeSocketResponse(v2Error(id: id, code: "invalid_params", message: String(localized: "mailbox.native.error.liveProcess", defaultValue: "Native mailbox requires the live agent process and its terminal.")), to: socket)
                 return
             }
             claudeSessionID = session
-        } else {
-            claudeSessionID = nil // Older bridges did not report the Claude session.
-        }
+        } else { claudeSessionID = nil }
         let supportsInlineMail = params["supports_inline_mail"] as? Bool ?? false
         let registration = MailboxNativeDoorbell.Registration(id: UUID(), panelID: panelID, agentPID: pidNumber.int32Value,
             processStart: process.startTime, sessionID: sessionID, route: route, canQueue: params["can_queue"] as? Bool ?? false,
             supportsAttemptReplay: supportsAttemptReplay, claudeSessionID: claudeSessionID,
+            bridgeProcessStart: route == .claudeInbox ? peer?.startTime : nil,
             supportsInlineMail: supportsInlineMail)
         // A slow/dead peer cannot occupy the shared writer indefinitely.
         var timeout = timeval(tv_sec: 1, tv_usec: 0)
@@ -585,10 +660,35 @@ extension TerminalController {
             return writer.write(line)
         }
         guard Self.writeSocketResponse(v2Ok(id: id, result: ["subscription_id": registration.id.uuidString]), to: socket) else { return }
-        MailboxNativeDoorbell.shared.register(registration, write: write, close: { writer.shutdown() })
+        guard MailboxNativeDoorbell.shared.register(registration, write: write, close: { writer.shutdown() }) else {
+            return
+        }
+        if let claudeSessionID {
+            // A SessionStart that happened while the app was down could not
+            // push its conversation owner. Recover only this verified hook's
+            // bound ID; never infer from cwd or invent a lifecycle edge.
+            if !ConversationStorePolicy.isDisabled {
+                // C11H-196: the verified agent's own folder, so a later resume
+                // can find its transcript and `cd` there. Read once, here.
+                let agentCwd = AgentProcessFacts.cwdAndStart(pid: registration.agentPID)?.cwd
+                let _: ConversationRef?? = conversationStoreSync { store in
+                    await store.captureClaudeBridgeSession(
+                        surfaceId: panelID.uuidString, sessionID: claudeSessionID, cwd: agentCwd,
+                        isCurrent: { MailboxNativeDoorbell.shared.registration(panelID: panelID)?.id == registration.id }
+                    )
+                }
+            }
+            JournalCoordinator.shared.runtimeConnected(
+                owner: JournalOwner(panelID: panelID, agentKind: "claude-code", sessionID: claudeSessionID),
+                identity: JournalRuntimeIdentity(pid: registration.agentPID, startTimeMicroseconds: registration.processStart),
+                subscriptionID: registration.id,
+                isCurrent: { MailboxNativeDoorbell.shared.registration(panelID: panelID)?.id == registration.id }
+            )
+        }
         Self.nativeMailboxChanged(panelID)
         defer {
             MailboxNativeDoorbell.shared.disconnect(registration)
+            JournalCoordinator.shared.runtimeDisconnected(panelID: panelID, subscriptionID: registration.id)
             Self.nativeMailboxChanged(panelID)
         }
         var pending = Data()
@@ -623,7 +723,7 @@ extension TerminalController {
 }
 
 /// Own a duplicate descriptor so a queued write cannot hit a reused client fd.
-private final class MailboxNativeSocketWriter {
+final class MailboxNativeSocketWriter {
     private let fd: Int32
     init(_ socket: Int32) { fd = dup(socket) }
     deinit { if fd >= 0 { Darwin.close(fd) } }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prove Workspace's omp hard-failure recovery in an isolated sandbox guest.
 
-Run on Atlas: C11_SANDBOX_HOST=local scripts/check-omp-native-rering.py RUN_ID --out DIR
+Run on the build host: C11_SANDBOX_HOST=local scripts/check-omp-native-rering.py RUN_ID --out DIR
 No staged agent or provider credentials are needed. A foreground raw-terminal
 fixture uses the production omp native subscription, withholds its first ack,
 and accepts its second invitation. This proves routing, not the real omp TUI.
@@ -119,7 +119,7 @@ def main():
     parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("/tmp/c11-omp-rering-proof"))
     args = parser.parse_args()
     if os.environ.get("C11_SANDBOX_HOST") != "local":
-        parser.error("run on Atlas with C11_SANDBOX_HOST=local; this proof only addresses a sandbox guest")
+        parser.error("run on the build host with C11_SANDBOX_HOST=local; this proof only addresses a sandbox guest")
     args.out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     nonce = uuid.uuid4().hex[:12]

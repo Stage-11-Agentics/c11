@@ -285,6 +285,9 @@ final class CLIHealthRuntimeTests: XCTestCase {
         try ipsBody.data(using: .utf8)!.write(
             to: reportsDir.appendingPathComponent("c11-runtime-test.ips")
         )
+        try ipsBody.data(using: .utf8)!.write(
+            to: reportsDir.appendingPathComponent("c11h-runtime-foreign.ips") // c11-2.0:keep (the retired line is foreign)
+        )
 
         // Sentry rail: one envelope under a per-bundle dir.
         let envelopesDir = home.appendingPathComponent(

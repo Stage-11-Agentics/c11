@@ -1,0 +1,15 @@
+{
+  "version": "0.1.16",
+  "ref": "v0.1.16",
+  "commit": "e07c2a1bedd62cf4787ee026ee23ee79c7d95491",
+  "sha256": "5714074326b758dafd4215b0411c883b6600798750c75315d88ebc110cf2aa0a",
+  "protocolGeneration": 1,
+  "builder": "hc repo build/build.sh on the build host (macOS SDK 26.5, rustc 1.95.0), unsigned",
+  "remote": {
+    "linux-x86_64": {
+      "sha256": "c3e7a00c9c62c10a56cb5fdbf1a06fc1951d94d0e0e2474f7687c2d1b3fa9b5e",
+      "builder": "hc-build.sh v0.1.16 e07c2a1b from the Linux host's build folder, on Debian 13 (cc 14.2.0, rustc 1.95.0, zig 0.16.0), x86_64-unknown-linux-musl static-pie, unsigned; the hash depends on the host C compiler (Debian 12's cc 12.2.0 gives another)",
+      "kept": "the Linux host's hc-build.sh output, ~/hc-build/out/v0.1.16-x86_64-linux-musl/herdr-core beside its build.json, in its build user's home; a release copies that file (stamp refuses any other bytes), and a rebuild that hashes differently needs a reviewed new pin"
+    }
+  }
+}

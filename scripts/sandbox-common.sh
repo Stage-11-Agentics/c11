@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Library for scripts/sandbox-*.sh. The Tart host defaults to Atlas.
+# Library for scripts/sandbox-*.sh. The Tart host is C11_SANDBOX_HOST, from the environment or
+# ~/.config/c11/dev-hosts (scripts/dev-hosts.sh); `local` means this machine. No default.
 # Entry points are the sandbox-* scripts; sourcing this file is the other use.
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
@@ -12,8 +13,12 @@ sandbox_die() {
   exit 1
 }
 
+# shellcheck source=dev-hosts.sh
+source "$(dirname "${BASH_SOURCE[0]}")/dev-hosts.sh"
+
 sandbox_host_name() {
-  local host="${C11_SANDBOX_HOST:-atlas}"
+  local host
+  host="$(c11_dev_host C11_SANDBOX_HOST)" || exit 2
   case "$host" in
     local|localhost) printf '%s\n' local ;;
     *) printf '%s\n' "$host" ;;
@@ -47,13 +52,27 @@ sandbox_vm_name() {
 sandbox_host_prelude() {
   local golden="${C11_SANDBOX_GOLDEN:-c11-sandbox-golden}"
   local golden_b="${C11_SANDBOX_GOLDEN_B:-${golden}-b}"
+  # A golden names a serial slot (one machine identity); runs/<id>/golden records the
+  # slot, and every copy of these scripts reads that record to keep two running guests
+  # off one serial. The image is what a slot's clones are made from. C11_SANDBOX_IMAGE
+  # and C11_SANDBOX_IMAGE_B name a copy of that slot's golden (same serial, because a
+  # tart clone keeps it) with more installed; unset, each slot clones its golden.
+  local image="${C11_SANDBOX_IMAGE:-$golden}"
+  local image_b="${C11_SANDBOX_IMAGE_B:-$golden_b}"
   local guest="${C11_SANDBOX_GUEST_USER:-admin}"
   sandbox_validate_token "golden image" "$golden" '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
   sandbox_validate_token "second golden image" "$golden_b" '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+  sandbox_validate_token "image" "$image" '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+  sandbox_validate_token "second image" "$image_b" '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+  [[ "$image" != "$image_b" ]] || sandbox_die "C11_SANDBOX_IMAGE and C11_SANDBOX_IMAGE_B name the same image ($image); each serial slot needs its own"
   sandbox_validate_token "guest user" "$guest" '^[A-Za-z_][A-Za-z0-9._-]{0,31}$'
   printf 'golden=%q\n' "$golden"
   printf 'golden_b=%q\n' "$golden_b"
+  printf 'image=%q\n' "$image"
+  printf 'image_b=%q\n' "$image_b"
   printf 'guest_user=%q\n' "$guest"
+  # Test seam: a stand-in tart (tests/test_sandbox_image_select.py). Unset in real use.
+  printf 'tart_override=%q\n' "${C11_SANDBOX_TART_BIN:-}"
   cat <<'ZSH'
 zmodload zsh/datetime
 root="$HOME/.c11-sandbox"
@@ -68,6 +87,10 @@ die() {
 }
 
 tart_bin() {
+  if [[ -n "$tart_override" ]]; then
+    print -r -- "$tart_override"
+    return 0
+  fi
   if [[ -x /opt/homebrew/bin/tart ]]; then
     print -r -- /opt/homebrew/bin/tart
     return 0
@@ -79,6 +102,8 @@ refuse_protected() {
   local name="$1"
   [[ "$name" != "$golden" ]] || die "refusing to operate on the golden image ($golden)"
   [[ "$name" != "$golden_b" ]] || die "refusing to operate on the golden image ($golden_b)"
+  [[ "$name" != "$image" ]] || die "refusing to operate on the image ($image)"
+  [[ "$name" != "$image_b" ]] || die "refusing to operate on the image ($image_b)"
   case "$name" in
     scanner-*) die "refusing to operate on scanner VM $name" ;;
   esac
@@ -109,6 +134,16 @@ running_count() {
     [[ "$state" == stopped ]] || n=$((n + 1))
   done < <("$tart" list)
   print -r -- "$n"
+}
+
+# The image a run was cloned from (runs/<id>/image), else its slot's golden for a run
+# that predates images.
+run_image() {
+  local run_id="$1" img
+  img="$(cat "$root/runs/$run_id/image" 2>/dev/null || true)"
+  [[ -n "$img" ]] || img="$(cat "$root/runs/$run_id/golden" 2>/dev/null || true)"
+  [[ -n "$img" ]] || img="$golden"
+  print -r -- "$img"
 }
 
 meta_path() {
@@ -217,7 +252,7 @@ ZSH
 
 sandbox_on_host() {
   local host
-  host="$(sandbox_host_name)"
+  host="$(sandbox_host_name)" || exit 2
   if [[ "$host" == "local" ]]; then
     PATH="/opt/homebrew/bin:${PATH:-/usr/bin:/bin}" /bin/zsh -s
     return
@@ -231,7 +266,7 @@ sandbox_extract_tar() {
   local rel="$1"
   [[ "$rel" =~ ^\.c11-sandbox/[A-Za-z0-9._/-]+$ ]] || sandbox_die "refusing to extract outside .c11-sandbox ($rel)"
   local host
-  host="$(sandbox_host_name)"
+  host="$(sandbox_host_name)" || exit 2
   if [[ "$host" == "local" ]]; then
     mkdir -p "${HOME}/${rel}"
     tar -xf - -C "${HOME}/${rel}"
@@ -245,7 +280,7 @@ sandbox_fetch() {
   local rel="$1" dest="$2"
   [[ "$rel" =~ ^\.c11-sandbox/[A-Za-z0-9._/-]+$ ]] || sandbox_die "refusing to fetch outside .c11-sandbox ($rel)"
   local host
-  host="$(sandbox_host_name)"
+  host="$(sandbox_host_name)" || exit 2
   mkdir -p "$(dirname "$dest")"
   if [[ "$host" == "local" ]]; then
     cp "${HOME}/${rel}" "$dest"
@@ -301,23 +336,33 @@ sandbox_guest_runtime_zsh() {
 sandbox_quit_app() {
   # sudo: a launch that failed to drop uid leaves a root-owned c11, which
   # the SSH user cannot signal. Passwordless sudo is part of the golden image.
-  /usr/bin/sudo -n /usr/bin/killall c11 2>/dev/null || true
-  /usr/bin/sudo -n /usr/bin/killall cmux 2>/dev/null || true
+  # Path-scoped. The pattern contains c11 and .app/Contents/MacOS/.
+  # Never killall c11 or pkill -x c11 (that hits the operator's c11).
+  local app="${1:-${SANDBOX_GUEST_APP:-}}"
+  [[ -n "$app" ]] || return 0
+  local bin="${app}/Contents/MacOS/c11"
+  [[ "$bin" == *c11* && "$bin" == *".app/Contents/MacOS/"* ]] || return 0
+  /usr/bin/sudo -n /usr/bin/pkill -f "$bin" 2>/dev/null || true
   local i
   for i in {1..25}; do
-    if ! pgrep -x c11 >/dev/null 2>&1 && ! pgrep -x cmux >/dev/null 2>&1; then
+    if ! /bin/ps -axo pid=,command= | /usr/bin/awk -v target="$bin" '
+      {
+        cmd = $0
+        sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", cmd)
+        if (cmd == target || index(cmd, target " ") == 1) found = 1
+      }
+      END { exit found ? 0 : 1 }
+    '; then
       return 0
     fi
     sleep 0.2
   done
-  /usr/bin/sudo -n /usr/bin/killall -9 c11 2>/dev/null || true
-  /usr/bin/sudo -n /usr/bin/killall -9 cmux 2>/dev/null || true
+  /usr/bin/sudo -n /usr/bin/pkill -9 -f "$bin" 2>/dev/null || true
 }
 
 sandbox_launch_app() {
   local app="$1" socket="$2" dbglog="$3" stdout="$4" dsock="$5"
   local bin="$app/Contents/MacOS/c11"
-  [[ -x "$bin" ]] || bin="$app/Contents/MacOS/cmux"
   [[ -x "$bin" ]] || { print -u2 -- "no c11 binary in $app"; return 1 }
   mkdir -p "${dsock:h}" "$(dirname "$stdout")"
   # A root-owned socket from an earlier launch cannot be unlinked by the SSH user.

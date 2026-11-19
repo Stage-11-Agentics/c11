@@ -202,7 +202,8 @@ def exercise_groups(f):
     f.mutate("rename", group_id=g, name="  Renamed Folder  ")
     require(f.group(g)["name"] == "Renamed Folder", "name not trimmed")
     for verb, field, value in (("set_color", "color", "#AABBCC"),
-                               ("set_icon", "icon", "folder.fill")):
+                               ("set_icon", "icon", "folder.fill"),
+                               ("set_icon", "icon", "\U0001F680")):
         f.mutate(verb, group_id=g, **{field: value})
         require(str(f.group(g)[field]).upper() == value.upper(), f"{field} not stored")
         f.mutate(verb, group_id=g, **{field: None})
@@ -315,7 +316,8 @@ def exercise_cli(f):
     refs = {r["id"]: r["ref"] for r in f.rows()}
     command("add", "--group", g["ref"], "--workspaces", f"{refs[c]},{d}")
     for verb, field, value in (("set-color", "color", "#112233"),
-                               ("set-icon", "icon", "folder.fill")):
+                               ("set-icon", "icon", "folder.fill"),
+                               ("set-icon", "icon", "\U0001F680")):
         command(verb, "--group", g["id"], "--" + field, value)
         require(f.group(g["id"])[field] == value, f"CLI {verb} did not apply")
         command(verb, "--group", g["id"], "--clear")

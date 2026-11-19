@@ -71,8 +71,11 @@ Every state occupies the same uniform slot so titles never shift horizontally on
 
 ### Colors
 
-Dark theme values from `Sources/Workspace.swift` (`resolvedSurfaceTabActivityColors`):
-working `#E8E8E8`, waiting `#D0AA45` gold, idle `#9AA0A9`, cold `#62676F`.
+Working is yellow, waiting is white, done (idle) stays gray (C11H-344). Values from
+`Sources/Workspace.swift` (`defaultSurfaceTabActivityColors`): on a dark theme working
+`#D0AA45`, waiting `#E8E8E8`, idle `#9AA0A9`, cold `#62676F`; on a light theme working
+`#9B7415`, waiting `#1D2024` (white would vanish on light chrome), idle `#585D66`, cold
+`#8D939C`. A theme's `[states]` replaces any of them.
 Color remains the fast day-to-day read — redundant reinforcement rather than the
 load-bearing channel.
 
@@ -81,7 +84,7 @@ load-bearing channel.
 against its chrome (dark chrome up to `#3A3A3A`). It marks a cold that is a cost: the next message re-caches the context.
 A cold line from dormancy stays gray. Blue is darker than the flag violet, so the two differ
 in lightness as well as hue; the flag still wins on a flagged agent. A waiting agent keeps its
-gold mark: its expired cache shows in text only (the tooltip and a `cache expired` note on its
+waiting mark: its expired cache shows in text only (the tooltip and a `cache expired` note on its
 panel sheet row). The tooltip names what expired or reset it, whether it is an estimate, and how
 many tokens the next message re-caches.
 

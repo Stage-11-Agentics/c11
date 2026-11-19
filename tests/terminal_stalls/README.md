@@ -1,9 +1,9 @@
 # C11-295 paired runtime workload
 
-Run only inside the Atlas Tart guest against an explicit sandbox-up tagged app.
+Run only inside the build host's Tart guest against an explicit sandbox-up tagged app.
 The controller validates the socket owner, peer PID, executable, bundle tag and
 bundled CLI before changing the guest workspace. Do not run this workload on
-Hyperion or against an operator session.
+the operator's laptop or against an operator session.
 
 Reuse `tests/ghostty_patchset/runtime-fixture.py` for both the baseline and
 candidate. Keep the guest hardware, fixture version, input mode and arguments
@@ -50,7 +50,7 @@ If the independent 180-second worker timer expires, `workload_limitations`
 explicitly withdraws full-streaming-load proof for that case.
 
 For PID-scoped keyboard input, compile `tests/ghostty_patchset/ui-driver.m` on
-Atlas or in the guest through the build lock, then pass its **guest** absolute
+the build host or in the guest through the build lock, then pass its **guest** absolute
 path and verified window ID to both runs:
 
 ```text

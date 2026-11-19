@@ -17,7 +17,7 @@ final class JournalSpoolTests: XCTestCase {
 
     // Offline delivery and ambiguous acknowledgement repeat the exact original event ID.
     func testOfflineDraftDrainsOnceAndLostDeleteReturnsOriginalReceipt() throws {
-        let spool = JournalSpool(layout: layout)
+        let spool = JournalTestData.spool(layout)
         let draft = JournalTestData.draft(.questionRequested)
         XCTAssertTrue(spool.write(draft))
         let store = try JournalStore(layout: layout, clock: { 1000 })
@@ -28,7 +28,7 @@ final class JournalSpoolTests: XCTestCase {
         XCTAssertTrue(spool.write(draft)) // Models a crash after commit, before consumed file deletion.
         _ = spool.drain(now: 1000) { receipts.append(try store.append(draft: $0, context: JournalContext(eligible: true, historical: true)).receipt) }
         XCTAssertEqual(receipts.map(\.sequence), [1, 1])
-        XCTAssertTrue(receipts[1].replayed)
+        XCTAssertTrue(receipts.count == 2 && receipts[1].replayed)
         XCTAssertEqual(spool.drain(now: 1000) { _ in XCTFail("already drained") }.committed, 0)
     }
 
@@ -49,12 +49,21 @@ final class JournalSpoolTests: XCTestCase {
     // Unknown/stale attribution is retained diagnostically, never rebound to a live tab.
     func testUnattributedSpoolDoesNotCreateCurrentState() throws {
         let draft = JournalTestData.draft(.questionRequested)
-        let spool = JournalSpool(layout: layout)
+        let spool = JournalTestData.spool(layout)
         XCTAssertTrue(spool.write(draft))
         let store = try JournalStore(layout: layout, clock: { 1000 })
         _ = spool.drain(now: 1000) { _ = try store.append(draft: $0, context: JournalContext(eligible: false, historical: true)) }
         XCTAssertTrue(try store.baselines().isEmpty)
         XCTAssertEqual(try store.readPage(after: 0).first?.effect, .unattributed)
+    }
+
+    // The CLI's spool write is bounded: past its wall-clock budget it gives up
+    // and leaves nothing behind, rather than holding the agent.
+    func testAWriteOverItsBudgetGivesUpAndSpoolsNothing() throws {
+        var spool = JournalSpool(layout: layout)
+        spool.budgets.spoolWriteNanos = 0
+        XCTAssertFalse(spool.write(JournalTestData.draft(.questionRequested)))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: layout.spool.path).filter { !$0.hasPrefix(".") }, [])
     }
 
     func testSymlinkSpoolEntryIsNeverReadOrRemoved() throws {

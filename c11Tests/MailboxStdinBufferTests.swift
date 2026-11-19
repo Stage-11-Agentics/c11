@@ -65,6 +65,39 @@ final class MailboxStdinBufferTests: XCTestCase {
         XCTAssertEqual(gate(buffer, panel, at: t(1)), .closed)
     }
 
+    func testRelearnedSurvivingProcessKeepsItsWorkingTurn() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        let process = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 990_000_000)
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(0))
+        XCTAssertTrue(buffer.relearnAgentProcess(surfaceId: panel, process: process))
+        XCTAssertEqual(buffer.agentProcess(surfaceId: panel), process)
+        XCTAssertEqual(gate(buffer, panel, at: t(1)), .closed)
+        XCTAssertFalse(buffer.relearnAgentProcess(surfaceId: panel, process: process))
+        XCTAssertEqual(gate(buffer, panel, at: t(2)), .closed)
+    }
+
+    func testRelearnedNewProcessRetiresOnlyOlderTurnEdges() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        buffer.noteAgentProcess(surfaceId: panel, process: .init(pid: 123, startTime: 990_000_000))
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(0))
+        let replacement = MailboxStdinBuffer.AgentProcess(pid: 123, startTime: 1_001_000_000)
+        XCTAssertTrue(buffer.relearnAgentProcess(surfaceId: panel, process: replacement))
+        XCTAssertEqual(buffer.agentProcess(surfaceId: panel), replacement)
+        XCTAssertEqual(gate(buffer, panel, at: t(2)), .unknown)
+        buffer.noteAgentTurn(surfaceId: panel, atPrompt: false, at: t(3))
+        XCTAssertFalse(buffer.relearnAgentProcess(surfaceId: panel, process: replacement))
+        XCTAssertEqual(gate(buffer, panel, at: t(4)), .closed)
+    }
+
+    func testRecoveryWithoutProcessBirthDoesNotAuthorizeMail() {
+        var buffer = MailboxStdinBuffer()
+        let panel = UUID()
+        XCTAssertFalse(buffer.relearnAgentProcess(surfaceId: panel, process: .init(pid: 123, startTime: nil)))
+        XCTAssertNil(buffer.agentProcess(surfaceId: panel))
+    }
+
     // MARK: - C11-398: unknown, and working that nothing supports
 
     /// A restored or freshly attached agent has no turn edge. That is
@@ -385,6 +418,11 @@ final class MailboxStdinBufferTests: XCTestCase {
 /// turn. The socket path reads the composer first and again after the
 /// settle; when nothing changed, the submit it recorded is taken back.
 final class MailboxNoOpReturnTests: XCTestCase {
+    func testDelayedReturnRefusesAReplacedAttachmentEvenWithAnEmptyComposer() {
+        XCTAssertFalse(MailboxNoOpReturn.shouldSubmitDelayedReturn(
+            operatorInputAtDispatch: nil, operatorInputAtReturn: nil,
+            dispatchState: .empty, freshState: .empty, generationIsCurrent: false))
+    }
     private let panel = UUID()
 
     private func t(_ seconds: TimeInterval) -> Date {
@@ -666,5 +704,129 @@ final class MailboxMoveStateTests: XCTestCase {
             gate: .init(ownsTerminal: false), input: .init()), .skip(reason: "agent_not_foreground"))
         XCTAssertEqual(MailboxStdinDelivery.typedDecision(state: state, surfaceId: panel,
             gate: open, input: .init(inFlight: true, prompt: .empty)), .ring)
+    }
+}
+
+/// C11H-238 (F3): local hc agent ownership is probed off main, only when what
+/// the probe answers for changed, and only the newest answer is applied.
+final class HCLocalOwnershipTrackerTests: XCTestCase {
+    private let panel = UUID()
+    private let born: UInt64 = 1_700_000_000_000_000
+    private let device: dev_t = 0x1234
+
+    private func record(foreground pid: Int32? = 4100, tty: String? = "/dev/ttys042") -> HCTerminalRecord {
+        HCTerminalRecord(key: HCTerminalKey(owningCoreID: "core", localAddress: "t1"), state: .running, pid: 99,
+                         foreground: HCForeground(pid: pid, name: "claude"), tty: tty)
+    }
+
+    private func key(_ record: HCTerminalRecord, known: String? = "/dev/ttys042",
+                     process: MailboxStdinBuffer.AgentProcess? = nil) -> HCLocalOwnershipKey {
+        HCLocalOwnershipKey(record: record, knownTTY: known, process: process)
+    }
+
+    func testAnOwnerIsNotProbedAgainWhileItsKeyHolds() {
+        var tracker = HCLocalOwnershipTracker()
+        let r = record(), k = key(r)
+        let now = Date()
+        let first = tracker.observe(panel: panel, key: k, record: r, now: now, force: false)
+        XCTAssertNotNil(first)
+        XCTAssertNil(tracker.observe(panel: panel, key: k, record: r, now: now, force: false), "in flight answers")
+        guard case .current = tracker.accept(panel: panel, generation: first!, currentKey: { _ in k }) else { return XCTFail() }
+        XCTAssertNil(tracker.settle(panel: panel, key: k, owned: true))
+        for second in 1...50 {
+            XCTAssertNil(tracker.observe(panel: panel, key: k, record: r, now: now.addingTimeInterval(Double(second)), force: false),
+                         "a title or status change with the same key probes nothing")
+        }
+    }
+
+    func testAChangedForegroundStartTimeOrTTYProbesAgain() {
+        var tracker = HCLocalOwnershipTracker()
+        let r = record()
+        let held = MailboxStdinBuffer.AgentProcess(pid: 4100, startTime: born)
+        let k = key(r, process: held)
+        let now = Date()
+        let g = tracker.observe(panel: panel, key: k, record: r, now: now, force: false)!
+        _ = tracker.accept(panel: panel, generation: g, currentKey: { _ in k })
+        _ = tracker.settle(panel: panel, key: k, owned: true)
+        // The agent exits; a shell (another pid) takes the foreground.
+        let shell = record(foreground: 4200)
+        XCTAssertNotNil(tracker.observe(panel: panel, key: key(shell, process: held), record: shell, now: now, force: false),
+                        "a cached owner never survives a new foreground")
+        // The same pid reused by another process: a new start time.
+        let reused = MailboxStdinBuffer.AgentProcess(pid: 4100, startTime: born + 5)
+        XCTAssertNotNil(tracker.observe(panel: panel, key: key(r, process: reused), record: r, now: now, force: false))
+        // Another tty.
+        XCTAssertNotNil(tracker.observe(panel: panel, key: key(r, known: "/dev/ttys043", process: reused), record: r,
+                                        now: now, force: false))
+    }
+
+    func testAnOlderProbesAnswerIsNeverAppliedAfterANewerObservation() {
+        var tracker = HCLocalOwnershipTracker()
+        let a = record(), b = record(foreground: 4300)
+        let now = Date()
+        let old = tracker.observe(panel: panel, key: key(a), record: a, now: now, force: false)!
+        let new = tracker.observe(panel: panel, key: key(b), record: b, now: now, force: false)!
+        XCTAssertEqual(tracker.accept(panel: panel, generation: old, currentKey: { self.key($0) }), .dropped)
+        XCTAssertEqual(tracker.accept(panel: panel, generation: new, currentKey: { self.key($0) }), .current(key(b), b))
+    }
+
+    func testAnAnswerForAReplacedAgentProcessIsStale() {
+        var tracker = HCLocalOwnershipTracker()
+        let r = record()
+        let g = tracker.observe(panel: panel, key: key(r), record: r, now: Date(), force: false)!
+        // A hook registered the agent while the probe ran.
+        let hooked = MailboxStdinBuffer.AgentProcess(pid: 4100, startTime: born)
+        XCTAssertEqual(tracker.accept(panel: panel, generation: g, currentKey: { self.key($0, process: hooked) }), .stale(r))
+    }
+
+    func testNoOwnerIsProbedAgainOnABackoffAndOnAChangedRecordAtMostEveryTwoSeconds() {
+        var tracker = HCLocalOwnershipTracker()
+        let r = record(), k = key(r)
+        let now = Date()
+        let g = tracker.observe(panel: panel, key: k, record: r, now: now, force: false)!
+        _ = tracker.accept(panel: panel, generation: g, currentKey: { _ in k })
+        XCTAssertEqual(tracker.settle(panel: panel, key: k, owned: false), 1)
+        XCTAssertNil(tracker.observe(panel: panel, key: k, record: r, now: now.addingTimeInterval(1), force: false))
+        XCTAssertNotNil(tracker.retryRecord(panel: panel, key: k))
+        let again = tracker.observe(panel: panel, key: k, record: r, now: now.addingTimeInterval(2.5), force: false)
+        XCTAssertNotNil(again)
+        XCTAssertNil(tracker.retryRecord(panel: panel, key: k), "in flight: the scheduled retry stands down")
+        _ = tracker.accept(panel: panel, generation: again!, currentKey: { _ in k })
+        XCTAssertEqual(tracker.settle(panel: panel, key: k, owned: false), 2)
+        var delays: [TimeInterval] = []
+        for _ in 0..<10 {
+            let next = tracker.observe(panel: panel, key: k, record: r, now: now, force: true)!
+            _ = tracker.accept(panel: panel, generation: next, currentKey: { _ in k })
+            if let delay = tracker.settle(panel: panel, key: k, owned: false) { delays.append(delay) }
+        }
+        XCTAssertEqual(delays, [4, 8, 16, 32], "the backoff is bounded")
+    }
+
+    /// The probe itself, against fixed kernel facts: a foreground agent in raw
+    /// mode owns; one in canonical mode (a print run) is a candidate that does
+    /// not own; a non-foreground process is no candidate.
+    func testTheProbeFailsClosed() {
+        let pid: pid_t = 4100, born = self.born, device = self.device
+        func kernel(foreground: Bool, canonical: Bool) -> MailboxAgentForeground.Kernel {
+            MailboxAgentForeground.Kernel(
+                processInfo: { $0 == pid ? .init(processGroup: pid, terminalForegroundGroup: foreground ? pid : pid + 1,
+                                                 terminalDevice: device, isZombie: false, startTime: born) : nil },
+                ttyDevice: { $0.hasSuffix("ttys042") ? device : nil },
+                isCanonical: { _ in canonical })
+        }
+        let r = record()
+        let raw = HCLocalOwnershipVerdict.probe(key(r), kernel: kernel(foreground: true, canonical: false))
+        XCTAssertFalse(raw.ownsCurrent)
+        XCTAssertEqual(raw.candidate, .init(pid: pid, startTime: born))
+        XCTAssertTrue(raw.candidateOwns)
+        let held = HCLocalOwnershipVerdict.probe(key(r, process: .init(pid: pid, startTime: born)),
+                                                 kernel: kernel(foreground: true, canonical: false))
+        XCTAssertTrue(held.ownsCurrent)
+        let printRun = HCLocalOwnershipVerdict.probe(key(r), kernel: kernel(foreground: true, canonical: true))
+        XCTAssertFalse(printRun.candidateOwns)
+        let background = HCLocalOwnershipVerdict.probe(key(r), kernel: kernel(foreground: false, canonical: false))
+        XCTAssertNil(background.candidate)
+        let otherTTY = HCLocalOwnershipVerdict.probe(key(r, known: "/dev/ttys099"), kernel: kernel(foreground: true, canonical: false))
+        XCTAssertNil(otherTTY.candidate, "a tty the agent is not on is never relearned")
     }
 }

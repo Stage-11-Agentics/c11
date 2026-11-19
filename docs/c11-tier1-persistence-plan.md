@@ -462,12 +462,12 @@ was empirically confirmed against local data on 2026-04-18:
   `/`, `_`, `.`, spaces, and other punctuation all map to `-`. Alphanumeric
   runs are preserved. A leading `-` appears because the cwd starts with `/`.
 - **Examples (all confirmed from real `~/.claude/projects/` data):**
-  - `/Users/atin/Projects/Stage11/code/cmux` → `-Users-atin-Projects-Stage11-code-cmux`
-  - `/Users/atin/Projects/Stage11/code/005_cybentic_project/structure/state/worktrees/worker-1`
-    → `-Users-atin-Projects-Stage11-code-005-cybentic-project-structure-state-worktrees-worker-1`
+  - `~/src/cmux` → `-Users-demo-src-cmux`
+  - `~/src/005_cybentic_project/structure/state/worktrees/worker-1`
+    → `-Users-demo-src-005-cybentic-project-structure-state-worktrees-worker-1`
     (underscores → `-`)
-  - `/Users/atin/Projects/Gregorovich/.worktrees/test-feature`
-    → `-Users-atin-Projects-Gregorovich--worktrees-test-feature`
+  - `~/src/.worktrees/test-feature`
+    → `-Users-demo-src--worktrees-test-feature`
     (dot → `-`, producing a double-dash after the preceding `/`)
 - **Lossiness:** the transform is many-to-one. `/foo/bar`, `/foo-bar`,
   `/foo_bar`, `/foo.bar`, and `/foo bar` all slug to `-foo-bar`.

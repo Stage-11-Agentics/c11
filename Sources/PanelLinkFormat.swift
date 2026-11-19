@@ -8,6 +8,20 @@ struct PanelLinkFormat {
 
     static let maximumTitleScalars = 256
 
+    /// c11 prints its own scheme, so a link never opens c11 on a Mac that has
+    /// both. `c11://` links (older mail, c11's docs) still resolve inside c11.
+    static let scheme = "c11"
+    static let acceptedSchemes: Set<String> = ["c11", "c11h"] // c11-2.0:keep (c11h:// is a hidden alias)
+
+    /// The scheme of `text` when it is one c11 accepts, read from a bounded
+    /// prefix so malformed payloads are recognized before URL parsing.
+    static func acceptedScheme(prefixOf text: String) -> String? {
+        let head = text.utf8.prefix(8)
+        guard let colon = head.firstIndex(of: UInt8(ascii: ":")) else { return nil }
+        let candidate = String(decoding: head[head.startIndex..<colon], as: UTF8.self).lowercased()
+        return acceptedSchemes.contains(candidate) ? candidate : nil
+    }
+
     let kind: Kind
     let id: UUID
     let title: String
@@ -20,7 +34,7 @@ struct PanelLinkFormat {
     }
 
     static func url(kind: Kind, id: UUID) -> String {
-        "c11://\(kind.rawValue)/\(id.uuidString.lowercased())"
+        "\(scheme)://\(kind.rawValue)/\(id.uuidString.lowercased())"
     }
 
     var url: String { Self.url(kind: kind, id: id) }

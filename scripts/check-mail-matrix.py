@@ -145,7 +145,8 @@ print(json.dumps(out))''', root))
     # A ring uses the recipient's own route, never the typed fallback where a
     # native route exists. No route means the recipient claimed the mail without
     # a ring (a Stop drain, or a recv already running).
-    expected = {'claude': 'claude_inbox', 'grok': 'grok_leader', 'pi-live': 'pi_extension',
+    # Claude's inbox route is opt-in (C11_CLAUDE_NATIVE_MAIL=1); sandbox seats use the typed default.
+    expected = {'claude': 'typed', 'grok': 'grok_leader', 'pi-live': 'pi_extension',
                 'opencode-live': 'opencode_plugin', 'omp-live': 'omp_extension', 'codex': 'typed'}
     wrong = {k: v['route'] for k, v in rows.items() if v['route'] not in (None, expected.get(k[1]))}
     assert not wrong, 'unexpected delivery routes: %s' % wrong

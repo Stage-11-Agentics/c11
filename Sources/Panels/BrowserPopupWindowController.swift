@@ -83,7 +83,11 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
     private let externalOpenGate: BrowserExternalOpenGate
     private let externalOpenNoticePresenter = PanelLinkNoticePresenter()
     /// Real operator input to this popup, for the same click test the panel uses.
-    private var lastOperatorInputAt: Date?
+    fileprivate(set) var lastOperatorInputAt: Date?
+    /// C11H-377: the opener panel's dialog gate (one rate limit for the panel
+    /// and its popups), and this popup's notices.
+    let dialogGate: BrowserJSDialogGate
+    fileprivate let pageGuardNoticePresenter = PanelLinkNoticePresenter()
 
     private static var associatedObjectKey: UInt8 = 0
 
@@ -100,6 +104,9 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         self.externalOpenGate = parentPopupController?.externalOpenGate
             ?? openerPanel?.externalOpenGate
             ?? BrowserExternalOpenGate()
+        self.dialogGate = parentPopupController?.dialogGate
+            ?? openerPanel?.dialogGate
+            ?? BrowserJSDialogGate(isShowViewer: false)
 
         // Create popup web view with WebKit's supplied configuration (preserves
         // internal browsing-context state for opener linkage / postMessage).
@@ -170,7 +177,16 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
 
         super.init()
         webView.onOperatorInput = { [weak self] in
-            MainActor.assumeIsolated { self?.lastOperatorInputAt = Date() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = Date()
+                self.lastOperatorInputAt = now
+                guard self.dialogGate.waitingCount > 0 else { return }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.dialogGate.operatorDidInteract(with: self.webView, at: now)
+                }
+            }
         }
 
         // --- URL label for phishing protection ---
@@ -280,6 +296,10 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         if let sheet = panel.attachedSheet {
             panel.endSheet(sheet, returnCode: .abort)
         }
+        // C11H-377: a waiting dialog answers its safe default, and this
+        // popup's downloads stop with it.
+        dialogGate.flush(webView)
+        downloadDelegate.cancelAll()
 
         webView.cmuxCloseInspectorBeforeHostTeardown()
 
@@ -300,6 +320,10 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
 
         // Release self-retention
         objc_setAssociatedObject(panel, &Self.associatedObjectKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    func showPageGuardNotice(_ text: String) {
+        pageGuardNoticePresenter.show(text: text, in: webView)
     }
 
     // MARK: - Nested popup creation
@@ -461,7 +485,16 @@ private class PopupUIDelegate: NSObject, WKUIDelegate {
         )
 
         if isScriptedPopup {
-            return controller?.createNestedPopup(
+            // C11H-377: the same rule as a panel: only right after the
+            // operator's own input on this popup while it is on screen.
+            guard let controller,
+                  BrowserPopupPolicy.allows(lastOperatorInput: controller.lastOperatorInputAt,
+                                            onScreen: browserWebViewIsOnScreen(webView)) else {
+                let sourceHost = navigationAction.sourceFrame.securityOrigin.host
+                controller?.showPageGuardNotice(BrowserPopupPolicy.notice(host: sourceHost.isEmpty ? webView.url?.host : sourceHost))
+                return nil
+            }
+            return controller.createNestedPopup(
                 configuration: configuration,
                 windowFeatures: windowFeatures
             )
@@ -488,13 +521,21 @@ private class PopupUIDelegate: NSObject, WKUIDelegate {
         for webView: WKWebView,
         completion: @escaping (NSApplication.ModalResponse) -> Void
     ) {
-        // Same rule as the main browser: sheet it, or cancel it. A popup JS
-        // dialog must never spin an app-modal run loop on the main thread.
-        browserPresentModalAlert(
-            alert,
-            preferredWindow: webView.window,
-            safeDefaultResponse: .alertSecondButtonReturn,
-            reasonForLog: "popup javascript dialog",
+        // Same rule as the main browser (C11H-377): the shared gate decides,
+        // and presents only as a sheet. A popup JS dialog must never spin an
+        // app-modal run loop on the main thread.
+        guard let controller else {
+            completion(.alertSecondButtonReturn)
+            return
+        }
+        controller.dialogGate.request(
+            for: webView,
+            safeDefault: .alertSecondButtonReturn,
+            lastOperatorInput: controller.lastOperatorInputAt,
+            present: { [weak webView] done in
+                browserPresentModalAlert(alert, preferredWindow: webView?.window, safeDefaultResponse: .alertSecondButtonReturn,
+                                         reasonForLog: "popup javascript dialog", completion: done)
+            },
             completion: completion
         )
     }
@@ -678,17 +719,28 @@ class PopupNavigationDelegate: NSObject, WKNavigationDelegate {
         if let response = navigationResponse.response as? HTTPURLResponse {
             let contentDisposition = response.value(forHTTPHeaderField: "Content-Disposition") ?? ""
             if contentDisposition.lowercased().hasPrefix("attachment") {
-                decisionHandler(.download)
+                decisionHandler(decideDownload(webView, responseURL: navigationResponse.response.url))
                 return
             }
         }
 
         if !navigationResponse.canShowMIMEType {
-            decisionHandler(.download)
+            decisionHandler(decideDownload(webView, responseURL: navigationResponse.response.url))
             return
         }
 
         decisionHandler(.allow)
+    }
+
+    /// C11H-377: a popup downloads only after the operator's input on it.
+    /// Popups come only from ordinary panels; no show viewer opens one.
+    private func decideDownload(_ webView: WKWebView, responseURL: URL?) -> WKNavigationResponsePolicy {
+        let decision = BrowserDownloadPolicy.decide(isShowViewer: false, lastActivation: controller?.lastOperatorInputAt)
+        guard decision != .allow else { return .download }
+        if let text = BrowserDownloadPolicy.notice(for: decision, host: responseURL?.host ?? webView.url?.host) {
+            controller?.showPageGuardNotice(text)
+        }
+        return .cancel
     }
 
     func webView(

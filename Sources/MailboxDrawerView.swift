@@ -23,6 +23,11 @@ struct MailboxDrawerStyle {
 }
 
 enum MailboxDrawerText {
+    /// C11H-360: the badge on mail relayed from a linked machine.
+    static func via(_ machine: String) -> String {
+        String(format: String(localized: "mailbox.relay.via", defaultValue: "via %@"), machine)
+    }
+
     /// `now`, `45s`, `12m`, `5h`, `3d`: the age of a moment, or a duration.
     static func span(_ interval: TimeInterval) -> String {
         let seconds = max(0, Int(interval))
@@ -70,9 +75,25 @@ struct MailboxCellView: View {
     let isOpen: Bool
     let fontSize: CGFloat
     let secondary: Color
+    /// A schema-2 theme's `states.unread`; nil keeps system orange.
+    var unreadColor: Color? = nil
+    // c11h: the cell sits at the bar's left, beside the machine chip. There
+    // the unread count is a badge on the envelope's top-left corner, an overlay that
+    // takes no width, instead of a reserved slot before it; the received
+    // count keeps its fixed slot, so nothing after the cell ever moves.
+    var unreadTrailing: Bool = false
     let action: () -> Void
 
     @State private var hovering = false
+
+    private var unreadInk: Color { unreadColor ?? Color(nsColor: .systemOrange) }
+
+    /// Count text on the filled fresh badge: today's near-black on orange; on
+    /// a theme's unread colour, black or white by its luminance.
+    private var freshInk: Color {
+        guard let unreadColor else { return Color.black.opacity(0.85) }
+        return NSColor(unreadColor).isLightColor ? Color.black.opacity(0.85) : .white
+    }
 
     private var unread: Int { model.summary.unread }
     private var received: Int { model.summary.received }
@@ -84,11 +105,14 @@ struct MailboxCellView: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 3) {
-                unreadSlot
+                if !unreadTrailing { unreadSlot }
                 Image(systemName: "envelope")
                     .font(.system(size: fontSize + 1))
-                    .foregroundColor(unread > 0 ? Color(nsColor: .systemOrange) : secondary)
+                    .foregroundColor(unread > 0 ? unreadInk : secondary)
                     .frame(width: fontSize + 5)
+                    .overlay(alignment: .topLeading) {
+                        if unreadTrailing && unread > 0 { unreadBadge }
+                    }
                 Text(MailboxPanelMail.countText(received))
                     .font(.system(size: fontSize, design: .monospaced).monospacedDigit())
                     .foregroundColor(secondary.opacity(received == 0 ? 0.55 : 1))
@@ -114,14 +138,29 @@ struct MailboxCellView: View {
         let fresh = model.isFresh && unread > 0
         return Text(unread > 0 ? MailboxPanelMail.countText(unread) : "")
             .font(.system(size: fontSize, weight: fresh ? .semibold : .regular, design: .monospaced).monospacedDigit())
-            .foregroundColor(fresh ? Color.black.opacity(0.85) : Color(nsColor: .systemOrange))
+            .foregroundColor(fresh ? freshInk : unreadInk)
             .lineLimit(1)
             .padding(.horizontal, 3)
             .background(
                 RoundedRectangle(cornerRadius: 3)
-                    .fill(fresh ? Color(nsColor: .systemOrange) : Color.clear)
+                    .fill(fresh ? unreadInk : Color.clear)
             )
             .frame(width: slotWidth, alignment: .trailing)
+    }
+
+    /// c11h: the unread count on the envelope's corner (filled while fresh).
+    private var unreadBadge: some View {
+        let fresh = model.isFresh
+        return Text(MailboxPanelMail.countText(unread))
+            .font(.system(size: max(8, fontSize - 3), weight: .bold, design: .monospaced).monospacedDigit())
+            .foregroundColor(fresh ? freshInk : unreadInk)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 2)
+            .background(Capsule().fill(fresh ? unreadInk : Color.black))
+            // Out over the gap before the envelope, never over the count after it.
+            .offset(x: -7, y: -6)
+            .allowsHitTesting(false)
     }
 
     private var helpText: String {
@@ -439,7 +478,7 @@ struct MailboxDrawerView: View {
                             let parent = message.inReplyTo.flatMap { id in listing.messages.first { $0.fileId == id } }
                             MailboxMessageCard(
                                 message: message,
-                                sender: senders[message.from],
+                                sender: message.relayMachine == nil ? senders[message.from] : nil,
                                 now: timeline.date,
                                 isExpanded: expanded.contains(message.id),
                                 parentId: parent?.id,
@@ -955,12 +994,18 @@ private struct MailboxMessageCard: View {
 
     private var fromRow: some View {
         var parts: [String] = []
-        if let number = sender?.panelNumber {
-            parts.append(String(localized: "mailbox.drawer.panelNumber", defaultValue: "panel \(number)"))
-        }
-        if let address = sender?.address, address != message.from { parts.append(address) }
-        if sender?.isOpen != true {
-            parts.append(String(localized: "mailbox.drawer.sender.notOpen", defaultValue: "not open"))
+        if let machine = message.relayMachine {
+            // C11H-360: relayed mail names its machine, never a local panel
+            // that happens to share its `from`.
+            parts.append(MailboxDrawerText.via(machine))
+        } else {
+            if let number = sender?.panelNumber {
+                parts.append(String(localized: "mailbox.drawer.panelNumber", defaultValue: "panel \(number)"))
+            }
+            if let address = sender?.address, address != message.from { parts.append(address) }
+            if sender?.isOpen != true {
+                parts.append(String(localized: "mailbox.drawer.sender.notOpen", defaultValue: "not open"))
+            }
         }
         let detail = parts.joined(separator: " · ")
         return HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -1890,7 +1935,11 @@ private struct MailboxInsightsView: View {
                     style: style,
                     action: { onOpenConversation(MailboxPanelMail.peerKey(of: record.header)) }
                 )
-                if let number = senders[record.header.from]?.panelNumber {
+                if let machine = record.header.relayMachine {
+                    Text(verbatim: MailboxDrawerText.via(machine))
+                        .foregroundColor(style.secondary)
+                        .lineLimit(1)
+                } else if let number = senders[record.header.from]?.panelNumber {
                     Text(String(localized: "mailbox.drawer.panelNumber", defaultValue: "panel \(number)"))
                         .foregroundColor(style.secondary)
                         .lineLimit(1)
@@ -2793,7 +2842,10 @@ private struct MailboxConversationsView: View {
             return Peer(name: name, number: nil, isOpen: false, isNameOnly: true)
         case .panel(let id):
             let resolved = model.panels[id]
-            let live = resolved?.isOpen == true ? (resolved?.address ?? resolved?.title) : nil
+            // C11H-360: a relayed peer's live name keeps its machine; the
+            // label already carries it.
+            let live = (resolved?.isOpen == true ? (resolved?.address ?? resolved?.title) : nil)
+                .map { MailboxEnvelope.senderLabel($0, relayMachine: conversation.relayMachine) }
             let name = live ?? (conversation.label.isEmpty ? nil : conversation.label) ?? String(id.uuidString.lowercased().prefix(8))
             return Peer(name: name, number: resolved?.panelNumber, isOpen: resolved?.isOpen == true, isNameOnly: false)
         }
@@ -3552,6 +3604,10 @@ private struct MailboxConversationBubble: View {
     private var chipItems: [Chip] {
         guard let message = item.message, message.problem == nil else { return [] }
         var items: [Chip] = []
+        // C11H-360: a relayed bubble names the machine it came from.
+        if let machine = message.relayMachine {
+            items.append(Chip(text: MailboxDrawerText.via(machine), kind: .plain))
+        }
         if message.urgent {
             items.append(Chip(text: String(localized: "mailbox.drawer.chip.urgent", defaultValue: "urgent"), kind: .warn))
         }

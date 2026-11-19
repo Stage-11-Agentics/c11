@@ -1,0 +1,8 @@
+#!/bin/sh
+# c11-2.0:begin-keep
+# c11h: the retired line's name for this build's CLI, kept as a hidden alias so
+# scripts and muscle memory from c11h 1.x still work (docs/c11-2.0-identity.md).
+# It runs the `c11` beside this file; hints and help always say `c11`.
+# c11-2.0:end-keep
+dir="$(cd "$(dirname "$0")" && pwd)"
+C11_INVOKED_AS=c11 exec "$dir/c11" "$@"

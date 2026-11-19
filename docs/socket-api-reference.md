@@ -9,8 +9,11 @@ The **v2 JSON socket protocol** for programmatically controlling c11 over a Unix
 | Build | Default socket path |
 |-------|---------------------|
 | Release (stable) | `~/Library/Application Support/c11/c11.sock` |
-| Debug | `/tmp/c11-debug.sock` |
-| Tagged debug | `/tmp/c11-debug-<tag>.sock` |
+| Debug | `$(getconf DARWIN_USER_TEMP_DIR)c11/c11-debug.sock` |
+| Tagged debug | `$(getconf DARWIN_USER_TEMP_DIR)c11/c11-debug-<tag>.sock` (a tag over about 29 characters gets a shortened name ending in a hash) |
+| Staging, nightly | `$(getconf DARWIN_USER_TEMP_DIR)c11/c11-staging.sock`, `…/c11-nightly.sock` |
+
+Non-release sockets live in c11's per-user folder (0700), never at fixed `/tmp` names another local account could take. A non-release build also keeps its older `/tmp/c11-<channel>.sock` name as a link to its socket, for terminals that still carry that name. The CLI refuses a socket whose listener runs as another user.
 
 Override the path with the `C11_SOCKET_PATH` environment variable (the CLI also reads `C11_SOCKET`). Inside a c11 terminal, `C11_SOCKET_PATH` is injected automatically so a spawned process talks to its own c11.
 
@@ -59,7 +62,7 @@ Protocol-level error codes: `invalid_utf8`, `parse_error`, `invalid_request`, `i
 **Example round-trip**
 
 ```bash
-SOCK="${C11_SOCKET_PATH:-/tmp/c11-debug.sock}"
+SOCK="${C11_SOCKET_PATH:-$(getconf DARWIN_USER_TEMP_DIR)c11/c11-debug.sock}"
 printf '%s\n' '{"id":"ping","method":"system.ping","params":{}}' | nc -U "$SOCK"
 # → {"id":"ping","ok":true,"result":{"pong":true}}
 ```

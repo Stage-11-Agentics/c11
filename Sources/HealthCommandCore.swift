@@ -123,6 +123,18 @@ func parseIPSTimestamp(_ raw: String) -> Date? {
     return f.date(from: raw)
 }
 
+/// Top-level DiagnosticReports names. Accept `c11…` and a filename that
+/// embeds the c11 bundle family. A bare `c11` or `c11mux` stem is foreign.
+func isC11TopLevelIPSFileName(_ name: String) -> Bool {
+    let stem = (name as NSString).deletingPathExtension.lowercased()
+    if stem == "c11" || stem.hasPrefix("c11-") || stem.hasPrefix("c11.") || stem.hasPrefix("c11 ") {
+        return true
+    }
+    guard let range = stem.range(of: "com.stage11.c11") else { return false }
+    let after = stem[range.upperBound...]
+    return after.isEmpty || after.hasPrefix(".") || after.hasPrefix("-")
+}
+
 func scanIPS(home: String, since: Date) -> [HealthEvent] {
     let baseDir = "\(home)/Library/Logs/DiagnosticReports"
     let baseURL = URL(fileURLWithPath: baseDir)
@@ -141,7 +153,7 @@ func scanIPS(home: String, since: Date) -> [HealthEvent] {
         let name = entry.lastPathComponent
 
         if isDir {
-            guard name.hasPrefix("com.stage11.c11") else { continue }
+            guard C11Identity.isFamilyBundleIdentifier(name) else { continue }
             if let inside = try? fm.contentsOfDirectory(
                 at: entry,
                 includingPropertiesForKeys: nil,
@@ -157,8 +169,7 @@ func scanIPS(home: String, since: Date) -> [HealthEvent] {
         }
 
         guard entry.pathExtension == "ips" else { continue }
-        let stem = entry.deletingPathExtension().lastPathComponent
-        guard stem.lowercased().contains("c11") else { continue }
+        guard isC11TopLevelIPSFileName(entry.lastPathComponent) else { continue }
         if let ev = ipsEventIfRecent(at: entry, since: since) {
             events.append(ev)
         }
@@ -236,7 +247,7 @@ func scanSentryQueued(home: String, since: Date) -> [HealthEvent] {
 
     for bundleDir in bundleDirs {
         let bundleName = bundleDir.lastPathComponent
-        guard bundleName.hasPrefix("com.stage11.c11") else { continue }
+        guard C11Identity.isFamilyBundleIdentifier(bundleName) else { continue }
         let isDir = (try? bundleDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
         guard isDir else { continue }
 
@@ -446,6 +457,7 @@ func parseSinceFlag(_ value: String) -> TimeInterval? {
 func bootTime(onFallback: (String) -> Void = { msg in
     FileHandle.standardError.write(Data((msg + "\n").utf8))
 }) -> Date {
+    #if os(macOS)
     var tv = timeval()
     var size = MemoryLayout<timeval>.size
     let result = sysctlbyname("kern.boottime", &tv, &size, nil, 0)
@@ -453,6 +465,9 @@ func bootTime(onFallback: (String) -> Void = { msg in
         let seconds = TimeInterval(tv.tv_sec) + TimeInterval(tv.tv_usec) / 1_000_000
         return Date(timeIntervalSince1970: seconds)
     }
+    #else
+    if let boot = LinuxProc.bootTime { return boot }
+    #endif
     onFallback("c11 health: kern.boottime unavailable (errno=\(errno)), falling back to 24h window")
     return Date(timeIntervalSinceNow: -24 * 3600)
 }
@@ -543,7 +558,7 @@ private func mostRecentSentinelMarker(home: String) -> UncleanExitMarker? {
     var best: UncleanExitMarker? = nil
 
     for bundleDir in bundleDirs {
-        guard bundleDir.lastPathComponent.hasPrefix("com.stage11.c11") else { continue }
+        guard C11Identity.isFamilyBundleIdentifier(bundleDir.lastPathComponent) else { continue }
         let sessionsDir = bundleDir.appendingPathComponent("sessions", isDirectory: true)
         guard let files = try? fm.contentsOfDirectory(
             at: sessionsDir,
@@ -627,7 +642,7 @@ func telemetryAmbiguityFooter(home: String, sentryCount: Int) -> String? {
 
     var sawAnySentryDir = false
     for bundleDir in bundleDirs {
-        guard bundleDir.lastPathComponent.hasPrefix("com.stage11.c11") else { continue }
+        guard C11Identity.isFamilyBundleIdentifier(bundleDir.lastPathComponent) else { continue }
         let isDir = (try? bundleDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
         guard isDir else { continue }
 
@@ -674,7 +689,7 @@ func scanLaunchSentinel(home: String, since: Date) -> [HealthEvent] {
 
     for bundleDir in bundleDirs {
         let bundleName = bundleDir.lastPathComponent
-        guard bundleName.hasPrefix("com.stage11.c11") else { continue }
+        guard C11Identity.isFamilyBundleIdentifier(bundleName) else { continue }
         let isDir = (try? bundleDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
         guard isDir else { continue }
 

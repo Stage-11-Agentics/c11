@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Link Consent</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23000000'/%3E%3Cg fill='%23e8e8e8' transform='translate(34.96 387.08) scale(0.35913 -0.35913)'%3E%3Cpath transform='translate(0)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3Cpath transform='translate(600)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: light;
+  --page-bg: #e6e6ea;
+  --page-text: #1d1d1f;
+  --page-text2: #5f5f66;
+  --track: rgba(0,0,0,.08);
+  --seg-on: #ffffff;
+  --seg-on-text: #1d1d1f;
+  --win-bg: #ececee;
+  --win-side: #e2e2e6;
+  --sheet-bg: #f5f5f7;
+  --sheet-border: rgba(0,0,0,.14);
+  --text: #1d1d1f;
+  --text2: #6e6e73;
+  --sep: rgba(0,0,0,.12);
+  --fill: rgba(0,0,0,.035);
+  --field-bg: #ffffff;
+  --field-border: rgba(0,0,0,.2);
+  --btn-bg: #ffffff;
+  --btn-border: rgba(0,0,0,.2);
+  --accent: #007aff;
+  --accent-text: #ffffff;
+  --green: #1f9d3f;
+  --dim: rgba(0,0,0,.3);
+  --shadow: 0 18px 50px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.2);
+  --sel: rgba(0,122,255,.16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page-bg: #151517;
+    --page-text: #f5f5f7;
+    --page-text2: #a1a1a8;
+    --track: rgba(255,255,255,.1);
+    --seg-on: #48484c;
+    --seg-on-text: #ffffff;
+    --win-bg: #2a2a2d;
+    --win-side: #232326;
+    --sheet-bg: #353538;
+    --sheet-border: rgba(255,255,255,.14);
+    --text: #f5f5f7;
+    --text2: #a1a1a8;
+    --sep: rgba(255,255,255,.14);
+    --fill: rgba(255,255,255,.05);
+    --field-bg: #212123;
+    --field-border: rgba(255,255,255,.2);
+    --btn-bg: #4a4a4e;
+    --btn-border: rgba(255,255,255,.12);
+    --accent: #0a84ff;
+    --accent-text: #ffffff;
+    --green: #32d74b;
+    --dim: rgba(0,0,0,.45);
+    --shadow: 0 18px 50px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.4);
+    --sel: rgba(10,132,255,.28);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page-bg: #151517;
+  --page-text: #f5f5f7;
+  --page-text2: #a1a1a8;
+  --track: rgba(255,255,255,.1);
+  --seg-on: #48484c;
+  --seg-on-text: #ffffff;
+  --win-bg: #2a2a2d;
+  --win-side: #232326;
+  --sheet-bg: #353538;
+  --sheet-border: rgba(255,255,255,.14);
+  --text: #f5f5f7;
+  --text2: #a1a1a8;
+  --sep: rgba(255,255,255,.14);
+  --fill: rgba(255,255,255,.05);
+  --field-bg: #212123;
+  --field-border: rgba(255,255,255,.2);
+  --btn-bg: #4a4a4e;
+  --btn-border: rgba(255,255,255,.12);
+  --accent: #0a84ff;
+  --accent-text: #ffffff;
+  --green: #32d74b;
+  --dim: rgba(0,0,0,.45);
+  --shadow: 0 18px 50px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.4);
+  --sel: rgba(10,132,255,.28);
+}
+:root[data-theme="light"] { color-scheme: light; }
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--page-text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 680px; margin: 0 auto; padding: 20px 16px 40px; }
+.page h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+.page .sub { font-size: 12px; color: var(--page-text2); margin: 0 0 14px; line-height: 1.45; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }
+.seg { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; background: var(--track); border-radius: 9px; }
+.seg button {
+  font: inherit; font-size: 12px; line-height: 16px; color: var(--page-text);
+  background: transparent; border: 0; border-radius: 7px; padding: 5px 10px; cursor: pointer;
+  white-space: nowrap;
+}
+.seg button b { font-weight: 700; margin-right: 4px; }
+.seg button small { font-size: 11px; color: var(--page-text2); margin-left: 4px; }
+.seg button[aria-checked="true"], .seg button[aria-pressed="true"] {
+  background: var(--seg-on); color: var(--seg-on-text); box-shadow: 0 1px 2px rgba(0,0,0,.2);
+}
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.theme { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--page-text2); }
+
+.stage-wrap { width: 100%; max-width: 600px; margin: 0 auto; position: relative; overflow: hidden; border-radius: 10px; }
+.canvas { width: 600px; height: 580px; position: relative; transform-origin: 0 0; }
+.canvas[data-variant="B"] { height: 800px; }
+
+.win { position: absolute; inset: 0; background: var(--win-bg); border: 1px solid var(--sheet-border); border-radius: 10px; overflow: hidden; color: var(--text); font-size: 13px; }
+.titlebar { height: 36px; display: flex; align-items: center; justify-content: center; position: relative; border-bottom: 1px solid var(--sep); font-weight: 600; font-size: 13px; }
+.lights { position: absolute; left: 12px; top: 12px; display: flex; gap: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; }
+.lights i:nth-child(2) { background: #febc2e; }
+.lights i:nth-child(3) { background: #28c840; }
+.win-body { position: absolute; top: 37px; left: 0; right: 0; bottom: 0; display: flex; }
+.side { width: 160px; background: var(--win-side); border-right: 1px solid var(--sep); padding: 10px 8px; }
+.side div { padding: 5px 8px; border-radius: 6px; font-size: 13px; line-height: 18px; }
+.side div.on { background: var(--sel); }
+.main { flex: 1; padding: 18px 20px; min-width: 0; }
+.main h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.main p { margin: 0 0 14px; font-size: 12px; color: var(--text2); }
+.mlist { border: 1px solid var(--sep); border-radius: 8px; background: var(--fill); margin-bottom: 14px; }
+.mrow { display: flex; justify-content: space-between; padding: 8px 12px; font-size: 13px; border-top: 1px solid var(--sep); }
+.mrow:first-child { border-top: 0; }
+.mrow span { color: var(--text2); font-size: 12px; }
+.dim { position: absolute; inset: 0; background: var(--dim); opacity: 0; pointer-events: none; border-radius: 10px; transition: opacity .15s; }
+.canvas.is-open .dim { opacity: 1; pointer-events: auto; }
+
+.btn {
+  font: inherit; font-size: 13px; line-height: 20px; height: 24px; min-width: 72px; padding: 0 14px;
+  border-radius: 6px; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--text);
+  cursor: pointer; box-shadow: 0 1px 1px rgba(0,0,0,.08); white-space: nowrap;
+}
+.btn.default { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.ghost-hidden { visibility: hidden; }
+
+.sheet {
+  position: absolute; left: 60px; top: 38px; width: 480px; background: var(--sheet-bg);
+  border: 1px solid var(--sheet-border); border-radius: 14px; box-shadow: var(--shadow); color: var(--text);
+  display: flex; flex-direction: column; font-size: 13px;
+}
+.sheet[hidden] { display: none; }
+.sheet-head { padding: 20px 20px 0; height: 54px; }
+.sheet-head h2, .rhead h2 { margin: 0; font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-body { padding: 0 20px; height: 330px; overflow: hidden; position: relative; }
+.canvas[data-variant="B"] .sheet-body { height: 640px; }
+.sheet-foot { padding: 0 20px; height: 58px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+
+.intro { margin: 0 0 12px; font-size: 12px; line-height: 16px; color: var(--text2); }
+.grid { display: grid; grid-template-columns: 64px 1fr; gap: 10px 10px; align-items: center; margin-bottom: 14px; }
+.grid label { text-align: right; font-size: 13px; }
+.grid input {
+  font: inherit; font-size: 13px; height: 22px; width: 100%; padding: 0 7px; border-radius: 5px;
+  border: 1px solid var(--field-border); background: var(--field-bg); color: var(--text); min-width: 0;
+}
+.grid input::placeholder { color: var(--text2); opacity: .8; }
+.grid input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.grid input:disabled { opacity: .55; }
+
+.steps { border: 1px solid var(--sep); border-radius: 6px; background: var(--fill); padding: 6px 12px; }
+.step { display: flex; align-items: center; gap: 9px; height: 24px; font-size: 12px; }
+.step.done { color: var(--text); }
+.step.idle { color: var(--text2); }
+.ic { width: 14px; height: 14px; flex: none; display: inline-block; }
+.ic.idle { border: 1.5px solid var(--text2); border-radius: 50%; opacity: .6; }
+.ic.spin { border: 2px solid var(--sep); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+.ic.done { color: var(--green); }
+.ic.done svg { display: block; width: 14px; height: 14px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ic.spin { animation-duration: 2.4s; } }
+.status { height: 18px; line-height: 18px; margin-top: 8px; font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status .ok { color: var(--green); font-weight: 500; }
+
+.consent h3 { margin: 0 0 8px; font-size: 13px; line-height: 18px; font-weight: 700; }
+.consent ul { margin: 0 0 10px; padding-left: 16px; }
+.consent li { font-size: 12px; line-height: 16.5px; margin-bottom: 5px; }
+.consent li::marker { color: var(--text2); }
+.linkbtn { font: inherit; font-size: 12px; line-height: 16px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.linkbtn:hover { text-decoration: underline; }
+.linkbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.consent-page { padding-top: 6px; }
+.consent-box { border: 1px solid var(--sep); border-radius: 6px; background: var(--fill); padding: 12px 12px 10px; margin-bottom: 10px; }
+.consent-box ul { margin-bottom: 8px; }
+.check { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 16px; margin-bottom: 12px; height: 34px; }
+.check input { margin: 1px 0 0; width: 14px; height: 14px; accent-color: var(--accent); flex: none; }
+
+.overlay { position: absolute; inset: 0; background: var(--dim); border-radius: 10px; z-index: 5; }
+.overlay[hidden] { display: none; }
+.rsheet {
+  position: absolute; left: 20px; top: 24px; width: 560px; height: 520px; background: var(--sheet-bg);
+  border: 1px solid var(--sheet-border); border-radius: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; color: var(--text);
+}
+.rhead { padding: 20px 20px 10px; border-bottom: 1px solid var(--sep); flex: none; }
+.rbody { flex: 1; overflow-y: auto; padding: 14px 20px 6px; }
+.rbody:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rbody h4 { margin: 0 0 4px; font-size: 13px; line-height: 18px; font-weight: 600; }
+.rbody p { margin: 0 0 14px; font-size: 12px; line-height: 17px; color: var(--text); }
+.rbody code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; background: var(--fill); border: 1px solid var(--sep); border-radius: 4px; padding: 0 4px; }
+.rfoot { flex: none; height: 56px; padding: 0 20px; display: flex; align-items: center; justify-content: flex-end; border-top: 1px solid var(--sep); }
+
+.caption { max-width: 600px; margin: 12px auto 0; font-size: 12px; line-height: 17px; color: var(--page-text2); min-height: 34px; }
+.caption b { color: var(--page-text); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>c11: link a machine, consent screen</h1>
+  <p class="sub">Three ways to tell the operator that linking gives c11 a shell on the machine as them. Edit the SSH host inside the mock and the consent text follows it.</p>
+  <div class="controls">
+    <div class="seg" role="radiogroup" aria-label="Variant" id="variants">
+      <button type="button" role="radio" data-testid="variant-A" data-v="A"><b>A</b>Consent first</button>
+      <button type="button" role="radio" data-testid="variant-B" data-v="B"><b>B</b>Inline checkbox</button>
+      <button type="button" role="radio" data-testid="variant-C" data-v="C"><b>C</b>Confirm after Add<small>(recommended)</small></button>
+    </div>
+    <div class="theme">
+      <span>Theme</span>
+      <div class="seg" id="themes">
+        <button type="button" data-testid="theme-light" data-t="light">Light</button>
+        <button type="button" data-testid="theme-dark" data-t="dark">Dark</button>
+        <button type="button" data-testid="theme-auto" data-t="auto">Auto</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage-wrap" id="wrap">
+    <div class="canvas is-open" id="canvas" data-variant="C">
+      <div class="win">
+        <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div>Settings</div>
+        <div class="win-body">
+          <div class="side">
+            <div>General</div><div>Terminal</div><div>Browser</div><div class="on">Herder Topography</div><div>Shortcuts</div>
+          </div>
+          <div class="main">
+            <h3>Herder Topography</h3>
+            <p>Machines whose terminals c11 can show.</p>
+            <div class="mlist" id="mlist"></div>
+            <button type="button" class="btn" data-action="addmachine" data-testid="add-machine-button">Add Machine…</button>
+          </div>
+        </div>
+        <div class="dim"></div>
+      </div>
+      <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" data-testid="sheet"></div>
+      <div class="overlay" id="reading" hidden data-testid="reading-sheet" role="dialog" aria-modal="true" aria-labelledby="reading-title">
+        <div class="rsheet">
+          <div class="rhead"><h2 id="reading-title">How c11 trusts a linked machine</h2></div>
+          <div class="rbody" tabindex="0">
+            <h4>What linking grants</h4>
+            <p>Linking gives c11 a shell on the machine as the account you link with. c11 uses it to install hc, start it and open terminals there.</p>
+            <h4>Same account, same trust</h4>
+            <p>A c11 terminal on a linked machine is your own login shell. It has the same files, keys and permissions you have when you sign in there yourself.</p>
+            <h4>No per-program check in hc</h4>
+            <p>hc accepts connections from programs running as your account on that machine. It does not check which program is asking, so any program running as you can read and type into the c11 terminals there.</p>
+            <h4>Shards separate failure, not people</h4>
+            <p>hc splits terminals into shards so that one stalled group does not take down the others. Shards are about failure, not trust: every shard runs as you.</p>
+            <h4>What stays on disk</h4>
+            <p>hc is installed under your home folder, and its folders are readable only by you. c11 keeps the machine's host name and the hash of the hc it expects. It stores no passwords.</p>
+            <h4>What c11 adds</h4>
+            <p>Before it runs hc, c11 checks the file's hash against the one it expects. It keeps hc's folders private to your account and records every cross-machine action in its audit log.</p>
+            <h4>Read the audit log</h4>
+            <p>Run <code>c11 machine audit</code> to list every cross-machine action c11 has taken, with the time, the machine and the action.</p>
+          </div>
+          <div class="rfoot"><button type="button" class="btn default" data-action="reading-done" data-testid="reading-done-button">Done</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption" id="caption" data-testid="caption"></p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var STEPS = ["Reach the machine over SSH", "Install c11's hc there", "Check c11's hc and its folders", "Install the relay for agents there", "Link it to c11", "Check the link"];
+  var CAPTIONS = {
+    A: "<b>A, Consent first.</b> The operator reads the consent page before the form ever appears, and Continue is the only way in.",
+    B: "<b>B, Inline checkbox.</b> The consent sits inside the form, and Add stays off until the operator ticks the box and types a host.",
+    C: "<b>C, Confirm after Add.</b> The form is unchanged until Add, then a consent page asks the operator to confirm or go Back."
+  };
+  var S = {
+    variant: 'C', open: true, page: 'form', host: 'studio', name: '', checked: false,
+    run: 'idle', steps: [], runIdx: -1, reading: false,
+    machines: [{ name: 'This Mac', note: 'local' }, { name: 'studio', note: 'linked' }]
+  };
+  var timers = [];
+  var canvas = document.getElementById('canvas');
+  var wrap = document.getElementById('wrap');
+  var sheet = document.getElementById('sheet');
+  var reading = document.getElementById('reading');
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+  }
+  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+  function hostLabel() { var t = S.host.trim(); return t || 'this machine'; }
+  function derivedName() {
+    var t = S.host.trim();
+    if (!t) return 'Name';
+    t = t.replace(/^.*@/, '').split('.')[0];
+    return t || 'Name';
+  }
+  function hostSpan() { return '<span class="js-host">' + esc(hostLabel()) + '</span>'; }
+  function initPage() {
+    clearTimers();
+    S.page = S.variant === 'A' ? 'consent' : 'form';
+    S.run = 'idle'; S.steps = []; S.runIdx = -1; S.checked = false;
+  }
+  function addEnabled() {
+    return S.run === 'idle' && S.host.trim() !== '' && (S.variant !== 'B' || S.checked);
+  }
+
+  function consentHTML(hostHtml) {
+    return '<div class="consent">' +
+      '<h3>Linking gives c11 a shell on ' + hostHtml + ' as you.</h3>' +
+      '<ul>' +
+      '<li>c11 signs in with your SSH keys, installs its own hc there and starts it whenever this Mac connects, and never forwards your SSH agent, X11 or ports there.</li>' +
+      '<li>Anything you or an agent runs in a c11 terminal there runs as you, with your files and keys on that machine.</li>' +
+      '<li>Any program running as you on ' + hostHtml + ' can read and type into the c11 terminals there. hc has no per-program check.</li>' +
+      '<li>c11 checks hc\'s hash before it runs it, keeps hc\'s folders private, and records every cross-machine action in its audit log.</li>' +
+      '</ul>' +
+      '<button type="button" class="linkbtn" data-action="trust" data-testid="trust-link">How c11 trusts a linked machine</button>' +
+      '</div>';
+  }
+
+  function iconHTML(st) {
+    if (st === 'running') return '<span class="ic spin"></span>';
+    if (st === 'done') return '<span class="ic done"><svg viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><path d="M4 7.3l2 2 4-4.4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+    return '<span class="ic idle"></span>';
+  }
+  function stepsHTML() {
+    var html = '<div class="steps">';
+    STEPS.forEach(function (label, i) {
+      var st = S.steps[i] || 'idle';
+      html += '<div class="step ' + st + '">' + iconHTML(st) + '<span>' + esc(label) + '</span></div>';
+    });
+    return html + '</div>';
+  }
+  function statusHTML() {
+    var t = '&nbsp;';
+    if (S.run === 'running' && S.runIdx >= 0) t = esc(STEPS[S.runIdx]) + '…';
+    if (S.run === 'done') t = '<span class="ok">' + hostSpan() + ' is linked.</span>';
+    return '<div class="status" data-testid="status-line" aria-live="polite">' + t + '</div>';
+  }
+  function formHTML() {
+    var dis = S.run !== 'idle' ? ' disabled' : '';
+    var html = '<p class="intro">Link another machine so its terminals show up in c11. It needs SSH access from this Mac.</p>' +
+      '<div class="grid">' +
+      '<label for="f-host">SSH host</label><input id="f-host" data-testid="host-field" type="text" placeholder="studio, me@studio.local" autocomplete="off" autocapitalize="off" spellcheck="false"' + dis + '>' +
+      '<label for="f-name">Name</label><input id="f-name" data-testid="name-field" type="text" placeholder="' + esc(derivedName()) + '" autocomplete="off" spellcheck="false"' + dis + '>' +
+      '</div>';
+    if (S.variant === 'B') {
+      html += '<div class="consent-box">' + consentHTML(hostSpan()) + '</div>' +
+        '<label class="check"><input type="checkbox" data-testid="consent-checkbox"' + (S.checked ? ' checked' : '') + dis + '><span>I understand that c11 gets a shell on ' + hostSpan() + ' as me.</span></label>';
+    }
+    return html + stepsHTML() + statusHTML();
+  }
+
+  function build() {
+    var title, body, foot;
+    if (S.variant === 'A' && S.page === 'consent') {
+      title = 'Link a Machine';
+      body = '<div class="consent-page">' + consentHTML('a machine you choose') + '</div>';
+      foot = '<button type="button" class="btn" data-action="cancel" data-testid="cancel-button">Cancel</button>' +
+        '<button type="button" class="btn default" data-action="continue" data-testid="continue-button">Continue</button>';
+    } else if (S.variant === 'C' && S.page === 'consent') {
+      title = 'Link ' + hostSpan() + ' to c11?';
+      body = '<div class="consent-page">' + consentHTML(hostSpan()) + '</div>';
+      foot = '<button type="button" class="btn" data-action="back" data-testid="back-button">Back</button>' +
+        '<button type="button" class="btn default" data-action="link" data-testid="link-button">Link ' + hostSpan() + '</button>';
+    } else {
+      title = 'Add Machine';
+      body = formHTML();
+      if (S.run === 'done') {
+        foot = '<button type="button" class="btn ghost-hidden" tabindex="-1" aria-hidden="true">Cancel</button>' +
+          '<button type="button" class="btn default" data-action="done" data-testid="done-button">Done</button>';
+      } else {
+        foot = '<button type="button" class="btn" data-action="cancel" data-testid="cancel-button">Cancel</button>' +
+          '<button type="button" class="btn default" data-action="add" data-testid="add-button"' + (addEnabled() ? '' : ' disabled') + '>Add</button>';
+      }
+    }
+    return '<div class="sheet-head"><h2 id="sheet-title">' + title + '</h2></div>' +
+      '<div class="sheet-body">' + body + '</div><div class="sheet-foot">' + foot + '</div>';
+  }
+
+  function fit() {
+    var s = Math.min(1, wrap.clientWidth / 600);
+    canvas.style.transform = 'scale(' + s + ')';
+    wrap.style.height = Math.round(canvas.offsetHeight * s) + 'px';
+  }
+
+  function renderWindow() {
+    document.getElementById('mlist').innerHTML = S.machines.map(function (m) {
+      return '<div class="mrow">' + esc(m.name) + '<span>' + esc(m.note) + '</span></div>';
+    }).join('');
+  }
+
+  function render() {
+    canvas.dataset.variant = S.variant;
+    canvas.classList.toggle('is-open', S.open);
+    sheet.hidden = !S.open;
+    reading.hidden = !S.reading;
+    if (S.open) {
+      sheet.innerHTML = build();
+      var h = sheet.querySelector('[data-testid="host-field"]');
+      if (h) h.value = S.host;
+      var n = sheet.querySelector('[data-testid="name-field"]');
+      if (n) n.value = S.name;
+    }
+    renderWindow();
+    document.getElementById('caption').innerHTML = CAPTIONS[S.variant];
+    Array.prototype.forEach.call(document.querySelectorAll('#variants button'), function (b) {
+      b.setAttribute('aria-checked', b.dataset.v === S.variant ? 'true' : 'false');
+    });
+    fit();
+  }
+
+  function refreshDynamic() {
+    Array.prototype.forEach.call(sheet.querySelectorAll('.js-host'), function (el) { el.textContent = hostLabel(); });
+    var add = sheet.querySelector('[data-testid="add-button"]');
+    if (add) add.disabled = !addEnabled();
+    var n = sheet.querySelector('[data-testid="name-field"]');
+    if (n) n.placeholder = derivedName();
+  }
+
+  function startRun() {
+    clearTimers();
+    S.run = 'running'; S.steps = STEPS.map(function () { return 'idle'; });
+    function go(i) {
+      if (i >= STEPS.length) { S.run = 'done'; S.runIdx = -1; render(); return; }
+      S.steps[i] = 'running'; S.runIdx = i; render();
+      timers.push(setTimeout(function () { S.steps[i] = 'done'; go(i + 1); }, 500));
+    }
+    go(0);
+  }
+  function openSheet() { S.open = true; initPage(); render(); }
+  function closeSheet() { clearTimers(); S.open = false; S.reading = false; render(); }
+
+  canvas.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-action]');
+    if (!el || el.disabled) return;
+    switch (el.dataset.action) {
+      case 'addmachine': openSheet(); break;
+      case 'cancel': closeSheet(); break;
+      case 'continue': S.page = 'form'; render(); break;
+      case 'back': S.page = 'form'; render(); break;
+      case 'add':
+        if (!addEnabled()) return;
+        if (S.variant === 'C') { S.page = 'consent'; render(); } else { startRun(); }
+        break;
+      case 'link': S.page = 'form'; startRun(); break;
+      case 'done':
+        var nm = S.name.trim() || derivedName();
+        S.machines = S.machines.filter(function (m) { return m.name !== nm; }).concat([{ name: nm, note: 'linked' }]);
+        closeSheet();
+        break;
+      case 'trust': S.reading = true; render(); var d = reading.querySelector('[data-action="reading-done"]'); if (d) d.focus(); break;
+      case 'reading-done':
+        S.reading = false; render();
+        var tl = sheet.querySelector('[data-testid="trust-link"]'); if (tl) tl.focus();
+        break;
+    }
+  });
+  sheet.addEventListener('input', function (e) {
+    var t = e.target;
+    if (t.matches('[data-testid="host-field"]')) { S.host = t.value; refreshDynamic(); }
+    else if (t.matches('[data-testid="name-field"]')) { S.name = t.value; }
+  });
+  sheet.addEventListener('change', function (e) {
+    if (e.target.matches('[data-testid="consent-checkbox"]')) { S.checked = e.target.checked; refreshDynamic(); }
+  });
+  sheet.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && e.target.matches('input[type="text"]')) {
+      var p = sheet.querySelector('.btn.default');
+      if (p && !p.disabled) p.click();
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && S.reading) { S.reading = false; render(); }
+  });
+
+  document.getElementById('variants').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-v]');
+    if (!b) return;
+    S.variant = b.dataset.v; S.open = true; S.reading = false; initPage(); render();
+  });
+  function setTheme(t) {
+    var root = document.documentElement;
+    if (t === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+    Array.prototype.forEach.call(document.querySelectorAll('#themes button'), function (b) {
+      b.setAttribute('aria-pressed', b.dataset.t === t ? 'true' : 'false');
+    });
+  }
+  document.getElementById('themes').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-t]');
+    if (b) setTheme(b.dataset.t);
+  });
+
+  window.addEventListener('resize', fit);
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(wrap);
+  setTheme('auto');
+  initPage();
+  render();
+})();
+</script>
+</body>
+</html>

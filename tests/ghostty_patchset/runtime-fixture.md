@@ -4,7 +4,7 @@ One bounded harness, `runtime-fixture.py`, supports an existing `sandbox-up.sh` 
 
 ## Authorized local tagged run
 
-The owner's go-owner authorization permits these owned Hyperion tagged apps until ATLAS BUILDS LIVE. Start the exact tagged artifacts separately through the existing launch script; this harness only connects. Run baseline before the candidate build/load, and do not run baseline/candidate simultaneously:
+The owner's go-owner authorization permits these owned tagged apps on the operator's laptop until BUILD-HOST BUILDS LIVE. Start the exact tagged artifacts separately through the existing launch script; this harness only connects. Run baseline before the candidate build/load, and do not run baseline/candidate simultaneously:
 
 ```sh
 tests/ghostty_patchset/run-runtime-sandbox.sh --local-tagged \
@@ -58,7 +58,7 @@ The first readiness or ACK-observation miss stops sampling before another token 
 
 ## Sandbox baseline and candidate
 
-Build the two tagged artifacts on Atlas through the existing remote build lane. Preserve their full parent and Ghostty SHAs and archive hashes. Start one guest at a time from the same golden image and with the same CPU/RAM:
+Build the two tagged artifacts on the build host through the existing remote build lane. Preserve their full parent and Ghostty SHAs and archive hashes. Start one guest at a time from the same golden image and with the same CPU/RAM:
 
 ```sh
 scripts/sandbox-up.sh c11-294-baseline /absolute/path/to/c11\ DEV\ c11-294-baseline.app
@@ -72,7 +72,7 @@ tests/ghostty_patchset/run-runtime-sandbox.sh \
 scripts/sandbox-down.sh c11-294-candidate
 ```
 
-Use the real tags of the supplied artifacts, not invented labels. The `.app` paths are on the machine running `sandbox-up.sh`; its normal default host is Atlas. No fixture commands should be run against the operator's production session. The separate local mode above is restricted to the specifically authorized tagged builds. If a run times out, retain its logs and dispose that sandbox guest; do not rerun in uncertain state.
+Use the real tags of the supplied artifacts, not invented labels. The `.app` paths are on the machine running `sandbox-up.sh`; its host is the one C11_SANDBOX_HOST names (normally the build host). No fixture commands should be run against the operator's production session. The separate local mode above is restricted to the specifically authorized tagged builds. If a run times out, retain its logs and dispose that sandbox guest; do not rerun in uncertain state.
 
 Evidence is written to the guest share `/Volumes/My Shared Files/out/ghostty-runtime-{baseline,candidate}` and its adjacent `.log`. On the Tart host these remain under `~/.c11-sandbox/out/<run-id>/`. Each output directory must be new. Fetch the evidence before guest disposal if the host's retention policy requires it. Compare downloaded reports without contacting an app:
 

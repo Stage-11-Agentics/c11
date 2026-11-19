@@ -1,6 +1,6 @@
 # Synthesis: Standard Plan Reviews — Conversation Store Architecture
 
-**Plan reviewed:** `/Users/atin/Projects/Stage11/code/c11/docs/conversation-store-architecture.md`
+**Plan reviewed:** `~/src/c11/docs/conversation-store-architecture.md`
 **Reviewers synthesized:** Claude (Opus 4.7), Codex, Gemini
 **Synthesis date:** 2026-04-27
 

@@ -1,0 +1,198 @@
+# Outrun Horizon: vaporwave night. Neon horizon gradient and cyan perspective grid behind the
+# sidebar, hot pink for the live thing, orange for what needs you, scanlines over the chrome.
+# Prototype key 5, [data-theme="outrun"] in design/themes/c11-themes.html.
+
+[identity]
+name         = "outrun-horizon"
+display_name = "Outrun Horizon"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 2
+
+[palette]
+night      = "#0B0716"   # --chrome
+night2     = "#0E0A1C"   # --chrome-2 (description bar); the Browser omnibar borrows it
+ctl        = "#221640"   # --chrome-ctl
+text       = "#EEE8FF"   # --chrome-text
+textDim    = "#9D8FC4"   # --chrome-text-2
+rule       = "#261A44"   # --chrome-rule
+floor      = "#2A0B4C"   # the dark foot of the horizon gradient (sidebar tint base)
+cardInk    = "#0A0618"   # --card is rgba(10,6,24,.80); see the judgment call on [chrome.card]
+cardInkAct = "#060310"   # --card-active is rgba(6,3,16,.92)
+cyan       = "#2DE2E6"   # --accent
+pink       = "#FF3F8E"   # --live
+orange     = "#FF9F45"   # --attn, waiting
+violet     = "#C77DFF"   # --flag
+cold       = "#2F2A5E"   # --cold
+ink        = "#170A1F"   # ink on the pink-to-orange pill
+tabActive  = "#1A1130"   # --tab-active
+cardText   = "#F3EEFF"
+cardText2  = "#C3B5E6"
+cardDim    = "#8D7FB3"
+
+[variables]
+background          = "$palette.night"
+surface             = "$palette.night2"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.cyan"
+separator           = "$palette.rule"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$workspaceColor"
+thicknessPt      = 1.5
+inactiveOpacity  = 0.25
+unfocusedOpacity = 0.6
+
+[chrome.sidebar]
+tintOverlay                   = "#00000000"
+tintBase                      = "$palette.floor"
+tintBaseOpacity               = 1.0
+activeTabFill                 = "$palette.cardInkAct.mix($palette.floor, 0.08)"
+activeTabFillFallback         = "$palette.cardInkAct.mix($palette.floor, 0.08)"
+activeTabRail                 = "$accent"
+activeTabRailFallback         = "$accent"
+activeTabRailOpacity          = 0.95
+inactiveTabCustomOpacity      = 0.70
+inactiveTabMultiSelectOpacity = 0.35
+badgeFill                     = "$accent"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$separator"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$background"
+backgroundOpacity   = 1.0
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+controlFill         = "$palette.ctl"
+controlForeground   = "$foreground"
+
+[chrome.tabBar]
+background      = "$background"
+activeFill      = "$palette.tabActive"
+divider         = "$separator"
+activeIndicator = "$accent"
+text            = "#F3EEFF"
+textSecondary   = "$foregroundSecondary"
+activeText      = "#FFFFFF"
+number          = "$accent"
+
+[chrome.browserChrome]
+background  = "$background"
+omnibarFill = "$surface"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = false
+
+# --- schema 2 ---------------------------------------------------------------------------------
+
+[type]
+ui      = "system"
+display = "system"
+mono    = "JetBrains Mono"
+
+[type.windowTitle]
+family   = "display"
+scale    = 0.92        # 12 / 13
+weight   = "bold"
+case     = "upper"
+tracking = 0.12
+
+[type.cardTitle]
+family   = "display"
+scale    = 0.79        # 13.5 / 17
+weight   = "bold"
+case     = "upper"
+tracking = 0.02
+
+[type.cardLabel]
+family = "mono"        # .meta, .usage, .branch, .ports use --font-mono at the baseline size
+
+[type.tab]
+family   = "ui"
+scale    = 0.88        # 11 / 12.5
+case     = "upper"
+tracking = 0.04
+
+[type.chip]
+scale    = 0.88        # 10.5 / 12
+case     = "upper"
+tracking = 0.08
+
+[geometry]
+cardRadius         = 6
+cardBorderPt       = 1.5
+cardActiveBorderPt = 1.5
+cardPaddingPt      = 13
+controlRadius      = 4
+chipRadius         = 2
+tabSelection       = "underline"
+
+# Card fills. The prototype's cards are translucent dark over the horizon gradient
+# (rgba(10,6,24,.80) and rgba(6,3,16,.92)). JUDGMENT CALL: c11 requires opaque card fills so text
+# contrast never depends on the backdrop (C11H-32). Each fill is the prototype ink mixed 12 percent
+# toward the dark foot of the sidebar gradient (the mix is in linear light, so 0.12 reads close to
+# what 20 percent of backdrop does in sRGB), which keeps the "tinted glass" tone without see-through.
+[chrome.card]
+sheen = false   # the prototype cards are flat: no top sheen, no identity wash
+fill          = "$palette.cardInk.mix($palette.floor, 0.12)"
+fillActive    = "$palette.cardInkAct.mix($palette.floor, 0.08)"
+border        = "#2DE2E638"    # rgba(45,226,230,.22)
+borderActive  = "$palette.cyan"
+borderWaiting = "#2DE2E6A6"    # the prototype's .card.waiting: active border 55 percent over the border
+text          = "$palette.cardText"
+textSecondary = "$palette.cardText2"
+textDim       = "$palette.cardDim"
+rule          = "#FFFFFF24"    # rgba(255,255,255,.14)
+accent        = "$accent"
+progress      = "#FF3F8E 0%, #FF9F45 100%"
+progressTrack = "#FFFFFF24"    # rgba(255,255,255,.14)
+glow          = "#2DE2E659"    # JUDGMENT CALL: the CSS has a 1 px ring at .35 plus a 22 px bloom at .18; one colour here, at the ring's .35
+
+[chrome.pill]
+style = "filled"
+fill  = "#FF3F8E 0%, #FF9F45 100%"
+ink   = "$palette.ink"
+
+[chrome.descriptionBar]
+chipFill   = "#2DE2E60F"    # rgba(45,226,230,.06)
+chipBorder = "#2DE2E666"    # rgba(45,226,230,.4)
+chipText   = "$accent"
+
+[chrome.area]
+focusBorder   = "$palette.cyan"
+waitingBorder = "$palette.pink"
+thicknessPt   = 1.5
+
+[backdrop]
+kind      = "gradient"
+gradient  = "#26104F 0%, #4A1A82 50%, #E2367F 64%, #FF9F45 69%, #3A1066 71%, #2A0B4C 100%"
+grid      = "perspective"
+gridColor = "#2DE2E673"    # cyan at 0.45 opacity (0.45 * 255 = 115)
+gridTop   = 0.70
+
+[states]
+waiting    = "$palette.orange"
+waitingInk = "$palette.ink"
+running    = "$palette.pink"
+idle       = "$palette.cardDim"
+cold       = "$palette.cold"
+flag       = "$palette.violet"
+unread     = "$palette.orange"
+
+[ornaments]
+bust      = true
+scanlines = 0.14
+
+# Ghostty terminal theme for `c11 themes set <name> --with-terminal`
+[terminal]
+pairedTheme = "c11-outrun-horizon"

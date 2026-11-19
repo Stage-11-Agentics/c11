@@ -106,6 +106,9 @@ struct ConfigFields: Equatable {
     var command: String?
     var initialPrompt: String?
     var env: [String: String]?
+    /// C11H-138: `ask`, `local`, or hc's machine name; empty also means ask.
+    /// Not supplied keeps the stored value on edit.
+    var machine: String?
 
     init(
         harness: String? = nil,
@@ -115,8 +118,10 @@ struct ConfigFields: Equatable {
         systemPromptText: String? = nil,
         command: String? = nil,
         initialPrompt: String? = nil,
-        env: [String: String]? = nil
+        env: [String: String]? = nil,
+        machine: String? = nil
     ) {
+        self.machine = machine
         self.harness = harness
         self.model = model
         self.effort = effort
@@ -212,14 +217,16 @@ struct ConfigCommandCore {
         "claude-code", "codex", "grok", "kimi", "opencode", "github-copilot", "pi", "omp",
     ]
 
-    /// The custom-kind template path (mirrors `UserAgentLaunchTemplate.templateURL`,
-    /// which is app-only). CLI-safe: a plain file-existence check.
-    static func customTemplateExists(kind: String) -> Bool {
+    /// The custom-kind template path (mirrors `UserAgentLaunchTemplate.templateURL`).
+    /// CLI-safe: a plain file-existence check under `~/.config/c11/agents`.
+    static func customTemplateExists(
+        kind: String,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> Bool {
         guard kind.range(of: "^[a-z][a-z0-9-]*$", options: .regularExpression) != nil, kind.count <= 32 else {
             return false
         }
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/c11/agents", isDirectory: true)
+        let url = C11Identity.userAgentsDirectory(home: home)
             .appendingPathComponent("\(kind).json")
         return FileManager.default.fileExists(atPath: url.path)
     }
@@ -259,7 +266,7 @@ struct ConfigCommandCore {
         }
         try Self.validate(fields: fields, harness: harness)
         let config = Self.makeLaunchConfig(harness: harness, fields: fields, base: nil)
-        let saved = SavedAgentConfig(id: "", name: trimmedName, order: 0, config: config)
+        let saved = SavedAgentConfig(id: "", name: trimmedName, order: 0, config: config, machine: fields.machine)
         do {
             return try library.add(saved)
         } catch let e as AgentConfigLibraryStore.StoreError {
@@ -280,7 +287,8 @@ struct ConfigCommandCore {
             throw ConfigCoreError.configNotFound(query: nameOrId, available: Self.availableLabels(file.configs))
         }
         file.configs[idx] = SavedAgentConfig(
-            id: target.id, name: target.name, order: target.order, config: merged
+            id: target.id, name: target.name, order: target.order, config: merged,
+            machine: fields.machine == nil ? target.machine : fields.machine
         )
         do {
             try library.write(file)
@@ -401,6 +409,27 @@ struct ConfigCommandCore {
             prompt: resolvedPrompt,
             json: json
         )
+    }
+
+    /// Delegation and title for `config launch`, on top of the saved recipe.
+    /// The caller is not an argument. `config launch` attaches it at the socket
+    /// call site, the same place `launch-agent` resolves it. `--delegated` with
+    /// no caller matches `launch-agent`: the flag is still sent, and the server
+    /// records an ownerless delegate. `--suppressed` is the same flag
+    /// (`delegated` is true for either). `title` nil means the launch placeholder.
+    static func configLaunchFlagParams(
+        delegated: Bool,
+        title: String?
+    ) -> [String: Any] {
+        var params: [String: Any] = [:]
+        if delegated {
+            params["delegated"] = true
+            params["suppressed"] = true
+        }
+        if let title {
+            params["title"] = title
+        }
+        return params
     }
 
     // MARK: Validation

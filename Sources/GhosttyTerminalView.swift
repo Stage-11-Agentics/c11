@@ -986,8 +986,36 @@ final class GhosttySurfaceCallbackContext {
 // MARK: - Ghostty App Singleton
 
 class GhosttyApp {
+    #if DEBUG
+    private static let liveShared = GhosttyApp()
+    private static let configFreeFixtureLock = NSLock()
+    nonisolated(unsafe) private static var configFreeFixture: GhosttyApp?
+    static var shared: GhosttyApp {
+        configFreeFixtureLock.lock()
+        let fixture = configFreeFixture
+        configFreeFixtureLock.unlock()
+        return fixture ?? liveShared
+    }
+
+    /// Model recovery tests need AppKit views, but never an operator's
+    /// Ghostty configuration or a native app. Reset preserves the lazy live
+    /// singleton: installing or removing this fixture never initializes it.
+    @MainActor
+    static func installConfigFreeFixtureForTesting() -> @MainActor () -> Void {
+        configFreeFixtureLock.lock()
+        let previous = configFreeFixture
+        configFreeFixture = GhosttyApp(configFreeFixture: ())
+        configFreeFixtureLock.unlock()
+        return {
+            Self.configFreeFixtureLock.lock()
+            Self.configFreeFixture = previous
+            Self.configFreeFixtureLock.unlock()
+        }
+    }
+    #else
     static let shared = GhosttyApp()
-    private static let releaseBundleIdentifier = "com.stage11.c11"
+    #endif
+    private static let releaseBundleIdentifier = C11Identity.releaseBundleIdentifier
     private static let backgroundLogTimestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -1020,10 +1048,13 @@ class GhosttyApp {
             return baseURL.deletingLastPathComponent().appendingPathComponent(bgName)
         }
 
-        return URL(fileURLWithPath: "/tmp/cmux-bg.log")
+        // c11's per-user folder, never shared /tmp (C11H-364 L21).
+        return URL(fileURLWithPath: C11UserRuntime.logPath("cmux-bg.log"))
     }
 
-    let backgroundLogEnabled = {
+    let backgroundLogEnabled: Bool
+
+    private static func resolveBackgroundLogEnabled() -> Bool {
         if c11Env("C11_DEBUG_BG", in: ProcessInfo.processInfo.environment) == "1" {
             return true
         }
@@ -1037,7 +1068,7 @@ class GhosttyApp {
             return true
         }
         return UserDefaults.standard.bool(forKey: "GhosttyTabsDebugBG")
-    }()
+    }
     private let backgroundLogURL = GhosttyApp.resolveBackgroundLogURL()
     private let backgroundLogStartUptime = ProcessInfo.processInfo.systemUptime
     private let backgroundLogLock = NSLock()
@@ -1133,22 +1164,23 @@ class GhosttyApp {
     }
 
     private init() {
+        backgroundLogEnabled = Self.resolveBackgroundLogEnabled()
         initializeGhostty()
     }
 
     #if DEBUG
-    private static let initLogPath = "/tmp/cmux-ghostty-init.log"
+    private init(configFreeFixture: Void) {
+        backgroundLogEnabled = false
+    }
+    #endif
+
+    #if DEBUG
+    private static let initLogPath = C11UserRuntime.logPath("cmux-ghostty-init.log")
 
     private static func initLog(_ message: String) {
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let line = "[\(timestamp)] \(message)\n"
-        if let handle = FileHandle(forWritingAtPath: initLogPath) {
-            handle.seekToEndOfFile()
-            handle.write(line.data(using: .utf8)!)
-            handle.closeFile()
-        } else {
-            FileManager.default.createFile(atPath: initLogPath, contents: line.data(using: .utf8))
-        }
+        C11UserRuntime.appendLog(Data(line.utf8), to: initLogPath)
     }
 
     private static func dumpConfigDiagnostics(_ config: ghostty_config_t, label: String) {
@@ -1202,60 +1234,77 @@ class GhosttyApp {
             return GhosttyApp.shared.handleAction(target: target, action: action)
         }
         runtimeConfig.read_clipboard_cb = { userdata, location, state in
-            // Read clipboard
+            // Read clipboard. The gate decides from the request's kind before
+            // anything reads the pasteboard: an OSC 52 read is answered only
+            // under `clipboard-read = allow` (C11H-372).
+            guard let callbackContext = GhosttyApp.callbackContext(from: userdata),
+                  let surface = callbackContext.runtimeSurface, let state else { return }
+
+            let kind = GhosttyClipboardGate.RequestKind(request: state)
+            let clipboardRead = GhosttyApp.shared.clipboardReadAccess()
+            guard let answer = GhosttyClipboardGate.answerRead(kind: kind, clipboardRead: clipboardRead, readPasteboard: { allowImageFallback in
+                let pasteboard = GhosttyPasteboardHelper.pasteboard(for: location)
+                var value = pasteboard.flatMap { GhosttyPasteboardHelper.stringContents(from: $0) } ?? ""
+
+                // When clipboard has only image data (e.g. screenshot), save as temp
+                // PNG and paste the file path so CLI tools can receive images.
+                if value.isEmpty, allowImageFallback,
+                   let imagePath = pasteboard.flatMap({
+                       GhosttyPasteboardHelper.saveClipboardImageIfNeeded(from: $0, assumeNoText: true)
+                   })
+                {
+                    value = imagePath
+                }
+                return value
+            }) else { return }
+            if kind == .osc52Read, answer == .refused {
+                GhosttyClipboardGate.logRefusal("osc52_read_refused", panel: callbackContext.surfaceId,
+                                                setting: clipboardRead)
+            }
+
+            if kind == .paste, let terminal = callbackContext.terminalSurface,
+               terminal.consumeHCClipboardPaste(answer.text, native: surface, request: state) { return }
+
+            answer.text.withCString { ptr in
+                ghostty_surface_complete_clipboard_request(surface, ptr, state, answer.confirmed)
+            }
+        }
+        runtimeConfig.confirm_read_clipboard_cb = { userdata, content, state, request in
+            // Ghostty asks after an unsafe paste or an OSC 52 read under
+            // `clipboard-read = ask`. The gate never confirms a read's content.
+            guard let content, let state else { return }
             guard let callbackContext = GhosttyApp.callbackContext(from: userdata),
                   let surface = callbackContext.runtimeSurface else { return }
 
-            let pasteboard = GhosttyPasteboardHelper.pasteboard(for: location)
-            var value = pasteboard.flatMap { GhosttyPasteboardHelper.stringContents(from: $0) } ?? ""
-
-            // When clipboard has only image data (e.g. screenshot), save as temp
-            // PNG and paste the file path so CLI tools can receive images.
-            if value.isEmpty,
-               let imagePath = pasteboard.flatMap({
-                   GhosttyPasteboardHelper.saveClipboardImageIfNeeded(from: $0, assumeNoText: true)
-               })
-            {
-                value = imagePath
+            let kind = GhosttyClipboardGate.RequestKind(request)
+            guard let answer = GhosttyClipboardGate.answerConfirm(kind: kind, content: String(cString: content))
+            else { return }
+            if kind == .osc52Read {
+                GhosttyClipboardGate.logRefusal("osc52_read_confirm_refused", panel: callbackContext.surfaceId,
+                                                setting: GhosttyApp.shared.clipboardReadAccess())
             }
-
-            value.withCString { ptr in
-                ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
+            answer.text.withCString { ptr in
+                ghostty_surface_complete_clipboard_request(surface, ptr, state, answer.confirmed)
             }
         }
-        runtimeConfig.confirm_read_clipboard_cb = { userdata, content, state, _ in
-            guard let content else { return }
-            guard let callbackContext = GhosttyApp.callbackContext(from: userdata),
-                  let surface = callbackContext.runtimeSurface else { return }
-
-            ghostty_surface_complete_clipboard_request(surface, content, state, true)
-        }
-        runtimeConfig.write_clipboard_cb = { _, location, content, len, _ in
-            // Write clipboard
+        runtimeConfig.write_clipboard_cb = { userdata, location, content, len, confirm in
+            // Write clipboard. `confirm` is Ghostty's `clipboard-write = ask`
+            // on an OSC 52 write; c11 has no prompt, so nothing is written.
             guard let content = content, len > 0 else { return }
             let buffer = UnsafeBufferPointer(start: content, count: Int(len))
-
-            var fallback: String?
-            for item in buffer {
-                guard let dataPtr = item.data else { continue }
-                let value = String(cString: dataPtr)
-
-                if let mimePtr = item.mime {
-                    let mime = String(cString: mimePtr)
-                    if mime.hasPrefix("text/plain") {
-                        GhosttyPasteboardHelper.writeString(value, to: location)
-                        return
-                    }
-                }
-
-                if fallback == nil {
-                    fallback = value
-                }
+            let items: [(mime: String?, data: String)] = buffer.compactMap { item in
+                guard let dataPtr = item.data else { return nil }
+                return (mime: item.mime.map { String(cString: $0) }, data: String(cString: dataPtr))
             }
-
-            if let fallback {
-                GhosttyPasteboardHelper.writeString(fallback, to: location)
+            guard let text = GhosttyClipboardGate.textToWrite(items: items, confirm: confirm) else {
+                if confirm {
+                    GhosttyClipboardGate.logRefusal("osc52_write_refused",
+                                                    panel: GhosttyApp.callbackContext(from: userdata)?.surfaceId,
+                                                    setting: .ask)
+                }
+                return
             }
+            GhosttyPasteboardHelper.writeString(text, to: location)
         }
         runtimeConfig.close_surface_cb = { userdata, needsConfirmClose in
             guard let callbackContext = GhosttyApp.callbackContext(from: userdata) else { return }
@@ -1918,6 +1967,20 @@ class GhosttyApp {
         return points
     }
 
+    /// The operator's `clipboard-read` setting, read per request from the
+    /// loaded config; nil when it can't be read, which the clipboard gate
+    /// treats as a refusal (C11H-372).
+    func clipboardReadAccess() -> GhosttyClipboardGate.Access? {
+        guard let config else { return nil }
+        var value: UnsafePointer<Int8>?
+        let key = "clipboard-read"
+        guard ghostty_config_get(config, &value, key, UInt(key.lengthOfBytes(using: .utf8))),
+              let value else {
+            return nil
+        }
+        return GhosttyClipboardGate.Access(configValue: String(cString: value))
+    }
+
     fileprivate func shellIntegrationMode() -> String {
         guard let config else { return "detect" }
         var value: UnsafePointer<Int8>?
@@ -2310,7 +2373,10 @@ class GhosttyApp {
                       let workspaceManager = app.workspaceManagerFor(workspaceId: workspaceId) ?? app.workspaceManager else {
                     return false
                 }
-                return workspaceManager.createSplit(workspaceId: workspaceId, surfaceId: surfaceId, direction: direction) != nil
+                // A Ghostty new_split keybinding is the operator's (C11H-260).
+                return PanelLineage.shared.withOrigin(.operator) {
+                    workspaceManager.createSplit(workspaceId: workspaceId, surfaceId: surfaceId, direction: direction) != nil
+                }
             }
         case GHOSTTY_ACTION_RING_BELL:
             performOnMain {
@@ -2565,8 +2631,11 @@ class GhosttyApp {
                 let sourcePanelId = callbackSurfaceId ?? surfaceView.terminalSurface?.id
                 let optionHeld = NSEvent.modifierFlags.contains(.option)
                 return performOnMain {
-                    openC11WebLink(url, sourceWorkspaceId: sourceWorkspaceId,
-                                   sourcePanelId: sourcePanelId, optionHeld: optionHeld)
+                    // The operator clicked the link (C11H-260).
+                    PanelLineage.shared.withOrigin(.operator) {
+                        openC11WebLink(url, sourceWorkspaceId: sourceWorkspaceId,
+                                       sourcePanelId: sourcePanelId, optionHeld: optionHeld)
+                    }
                 }
             }
         default:
@@ -2617,14 +2686,8 @@ class GhosttyApp {
         let line =
             "\(timestamp) seq=\(sequence) t+\(String(format: "%.3f", uptimeMs))ms thread=\(threadLabel) frame60=\(frame60) frame120=\(frame120) cmux bg: \(message)\n"
         if let data = line.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: backgroundLogURL.path) == false {
-                FileManager.default.createFile(atPath: backgroundLogURL.path, contents: nil)
-            }
-            if let handle = try? FileHandle(forWritingTo: backgroundLogURL) {
-                defer { try? handle.close() }
-                try? handle.seekToEnd()
-                try? handle.write(contentsOf: data)
-            }
+            // No-follow, owner and single-link checked (C11H-364 L21).
+            C11UserRuntime.appendLog(data, to: backgroundLogURL.path)
         }
     }
 }
@@ -2867,17 +2930,6 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
     let id: UUID
     private(set) var workspaceId: UUID
-    /// Port ordinal for CMUX_PORT range assignment
-    var portOrdinal: Int = 0
-    /// Snapshotted once per app session so all workspaces use consistent values
-    private static let sessionPortBase: Int = {
-        let val = UserDefaults.standard.integer(forKey: "cmuxPortBase")
-        return val > 0 ? val : 9100
-    }()
-    private static let sessionPortRangeSize: Int = {
-        let val = UserDefaults.standard.integer(forKey: "cmuxPortRange")
-        return val > 0 ? val : 10
-    }()
     private let surfaceContext: ghostty_surface_context_e
     private let configTemplate: OwnedTerminalSurfaceConfig?
     private let workingDirectory: String?
@@ -2897,6 +2949,22 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private var runtimeSurfaceCreatedAt: Date?
     private var teardownRequestedAt: Date?
     private var teardownRequestReason: String?
+    @MainActor private(set) var hcSession: HCPanelSession?
+    @MainActor private var hcCompositionChecked = false
+
+    @MainActor
+    func configureHCSessionIfNeeded() {
+        guard !hcCompositionChecked else { return }
+        hcCompositionChecked = true
+        #if DEBUG
+        if HCTrace.sink == nil { HCTrace.sink = { dlog($0) } }
+        #endif
+        // C11H-359 (M3): the session finds this panel's terminal by its labels
+        // only on the machine the panel was made for.
+        HCPanelPlacements.shared.set(hcRemoteTarget.map { .machine($0.machine) } ?? .local, for: id)
+        hcSession = HCBackendComposition.shared.makePanelSession(panelID: id)
+    }
+
     private var pendingTextQueue: [Data] = []
     private var pendingTextBytes: Int = 0
     private let maxPendingTextBytes = 1_048_576
@@ -2907,6 +2975,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// submits the typed line on cold start.
     private var pendingSubmitOnFlush: Bool = false
     private var backgroundSurfaceStartQueued = false
+    /// Test seam (C11H-96): when set, a background start request is handed to this sink instead of starting
+    /// Ghostty. The request has passed the live/no-surface/not-already-queued guards; calling `finish` stands in
+    /// for the main-queue turn that clears the queued flag. Nil in production.
+    nonisolated(unsafe) static var backgroundStartSink: ((TerminalSurface, _ finish: @escaping () -> Void) -> Void)?
     #if DEBUG
     private var debugRuntimeStartHoldUntil: TimeInterval?
     private var debugPendingFlushHoldUntil: TimeInterval?
@@ -2955,6 +3027,704 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// PTY spawn, and release it when the real window arrives (`reconcileAttachedWindowIfNeeded`).
     private var headlessStartupWindow: NSWindow?
     fileprivate var surfaceCallbackContext: Unmanaged<GhosttySurfaceCallbackContext>?
+
+    struct InputGenerationStamp: Equatable {
+        let nativeGeneration: UInt64
+        let hcEpoch: UInt64?
+    }
+    private var nativeInputGeneration: UInt64 = 0
+
+    #if DEBUG
+    // Seams for the delayed-Return call-site tests: a fake native handle, a
+    // surface replacement (bumps the input generation) and sinks that observe
+    // the Return key and programmatic text. The fake handle must be removed
+    // (`installFakeNativeSurfaceForTesting(nil)`) before the surface is released.
+    @MainActor func installFakeNativeSurfaceForTesting(_ pointer: ghostty_surface_t?) { surface = pointer }
+    /// C11H-160 test seams: a native bridge installed as a real surface's start would, and a barrier run by
+    /// replaceEndedHCWithShell right after the old bridge retired (the window in which a reveal can start one).
+    @MainActor func installNativeBridgeForTesting(_ bridge: HCNativeBridge) {
+        nativeInputGeneration &+= 1; hcHeadlessBridge = nil; hcNativeBridge = bridge
+    }
+    /// A native-backed bridge as createSurface installs it, with the production removal (generation moves, the
+    /// pointer and bridge clear) and no Ghostty calls: output and destruction are no-ops on the fake pointer.
+    @MainActor func installNativeBackedBridgeForTesting(_ bridge: HCNativeBridge, pointer: ghostty_surface_t) {
+        nativeInputGeneration &+= 1; hcHeadlessBridge = nil; hcNativeBridge = bridge; surface = pointer
+        bridge.installProcessor(process: { _ in }, removeFromUse: { [weak self, weak bridge] in
+            self?.nativeSurfaceRemovedFromUse(pointer, bridge: bridge)
+        }, destroy: {})
+    }
+    @MainActor var nativeBridgeForTesting: HCNativeBridge? { hcNativeBridge }
+    @MainActor var nativeInputGenerationForTesting: UInt64 { nativeInputGeneration }
+    @MainActor static var replacementRetiredBarrierForTesting: ((TerminalSurface) async -> Void)?
+    @MainActor func replaceNativeSurfaceForTesting() { nativeInputGeneration &+= 1 }
+    var returnKeySinkForTesting: (() -> Void)?
+    var textSinkForTesting: ((Data) -> Void)?
+    #endif
+
+    func captureInputGeneration() -> InputGenerationStamp {
+        MainActor.assumeIsolated {
+            InputGenerationStamp(nativeGeneration: nativeInputGeneration, hcEpoch: hcSession?.inputEpoch)
+        }
+    }
+
+    func isInputGenerationCurrent(_ stamp: InputGenerationStamp) -> Bool {
+        MainActor.assumeIsolated {
+            guard surface != nil || hcHeadlessBridge != nil, stamp == captureInputGeneration() else { return false }
+            guard let hcSession, hcSession.identity.persistence == .persistent else { return true }
+            return hcSession.attachment != nil && hcSession.inputFault == nil
+        }
+    }
+
+    @MainActor
+    func makeHCNativeEncoder() -> any HCInputEncoder {
+        let expected = nativeInputGeneration
+        return HCNativePasteEncoder(surface: { [weak self] in
+            guard let self, self.nativeInputGeneration == expected else { return nil }
+            return self.surface
+        }, returnDelayNanoseconds: { [weak self] source in
+            if source == .feed || source == .mailbox {
+                #if DEBUG
+                let hold = self.map { FeedAnswerDebugHold.shared.consume(panelID: $0.id) ?? 0 } ?? 0
+                #else
+                let hold = 0
+                #endif
+                return UInt64(FeedAnswerTiming.returnDelayMilliseconds(
+                    baseDelayMs: TextBoxBehavior.returnKeyDelayMs, debugHoldMs: hold)) * 1_000_000
+            }
+            return UInt64(max(0, TextBoxBehavior.returnKeyDelayMs)) * 1_000_000
+        })
+    }
+
+    /// Ticket 12: the machine this panel's hc session runs on, when it is not
+    /// this Mac. Fixed at creation; its `cwd` is a remote path, never used for
+    /// local cwd tracking or probes. Nil for local panels.
+    let hcRemoteTarget: HCRemoteTarget?
+
+    /// The machine and live folder a split of this panel inherits.
+    @MainActor var hcRemoteSource: HCRemoteSource? {
+        guard let hcRemoteTarget else { return nil }
+        var record: HCTerminalRecord?
+        if case .live(let live) = hcSession?.lifecycle { record = live }
+        return HCRemoteSource(target: hcRemoteTarget, record: record)
+    }
+
+    private var hcNativeBridge: HCNativeBridge?
+    private var hcRetiringBridge: HCNativeBridge?
+    @MainActor private var hcLaunchSpec: HCPanelLaunchSpec?
+    #if DEBUG
+    /// Supplies only the external configuration input. Replacement identity,
+    /// creation, attachment and guarded input still use the production path.
+    @MainActor var replacementLaunchSnapshotForTesting: HCNativeLaunchSnapshot?
+    #endif
+    /// A start that lacked an input (typically the grid, before the first size)
+    /// waits here and is retried by `hcStartInputsMayHaveArrived`.
+    @MainActor private lazy var hcDeferredStart = HCDeferredStart { [weak self] blocker in
+        #if DEBUG
+        if let self { dlog("hc.trace start.refused panel=\(self.id.uuidString.prefix(8)) condition=\(blocker.rawValue)") }
+        #endif
+        // Stays truthful until the retry attaches: unresolved, not exec.
+        guard let runtime = self?.hcSession else { return }
+        runtime.publish(.unresolved(runtime.identity, .backendNotInstalled))
+    }
+
+    /// C11H-112: the bridge of an hc terminal that runs with no Ghostty surface (see `HCHeadless`). Set from
+    /// the headless start until a real surface takes over, or the panel closes.
+    @MainActor private(set) var hcHeadlessBridge: HCNativeBridge?
+    /// C11H-167: a conversation resume typed into this terminal. With a Ghostty surface, the screen guard (the
+    /// receipt is the current display). With none (a headless terminal, e.g. a hidden panel's replacement after a
+    /// holder loss) no screen receipt ever comes, so hc's own status decides, as for a socket send (C11H-112):
+    /// a plain shell or an idle agent takes it. `permitsResume` (the shell reported its prompt) holds either way.
+    /// `attemptEpoch` (C11H-272) is the empty prompt a live-shell resume
+    /// answers; nil for a replacement terminal's once-only resume.
+    @MainActor
+    func submitHCConversationResume(text: String, submitReturn: Bool, runtime: HCPanelSession,
+                                    attachment: any HCAttachment, attemptEpoch: Date? = nil,
+                                    permitsResume: @escaping @MainActor @Sendable () -> Bool) async -> HCInputOutcome {
+        if headlessResumeEligible() {
+            // Asked again after encoding and before the Return: the shell may leave its prompt, or an agent
+            // turn blocked, while the write is queued; a surface that appears takes the screen route instead.
+            return await HCConversationResumeSubmission.shared.submit(panelID: id, runtime: runtime, attachment: attachment,
+                attemptEpoch: attemptEpoch,
+                text: text, submitReturn: submitReturn, permitsResume: permitsResume, screenGuard: nil, returnGuard: nil,
+                eligibility: { [weak self] in self?.headlessResumeEligible() ?? false })
+        }
+        if HCHeadless.sendRoute(hasSurface: surface != nil, hasHeadlessBridge: hcHeadlessBridge != nil) == .statusDecision {
+            return .refused(.guardRefused)
+        }
+        return await HCConversationResumeSubmission.shared.submit(panelID: id, runtime: runtime, attachment: attachment,
+            attemptEpoch: attemptEpoch,
+            text: text, submitReturn: submitReturn, permitsResume: permitsResume,
+            screenGuard: { receipt in receipt.revision == runtime.currentDisplayRevision },
+            returnGuard: { receipt in receipt.revision == runtime.currentDisplayRevision })
+    }
+
+    /// Headless and hc's current status lets a resume in (C11H-112's send rule, never overridden).
+    @MainActor
+    private func headlessResumeEligible() -> Bool {
+        guard HCHeadless.sendRoute(hasSurface: surface != nil, hasHeadlessBridge: hcHeadlessBridge != nil) == .statusDecision,
+              case .deliver = HCHeadless.sendDecision(record: hcLiveRecord, allowUnguarded: false) else { return false }
+        return true
+    }
+
+    /// The live hc record of this terminal (its agent status), for the headless prompt gate.
+    @MainActor var hcLiveRecord: HCTerminalRecord? {
+        if case .live(let record)? = hcSession?.lifecycle { return record }
+        return nil
+    }
+    /// Test seams (C11H-112), nil/unused in production: replaces the hc session start of a headless start, so a
+    /// test observes the bridge it would start with; and installs a runtime / headless bridge on a surface.
+    nonisolated(unsafe) static var headlessStartSink: ((TerminalSurface, HCNativeBridge) -> Void)?
+    @MainActor func installHCSessionForTesting(_ runtime: HCPanelSession) { hcSession = runtime; hcCompositionChecked = true }
+    @MainActor func setHeadlessBridgeForTesting(_ bridge: HCNativeBridge?) { hcHeadlessBridge = bridge; hcNativeBridge = bridge }
+    @MainActor func setLaunchSpecForTesting(_ spec: HCPanelLaunchSpec) { hcLaunchSpec = spec }
+    @MainActor func drainHCPendingInputForTesting() { postHCReady() }
+    @MainActor private var hcHeadlessGraceTask: Task<Void, Never>?
+    @MainActor private var hcHeadlessRestoreObservation: AnyCancellable?
+
+    /// Asks for this panel's hc terminal to be created and attached with no Ghostty surface, per
+    /// `HCHeadless.startPolicy`: at once for a restored panel (behind the restore gate), after a short grace
+    /// for a new one, so a panel that is about to be shown is created once at its real size. Never types
+    /// input; the creation input and the start path are the shown panel's own.
+    /// Test seam (C11H-112): observes every headless start request with its `restoring` flag. Nil in production.
+    @MainActor static var headlessRequestSink: ((TerminalSurface, _ restoring: Bool) -> Void)?
+
+    @MainActor
+    func requestHCHeadlessStart(restoring: Bool) {
+        Self.headlessRequestSink?(self, restoring)
+        configureHCSessionIfNeeded()
+        let persistent = hcSession.map { !HCPanelNativeLaunchPolicy.permitsExec(identity: $0.identity) } ?? false
+        switch HCHeadless.startPolicy(persistent: persistent, hasNativeSurface: surface != nil,
+                                      hasHeadlessAttachment: hcHeadlessBridge != nil, restoring: restoring) {
+        case .leave: return
+        case .now:
+            // A restored panel reattaches headless only if its terminal is live in hc: an ended or unknown one
+            // keeps today's policy (it is replaced or resumed when shown), and nothing is created for it here.
+            guard hcHeadlessRestoreObservation == nil, let runtime = hcSession else { return }
+            let started = DispatchTime.now().uptimeNanoseconds
+            runtime.recordAttachmentProgress(phase: "headless", outcome: "waiting", started: started)
+            // Inventory may take longer than the initial lookup budget. Wait
+            // for a lifecycle event rather than abandoning the hidden panel.
+            // Deliver after @Published's willSet so startup reads the new state.
+            hcHeadlessRestoreObservation = runtime.$lifecycle.receive(on: DispatchQueue.main).sink {
+                [weak self, weak runtime] lifecycle in
+                MainActor.assumeIsolated {
+                    guard let self, let runtime, self.hcSession === runtime,
+                          self.portalLifecycleState == .live else { return }
+                    switch lifecycle {
+                    case .live:
+                        guard case .live = runtime.lifecycle else { return }
+                        self.hcHeadlessRestoreObservation = nil
+                        self.hcHeadlessGraceTask?.cancel()
+                        self.hcHeadlessGraceTask = nil
+                        runtime.recordAttachmentProgress(phase: "headless", outcome: "live", started: started)
+                        self.startHCHeadlessNow()
+                    case .ended:
+                        self.hcHeadlessRestoreObservation = nil
+                        self.hcHeadlessGraceTask?.cancel()
+                        self.hcHeadlessGraceTask = nil
+                        runtime.recordAttachmentProgress(phase: "headless", outcome: "ended", started: started)
+                    default: break
+                    }
+                }
+            }
+            // Keep the initial diagnostic budget, but its expiry is only a
+            // report. The lifecycle subscription stays armed for a slow core.
+            hcHeadlessGraceTask?.cancel()
+            hcHeadlessGraceTask = Task { @MainActor [weak self, weak runtime] in
+                let live = await runtime?.liveRecord(within: HCHeadless.restoredLiveWaitSeconds)
+                guard let self, let runtime, !Task.isCancelled,
+                      self.hcSession === runtime else { return }
+                self.hcHeadlessGraceTask = nil
+                if live == nil {
+                    runtime.recordAttachmentProgress(phase: "headless", outcome: "waiting", started: started)
+                }
+            }
+        case .afterGrace:
+            guard hcHeadlessGraceTask == nil else { return }
+            hcHeadlessGraceTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: HCHeadless.graceNanoseconds)
+                guard let self, !Task.isCancelled else { return }
+                self.hcHeadlessGraceTask = nil
+                self.startHCHeadlessNow()
+            }
+        }
+    }
+
+    /// C11H-196: `replacingEnded` starts a fresh login shell for a panel whose terminal ended with the host (a
+    /// reboot) and that was never started this launch: the same start a shown panel makes, headless, with no
+    /// launch command or input (the resume is typed later, by the guarded submit).
+    @MainActor
+    private func startHCHeadlessNow(replacingEnded: Bool = false) {
+        guard portalLifecycleState == .live, surface == nil, hcHeadlessBridge == nil,
+              let runtime = hcSession, !HCPanelNativeLaunchPolicy.permitsExec(identity: runtime.identity) else { return }
+        if replacingEnded {
+            guard case .ended = runtime.lifecycle else { return }
+        } else {
+            guard HCInputReadyQueue.needsStart(runtime, current: hcSession, hasNativeSurface: false) else { return }
+        }
+        // The restore gate is the shown panel's own: parked now, run when it opens.
+        if HCBackendComposition.shared.deferSurfaceStartUntilRestore(panelID: id, start: { [weak self] in
+            MainActor.assumeIsolated { self?.resumeParkedHeadlessStart(replacingEnded: replacingEnded) }
+        }) { return }
+        nativeInputGeneration &+= 1
+        let bridge = HCNativeBridge.headless(panelID: id, report: { [weak runtime] outcome in
+            Task { @MainActor in runtime?.recordInputOutcome(outcome) }
+        })
+        hcHeadlessBridge = bridge
+        hcNativeBridge = bridge
+        if let sink = Self.headlessStartSink { sink(self, bridge); return }
+        let managed = managedStartupEnvironment(hcRuntime: runtime)
+        startHCSession(runtime, bridge: bridge, managed: managed,
+                       command: replacingEnded ? configTemplate?.command : (initialCommand ?? configTemplate?.command),
+                       cwd: workingDirectory ?? configTemplate?.workingDirectory,
+                       initial: replacingEnded ? nil : (initialInput ?? configTemplate?.initialInput))
+        // One creation consumes the caller's input, as a native creation does.
+        if !replacingEnded { initialInput = nil }
+    }
+
+    /// The restore gate opened for a start parked as headless. A panel whose view is in a real window takes the
+    /// normal surface route (it is shown, so it starts at its real size, and a refused surface falls back to
+    /// headless); any other starts headless now.
+    @MainActor
+    private func resumeParkedHeadlessStart(replacingEnded: Bool = false) {
+        if let view = attachedView, let window = view.window, !isHeadlessStartupWindow(window),
+           portalLifecycleState == .live, surface == nil {
+            createSurface(for: view)
+        } else {
+            startHCHeadlessNow(replacingEnded: replacingEnded)
+        }
+    }
+
+    /// C11H-196: whether this panel's view is in a real window (shown), not the headless bootstrap window.
+    @MainActor var isShownInRealWindow: Bool {
+        attachedView?.window.map { !isHeadlessStartupWindow($0) } ?? false
+    }
+
+    /// C11H-196: start the fresh terminal for a panel whose terminal ended with the host, shown or not, without
+    /// showing it. A panel already started this launch replaces through its own launch spec
+    /// (`replaceEndedHCWithShell`, headless when hidden). A panel hidden since restore was never started and has
+    /// no launch spec: it takes its own start path headless, which replaces the ended terminal exactly as a shown
+    /// panel's start does. Returns once a creation is underway; throws when none could begin (the queue retries).
+    @MainActor
+    func startHostEndReplacement(startTimeout: TimeInterval = 15) async throws {
+        guard let runtime = hcSession, runtime.identity.persistence == .persistent,
+              case .ended = runtime.lifecycle else { throw HCUnavailableReason.staleIdentity }
+        if hcLaunchSpec != nil {
+            try await replaceEndedHCWithShell(evenWhenHidden: true)
+            return
+        }
+        // A shown panel's own start is about to run (or is parked behind the restore gate): let it.
+        guard surface == nil, hcHeadlessBridge == nil, portalLifecycleState == .live else {
+            throw HCUnavailableReason.cancelled
+        }
+        startHCHeadlessNow(replacingEnded: true)
+        let deadline = DispatchTime.now().uptimeNanoseconds &+ UInt64(startTimeout * 1_000_000_000)
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            guard hcSession === runtime else { throw HCUnavailableReason.staleIdentity }
+            if case .ended = runtime.lifecycle {} else { return }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        throw HCUnavailableReason.deadlineExceeded
+    }
+
+    /// A real surface now exists: the headless attachment gives way to it. The terminal is already live in hc,
+    /// so the real bridge's attach skips creation, and hc sends it the current screen.
+    @MainActor
+    func handOffHeadlessHC(to nativeBridge: HCNativeBridge) {
+        guard let headless = hcHeadlessBridge, let runtime = hcSession else { return }
+        hcHeadlessBridge = nil
+        hcHeadlessGraceTask?.cancel()
+        hcHeadlessGraceTask = nil
+        hcHeadlessRestoreObservation = nil
+        runtime.prepareReattach()
+        headless.retire {}
+        Self.onLeftHeadless(id, workspaceId)
+    }
+
+    /// C11H-306: a panel that had no screen got one. Its workspace's held mail looks again, on the screen, instead
+    /// of waiting for the held series. A hop to main, never a wait.
+    nonisolated(unsafe) static var onLeftHeadless: (_ panelID: UUID, _ workspaceID: UUID?) -> Void = { panelID, workspaceID in
+        DispatchQueue.main.async {
+            guard let workspaceID, let app = AppDelegate.shared,
+                  let manager = app.workspaceManagerFor(workspaceId: workspaceID) ?? app.workspaceManager,
+                  let workspace = manager.workspaces.first(where: { $0.id == workspaceID }) else { return }
+            workspace.mailboxPanelGotScreen(surfaceId: panelID)
+        }
+    }
+
+    /// The surface was sized or the panel's view changed: let a waiting hc
+    /// start try again. Deferred a turn so it never runs inside the resize.
+    @MainActor
+    func hcStartInputsMayHaveArrived() {
+        guard hcDeferredStart.isWaiting else { return }
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.hcDeferredStart.inputsMayHaveArrived() }
+        }
+    }
+
+    /// One start per native surface, retried while an input is missing. The
+    /// grid is empty until the surface has been sized; a view created before
+    /// its layout (a panel first shown after a no-window deferral) reaches here
+    /// unsized, and nothing else would start it later.
+    @MainActor
+    private func startHCSession(_ runtime: HCPanelSession, bridge: HCNativeBridge,
+                                managed: [String: String], command: String?, cwd: String?, initial: String?) {
+        let generation = nativeInputGeneration
+        // Decided once: createSurface sets hasCreatedNativeSurface right after
+        // this call, so a retry must not read it again (initial-command).
+        hcDeferredStart.begin(firstSurface: !HCBackendComposition.shared.hasCreatedNativeSurface) {
+            [weak self, weak runtime, weak bridge] firstSurface in
+            guard let self, let runtime, let bridge, self.nativeInputGeneration == generation,
+                  self.hcSession === runtime, self.hcNativeBridge === bridge else { return .abandoned }
+            return self.tryStartHCSession(runtime, bridge: bridge, managed: managed,
+                                          command: command, cwd: cwd, initial: initial,
+                                          firstSurface: firstSurface)
+        }
+    }
+
+    /// Returns `.blocked` naming the first missing input, `.started` once the
+    /// create/attach task is launched.
+    @MainActor
+    private func tryStartHCSession(_ runtime: HCPanelSession, bridge: HCNativeBridge,
+                                   managed: [String: String], command: String?, cwd: String?,
+                                   initial: String?, firstSurface: Bool) -> HCStartOutcome {
+        guard let config = GhosttyApp.shared.config else { return .blocked(.ghosttyConfig) }
+        // C11H-67: the shard this panel's creation would use, chosen before the
+        // environment so its C11_HC_SESSION matches the session hc sets.
+        let target = HCBackendComposition.shared.pool?.creationTarget(panelID: id, workspaceID: workspaceId,
+                                                                         machine: hcRemoteTarget?.machine)
+        guard let configuration = target?.configuration ?? HCBackendComposition.shared.configuration else {
+            return .blocked(.hcConfiguration)
+        }
+        guard let grid = hcSurfaceGrid() ?? (bridge === hcHeadlessBridge ? HCHeadless.grid : nil) else {
+            return .blocked(.surfaceGrid)
+        }
+        guard let snapshot = HCNativeLaunchSnapshot.capture(config,
+                initial: firstSurface) else { return .blocked(.launchSnapshot) }
+        #if DEBUG
+        dlog("hc.trace start panel=\(id.uuidString.prefix(8)) grid=\(grid.columns)x\(grid.rows) " +
+             "headless=\(isHeadlessStartupWindow(hostedView.window)) lifecycle=\(runtime.lifecycle)")
+        #endif
+        let nativeGeneration = nativeInputGeneration
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let finalCwd = cwd ?? snapshot.workingDirectory
+        // Ghostty's exec order: process environment, shell integration, then
+        // global config env overlaid by this panel's own launch environment.
+        let tuple = HCShellIntegration.launchTuple(command: snapshot.effectiveCommand(override: command),
+            base: snapshot.environment, globalOverrides: snapshot.overrides, panel: managed,
+            mode: GhosttyApp.shared.shellIntegrationMode(), configuration: configuration)
+        let integratedCommand = tuple.command
+        let terminalEnvironment = tuple.environment
+        let display = HCDisplayState(revision: HCDisplayRevision(attachmentGeneration: 0, displayGeneration: 0),
+            grid: grid, facts: HCDisplayFacts(), focused: desiredFocusState)
+        runtime.reconnectAttachment = { [weak self] record in
+            guard let self else { throw HCUnavailableReason.cancelled }
+            return try await self.recreateHCAttachment(record)
+        }
+        runtime.onEnded = { [weak self, weak runtime] evidence in
+            guard let self, let runtime, self.hcSession === runtime else { return }
+            self.hcPendingInput.failAll(.unavailable, runtime: runtime)
+            guard let app = AppDelegate.shared,
+                  let manager = app.workspaceManagerFor(workspaceId: self.workspaceId) ?? app.workspaceManager else { return }
+            // C11H-232: an agent's terminal ended by an outside signal keeps its panel, with Resume conversation.
+            if manager.workspaces.first(where: { $0.id == self.workspaceId })?
+                .keepPanelAfterOutsideSignal(panelId: self.id, evidence: evidence, lastLive: runtime.lastLiveRecord) == true {
+                return
+            }
+            // C11H-288: an end for a terminal this run never saw live was found at launch.
+            manager.closePanelAfterChildExited(workspaceId: self.workspaceId, surfaceId: self.id,
+                                               terminalWasLiveThisRun: runtime.lastLiveRecord != nil)
+        }
+        runtime.onFallback = { [weak self, weak runtime] in
+            Task { @MainActor in
+                guard let self, let runtime, self.hcSession === runtime else { return }
+                // Launch input held for the rejected creation was never sent;
+                // the fallback shell does not inherit it.
+                self.hcPendingInput.failAll(.unavailable, runtime: runtime)
+                await self.retireHCNativeSurface()
+                guard self.portalLifecycleState == .live, runtime.identity.persistence == .nonpersistent,
+                      let view = self.attachedView, view.window != nil else { return }
+                // The rejected create transmitted nothing. This exec shell is
+                // the one permitted fallback and consumes the original input.
+                self.initialInput = initial
+                self.createSurface(for: view)
+            }
+        }
+        Task { @MainActor [weak self, weak runtime] in
+            guard let self, let runtime, self.nativeInputGeneration == nativeGeneration,
+                  self.hcSession === runtime, self.hcNativeBridge === bridge else { return }
+            guard let rootArgv = snapshot.argv(command: integratedCommand) else {
+                runtime.publish(.unresolved(runtime.identity, .invalidLaunchTuple)); return
+            }
+            // Ticket 12: a remote panel runs that machine's login shell in its
+            // remote folder with only the portable environment.
+            var launch = HCPanelLaunchSpec.placed(argv: rootArgv,
+                localCwd: finalCwd == "home" ? home.path : (finalCwd == "inherit" ? nil : finalCwd),
+                environment: terminalEnvironment,
+                initialInput: initial.map { HCInitialInput.creation(from: $0) },
+                workspaceID: self.workspaceId, remote: self.hcRemoteTarget,
+                panelEnvironment: managed, session: target?.name)
+            launch.shard = target?.id
+            self.hcLaunchSpec = launch
+            do {
+                let attachment = try await runtime.attachSurface(launch: launch, bridge: bridge, display: display, replaceEnded: true)
+                #if DEBUG
+                dlog("hc.trace start.attached panel=\(self.id.uuidString.prefix(8)) gen=\(attachment.generation) " +
+                     "current=\(self.nativeInputGeneration == nativeGeneration) bound=\(runtime.attachment === attachment)")
+                #endif
+                self.finishHCStart(runtime: runtime, attachment: attachment, generation: nativeGeneration)
+            } catch {
+                #if DEBUG
+                dlog("hc.trace start.failed panel=\(self.id.uuidString.prefix(8)) error=\(error) lifecycle=\(runtime.lifecycle)")
+                #endif
+                // HCPanelSession publishes the unresolved/ended state; creating
+                // a renderer never grants a second shell or retries a run.
+            }
+        }
+        return .started
+    }
+
+    /// Current native grid for the first attach; nil until the surface is sized.
+    @MainActor
+    private func hcSurfaceGrid() -> HCGridSize? {
+        guard let surface else { return nil }
+        let size = ghostty_surface_size(surface)
+        guard size.columns > 0, size.rows > 0 else { return nil }
+        return HCGridSize(columns: size.columns, rows: size.rows)
+    }
+
+    @MainActor
+    private func retireHCNativeSurface() async {
+        guard let bridge = hcNativeBridge ?? hcRetiringBridge else { return }
+        hcRetiringBridge = bridge
+        await withCheckedContinuation { continuation in bridge.retire { continuation.resume() } }
+        if hcRetiringBridge === bridge { hcRetiringBridge = nil }
+    }
+
+    /// The view a reattach creates its surface in: the real window when the
+    /// panel is shown, otherwise the headless bootstrap window (re-adopted, or
+    /// created). Nil when the panel is closing or has no view.
+    /// A native bridge's retirement takes its surface out of UI use (before output retirement can free it):
+    /// a new input generation, no surface, the bridge parked as retiring.
+    @MainActor
+    private func nativeSurfaceRemovedFromUse(_ removed: ghostty_surface_t, bridge: HCNativeBridge?) {
+        guard surface == removed else { return }
+        nativeInputGeneration &+= 1
+        surface = nil
+        surfaceCallbackContext = nil
+        hcRetiringBridge = bridge
+        hcNativeBridge = nil
+    }
+
+    @MainActor
+    private func hcReattachView() -> GhosttyNSView? {
+        guard portalLifecycleState == .live, let view = attachedView else { return nil }
+        if view.window == nil { ensureHeadlessStartupWindowIfNeeded(reason: "hc-reattach") }
+        return view.window != nil ? view : nil
+    }
+
+    @MainActor
+    func recreateHCAttachment(_ record: HCTerminalRecord) async throws -> any HCAttachment {
+        guard let runtime = hcSession, let launch = hcLaunchSpec,
+              runtime.identity.key == nil || runtime.identity.key == record.key else { throw HCUnavailableReason.staleIdentity }
+        // C11H-112: a terminal running headless reconnects headless: a new headless bridge at the fixed grid
+        // replaces the dead one through the same runtime attachment path, with no Ghostty surface or window. A
+        // real surface still takes over through `handOffHeadlessHC` when one is created.
+        if surface == nil, hcHeadlessBridge != nil {
+            guard portalLifecycleState == .live else { throw HCUnavailableReason.cancelled }
+            runtime.prepareReattach()
+            await retireHCNativeSurface()
+            guard portalLifecycleState == .live, surface == nil, hcSession === runtime else { throw HCUnavailableReason.cancelled }
+            nativeInputGeneration &+= 1
+            let bridge = HCNativeBridge.headless(panelID: id, report: { [weak runtime] outcome in
+                Task { @MainActor in runtime?.recordInputOutcome(outcome) }
+            })
+            hcHeadlessBridge = bridge
+            hcNativeBridge = bridge
+            runtime.publish(.live(record))
+            let expected = nativeInputGeneration
+            let display = HCDisplayState(revision: HCDisplayRevision(attachmentGeneration: 0, displayGeneration: 0),
+                grid: HCHeadless.grid, facts: HCDisplayFacts(), focused: false)
+            let attached = try await runtime.attachSurface(launch: launch, bridge: bridge, display: display)
+            guard expected == nativeInputGeneration, runtime.attachment === attached else {
+                attached.detach(); throw HCUnavailableReason.cancelled
+            }
+            postHCReady()
+            return attached
+        }
+        // A hidden panel (a tab never mounted, or a host parked by portal
+        // churn) reattaches in the headless bootstrap window, as its first
+        // start did. Check before tearing down: retiring the surface and then
+        // refusing for want of a window left the panel with neither.
+        #if DEBUG
+        dlog("hc.trace reattach panel=\(id.uuidString.prefix(8)) surface=\(surface != nil) " +
+             "view=\(attachedView != nil) window=\(attachedView?.window != nil) headless=\(isHeadlessStartupWindow(hostedView.window))")
+        #endif
+        guard hcReattachView() != nil else { throw HCUnavailableReason.cancelled }
+        // The attachment bound to the surface about to be retired is dead; if it
+        // stayed bound, attachSurface below would return it (C11H-82).
+        runtime.prepareReattach()
+        await retireHCNativeSurface()
+        guard let view = hcReattachView() else {
+            #if DEBUG
+            dlog("hc.trace reattach.cancelled panel=\(id.uuidString.prefix(8)) reason=noView-afterRetire")
+            #endif
+            throw HCUnavailableReason.cancelled
+        }
+        runtime.publish(.live(record))
+        createSurface(for: view, startHC: false)
+        guard let bridge = hcNativeBridge, let grid = hcSurfaceGrid() else {
+            #if DEBUG
+            dlog("hc.trace reattach.noSurface panel=\(id.uuidString.prefix(8)) surface=\(surface != nil) bridge=\(hcNativeBridge != nil)")
+            #endif
+            throw HCUnavailableReason.backendNotInstalled
+        }
+        let expected = nativeInputGeneration
+        let display = HCDisplayState(revision: HCDisplayRevision(attachmentGeneration: 0, displayGeneration: 0),
+            grid: grid, facts: HCDisplayFacts(), focused: desiredFocusState)
+        let attached = try await runtime.attachSurface(launch: launch, bridge: bridge, display: display)
+        guard expected == nativeInputGeneration, runtime.attachment === attached else {
+            attached.detach(); throw HCUnavailableReason.cancelled
+        }
+        postHCReady()
+        return attached
+    }
+
+    /// Replace an `.ended` persistent terminal with a plain login shell in the
+    /// same panel. The caller already holds authoritative ended evidence.
+    /// Detaches the stale attachment, retires the old native surface, and
+    /// attaches a new terminal created with no agent argv and no initial input;
+    /// `replaceEnded` publishes 3A's creation provenance. Never creates when
+    /// the lifecycle is not `.ended`, and never retries a failed create.
+    ///
+    /// C11H-160: `evenWhenHidden` is for an end mid-session (a holder loss in
+    /// a workspace nobody is looking at): a panel that is not shown gets its
+    /// replacement headless (C11H-112's bridge at the fixed grid), so its
+    /// conversation resumes now; a real surface takes over when it is shown.
+    /// Startup's own resolution passes false and keeps today's rule.
+    @MainActor
+    func replaceEndedHCWithShell(evenWhenHidden: Bool = false) async throws {
+        guard let runtime = hcSession, runtime.identity.persistence == .persistent,
+              case .ended = runtime.lifecycle, let previous = hcLaunchSpec else {
+            throw HCUnavailableReason.staleIdentity
+        }
+        let snapshot: HCNativeLaunchSnapshot?
+        #if DEBUG
+        if let fixture = replacementLaunchSnapshotForTesting { snapshot = fixture }
+        else { snapshot = GhosttyApp.shared.config.flatMap { HCNativeLaunchSnapshot.capture($0, initial: false) } }
+        #else
+        snapshot = GhosttyApp.shared.config.flatMap { HCNativeLaunchSnapshot.capture($0, initial: false) }
+        #endif
+        guard let snapshot else {
+            throw HCUnavailableReason.staleIdentity
+        }
+        // Everything that can refuse comes before anything is torn down: at
+        // startup, a hidden panel or a surface not yet in a window leaves the
+        // dead terminal exactly as it was for startup's own replacement to take.
+        let shown = attachedView?.window.map { !isHeadlessStartupWindow($0) } ?? false
+        guard portalLifecycleState == .live, shown || evenWhenHidden else {
+            throw HCUnavailableReason.cancelled
+        }
+        guard let argv = snapshot.argv(override: nil) else {
+            throw HCUnavailableReason.invalidLaunchTuple
+        }
+        // Same shard as the environment it reuses (C11H-67).
+        let launch = previous.replacingEndedWithShell(argv: argv)
+        hcPendingInput.failAll(.cancelled, runtime: runtime)
+        // Retires the dead terminal's reconnect owner along with its attachment.
+        // The bridge this replacement retires; any other bridge installed during retirement is a start that won.
+        let retiring = hcNativeBridge
+        guard runtime.prepareEndedReplacement() else { throw HCUnavailableReason.staleIdentity }
+        await retireHCNativeSurface()
+        #if DEBUG
+        if let barrier = Self.replacementRetiredBarrierForTesting { await barrier(self) }
+        #endif
+        guard portalLifecycleState == .live, hcSession === runtime else { throw HCUnavailableReason.cancelled }
+        // Re-read after the suspension, by identity: the old bridge's own removal moves the input generation and
+        // clears the bridge, so only a different bridge installed meanwhile (a native start begun by a reveal) means
+        // another start owns this panel. Let it settle, then replace through that bridge; never overwrite it.
+        // With no such bridge, continue through the current view's native or headless creation (C11H-160, Astra).
+        if let bridge = hcNativeBridge, bridge !== retiring, bridge !== hcHeadlessBridge {
+            let expected = nativeInputGeneration
+            let grid = surface != nil ? (hcSurfaceGrid() ?? HCHeadless.grid) : HCHeadless.grid
+            let display = HCDisplayState(revision: HCDisplayRevision(attachmentGeneration: 0, displayGeneration: 0),
+                grid: grid, facts: HCDisplayFacts(), focused: desiredFocusState)
+            await runtime.settleStart()
+            guard expected == nativeInputGeneration, hcNativeBridge === bridge, hcSession === runtime else {
+                throw HCUnavailableReason.cancelled
+            }
+            let attached: any HCAttachment
+            if let bound = runtime.attachment { attached = bound }
+            else {
+                attached = try await runtime.attachSurface(launch: hcLaunchSpec ?? launch, bridge: bridge, display: display,
+                                                           replaceEnded: true)
+            }
+            guard expected == nativeInputGeneration, hcNativeBridge === bridge, runtime.attachment === attached else {
+                throw HCUnavailableReason.cancelled
+            }
+            postHCReady()
+            return
+        }
+        let shownNow = attachedView?.window.map { !isHeadlessStartupWindow($0) } ?? false
+        if !shownNow {
+            hcLaunchSpec = launch
+            nativeInputGeneration &+= 1
+            let bridge = HCNativeBridge.headless(panelID: id, report: { [weak runtime] outcome in
+                Task { @MainActor in runtime?.recordInputOutcome(outcome) }
+            })
+            hcHeadlessBridge = bridge
+            hcNativeBridge = bridge
+            let expected = nativeInputGeneration
+            let display = HCDisplayState(revision: HCDisplayRevision(attachmentGeneration: 0, displayGeneration: 0),
+                grid: HCHeadless.grid, facts: HCDisplayFacts(), focused: false)
+            let attached = try await runtime.attachSurface(launch: launch, bridge: bridge, display: display, replaceEnded: true)
+            // Only an attachment made for this bridge counts: a start that took over meanwhile keeps its own.
+            guard expected == nativeInputGeneration, hcNativeBridge === bridge, runtime.attachment === attached else {
+                if runtime.attachment !== attached { attached.detach() }
+                throw HCUnavailableReason.cancelled
+            }
+            postHCReady()
+            return
+        }
+        guard let view = attachedView, view.window != nil else { throw HCUnavailableReason.cancelled }
+        hcLaunchSpec = launch
+        createSurface(for: view, startHC: false)
+        guard let bridge = hcNativeBridge, let grid = hcSurfaceGrid() else {
+            throw HCUnavailableReason.backendNotInstalled
+        }
+        let expected = nativeInputGeneration
+        let display = HCDisplayState(revision: HCDisplayRevision(attachmentGeneration: 0, displayGeneration: 0),
+            grid: grid, facts: HCDisplayFacts(), focused: desiredFocusState)
+        let attached = try await runtime.attachSurface(launch: launch, bridge: bridge, display: display,
+                                                       replaceEnded: true)
+        guard expected == nativeInputGeneration, runtime.attachment === attached else {
+            attached.detach(); throw HCUnavailableReason.cancelled
+        }
+        postHCReady()
+    }
+
+    /// A start's attach came back bound. Launch input held for the first bind belongs to the terminal, not to
+    /// the surface start that ran it (C11H-218): `createSurface` moves the input generation before it can park or
+    /// fail, so a headless or background start whose attach lands after that would skip the drain, the launch
+    /// line would never be typed, and every later send would wait behind it as "reconnecting". The bound runtime
+    /// drains it either way; only the current generation's start announces the surface ready.
+    @MainActor
+    func finishHCStart(runtime: HCPanelSession, attachment: any HCAttachment, generation: UInt64) {
+        guard hcSession === runtime, runtime.attachment === attachment else { return }
+        guard nativeInputGeneration == generation else {
+            hcPendingInput.drain(runtime: runtime, panelID: id)
+            return
+        }
+        postHCReady()
+    }
+
+    @MainActor
+    private func postHCReady() {
+        if let runtime = hcSession { hcPendingInput.drain(runtime: runtime, panelID: id) }
+        NotificationCenter.default.post(name: .terminalSurfaceDidBecomeReady, object: self,
+            userInfo: ["surfaceId": id, "workspaceId": workspaceId])
+    }
+
     /// Tracks the last focus state to avoid sending redundant focus events.
     /// This prevents prompt redraw issues with zsh themes like Powerlevel10k.
     private var desiredFocusState: Bool = false
@@ -3070,9 +3840,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
         initialCommand: String? = nil,
         initialInput: String? = nil,
         initialEnvironmentOverrides: [String: String] = [:],
-        additionalEnvironment: [String: String] = [:]
+        additionalEnvironment: [String: String] = [:],
+        remoteTarget: HCRemoteTarget? = nil
     ) {
         self.id = id ?? UUID()
+        self.hcRemoteTarget = remoteTarget
         self.workspaceId = workspaceId
         self.surfaceContext = context
         self.configTemplate = configTemplate.map(OwnedTerminalSurfaceConfig.init)
@@ -3088,6 +3860,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         let view = GhosttyNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         self.surfaceView = view
         self.hostedView = GhosttySurfaceScrollView(surfaceView: view)
+        MainActor.assumeIsolated { configureHCSessionIfNeeded() }
         // Surface is created when attached to a view
         hostedView.attachSurface(self)
         TerminalSurfaceRegistry.shared.register(self)
@@ -3471,6 +4244,17 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// before deinit; deinit will skip the free if already torn down.
     @MainActor
     func teardownSurface() {
+        HCBackendComposition.shared.cancelDeferredSurfaceStart(panelID: id)
+        hcDeferredStart.cancel()
+        nativeInputGeneration &+= 1
+        let nativeBridge = hcNativeBridge
+        hcNativeBridge = nil
+        hcHeadlessBridge = nil
+        hcHeadlessGraceTask?.cancel()
+        hcHeadlessGraceTask = nil
+        hcHeadlessRestoreObservation = nil
+        hcPendingInput.failAll(.cancelled, runtime: hcSession)
+        hcSession?.detachSurface()
         recordTeardownRequest(reason: "surface.teardown")
         markPortalLifecycleClosed(reason: "teardown")
         closeHeadlessStartupWindowIfNeeded()
@@ -3480,6 +4264,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
         let surfaceToFree = surface
         surface = nil
+
+        if let nativeBridge {
+            // Bridge owns both callback contexts and native free. Main never
+            // waits for the output queue that may be waiting for main events.
+            nativeBridge.retire {}
+            return
+        }
 
         guard let surfaceToFree else {
             callbackContext?.release()
@@ -3495,8 +4286,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     #if DEBUG
-    private static let surfaceLogPath = "/tmp/cmux-ghostty-surface.log"
-    private static let sizeLogPath = "/tmp/cmux-ghostty-size.log"
+    private static let surfaceLogPath = C11UserRuntime.logPath("cmux-ghostty-surface.log")
+    private static let sizeLogPath = C11UserRuntime.logPath("cmux-ghostty-size.log")
 
     func debugCurrentPixelSize() -> (width: UInt32, height: UInt32) {
         (lastPixelWidth, lastPixelHeight)
@@ -3505,13 +4296,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private static func surfaceLog(_ message: String) {
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let line = "[\(timestamp)] \(message)\n"
-        if let handle = FileHandle(forWritingAtPath: surfaceLogPath) {
-            handle.seekToEndOfFile()
-            handle.write(line.data(using: .utf8)!)
-            handle.closeFile()
-        } else {
-            FileManager.default.createFile(atPath: surfaceLogPath, contents: line.data(using: .utf8))
-        }
+        C11UserRuntime.appendLog(Data(line.utf8), to: surfaceLogPath)
     }
 
     private static func sizeLog(_ message: String) {
@@ -3519,13 +4304,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         guard env["CMUX_UI_TEST_SPLIT_CLOSE_RIGHT_VISUAL"] == "1" else { return }
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let line = "[\(timestamp)] \(message)\n"
-        if let handle = FileHandle(forWritingAtPath: sizeLogPath) {
-            handle.seekToEndOfFile()
-            handle.write(line.data(using: .utf8)!)
-            handle.closeFile()
-        } else {
-            FileManager.default.createFile(atPath: sizeLogPath, contents: line.data(using: .utf8))
-        }
+        C11UserRuntime.appendLog(Data(line.utf8), to: sizeLogPath)
     }
     #endif
 
@@ -3577,6 +4356,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         if attachedView === view && surface != nil {
             MainActor.assumeIsolated {
                 releaseHeadlessStartupWindowIfNeeded(for: view)
+                hcStartInputsMayHaveArrived()
             }
 #if DEBUG
             dlog("surface.attach.reuse surface=\(id.uuidString.prefix(5)) view=\(Unmanaged.passUnretained(view).toOpaque())")
@@ -3637,8 +4417,249 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
     }
 
-    private func createSurface(for view: GhosttyNSView) {
+    /// C11H-112: the managed startup environment (panel ids, socket, shell integration, merged overrides),
+    /// shared by the native surface start and the headless start, which has no surface to read it from.
+    private func managedStartupEnvironment(hcRuntime: HCPanelSession?) -> [String: String] {
+        var env = configTemplate?.environment ?? [:]
+
+        var protectedStartupEnvironmentKeys: Set<String> = []
+        func setManagedEnvironmentValue(_ managedKey: ManagedTerminalEnvironmentKey, _ value: String) {
+            let key = managedKey.rawValue
+            env[key] = value
+            protectedStartupEnvironmentKeys.insert(key)
+            // Export the canonical C11_* twin alongside every managed CMUX_*
+            // var so agents inside the surface can rely on the project-convention
+            // names ($C11_SURFACE_ID, $C11_TAB_ID, $C11_SHELL_INTEGRATION, …),
+            // not just the legacy $CMUX_* aliases. Non-CMUX keys (PATH, ZDOTDIR)
+            // are left untouched.
+            if let twin = c11TwinKey(forCmuxKey: key) {
+                env[twin] = value
+                protectedStartupEnvironmentKeys.insert(twin)
+            }
+        }
+
+        setManagedEnvironmentValue(.surfaceId, id.uuidString)
+        setManagedEnvironmentValue(.workspaceId, workspaceId.uuidString)
+        // Canonical panel id is C11_PANEL_ID (the C11_ twin of CMUX_PANEL_ID).
+        // C11_TAB_ID / CMUX_TAB_ID and C11_SURFACE_ID / CMUX_SURFACE_ID hold the
+        // same UUID as hidden aliases, exported forever so older agents and
+        // scripts keep resolving their own panel.
+        setManagedEnvironmentValue(.panelId, id.uuidString)
+        setManagedEnvironmentValue(.tabId, id.uuidString)
+        // The integer N of this panel's `panel:N` handle: the number the panel
+        // bar displays when panel numbers are shown. C11_-only (no CMUX twin),
+        // like C11_SOCKET_PATH. Address yourself as `panel:$C11_PANEL_NUM`; a
+        // bare integer is a positional index. `C11_TAB_NUM` and
+        // `C11_SURFACE_NUM` carry the same value as hidden aliases. (`C11_AREA_ID`
+        // is deliberately not set: a panel's area changes when it moves, so a
+        // launch-time value would go stale.)
+        // C11H-23: number and port range come from one durable allocation
+        // keyed by this panel's UUID, recorded before the process starts, so
+        // they still name this panel after an app restart.
+        let launchAllocation = MainActor.assumeIsolated { () -> PanelAllocationRegistry.LaunchAllocation? in
+            guard hcRuntime == nil else { return nil }
+            return PanelAllocationRegistry.shared.allocationForLaunch(panelId: id, workspaceId: workspaceId)
+        }
+        let existingAllocation = MainActor.assumeIsolated { PanelAllocationRegistry.shared.record(for: id) }
+        if let surfaceNum = launchAllocation?.panelNumber ?? existingAllocation?.number {
+            setManagedEnvironmentValue(.panelNum, String(surfaceNum))
+            setManagedEnvironmentValue(.tabNum, String(surfaceNum))
+            setManagedEnvironmentValue(.surfaceNum, String(surfaceNum))
+        }
+        // Inject the *actually-bound* socket path (not the recomputed resolution
+        // path) so a build that fell back to a safe alternate path (C11-155) still
+        // hands its children the correct socket. Set the canonical C11_ key too.
+        let boundSocketPath = TerminalController.shared.activeSocketPath(
+            preferredPath: SocketControlSettings.socketPath()
+        )
+        setManagedEnvironmentValue(.socketPath, boundSocketPath)
+        setManagedEnvironmentValue(.c11SocketPath, boundSocketPath)
+        if let bundledCLIURL = Bundle.main.resourceURL?.appendingPathComponent("bin/c11"),
+           FileManager.default.isExecutableFile(atPath: bundledCLIURL.path) {
+            setManagedEnvironmentValue(.bundledCLIPath, bundledCLIURL.path)
+        }
+        if let bundleId = Bundle.main.bundleIdentifier, !bundleId.isEmpty {
+            setManagedEnvironmentValue(.bundleId, bundleId)
+        }
+
+        // C11_DEFAULT_AGENT_LAUNCH carries the bare launcher command (no
+        // operator-configured seed prompt) so callers can append their own
+        // positional args without colliding with a baked-in prompt. The seed,
+        // when configured, ships as a separate env var; orchestrators that
+        // want the operator's A-button shape should call
+        // `c11 default-agent launch ...` instead of building the shell line
+        // themselves. Resolved per shell at spawn time; preference changes
+        // only affect newly-spawned shells.
+        do {
+            let resolverCwd: String = {
+                if let wd = workingDirectory, !wd.isEmpty { return wd }
+                return FileManager.default.homeDirectoryForCurrentUser.path
+            }()
+            let userDefault = DefaultAgentConfigStore.shared.current
+            let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwd)
+            let resolved = DefaultAgentResolver.resolve(
+                explicitAgent: nil,
+                userDefault: userDefault,
+                projectConfig: projectConfig
+            )
+            if !resolved.launch.bareCommand.isEmpty {
+                setManagedEnvironmentValue(.defaultAgentLaunch, resolved.launch.bareCommand)
+            }
+            if !resolved.launch.initialPrompt.isEmpty {
+                setManagedEnvironmentValue(.defaultAgentSeedPrompt, resolved.launch.initialPrompt)
+            }
+        }
+
+        // Port range reserved for this workspace. Its exact values are stored,
+        // so changed settings or a restart never move a live range. None is
+        // set only when every range is taken (reported to the operator).
+        if let ports = launchAllocation?.ports ?? existingAllocation?.ports {
+            setManagedEnvironmentValue(.port, String(ports.start))
+            setManagedEnvironmentValue(.portEnd, String(ports.end))
+            setManagedEnvironmentValue(.portRange, String(ports.size))
+        }
+
+        let claudeHooksEnabled = ClaudeCodeIntegrationSettings.hooksEnabled()
+        if !claudeHooksEnabled {
+            setManagedEnvironmentValue(.claudeHooksDisabled, "1")
+        }
+
+        if let cliBinPath = Bundle.main.resourceURL?.appendingPathComponent("bin").path {
+            let currentPath = env["PATH"]
+                ?? getenv("PATH").map { String(cString: $0) }
+                ?? ProcessInfo.processInfo.environment["PATH"]
+                ?? ""
+            if !currentPath.split(separator: ":").contains(Substring(cliBinPath)) {
+                let separator = currentPath.isEmpty ? "" : ":"
+                setManagedEnvironmentValue(.path, "\(cliBinPath)\(separator)\(currentPath)")
+            }
+        }
+
+        // Shell integration: inject ZDOTDIR wrapper for zsh shells.
+        let shellIntegrationEnabled = UserDefaults.standard.object(forKey: "sidebarShellIntegration") as? Bool ?? true
+        if shellIntegrationEnabled,
+           let integrationDir = Bundle.main.resourceURL?.appendingPathComponent("shell-integration").path {
+            setManagedEnvironmentValue(.shellIntegration, "1")
+            setManagedEnvironmentValue(.shellIntegrationDir, integrationDir)
+
+            let shell = (env["SHELL"]?.isEmpty == false ? env["SHELL"] : nil)
+                ?? getenv("SHELL").map { String(cString: $0) }
+                ?? ProcessInfo.processInfo.environment["SHELL"]
+                ?? "/bin/zsh"
+            let shellName = URL(fileURLWithPath: shell).lastPathComponent
+            if shellName == "zsh" {
+                if GhosttyApp.shared.shellIntegrationMode() != "none" {
+                    setManagedEnvironmentValue(.loadGhosttyZsh, "1")
+                }
+                let candidateZdotdir = (env["ZDOTDIR"]?.isEmpty == false ? env["ZDOTDIR"] : nil)
+                    ?? getenv("ZDOTDIR").map { String(cString: $0) }
+                    ?? (ProcessInfo.processInfo.environment["ZDOTDIR"]?.isEmpty == false ? ProcessInfo.processInfo.environment["ZDOTDIR"] : nil)
+
+                if let candidateZdotdir, !candidateZdotdir.isEmpty {
+                    var isGhosttyInjected = false
+                    let ghosttyResources = (env["GHOSTTY_RESOURCES_DIR"]?.isEmpty == false ? env["GHOSTTY_RESOURCES_DIR"] : nil)
+                        ?? getenv("GHOSTTY_RESOURCES_DIR").map { String(cString: $0) }
+                        ?? (ProcessInfo.processInfo.environment["GHOSTTY_RESOURCES_DIR"]?.isEmpty == false ? ProcessInfo.processInfo.environment["GHOSTTY_RESOURCES_DIR"] : nil)
+                    if let ghosttyResources {
+                        let ghosttyZdotdir = URL(fileURLWithPath: ghosttyResources)
+                            .appendingPathComponent("shell-integration/zsh").path
+                        isGhosttyInjected = (candidateZdotdir == ghosttyZdotdir)
+                    }
+                    if !isGhosttyInjected {
+                        setManagedEnvironmentValue(.zshZdotdir, candidateZdotdir)
+                    }
+                }
+
+                setManagedEnvironmentValue(.zdotdir, integrationDir)
+            } else if shellName == "bash" {
+                if GhosttyApp.shared.shellIntegrationMode() != "none" {
+                    setManagedEnvironmentValue(.loadGhosttyBash, "1")
+                }
+                // macOS ships /bin/bash 3.2, where Ghostty's automatic bash
+                // integration is unsupported and HOME-based wrapper startup is
+                // not reliable. Bootstrap cmux bash integration on the first
+                // interactive prompt instead.
+                setManagedEnvironmentValue(.promptCommand, """
+                unset PROMPT_COMMAND; \
+                if [[ "${CMUX_LOAD_GHOSTTY_BASH_INTEGRATION:-0}" == "1" && -n "${GHOSTTY_RESOURCES_DIR:-}" ]]; then \
+                _cmux_ghostty_bash="$GHOSTTY_RESOURCES_DIR/shell-integration/bash/ghostty.bash"; \
+                [[ -r "$_cmux_ghostty_bash" ]] && source "$_cmux_ghostty_bash"; \
+                fi; \
+                if [[ "${CMUX_SHELL_INTEGRATION:-1}" != "0" && -n "${CMUX_SHELL_INTEGRATION_DIR:-}" ]]; then \
+                _cmux_bash_integration="$CMUX_SHELL_INTEGRATION_DIR/cmux-bash-integration.bash"; \
+                [[ -r "$_cmux_bash_integration" ]] && source "$_cmux_bash_integration"; \
+                fi; \
+                unset _cmux_ghostty_bash _cmux_bash_integration; \
+                if declare -F _cmux_prompt_command >/dev/null 2>&1; then _cmux_prompt_command; fi
+                """)
+            }
+        }
+        env = Self.mergedStartupEnvironment(
+            base: env,
+            protectedKeys: protectedStartupEnvironmentKeys,
+            additionalEnvironment: additionalEnvironment,
+            initialEnvironmentOverrides: initialEnvironmentOverrides
+        )
+        return env
+    }
+
+    /// Parks this panel's surface start behind the session-restore gate (true when parked). The release runs
+    /// `releaseParkedRestoreStart`. Internal so the gate release is testable through the real deferral.
+    @MainActor
+    func parkStartBehindRestoreGate(view: GhosttyNSView) -> Bool {
+        HCBackendComposition.shared.deferSurfaceStartUntilRestore(panelID: id) { [weak self, weak view] in
+            MainActor.assumeIsolated { self?.releaseParkedRestoreStart(view: view) }
+        }
+    }
+
+    /// What a start parked behind the restore gate does when the gate opens (see `HCInputReadyQueue.parkedStart`).
+    @MainActor
+    func releaseParkedRestoreStart(view: GhosttyNSView?) {
+        #if DEBUG
+        dlog("hc.trace restoreDeferral.fire panel=\(id.uuidString.prefix(8)) view=\(view != nil) " +
+             "window=\(view?.window != nil) surface=\(surface != nil)")
+        #endif
+        let needs = hcSession.map { HCInputReadyQueue.needsStart($0, current: hcSession,
+            hasNativeSurface: surface != nil) } ?? false
+        let action = HCInputReadyQueue.parkedStart(viewAlive: view != nil && portalLifecycleState == .live,
+            inWindow: view?.window != nil, needsStart: needs)
+        HCInputReadyQueue.logParkedStart(action, panelID: id)
+        #if DEBUG
+        dlog("hc.trace restoreDeferral.action panel=\(id.uuidString.prefix(8)) action=\(action)")
+        #endif
+        switch action {
+        case .create: if let view { createSurface(for: view) }
+        case .startHeadless: requestBackgroundSurfaceStartIfNeeded()
+        case .drop: break
+        }
+    }
+
+    private func createSurface(for view: GhosttyNSView, startHC: Bool = true) {
+        #if DEBUG
+        if usesPersistentHCInputForTrace {
+            dlog("hc.trace createSurface panel=\(id.uuidString.prefix(8)) live=\(portalLifecycleState == .live) " +
+                 "surface=\(surface != nil) window=\(view.window != nil) headless=\(isHeadlessStartupWindow(view.window)) startHC=\(startHC)")
+        }
+        #endif
         guard portalLifecycleState == .live, surface == nil, view.window != nil else { return }
+        #if DEBUG
+        let creationStarted = CACurrentMediaTime()
+        defer {
+            dlog("surface.create.total panel=\(id.uuidString) elapsedMs=\((CACurrentMediaTime() - creationStarted) * 1000) created=\(surface != nil)")
+        }
+        #endif
+        nativeInputGeneration &+= 1
+        let hcRuntime = MainActor.assumeIsolated { () -> HCPanelSession? in
+            configureHCSessionIfNeeded()
+            // The single exec-path decision: a persistent identity is never an exec shell.
+            return HCPanelNativeLaunchPolicy.permitsExec(identity: hcSession?.identity) ? nil : hcSession
+        }
+        if hcRuntime != nil, MainActor.assumeIsolated({ parkStartBehindRestoreGate(view: view) }) {
+            #if DEBUG
+            dlog("hc.trace restoreDeferral.park panel=\(id.uuidString.prefix(8))")
+            #endif
+            return
+        }
         #if DEBUG
         if let expiry = debugRuntimeStartHoldUntil, expiry > ProcessInfo.processInfo.systemUptime { return }
         let resourcesDir = getenv("GHOSTTY_RESOURCES_DIR").flatMap { String(cString: $0) } ?? "(unset)"
@@ -3681,6 +4702,23 @@ final class TerminalSurface: Identifiable, ObservableObject {
         surfaceCallbackContext = callbackContext
         surfaceConfig.scale_factor = scaleFactors.layer
         surfaceConfig.context = surfaceContext
+        let nativeBridge: HCNativeBridge? = MainActor.assumeIsolated {
+            guard let hcRuntime else { return nil }
+            return HCNativeBridge(panelID: id,
+                rendering: HCBackendComposition.shared.makeRenderingAdapter(self),
+                encoder: HCBackendComposition.shared.makeInputEncoder(self), report: { [weak hcRuntime] outcome in
+                    Task { @MainActor in
+                        guard let hcRuntime else { return }
+                        hcRuntime.recordInputOutcome(outcome)
+                    }
+                }, displayChanged: { [weak hcRuntime] display in
+                    Task { @MainActor in hcRuntime?.updateDisplayState(display) }
+                })
+        }
+        // Splits inherit native config, including callback pointers. Every new
+        // surface overwrites the complete IO tuple before native creation.
+        HCSurfaceNativeIO.apply(to: &surfaceConfig,
+                                hcInput: nativeBridge.map { Unmanaged.passUnretained($0.context).toOpaque() })
 #if DEBUG
         let templateFontText = String(format: "%.2f", surfaceConfig.font_size)
         dlog(
@@ -3697,177 +4735,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             }
         }
 
-        var env = configTemplate?.environment ?? [:]
-
-        var protectedStartupEnvironmentKeys: Set<String> = []
-        func setManagedEnvironmentValue(_ key: String, _ value: String) {
-            env[key] = value
-            protectedStartupEnvironmentKeys.insert(key)
-            // Export the canonical C11_* twin alongside every managed CMUX_*
-            // var so agents inside the surface can rely on the project-convention
-            // names ($C11_SURFACE_ID, $C11_TAB_ID, $C11_SHELL_INTEGRATION, …),
-            // not just the legacy $CMUX_* aliases. Non-CMUX keys (PATH, ZDOTDIR)
-            // are left untouched.
-            if let twin = c11TwinKey(forCmuxKey: key) {
-                env[twin] = value
-                protectedStartupEnvironmentKeys.insert(twin)
-            }
-        }
-
-        setManagedEnvironmentValue("CMUX_SURFACE_ID", id.uuidString)
-        setManagedEnvironmentValue("CMUX_WORKSPACE_ID", workspaceId.uuidString)
-        // Canonical panel id is C11_PANEL_ID (the C11_ twin of CMUX_PANEL_ID).
-        // C11_TAB_ID / CMUX_TAB_ID and C11_SURFACE_ID / CMUX_SURFACE_ID hold the
-        // same UUID as hidden aliases, exported forever so older agents and
-        // scripts keep resolving their own panel.
-        setManagedEnvironmentValue("CMUX_PANEL_ID", id.uuidString)
-        setManagedEnvironmentValue("CMUX_TAB_ID", id.uuidString)
-        // The integer N of this panel's `panel:N` handle: the number the panel
-        // bar displays when panel numbers are shown. C11_-only (no CMUX twin),
-        // like C11_SOCKET_PATH. Address yourself as `panel:$C11_PANEL_NUM`; a
-        // bare integer is a positional index. `C11_TAB_NUM` and
-        // `C11_SURFACE_NUM` carry the same value as hidden aliases. (`C11_AREA_ID`
-        // is deliberately not set: a panel's area changes when it moves, so a
-        // launch-time value would go stale.)
-        let surfaceNum = MainActor.assumeIsolated {
-            TerminalController.shared.surfaceOrdinal(forSurfaceUUID: id)
-        }
-        setManagedEnvironmentValue("C11_PANEL_NUM", String(surfaceNum))
-        setManagedEnvironmentValue("C11_TAB_NUM", String(surfaceNum))
-        setManagedEnvironmentValue("C11_SURFACE_NUM", String(surfaceNum))
-        // Inject the *actually-bound* socket path (not the recomputed resolution
-        // path) so a build that fell back to a safe alternate path (C11-155) still
-        // hands its children the correct socket. Set the canonical C11_ key too.
-        let boundSocketPath = TerminalController.shared.activeSocketPath(
-            preferredPath: SocketControlSettings.socketPath()
-        )
-        setManagedEnvironmentValue("CMUX_SOCKET_PATH", boundSocketPath)
-        setManagedEnvironmentValue("C11_SOCKET_PATH", boundSocketPath)
-        if let bundledCLIURL = Bundle.main.resourceURL?.appendingPathComponent("bin/c11"),
-           FileManager.default.isExecutableFile(atPath: bundledCLIURL.path) {
-            setManagedEnvironmentValue("CMUX_BUNDLED_CLI_PATH", bundledCLIURL.path)
-        }
-        if let bundleId = Bundle.main.bundleIdentifier, !bundleId.isEmpty {
-            setManagedEnvironmentValue("CMUX_BUNDLE_ID", bundleId)
-        }
-
-        // C11_DEFAULT_AGENT_LAUNCH carries the bare launcher command (no
-        // operator-configured seed prompt) so callers can append their own
-        // positional args without colliding with a baked-in prompt. The seed,
-        // when configured, ships as a separate env var; orchestrators that
-        // want the operator's A-button shape should call
-        // `c11 default-agent launch ...` instead of building the shell line
-        // themselves. Resolved per shell at spawn time; preference changes
-        // only affect newly-spawned shells.
-        do {
-            let resolverCwd: String = {
-                if let wd = workingDirectory, !wd.isEmpty { return wd }
-                return FileManager.default.homeDirectoryForCurrentUser.path
-            }()
-            let userDefault = DefaultAgentConfigStore.shared.current
-            let projectConfig = DefaultAgentProjectConfig.find(from: resolverCwd)
-            let resolved = DefaultAgentResolver.resolve(
-                explicitAgent: nil,
-                userDefault: userDefault,
-                projectConfig: projectConfig
-            )
-            if !resolved.launch.bareCommand.isEmpty {
-                setManagedEnvironmentValue("C11_DEFAULT_AGENT_LAUNCH", resolved.launch.bareCommand)
-            }
-            if !resolved.launch.initialPrompt.isEmpty {
-                setManagedEnvironmentValue("C11_DEFAULT_AGENT_SEED_PROMPT", resolved.launch.initialPrompt)
-            }
-        }
-
-        // Port range for this workspace (base/range snapshotted once per app session)
-        do {
-            let startPort = Self.sessionPortBase + portOrdinal * Self.sessionPortRangeSize
-            setManagedEnvironmentValue("CMUX_PORT", String(startPort))
-            setManagedEnvironmentValue("CMUX_PORT_END", String(startPort + Self.sessionPortRangeSize - 1))
-            setManagedEnvironmentValue("CMUX_PORT_RANGE", String(Self.sessionPortRangeSize))
-        }
-
-        let claudeHooksEnabled = ClaudeCodeIntegrationSettings.hooksEnabled()
-        if !claudeHooksEnabled {
-            setManagedEnvironmentValue("CMUX_CLAUDE_HOOKS_DISABLED", "1")
-        }
-
-        if let cliBinPath = Bundle.main.resourceURL?.appendingPathComponent("bin").path {
-            let currentPath = env["PATH"]
-                ?? getenv("PATH").map { String(cString: $0) }
-                ?? ProcessInfo.processInfo.environment["PATH"]
-                ?? ""
-            if !currentPath.split(separator: ":").contains(Substring(cliBinPath)) {
-                let separator = currentPath.isEmpty ? "" : ":"
-                setManagedEnvironmentValue("PATH", "\(cliBinPath)\(separator)\(currentPath)")
-            }
-        }
-
-        // Shell integration: inject ZDOTDIR wrapper for zsh shells.
-        let shellIntegrationEnabled = UserDefaults.standard.object(forKey: "sidebarShellIntegration") as? Bool ?? true
-        if shellIntegrationEnabled,
-           let integrationDir = Bundle.main.resourceURL?.appendingPathComponent("shell-integration").path {
-            setManagedEnvironmentValue("CMUX_SHELL_INTEGRATION", "1")
-            setManagedEnvironmentValue("CMUX_SHELL_INTEGRATION_DIR", integrationDir)
-
-            let shell = (env["SHELL"]?.isEmpty == false ? env["SHELL"] : nil)
-                ?? getenv("SHELL").map { String(cString: $0) }
-                ?? ProcessInfo.processInfo.environment["SHELL"]
-                ?? "/bin/zsh"
-            let shellName = URL(fileURLWithPath: shell).lastPathComponent
-            if shellName == "zsh" {
-                if GhosttyApp.shared.shellIntegrationMode() != "none" {
-                    setManagedEnvironmentValue("CMUX_LOAD_GHOSTTY_ZSH_INTEGRATION", "1")
-                }
-                let candidateZdotdir = (env["ZDOTDIR"]?.isEmpty == false ? env["ZDOTDIR"] : nil)
-                    ?? getenv("ZDOTDIR").map { String(cString: $0) }
-                    ?? (ProcessInfo.processInfo.environment["ZDOTDIR"]?.isEmpty == false ? ProcessInfo.processInfo.environment["ZDOTDIR"] : nil)
-
-                if let candidateZdotdir, !candidateZdotdir.isEmpty {
-                    var isGhosttyInjected = false
-                    let ghosttyResources = (env["GHOSTTY_RESOURCES_DIR"]?.isEmpty == false ? env["GHOSTTY_RESOURCES_DIR"] : nil)
-                        ?? getenv("GHOSTTY_RESOURCES_DIR").map { String(cString: $0) }
-                        ?? (ProcessInfo.processInfo.environment["GHOSTTY_RESOURCES_DIR"]?.isEmpty == false ? ProcessInfo.processInfo.environment["GHOSTTY_RESOURCES_DIR"] : nil)
-                    if let ghosttyResources {
-                        let ghosttyZdotdir = URL(fileURLWithPath: ghosttyResources)
-                            .appendingPathComponent("shell-integration/zsh").path
-                        isGhosttyInjected = (candidateZdotdir == ghosttyZdotdir)
-                    }
-                    if !isGhosttyInjected {
-                        setManagedEnvironmentValue("CMUX_ZSH_ZDOTDIR", candidateZdotdir)
-                    }
-                }
-
-                setManagedEnvironmentValue("ZDOTDIR", integrationDir)
-            } else if shellName == "bash" {
-                if GhosttyApp.shared.shellIntegrationMode() != "none" {
-                    setManagedEnvironmentValue("CMUX_LOAD_GHOSTTY_BASH_INTEGRATION", "1")
-                }
-                // macOS ships /bin/bash 3.2, where Ghostty's automatic bash
-                // integration is unsupported and HOME-based wrapper startup is
-                // not reliable. Bootstrap cmux bash integration on the first
-                // interactive prompt instead.
-                setManagedEnvironmentValue("PROMPT_COMMAND", """
-                unset PROMPT_COMMAND; \
-                if [[ "${CMUX_LOAD_GHOSTTY_BASH_INTEGRATION:-0}" == "1" && -n "${GHOSTTY_RESOURCES_DIR:-}" ]]; then \
-                _cmux_ghostty_bash="$GHOSTTY_RESOURCES_DIR/shell-integration/bash/ghostty.bash"; \
-                [[ -r "$_cmux_ghostty_bash" ]] && source "$_cmux_ghostty_bash"; \
-                fi; \
-                if [[ "${CMUX_SHELL_INTEGRATION:-1}" != "0" && -n "${CMUX_SHELL_INTEGRATION_DIR:-}" ]]; then \
-                _cmux_bash_integration="$CMUX_SHELL_INTEGRATION_DIR/cmux-bash-integration.bash"; \
-                [[ -r "$_cmux_bash_integration" ]] && source "$_cmux_bash_integration"; \
-                fi; \
-                unset _cmux_ghostty_bash _cmux_bash_integration; \
-                if declare -F _cmux_prompt_command >/dev/null 2>&1; then _cmux_prompt_command; fi
-                """)
-            }
-        }
-        env = Self.mergedStartupEnvironment(
-            base: env,
-            protectedKeys: protectedStartupEnvironmentKeys,
-            additionalEnvironment: additionalEnvironment,
-            initialEnvironmentOverrides: initialEnvironmentOverrides
-        )
+        let env = managedStartupEnvironment(hcRuntime: hcRuntime)
 
         if !env.isEmpty {
             envVars.reserveCapacity(env.count)
@@ -3895,7 +4763,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // Ghostty copies initial_input during native creation. Keep its UTF-8
         // pointer alive alongside command/cwd, and never inherit a prior input.
         let createWithInitialInput = { [self] in
-            if let initialInput {
+            if nativeBridge == nil, let initialInput {
                 initialInput.withCString { input in
                     surfaceConfig.initial_input = input
                     createSurface()
@@ -3929,12 +4797,21 @@ final class TerminalSurface: Identifiable, ObservableObject {
             }
         }
 
+        let hcInitialInput = initialInput ?? configTemplate?.initialInput
+        #if DEBUG
+        let nativeCreationStarted = CACurrentMediaTime()
+        #endif
         createWithCommandAndWorkingDirectory()
+        #if DEBUG
+        dlog("surface.create.native panel=\(id.uuidString) elapsedMs=\((CACurrentMediaTime() - nativeCreationStarted) * 1000) created=\(surface != nil)")
+        #endif
 
         if surface == nil {
             surfaceCallbackContext?.release()
             surfaceCallbackContext = nil
             print("Failed to create ghostty surface")
+            // C11H-112: no surface (a locked screen refuses them): the terminal still starts, headless.
+            MainActor.assumeIsolated { requestHCHeadlessStart(restoring: false) }
             #if DEBUG
             Self.surfaceLog("createSurface FAILED surface=\(id.uuidString): ghostty_surface_new returned nil")
             if let cfg = GhosttyApp.shared.config {
@@ -3952,6 +4829,14 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return
         }
         guard let createdSurface = surface else { return }
+        if let nativeBridge {
+            hcNativeBridge = nativeBridge
+            MainActor.assumeIsolated {
+                nativeBridge.installSurface(createdSurface, removeFromUse: { [weak self, weak nativeBridge] in
+                    self?.nativeSurfaceRemovedFromUse(createdSurface, bridge: nativeBridge)
+                }, releaseCallbackContext: { callbackContext.release() })
+            }
+        }
         EventEmitter.shared.noteWorkspaceRuntimeSurfaceCreated(workspaceId)
         // One native creation consumes this request. Runtime reconstruction and
         // reparenting must never execute the caller's command a second time.
@@ -3975,11 +4860,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
 
         ghostty_surface_set_content_scale(createdSurface, scaleFactors.x, scaleFactors.y)
+            MainActor.assumeIsolated { hcNativeBridge?.rendering.surfaceSizeChanged() }
         let backingSize = view.convertToBacking(NSRect(origin: .zero, size: view.bounds.size)).size
         let wpx = pixelDimension(from: backingSize.width)
         let hpx = pixelDimension(from: backingSize.height)
         if wpx > 0, hpx > 0 {
             ghostty_surface_set_size(createdSurface, wpx, hpx)
+            MainActor.assumeIsolated { hcNativeBridge?.rendering.surfaceSizeChanged() }
             lastPixelWidth = wpx
             lastPixelHeight = hpx
             lastXScale = scaleFactors.x
@@ -4000,13 +4887,30 @@ final class TerminalSurface: Identifiable, ObservableObject {
             }
         }
 
+        #if DEBUG
+        if hcRuntime != nil {
+            dlog("hc.trace createSurface.done panel=\(id.uuidString.prefix(8)) bridge=\(nativeBridge != nil) startHC=\(startHC)")
+        }
+        #endif
+        if let nativeBridge, startHC {
+            MainActor.assumeIsolated { handOffHeadlessHC(to: nativeBridge) }
+        }
+        if let nativeBridge, let hcRuntime, startHC {
+            MainActor.assumeIsolated {
+                startHCSession(hcRuntime, bridge: nativeBridge, managed: env,
+                    command: initialCommand ?? configTemplate?.command,
+                    cwd: workingDirectory ?? configTemplate?.workingDirectory, initial: hcInitialInput)
+            }
+        }
+        MainActor.assumeIsolated { HCBackendComposition.shared.hasCreatedNativeSurface = true }
+
         // Ready means queued bytes reached Ghostty, not that the shell executed
         // them. The existing delayed submit-on-flush remains asynchronous.
         ghostty_surface_set_focus(createdSurface, desiredFocusState)
         lastFocusState = desiredFocusState
-        flushPendingTextIfNeeded()
+        if nativeBridge == nil { flushPendingTextIfNeeded() }
 
-        NotificationCenter.default.post(
+        if nativeBridge == nil { NotificationCenter.default.post(
             name: .terminalSurfaceDidBecomeReady,
             object: self,
             userInfo: [
@@ -4014,6 +4918,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
                 "workspaceId": workspaceId
             ]
         )
+
+        }
 
         // A ready observer may synchronously close the tab.
         guard portalLifecycleState == .live, surface == createdSurface else { return }
@@ -4025,12 +4931,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
         ghostty_surface_refresh(createdSurface)
 
 #if DEBUG
-        let runtimeFontText = cmuxCurrentSurfaceFontSizePoints(createdSurface).map {
-            String(format: "%.2f", $0)
-        } ?? "nil"
+        // The quicklook font accessor takes the shared font-grid lock. Logging
+        // must not make attachment wait for another terminal's font rasterizer.
         dlog(
-            "zoom.create.done surface=\(id.uuidString.prefix(5)) context=\(cmuxSurfaceContextName(surfaceContext)) " +
-            "runtimeFont=\(runtimeFontText)"
+            "zoom.create.done surface=\(id.uuidString.prefix(5)) context=\(cmuxSurfaceContextName(surfaceContext))"
         )
 #endif
     }
@@ -4071,12 +4975,17 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
         if scaleChanged {
             ghostty_surface_set_content_scale(surface, xScale, yScale)
+            MainActor.assumeIsolated { hcNativeBridge?.rendering.surfaceSizeChanged() }
             lastXScale = xScale
             lastYScale = yScale
         }
 
         if sizeChanged {
             ghostty_surface_set_size(surface, wpx, hpx)
+            MainActor.assumeIsolated {
+                hcNativeBridge?.rendering.surfaceSizeChanged()
+                hcStartInputsMayHaveArrived()
+            }
             lastPixelWidth = wpx
             lastPixelHeight = hpx
             scrollbackGrowth.noteResized()
@@ -4142,6 +5051,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         guard focused != lastFocusState else { return }
         lastFocusState = focused
         ghostty_surface_set_focus(surface, focused)
+        MainActor.assumeIsolated { hcNativeBridge?.rendering.focusChanged(focused) }
 
         // If we focus a surface while it is being rapidly reparented (closing splits, etc),
         // Ghostty's CVDisplayLink can end up started before the display id is valid, leaving
@@ -4201,13 +5111,179 @@ final class TerminalSurface: Identifiable, ObservableObject {
         return ghostty_surface_needs_confirm_quit(surface)
     }
 
+    @MainActor
+    var usesPersistentHCInput: Bool { hcSession?.identity.persistence == .persistent }
+
+    /// Native paste requests are completed empty to retire their allocation;
+    /// the real payload enters the reserved synchronous encoder separately.
+    /// OSC 52 reads retain the existing native completion path.
+    func consumeHCClipboardPaste(_ text: String, native: ghostty_surface_t,
+                                 request: UnsafeMutableRawPointer?) -> Bool {
+        MainActor.assumeIsolated {
+            guard usesPersistentHCInput else { return false }
+            var kind = GHOSTTY_CLIPBOARD_REQUEST_PASTE
+            guard ghostty_clipboard_request_get_type(request, &kind) else {
+                hcSession?.recordInputOutcome(.refused(.unavailable))
+                return true
+            }
+            guard kind == GHOSTTY_CLIPBOARD_REQUEST_PASTE else { return false }
+            "".withCString { ghostty_surface_complete_clipboard_request(native, $0, request, false) }
+            guard surface == native else {
+                hcSession?.recordInputOutcome(.refused(.staleIdentity)); return true
+            }
+            guard !text.isEmpty else { return true }
+            return enqueueHCInput(text, submit: false, source: .filePaste)
+        }
+    }
+
+    /// Captures the exact port when this submission's turn comes. Awaiting or
+    /// queued work cannot silently migrate onto a replacement terminal. A
+    /// refused request retains no bytes.
+    ///
+    /// `waitSeconds` > 0 (contract L2): a panel still attaching or reattaching,
+    /// or a guarded send whose screen is not current yet, waits in order up to
+    /// that bound instead of being refused; zero answers at once.
+    @MainActor
+    func submitHCInput(_ text: String, submit: Bool, source: HCInputSource,
+                       screenGuard: HCInputGuard? = nil,
+                       returnGuard: HCInputGuard? = nil,
+                       waitSeconds: TimeInterval = 0,
+                       eligibility: (@Sendable () async -> Bool)? = nil) async -> HCInputOutcome {
+        guard let runtime = hcSession, runtime.identity.persistence == .persistent else { return .refused(.unavailable) }
+        guard text.utf8.count <= HCLimits.transactionBytes else {
+            let result = HCInputOutcome.refused(.tooLarge); runtime.recordInputOutcome(result); return result
+        }
+        let panelID = id
+        var submitted = false
+        let readiness: @MainActor () -> HCInputReadyQueue.Readiness = { [weak self] in
+            guard let self else { return .failed(.unavailable) }
+            return self.hcInputReadiness(runtime)
+        }
+        var screenReady: (@MainActor (any HCAttachment, UInt64) async -> Bool)?
+        if screenGuard != nil {
+            screenReady = { attachment, nanoseconds in
+                await HCInputReadyQueue.screenCurrent(attachment, after: runtime.currentDisplayRevision,
+                                                      within: nanoseconds)
+            }
+        }
+        let demandStart: @MainActor () -> Void = { [weak self] in self?.demandHCStart(runtime) }
+        let outcome: HCInputOutcome = await hcInputQueue.submit(waitSeconds: waitSeconds, readiness: readiness,
+                                                                screenReady: screenReady,
+                                                                demandStart: demandStart) { attachment in
+            submitted = true
+            let request = HCInputRequest(operationID: UUID(), panelID: panelID, key: attachment.key,
+                attachmentGeneration: attachment.generation, source: source, payload: Data(text.utf8),
+                submitReturn: submit, screenGuard: screenGuard, returnGuard: returnGuard,
+                // C11H-306: a screen-free check for a terminal with no screen, asked before the text and again
+                // before the Return; a no cuts the write.
+                eligibility: eligibility)
+            return await runtime.submitInput(request)
+        }
+        // A submission that never reached the port is recorded here, once.
+        if !submitted { runtime.recordInputOutcome(outcome) }
+        #if DEBUG
+        if case .refused(let reason) = outcome {
+            let attachment = runtime.attachment
+            dlog("hc.trace input.refused panel=\(panelID.uuidString.prefix(8)) reason=\(reason.rawValue) submitted=\(submitted) " +
+                 "attachment=\(attachment != nil) idKey=\(runtime.identity.key?.localAddress ?? "nil") " +
+                 "attKey=\(attachment?.key.localAddress ?? "nil") bound=\(attachment.map { runtime.disconnectedInput?.isBound(to: $0) == true } ?? false) " +
+                 "pendingBusy=\(hcPendingInput.isBusy) surface=\(surface != nil) lifecycle=\(runtime.lifecycle) everBound=\(!runtime.isAwaitingFirstAttachment)")
+        }
+        #endif
+        return outcome
+    }
+
+    /// Input is an explicit runtime demand (as for a native terminal's send):
+    /// a hidden tab's deferred surface starts in the headless window, and its
+    /// hc terminal attaches without the view being shown.
+    @MainActor
+    private func demandHCStart(_ runtime: HCPanelSession) {
+        #if DEBUG
+        dlog("hc.trace demandStart panel=\(id.uuidString.prefix(8)) needs=\(HCInputReadyQueue.needsStart(runtime, current: hcSession, hasNativeSurface: surface != nil)) " +
+             "surface=\(surface != nil) awaitingFirst=\(runtime.isAwaitingFirstAttachment) view=\(attachedView != nil) window=\(attachedView?.window != nil)")
+        #endif
+        // A start that exists but is blocked (no grid yet) retries through
+        // #61's deferred start; asking again only nudges it.
+        if surface != nil, hcSession === runtime { hcStartInputsMayHaveArrived(); return }
+        guard HCInputReadyQueue.needsStart(runtime, current: hcSession, hasNativeSurface: surface != nil) else { return }
+        requestBackgroundSurfaceStartIfNeeded()
+        // C11H-112: input is a demand for the terminal, not for a surface; where no surface can be made (a
+        // locked screen) the terminal starts headless and the input goes through hc.
+        requestHCHeadlessStart(restoring: false)
+    }
+
+    #if DEBUG
+    private var usesPersistentHCInputForTrace: Bool { MainActor.assumeIsolated { hcSession != nil } }
+    #endif
+
+    @MainActor
+    private func hcInputReadiness(_ runtime: HCPanelSession) -> HCInputReadyQueue.Readiness {
+        HCInputReadyQueue.readiness(of: runtime, current: hcSession, pendingBusy: hcPendingInput.isBusy)
+    }
+
+    /// Ordered, bounded waits for awaited programmatic input (contract L2).
+    @MainActor private let hcInputQueue = HCInputReadyQueue()
+
+    /// Held launch input for the creation that has not attached yet.
+    @MainActor private let hcPendingInput = HCPendingInput()
+
+    /// True when this terminal can take input now: always for exec terminals,
+    /// and for hc terminals once an attachment is bound. Launch rails wait on it.
+    var isHCInputReady: Bool {
+        MainActor.assumeIsolated {
+            guard usesPersistentHCInput else { return true }
+            return hcSession?.attachment != nil
+        }
+    }
+
+    @discardableResult
+    private func enqueueHCInput(_ text: String, submit: Bool, source: HCInputSource,
+                                screenGuard: HCInputGuard? = nil,
+                                returnGuard: HCInputGuard? = nil,
+                                queueUntilAttached: Bool = true,
+                                marksDraft: Bool = false,
+                                completion: ((HCInputOutcome) -> Void)? = nil) -> Bool {
+        MainActor.assumeIsolated {
+            guard usesPersistentHCInput, let runtime = hcSession else { return false }
+            // C11H-203: text left at the prompt without a Return is a draft,
+            // stamped once its bytes arrive, as on the PTY path.
+            let finished: ((HCInputOutcome) -> Void)? = marksDraft
+                ? { [weak self] outcome in
+                    if case .refused = outcome {} else { self?.lastOperatorKeyAt = Date() }
+                    completion?(outcome)
+                }
+                : completion
+            hcPendingInput.submit(HCPendingInput.Item(text: text, submit: submit, source: source,
+                screenGuard: screenGuard, returnGuard: returnGuard, completion: finished),
+                runtime: runtime, panelID: id, allowQueue: queueUntilAttached,
+                demandStart: { [weak self] in self?.demandHCStart(runtime) })
+            return true
+        }
+    }
+
+    /// C11H-203: `c11 send --no-submit` into an hc terminal leaves its text at
+    /// the prompt as a draft, the rule `deliverSocketSendText` applies on the
+    /// PTY path. Keys (`send-key`) are not text and never come here.
+    @MainActor
+    func noteHCSocketSend(body: String, wantsReturn: Bool, outcome: HCInputOutcome) {
+        guard !wantsReturn, !body.isEmpty else { return }
+        if case .refused = outcome { return }
+        lastOperatorKeyAt = Date()
+    }
+
     /// Programmatic text into the PTY. While another writer's input
     /// transaction is in flight (between its paste and its Return), this
     /// waits its turn instead of splicing into that writer's input line.
     /// Text left without a trailing newline is a draft for the mailbox push.
-    func sendText(_ text: String) {
+    ///
+    /// `source: .drop` is the operator's drop (C11H-362): over hc it is always
+    /// a paste, never keys. Off hc, `ghostty_surface_text` is already Ghostty's
+    /// own paste path.
+    func sendText(_ text: String, source: HCInputSource = .socket) {
         guard !text.isEmpty else { return }
-        writeOrDefer { [weak self] in self?.writeProgrammaticText(text) }
+        let draft = text.unicodeScalars.last.map { $0.value != 0x0A && $0.value != 0x0D } ?? false
+        if enqueueHCInput(text, submit: false, source: source, marksDraft: draft) { return }
+        writeOrDefer { [weak self] in self?.writeProgrammaticText(text, source: source) }
     }
 
     /// Queue fallback for socket sends, using the same newline policy as the
@@ -4215,6 +5291,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// mailbox admission; it must not look like a submitted line on attach.
     func sendQueuedSocketText(_ text: String, submit: Bool, preserveNewlines: Bool) {
         let delivery = SendTextDelivery(text, submit: submit, preserveNewlines: preserveNewlines)
+        if enqueueHCInput(delivery.body, submit: delivery.wantsReturn, source: .socket,
+                          marksDraft: !delivery.wantsReturn && !delivery.body.isEmpty) { return }
         if delivery.wantsReturn {
             sendSubmitFormText(text, preserveNewlines: preserveNewlines)
         } else if preserveNewlines {
@@ -4253,14 +5331,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
 
     /// Write now, inside the current transaction (or with none active).
     /// `marksDraft: false` is for the mailbox push's own paste.
-    func writeProgrammaticText(_ text: String, marksDraft: Bool = true) {
-        writeTextNow(text)
+    func writeProgrammaticText(_ text: String, marksDraft: Bool = true, source: HCInputSource = .socket) {
+        writeTextNow(text, source: source)
         if marksDraft, let last = text.unicodeScalars.last, last.value != 0x0A, last.value != 0x0D {
             lastOperatorKeyAt = Date()
         }
     }
 
-    private func writeTextNow(_ text: String) {
+    private func writeTextNow(_ text: String, source: HCInputSource) {
+        if enqueueHCInput(text, submit: false, source: source) { return }
         guard let data = text.data(using: .utf8), !data.isEmpty else { return }
         // C11-24: bump the per-surface activity timestamp. Off-main and
         // debounced; safe to call from this entry point because sendText
@@ -4297,9 +5376,22 @@ final class TerminalSurface: Identifiable, ObservableObject {
     ///   * defers the Return until the pending-text queue flushes (which
     ///     happens on surface attach, when `view.window` is guaranteed
     ///     non-nil) when the surface is not yet ready.
+    /// A launcher line queued like `sendSubmitFormText`, with a completion that reports whether its Return was
+    /// written, so a launch stays pending until it is actually delivered (C11H-116).
+    func sendLaunchLine(_ text: String, completion: @escaping (Bool) -> Void) {
+        let trimmed = text.trimmingCharacters(in: .newlines)
+        guard !trimmed.isEmpty else { completion(false); return }
+        if enqueueHCInput(trimmed, submit: true, source: .textBox, completion: { outcome in
+            if case .written(let receipt) = outcome { completion(receipt.returnWritten) } else { completion(false) }
+        }) { return }
+        sendSubmitFormText(text)
+        completion(true)
+    }
+
     func sendSubmitFormText(_ text: String, preserveNewlines: Bool = false) {
         let trimmed = preserveNewlines ? text : text.trimmingCharacters(in: .newlines)
         guard !trimmed.isEmpty else { return }
+        if enqueueHCInput(trimmed, submit: true, source: .textBox) { return }
         performInputTransaction { [weak self] finish in
             guard let self else { return finish() }
             self.writeProgrammaticText(trimmed)
@@ -4326,18 +5418,32 @@ final class TerminalSurface: Identifiable, ObservableObject {
         completion: @escaping (Bool) -> Void
     ) {
         let trimmed = text.trimmingCharacters(in: .newlines)
-        guard !trimmed.isEmpty, surface != nil else {
+        // C11H-116: with no Ghostty surface the launch sequence has already gated the prompt on hc's own agent
+        // status (idle at its prompt), which is what the screen receipt would have shown; it is delivered through
+        // hc after one last liveness/generation check.
+        let headless = MainActor.assumeIsolated { surface == nil && hcHeadlessBridge != nil }
+        guard !trimmed.isEmpty, surface != nil || headless else {
             completion(false)
             return
         }
+        if headless, !shouldSubmit() { completion(false); return }
+        var launchGuard: HCInputGuard?
+        if !headless { launchGuard = { _ in shouldSubmit() } }
+        if enqueueHCInput(trimmed, submit: true, source: .launchPrompt,
+            screenGuard: launchGuard, returnGuard: launchGuard,
+            queueUntilAttached: false, completion: { outcome in
+                if case .written(let receipt) = outcome { completion(receipt.returnWritten) }
+                else { completion(false) }
+            }) { return }
         // Only into an idle input slot: the push never queues behind (or
         // splices into) another writer's paste-then-Return.
         let started = tryInputTransaction { [weak self] finish in
             guard let self else { finish(); completion(false); return }
+            let inputGeneration = self.captureInputGeneration()
             self.writeProgrammaticText(trimmed, marksDraft: false)
             let delay = TimeInterval(max(0, TextBoxBehavior.returnKeyDelayMs)) / 1000.0
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, self.surface != nil, shouldSubmit() else {
+                guard let self, self.isInputGenerationCurrent(inputGeneration), shouldSubmit() else {
                     finish()
                     completion(false)
                     return
@@ -4363,6 +5469,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         beforeReturn: (@MainActor () -> Bool)? = nil,
         onReturnDispatched: ((Bool) -> Void)? = nil
     ) {
+        let inputGeneration = captureInputGeneration()
         let delayMs: Int
 #if DEBUG
         let feedAnswerHoldMs = feedAnswerGate == nil ? 0 : FeedAnswerDebugHold.shared.consume(panelID: id) ?? 0
@@ -4385,6 +5492,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
 #endif
         if delayMs <= 0 {
+            guard isInputGenerationCurrent(inputGeneration) else {
+                finish()
+                onReturnDispatched?(false)
+                return
+            }
             if let feedAnswerGate {
                 feedAnswerGate.enqueue { work in work() }
             } else {
@@ -4399,7 +5511,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
         let delay = TimeInterval(delayMs) / 1000.0
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else {
+            guard let self, self.isInputGenerationCurrent(inputGeneration) else {
                 finish()
                 onReturnDispatched?(false)
                 return
@@ -4629,6 +5741,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
         _ key: TextBoxKeyRouting.TerminalKey,
         captureNativeHandoff: Bool = false
     ) -> Bool {
+        #if DEBUG
+        if case .returnKey = key, let sink = returnKeySinkForTesting { sink(); return true }
+        #endif
         if case .returnKey = key {
             PanelLivenessDeriver.onAgentLifecycleChanged(
                 surfaceId: id,
@@ -4712,6 +5827,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
         guard portalLifecycleState == .live, surface == nil else { return }
         guard !backgroundSurfaceStartQueued else { return }
         backgroundSurfaceStartQueued = true
+        if let sink = Self.backgroundStartSink {
+            sink(self) { [weak self] in self?.backgroundSurfaceStartQueued = false }
+            return
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -4742,6 +5861,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
 
     private func writeTextData(_ data: Data, to surface: ghostty_surface_t) {
+        #if DEBUG
+        if let sink = textSinkForTesting { sink(data); return }
+        #endif
+        if MainActor.assumeIsolated({ usesPersistentHCInput }) {
+            MainActor.assumeIsolated { hcSession?.recordInputOutcome(.refused(.unavailable)) }
+            return
+        }
         data.withUnsafeBytes { rawBuffer in
             guard let baseAddress = rawBuffer.baseAddress?.assumingMemoryBound(to: CChar.self) else { return }
             ghostty_surface_text(surface, baseAddress, UInt(rawBuffer.count))
@@ -4868,6 +5994,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// Test-only helper to deterministically simulate a released runtime surface.
     @MainActor
     func releaseSurfaceForTesting() {
+        nativeInputGeneration &+= 1
+        let nativeBridge = hcNativeBridge
+        hcNativeBridge = nil
+        hcSession?.detachSurface()
         let callbackContext = surfaceCallbackContext
         surfaceCallbackContext = nil
 
@@ -4877,12 +6007,17 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
 
         surface = nil
+        if let nativeBridge { nativeBridge.retire {}; return }
         ghostty_surface_free(surfaceToFree)
         callbackContext?.release()
     }
 #endif
 
     deinit {
+        let runtime = hcSession
+        Task { @MainActor in runtime?.detachSurface() }
+        let nativeBridge = hcNativeBridge
+        hcNativeBridge = nil
         markPortalLifecycleClosed(reason: "deinit")
         closeHeadlessStartupWindowIfNeeded()
 
@@ -4895,6 +6030,11 @@ final class TerminalSurface: Identifiable, ObservableObject {
         // rather than passing a freed pointer to ghostty_surface_refresh (#432).
         let surfaceToFree = surface
         surface = nil
+
+        if let nativeBridge {
+            nativeBridge.retire {}
+            return
+        }
 
         guard let surfaceToFree else {
 #if DEBUG
@@ -4980,7 +6120,15 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private var keyboardCopyModeConsumedKeyUps: Set<UInt16> = []
     private var keyboardCopyModeInputState = TerminalKeyboardCopyModeInputState()
     private var dispatchingPanelLinkClick = false
+    /// A click on a c11 link held back from a program that holds the mouse,
+    /// and the press's modifiers for its replay.
+    private var capturedPanelLinkClick: CapturedPanelLinkClick?
+    private var capturedPanelLinkPressMods = GHOSTTY_MODS_NONE
+    /// The captured Cmd-hover's last read; nil when it is not running.
+    private var capturedPanelLinkHover: CapturedPanelLinkHover?
     private let panelLinkNotice = PanelLinkNoticePresenter()
+    /// The drag whose in-app file refusal has been explained (C11H-363).
+    private var inAppDropNoticeSequence: Int?
     private let panelLinkPreview = TerminalPanelLinkPreview()
     private var keyboardCopyModeViewportRow: Int?
 
@@ -6311,6 +7459,15 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                (event.keyCode == 36 || event.keyCode == 76),
                !submitFlags.contains(.command),
                !hasMarkedText() {
+                // C11H-123: a terminal on another machine only (a stored
+                // property; nothing for a local panel). Reads the composer
+                // before the Return when a remote Codex's next turn may start.
+                if terminalSurface.hcRemoteTarget != nil {
+                    AppDelegate.shared?.workspaceContainingPanel(
+                        panelId: terminalSurface.id,
+                        preferredWorkspaceId: terminalSurface.workspaceId
+                    )?.workspace.noteRemoteCodexReturnKey(surfaceId: terminalSurface.id, at: keyAt)
+                }
                 PanelLivenessDeriver.onAgentLifecycleChanged(
                     surfaceId: terminalSurface.id,
                     workspaceId: terminalSurface.workspaceId,
@@ -6820,6 +7977,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let newFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let oldFlags = lastModifierFlags
         lastModifierFlags = newFlags
+        // Ghostty clears its own link hover only while it is not reporting the
+        // mouse (C11H-325): Cmd let go, or Option or Control added, clears
+        // the preview. One stored check, no lookup.
+        if newFlags.intersection([.command, .control, .option]) != .command, panelLinkPreview.isShowing {
+            panelLinkPreview.clear()
+            capturedPanelLinkHover = nil
+        }
 
         var keyEvent = ghostty_input_key_s()
         keyEvent.keycode = UInt32(event.keyCode)
@@ -7100,9 +8264,28 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 workspaceId: terminalSurface.workspaceId,
                 surfaceId: terminalSurface.id
             )
+            // C11H-246: a click in a flagged panel opens it. Mouse-only path.
+            TerminalNotificationStore.shared.dismissFlagNotificationForOperatorOpen(
+                workspaceId: terminalSurface.workspaceId,
+                surfaceId: terminalSurface.id
+            )
         }
         guard let surface = surface else { return }
         let point = convert(event.locationInWindow, from: nil)
+        // C11H-325: while the program holds the mouse, Ghostty sees no links,
+        // so a plain or Cmd click on a c11 link is held back here; mouseUp
+        // navigates, or a drag replays the press. Every other click goes to
+        // Ghostty as before.
+        capturedPanelLinkClick = CapturedPanelLinkClick.begin(
+            modifiers: event.modifierFlags,
+            at: point,
+            mouseCaptured: { ghostty_surface_mouse_captured(surface) },
+            hrefAtPointer: { hyperlinkHref(at: point, surface: surface) }
+        )
+        if capturedPanelLinkClick != nil {
+            capturedPanelLinkPressMods = modsFromEvent(event)
+            return
+        }
         ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, modsFromEvent(event))
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, modsFromEvent(event))
     }
@@ -7112,15 +8295,49 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         dlog("terminal.mouseUp surface=\(terminalSurface?.id.uuidString.prefix(5) ?? "nil") mods=[\(debugModifierString(event.modifierFlags))]")
         #endif
         guard let surface = surface else { return }
+        if let click = capturedPanelLinkClick {
+            capturedPanelLinkClick = nil
+            let point = convert(event.locationInWindow, from: nil)
+            if let href = click.finish(hrefAtPointer: { hyperlinkHref(at: point, surface: surface) }) {
+                dispatchingPanelLinkClick = event.type == .leftMouseUp && !isSynthesizingKey
+                defer { dispatchingPanelLinkClick = false }
+                activatePanelLink(href, activation: "captured_click")
+                return
+            }
+            // Released off the link: the program gets the whole click.
+            replayCapturedPanelLinkPress(click, surface: surface)
+            ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, modsFromEvent(event))
+        }
         dispatchingPanelLinkClick = event.type == .leftMouseUp &&
             event.modifierFlags.contains(.command) && !isSynthesizingKey
         defer { dispatchingPanelLinkClick = false }
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, modsFromEvent(event))
     }
 
-    func activatePanelLink(_ href: String) {
+    /// Hand a held press to the program where and as it happened.
+    private func replayCapturedPanelLinkPress(_ click: CapturedPanelLinkClick, surface: ghostty_surface_t) {
+        ghostty_surface_mouse_pos(surface, click.origin.x, bounds.height - click.origin.y, capturedPanelLinkPressMods)
+        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, capturedPanelLinkPressMods)
+    }
+
+    /// The OSC 8 target of the cell under a view point, read without
+    /// reporting anything to the program. A target longer than the buffer
+    /// keeps only its prefix, which is never a valid c11 link, so an
+    /// oversized c11: target still reaches the invalid-link notice.
+    private func hyperlinkHref(at point: NSPoint, surface: ghostty_surface_t) -> String? {
+        withUnsafeTemporaryAllocation(of: CChar.self, capacity: 512) { buffer -> String? in
+            let length = Int(ghostty_surface_hyperlink_at(
+                surface, point.x, bounds.height - point.y, buffer.baseAddress, UInt(buffer.count)))
+            guard length > 0 else { return nil }
+            return String(decoding: UnsafeRawBufferPointer(start: buffer.baseAddress,
+                                                           count: min(length, buffer.count)),
+                          as: UTF8.self)
+        }
+    }
+
+    func activatePanelLink(_ href: String, activation: String = "native_command_click") {
         let policy = TerminalPanelLinkPolicy(
-            isNativeCommandClick: dispatchingPanelLinkClick,
+            isNativeClick: dispatchingPanelLinkClick,
             isSocketCommand: SocketCommandContext.current != nil,
             isKeyWindow: window?.isKeyWindow == true,
             isVisible: isVisibleInUI && !isHiddenOrHasHiddenAncestor
@@ -7143,18 +8360,18 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             guard let self, self.terminalSurface?.id == sourceID,
                   self.window?.isKeyWindow == true, self.isVisibleInUI,
                   !self.isHiddenOrHasHiddenAncestor else {
-                PanelLinkActivation.log(target: href, origin: "terminal", activation: "native_command_click", result: "source_unavailable")
+                PanelLinkActivation.log(target: href, origin: "terminal", activation: activation, result: "source_unavailable")
                 return
             }
             self.panelLinkPreview.clear()
             guard let target = PanelLinkTarget(href) else {
                 self.panelLinkNotice.show(.invalid, in: self.terminalSurface?.hostedView ?? self)
-                PanelLinkActivation.log(target: href, origin: "terminal", activation: "native_command_click", result: "invalid_target")
+                PanelLinkActivation.log(target: href, origin: "terminal", activation: activation, result: "invalid_target")
                 return
             }
             let opened = AppDelegate.shared?.openPanelLink(target) == true
             if !opened { self.panelLinkNotice.show(.unavailable, in: self.terminalSurface?.hostedView ?? self) }
-            PanelLinkActivation.log(target: href, origin: "terminal", activation: "native_command_click", result: opened ? "opened" : "unavailable")
+            PanelLinkActivation.log(target: href, origin: "terminal", activation: activation, result: opened ? "opened" : "unavailable")
         }
     }
 
@@ -7316,7 +8533,10 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
               let manager = app.workspaceManagerFor(workspaceId: workspaceId) ?? app.workspaceManager else {
             return false
         }
-        return manager.createSplit(workspaceId: workspaceId, surfaceId: surfaceId, direction: direction) != nil
+        // The terminal's context menu: the operator's split (C11H-260).
+        return PanelLineage.shared.withOrigin(.operator) {
+            manager.createSplit(workspaceId: workspaceId, surfaceId: surfaceId, direction: direction) != nil
+        }
     }
 
     @objc private func triggerFlash(_ sender: Any?) {
@@ -7328,6 +8548,29 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         guard let surface = surface else { return }
         let point = convert(event.locationInWindow, from: nil)
         ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, modsFromEvent(event))
+        // C11H-325: Ghostty sends no link hover while the program holds the
+        // mouse, so Cmd-hover reads the cell itself, only while Cmd alone is
+        // held. When the chord or the capture ends, its preview goes too.
+        if CapturedPanelLinkClick.previewsWith(event.modifierFlags),
+           ghostty_surface_mouse_captured(surface) {
+            updateCapturedPanelLinkHover(at: point, surface: surface)
+        } else if capturedPanelLinkHover != nil {
+            capturedPanelLinkHover = nil
+            panelLinkPreview.clear()
+        }
+    }
+
+    /// Read the cell under the pointer into a stack buffer and redo the
+    /// preview only when that target, or the preview's state, has changed.
+    private func updateCapturedPanelLinkHover(at point: NSPoint, surface: ghostty_surface_t) {
+        withUnsafeTemporaryAllocation(of: CChar.self, capacity: 512) { buffer in
+            let length = min(Int(ghostty_surface_hyperlink_at(
+                surface, point.x, bounds.height - point.y, buffer.baseAddress, UInt(buffer.count))), buffer.count)
+            let bytes = UnsafeRawBufferPointer(start: buffer.baseAddress, count: length)
+            if capturedPanelLinkHover?.covers(bytes, previewShowing: panelLinkPreview.isShowing) == true { return }
+            updatePanelLinkPreview(String(decoding: bytes, as: UTF8.self))
+            capturedPanelLinkHover = CapturedPanelLinkHover(target: Array(bytes), shown: panelLinkPreview.isShowing)
+        }
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -7367,6 +8610,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     override func mouseDragged(with event: NSEvent) {
         guard let surface = surface else { return }
         let point = convert(event.locationInWindow, from: nil)
+        if let click = capturedPanelLinkClick {
+            // Held on a c11 link (C11H-325): the program has not seen the
+            // press. Past the threshold it is a drag, so the program gets it.
+            guard click.becomesDrag(at: point) else { return }
+            capturedPanelLinkClick = nil
+            replayCapturedPanelLinkPress(click, surface: surface)
+        }
         ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, modsFromEvent(event))
     }
 
@@ -7478,6 +8728,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         }
     }
 
+    /// Every drop onto a terminal enters here (C11H-362): an operator's drop is
+    /// always a paste, never keys, whatever it holds. Off hc,
+    /// `ghostty_surface_text` is Ghostty's own paste path.
+    fileprivate static func pasteDrop(_ text: String, into surface: TerminalSurface?) {
+        surface?.sendText(text, source: .drop)
+    }
+
     fileprivate static func escapeDropForShell(_ value: String) -> String {
         var result = value
         for char in shellEscapeCharacters {
@@ -7504,13 +8761,100 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         return nil
     }
 
+    /// `startedInsideC11` is the drag's own word (`draggingSource != nil`):
+    /// the titlebar folder icon, a web view, the sidebar, another c11 window.
     @discardableResult
-    fileprivate func insertDroppedPasteboard(_ pasteboard: NSPasteboard) -> Bool {
+    fileprivate func insertDroppedPasteboard(_ pasteboard: NSPasteboard, startedInsideC11: Bool) -> Bool {
+        let urls = (pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []
+        switch TerminalFileDropPolicy.decide(urls: urls, targetIsRemote: terminalSurface?.hcRemoteTarget != nil,
+                                             startedInsideC11: startedInsideC11) {
+        case .refuse:
+            // C11H-363: never send a file a drag from inside c11 names.
+            guard let surface = terminalSurface else { return false }
+            let flow = remoteFileDropFlow(surface), target = remoteFileDropTarget(surface)
+            MainActor.assumeIsolated { flow.refuseInApp(urls, target: target) }
+            return false
+        case .ask(let files):
+            guard let surface = terminalSurface else { return false }
+            let flow = remoteFileDropFlow(surface), target = remoteFileDropTarget(surface)
+            MainActor.assumeIsolated { flow.start(files, target: target) }
+            return true
+        case .paste:
+            break
+        }
         guard let content = droppedContent(from: pasteboard) else { return false }
         // Use the text/paste path (ghostty_surface_text) instead of the key event
         // path (ghostty_surface_key) so bracketed paste mode is triggered and the
-        // insertion is instant, matching upstream Ghostty behaviour.
-        terminalSurface?.sendText(content)
+        // insertion is instant, matching upstream Ghostty behaviour. Over hc the
+        // `.drop` source keeps it a paste whatever it contains (C11H-362).
+        Self.pasteDrop(content, into: terminalSurface)
+        return true
+    }
+
+    /// Ticket 12, C11H-363: a drop onto a terminal on another machine sends
+    /// the files there (hc `terminal.put`) and pastes where they landed, once
+    /// the operator says Send. The target is the exact terminal at drop time;
+    /// reads and the RPC run off-main, and the paste happens on main only if
+    /// every file arrived and the panel still holds that terminal. A local
+    /// path never reaches a remote shell. One audit record per drop.
+    private func remoteFileDropTarget(_ surface: TerminalSurface) -> HCRemoteFileDropFlow.Target {
+        let key = MainActor.assumeIsolated { () -> HCTerminalKey? in
+            guard let runtime = surface.hcSession, runtime.session is any HCFileTransfer else { return nil }
+            return runtime.identity.key
+        }
+        return HCRemoteFileDropFlow.Target(key: key, machine: surface.hcRemoteTarget?.machine,
+                                           panelID: surface.id, workspaceID: workspaceId)
+    }
+
+    private func remoteFileDropFlow(_ surface: TerminalSurface) -> HCRemoteFileDropFlow {
+        let transfer = MainActor.assumeIsolated { surface.hcSession?.session as? any HCFileTransfer }
+        return MainActor.assumeIsolated {
+            HCRemoteFileDropFlow(
+                ask: { [weak self] urls, machine, answer in
+                    self?.askToSendFiles(urls, machine: machine, answer: answer) ?? false
+                },
+                send: { urls, key in
+                    guard let transfer else { return .failure(.transfer("", .backendNotInstalled)) }
+                    // File reads and the RPC never run on main.
+                    return await Task.detached(priority: .userInitiated) {
+                        switch HCRemoteFileDrop.read(urls) {
+                        case .failure(let failure): return .failure(failure)
+                        case .success(let items):
+                            return await HCRemoteFileDrop.send(items, to: key, via: transfer,
+                                                               escape: GhosttyNSView.escapeDropForShell)
+                        }
+                    }.value
+                },
+                stillBound: { [weak surface] key in surface?.hcSession?.identity.key == key },
+                paste: { [weak surface] text in GhosttyNSView.pasteDrop(text, into: surface) },
+                unsent: { [weak self, weak surface] outcome in
+                    NSLog("hc.put.unsent panel=%@ outcome=%@", surface?.id.uuidString ?? "nil",
+                          String(describing: outcome))
+                    // Cancel is the operator's own answer; anything else is a refusal.
+                    if outcome != .cancelled { NSSound.beep() }
+                    guard let self, outcome == .refused("in_app_source") else { return }
+                    self.panelLinkNotice.show(text: HCRemoteFileDropPrompt.refusedInApp,
+                                              in: self.terminalSurface?.hostedView ?? self)
+                },
+                audit: { record in C11AuditLog.shared.record(record) }
+            )
+        }
+    }
+
+    /// A sheet on this terminal's window, right after the operator's own drop.
+    /// `beginSheetModal` spins no nested run loop, so no socket call waits on it.
+    private func askToSendFiles(_ urls: [URL], machine: String,
+                                answer: @escaping @MainActor (Bool) -> Void) -> Bool {
+        guard let window else { return false }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = HCRemoteFileDropPrompt.title(urls: urls, machine: machine)
+        alert.informativeText = HCRemoteFileDropPrompt.body(urls: urls, machine: machine)
+        alert.addButton(withTitle: HCRemoteFileDropPrompt.sendButton)
+        alert.addButton(withTitle: HCRemoteFileDropPrompt.cancelButton)
+        alert.beginSheetModal(for: window) { response in
+            MainActor.assumeIsolated { answer(response == .alertFirstButtonReturn) }
+        }
         return true
     }
 
@@ -7523,7 +8867,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let pasteboard = NSPasteboard(name: pbName)
         pasteboard.clearContents()
         pasteboard.writeObjects(urls)
-        return insertDroppedPasteboard(pasteboard)
+        return insertDroppedPasteboard(pasteboard, startedInsideC11: false)
     }
 
     fileprivate func debugRegisteredDropTypes() -> [String] {
@@ -7538,11 +8882,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let types = sender.draggingPasteboard.types ?? []
         dlog("terminal.draggingEntered surface=\(terminalSurface?.id.uuidString.prefix(5) ?? "nil") types=\(types.map(\.rawValue))")
         #endif
-        guard let types = sender.draggingPasteboard.types else { return [] }
-        if Set(types).isDisjoint(with: Self.dropTypes) {
-            return []
-        }
-        return .copy
+        return dropOperation(for: sender)
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
@@ -7550,8 +8890,26 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let types = sender.draggingPasteboard.types ?? []
         dlog("terminal.draggingUpdated surface=\(terminalSurface?.id.uuidString.prefix(5) ?? "nil") types=\(types.map(\.rawValue))")
         #endif
+        return dropOperation(for: sender)
+    }
+
+    /// The drag cursor over this terminal: copy, or nothing for a drop it
+    /// takes no part in or refuses (C11H-363: a file dragged from inside c11
+    /// onto a terminal on another machine). Types only; nothing is read.
+    func dropOperation(for sender: any NSDraggingInfo) -> NSDragOperation {
         guard let types = sender.draggingPasteboard.types else { return [] }
         if Set(types).isDisjoint(with: Self.dropTypes) {
+            return []
+        }
+        if TerminalFileDropPolicy.refusesDrag(hasFileURL: types.contains(.fileURL),
+                                              targetIsRemote: terminalSurface?.hcRemoteTarget != nil,
+                                              startedInsideC11: sender.draggingSource != nil) {
+            // AppKit delivers no drop to a destination that shows no operation,
+            // so the explanation comes now, once per drag.
+            if inAppDropNoticeSequence != sender.draggingSequenceNumber {
+                inAppDropNoticeSequence = sender.draggingSequenceNumber
+                panelLinkNotice.show(text: HCRemoteFileDropPrompt.refusedInApp, in: terminalSurface?.hostedView ?? self)
+            }
             return []
         }
         return .copy
@@ -7561,7 +8919,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         #if DEBUG
         dlog("terminal.fileDrop surface=\(terminalSurface?.id.uuidString.prefix(5) ?? "nil")")
         #endif
-        return insertDroppedPasteboard(sender.draggingPasteboard)
+        return insertDroppedPasteboard(sender.draggingPasteboard, startedInsideC11: sender.draggingSource != nil)
     }
 }
 
@@ -7785,6 +9143,10 @@ final class GhosttySurfaceScrollView: NSView {
     private let keyboardCopyModeBadgeLabel: NSTextField
     private var searchOverlayHostingView: NSHostingView<PanelSearchOverlay>?
     private var flagBannerHostingView: NSHostingView<PanelFlagBanner>?
+    // C11H-330: created on first use; only a seen evaporating flag shows it.
+    private var evaporationBarView: FlagEvaporationBarView?
+    private var evaporationBarGeneration: UInt64 = 0
+    private var fadeFlagBannerOnNextRemoval = false
     private var deferredSearchOverlayMutationWorkItem: DispatchWorkItem?
     private var lastSearchOverlayStateID: ObjectIdentifier?
     private var searchOverlayMutationGeneration: UInt64 = 0
@@ -8307,6 +9669,9 @@ final class GhosttySurfaceScrollView: NSView {
         if let banner = flagBannerHostingView {
             _ = setFrameIfNeeded(banner, to: flagBannerFrame())
         }
+        if let bar = evaporationBarView {
+            _ = setFrameIfNeeded(bar, to: evaporationBarFrame())
+        }
         // NSScrollView can defer clip-view/content-size updates until its own layout pass,
         // which makes interactive width changes arrive a queue turn late on Sequoia.
         scrollView.layoutSubtreeIfNeeded()
@@ -8329,6 +9694,66 @@ final class GhosttySurfaceScrollView: NSView {
         )
     }
 
+    private func evaporationBarFrame() -> CGRect {
+        FlagEvaporationBarView.topEdgeFrame(in: bounds, flipped: isFlipped)
+    }
+
+    /// C11H-330: start the evaporation bar's sweep along the top edge. Additive
+    /// like the flag banner: it floats over terminal pixels and never changes
+    /// the scroll, document or surface geometry.
+    func startEvaporationBar(color: NSColor, duration: TimeInterval, elapsed: TimeInterval) {
+        fadeFlagBannerOnNextRemoval = false
+        evaporationBarGeneration &+= 1
+        let bar: FlagEvaporationBarView
+        if let existing = evaporationBarView {
+            bar = existing
+        } else {
+            bar = FlagEvaporationBarView(frame: evaporationBarFrame())
+            bar.autoresizingMask = [.width, .minYMargin]
+            evaporationBarView = bar
+            if let searchOverlayHostingView {
+                addSubview(bar, positioned: .below, relativeTo: searchOverlayHostingView)
+            } else if let paneInteractionOverlay {
+                addSubview(bar, positioned: .below, relativeTo: paneInteractionOverlay)
+            } else {
+                addSubview(bar, positioned: .above, relativeTo: flashOverlayView)
+            }
+        }
+        _ = setFrameIfNeeded(bar, to: evaporationBarFrame())
+        bar.start(color: color, duration: duration, elapsed: elapsed)
+    }
+
+    /// Empty the bar at once: focus left, or the flag changed under it.
+    func cancelEvaporationBar() {
+        fadeFlagBannerOnNextRemoval = false
+        evaporationBarGeneration &+= 1
+        evaporationBarView?.cancel()
+    }
+
+    /// The next flag removal is an evaporation: fade the banner and the full bar.
+    func prepareEvaporationFade() {
+        fadeFlagBannerOnNextRemoval = true
+    }
+
+    private func fadeOutEvaporatedFlag() {
+        fadeFlagBannerOnNextRemoval = false
+        let banner = flagBannerHostingView
+        let bar = evaporationBarView
+        let generation = evaporationBarGeneration
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = FlagEvaporationBarView.fadeDuration
+            banner?.animator().alphaValue = 0
+            bar?.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                banner?.removeFromSuperview()
+                // A run that started during the fade keeps its bar.
+                guard let self, self.evaporationBarGeneration == generation else { return }
+                bar?.cancel()
+            }
+        })
+    }
+
     /// Portal-owned, additive flag banner. Its frame floats over terminal
     /// pixels and never changes the scroll/document/surface geometry.
     func updateFlagBanner() {
@@ -8342,10 +9767,15 @@ final class GhosttySurfaceScrollView: NSView {
             surfaceId: terminalSurface.id
         )
         guard let reason = snapshot.flagReason else {
-            flagBannerHostingView?.removeFromSuperview()
+            if fadeFlagBannerOnNextRemoval {
+                fadeOutEvaporatedFlag()
+            } else {
+                flagBannerHostingView?.removeFromSuperview()
+            }
             flagBannerHostingView = nil
             return
         }
+        fadeFlagBannerOnNextRemoval = false
 
         let root = PanelFlagBanner(reason: reason, kind: snapshot.flagKind) { [weak self, weak terminalSurface] in
             guard let self, let terminalSurface else { return }
@@ -9352,13 +10782,19 @@ final class GhosttySurfaceScrollView: NSView {
     /// Handle file/URL drops, forwarding to the terminal as shell-escaped paths.
     func handleDroppedURLs(_ urls: [URL]) -> Bool {
         guard !urls.isEmpty else { return false }
+        // C11H-363: this fallback cannot tell where a drag started, so it
+        // never pastes or sends a local path to a terminal on another machine.
+        guard surfaceView.terminalSurface?.hcRemoteTarget == nil else {
+            NSSound.beep()
+            return false
+        }
         let content = urls
             .map { GhosttyNSView.escapeDropForShell($0.path) }
             .joined(separator: " ")
         #if DEBUG
         dlog("terminal.swiftUIDrop surface=\(surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") urls=\(urls.map(\.lastPathComponent))")
         #endif
-        surfaceView.terminalSurface?.sendText(content)
+        GhosttyNSView.pasteDrop(content, into: surfaceView.terminalSurface)
         return true
     }
 
@@ -11215,4 +12651,185 @@ struct GhosttyTerminalView: NSViewRepresentable {
 
         nsView.subviews.forEach { $0.removeFromSuperview() }
     }
+}
+
+#if DEBUG
+extension TerminalSurface {
+    /// C11H-255 guest seam: what this terminal shows the moment it is shown
+    /// again. A hidden terminal releases its GPU memory but keeps its last
+    /// frame as the layer's contents; this reads that IOSurface's purgeable
+    /// state and how much of it is non-zero, changing nothing.
+    func debugLayerContentsProbe() -> [String: Any] {
+        var surfaces: [[String: Any]] = []
+        func visit(_ layer: CALayer) {
+            if let contents = layer.contents {
+                let object = contents as AnyObject
+                if CFGetTypeID(object) == IOSurfaceGetTypeID() {
+                    let surface = object as! IOSurfaceRef
+                    var state: UInt32 = 0
+                    IOSurfaceSetPurgeable(surface, IOSurfacePurgeabilityState.purgeableKeepCurrent.rawValue, &state)
+                    var sampled = 0
+                    var nonZero = 0
+                    if state != IOSurfacePurgeabilityState.purgeableEmpty.rawValue,
+                       IOSurfaceLock(surface, .readOnly, nil) == KERN_SUCCESS {
+                        let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
+                        let size = IOSurfaceGetAllocSize(surface)
+                        var offset = 0
+                        while offset < size {
+                            sampled += 1
+                            if base[offset] != 0 { nonZero += 1 }
+                            offset += 61
+                        }
+                        IOSurfaceUnlock(surface, .readOnly, nil)
+                    }
+                    let names = ["non_volatile", "volatile", "empty", "keep_current"]
+                    surfaces.append([
+                        "state": Int(state) < names.count ? names[Int(state)] : String(state),
+                        "surface_id": IOSurfaceGetID(surface),
+                        "width": IOSurfaceGetWidth(surface),
+                        "height": IOSurfaceGetHeight(surface),
+                        "sampled_bytes": sampled,
+                        "non_zero_fraction": sampled > 0 ? Double(nonZero) / Double(sampled) : 0,
+                        "layer_width": layer.bounds.width,
+                        "layer_height": layer.bounds.height,
+                    ])
+                }
+            }
+            layer.sublayers?.forEach(visit)
+        }
+        if let layer = surfaceView.layer { visit(layer) }
+        return [
+            "surfaces": surfaces,
+            "in_window": surfaceView.window != nil,
+            "hidden": surfaceView.isHiddenOrHasHiddenAncestor,
+        ]
+    }
+
+    /// The IOSurface ids this terminal's layer tree shows now.
+    func debugLayerSurfaceIds() -> Set<UInt32> {
+        var ids: Set<UInt32> = []
+        func visit(_ layer: CALayer) {
+            if let contents = layer.contents {
+                let object = contents as AnyObject
+                if CFGetTypeID(object) == IOSurfaceGetTypeID() {
+                    ids.insert(IOSurfaceGetID(object as! IOSurfaceRef))
+                }
+            }
+            layer.sublayers?.forEach(visit)
+        }
+        if let layer = surfaceView.layer { visit(layer) }
+        return ids
+    }
+}
+
+/// C11H-255 guest seam: times a show on the app's own clock. Once armed, it
+/// records each workspace selection and, every 4 ms on the main thread, the
+/// first moment each watched terminal's layer shows an IOSurface it did not
+/// show when armed (a new frame) and any moment it shows none. The layer's
+/// contents are set on the main thread, so a recorded time is at most one
+/// tick after the frame was set. With `stallAfterSelectionMs`, the main
+/// thread blocks once for that long right after the next selection: a
+/// delayed-frame control for the measurement itself.
+@MainActor
+final class DebugFrameWatch {
+    static let shared = DebugFrameWatch()
+
+    private struct Watched {
+        weak var surface: TerminalSurface?
+        let baseline: Set<UInt32>
+        var newFrameAt: CFTimeInterval?
+        var newSurfaceId: UInt32?
+        var clearedAt: CFTimeInterval?
+    }
+
+    private var watched: [(String, Watched)] = []
+    private var selections: [[String: Any]] = []
+    private var timer: Timer?
+    private var armedAt: CFTimeInterval = 0
+    private var deadline: CFTimeInterval = 0
+    private var stallMs = 0
+    private var stall: [String: Any]?
+
+    private func ms(_ time: CFTimeInterval?) -> Any {
+        guard let time else { return NSNull() }
+        return ((time - armedAt) * 1000 * 10).rounded() / 10
+    }
+
+    func arm(_ targets: [(String, TerminalSurface)], stallAfterSelectionMs: Int, timeoutMs: Int) -> [String: Any] {
+        timer?.invalidate()
+        armedAt = CACurrentMediaTime()
+        deadline = armedAt + Double(max(timeoutMs, 100)) / 1000
+        selections = []
+        stall = nil
+        stallMs = max(stallAfterSelectionMs, 0)
+        watched = targets.map { ($0.0, Watched(surface: $0.1, baseline: $0.1.debugLayerSurfaceIds())) }
+        let timer = Timer(timeInterval: 0.004, repeats: true) { _ in
+            MainActor.assumeIsolated { DebugFrameWatch.shared.tick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+        return ["armed": watched.count,
+                "baseline": Dictionary(uniqueKeysWithValues: watched.map { ($0.0, $0.1.baseline.sorted()) })]
+    }
+
+    func recordSelection(_ workspaceId: UUID) {
+        guard timer != nil else { return }
+        selections.append(["workspace_id": workspaceId.uuidString, "at_ms": ms(CACurrentMediaTime())])
+        guard stallMs > 0 else { return }
+        let stallFor = stallMs
+        stallMs = 0
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                let watch = DebugFrameWatch.shared
+                let start = CACurrentMediaTime()
+                usleep(UInt32(stallFor) * 1000)
+                watch.stall = ["requested_ms": stallFor,
+                               "start_ms": watch.ms(start),
+                               "end_ms": watch.ms(CACurrentMediaTime())]
+            }
+        }
+    }
+
+    private func tick() {
+        let now = CACurrentMediaTime()
+        var pending = false
+        for index in watched.indices where watched[index].1.newFrameAt == nil {
+            guard let surface = watched[index].1.surface else { continue }
+            let ids = surface.debugLayerSurfaceIds()
+            if ids.isEmpty, watched[index].1.clearedAt == nil {
+                watched[index].1.clearedAt = now
+            }
+            if let fresh = ids.subtracting(watched[index].1.baseline).min() {
+                watched[index].1.newFrameAt = now
+                watched[index].1.newSurfaceId = fresh
+            } else {
+                pending = true
+            }
+        }
+        if !pending || now > deadline {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
+    func read() -> [String: Any] {
+        let panels = Dictionary(uniqueKeysWithValues: watched.map { key, item -> (String, [String: Any]) in
+            (key, ["closed": item.surface == nil,
+                   "baseline": item.baseline.sorted(),
+                   "new_frame_ms": ms(item.newFrameAt),
+                   "new_surface_id": item.newSurfaceId.map { Int($0) } as Any? ?? NSNull(),
+                   "cleared_ms": ms(item.clearedAt)])
+        })
+        return ["now_ms": ms(CACurrentMediaTime()),
+                "running": timer != nil,
+                "selections": selections,
+                "stall": stall as Any? ?? NSNull(),
+                "panels": panels]
+    }
+}
+#endif
+
+// C11H-330: the terminal's bar fades with its flag banner when the banner leaves.
+extension GhosttySurfaceScrollView: FlagEvaporationBarHost {
+    func evaporationLowered() {}
 }

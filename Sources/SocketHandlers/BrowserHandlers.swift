@@ -14,11 +14,23 @@ private final class V2BrowserAwaitGate {
     private let lock = NSLock()
     private var cancelled = false
     private var completed = false
+    private var began = false
 
     func begin() -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard !cancelled, !completed else { return false }
+        began = true
+        return true
+    }
+
+    /// Cancels the work only if it has not begun, so a caller can say truthfully
+    /// that nothing started. Returns false when the work had already begun.
+    func abandonIfNotBegun() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !began else { return false }
+        cancelled = true
         return true
     }
 
@@ -391,10 +403,14 @@ extension TerminalController {
         }
     }
 
+    /// `timeout` bounds the whole call. `beginTimeout` (default `timeout`) bounds
+    /// only the wait for main to start a clear or delete; a test passes a longer
+    /// one so a busy main cannot pre-empt the path it means to exercise.
     nonisolated func v2BrowserProfileCommand(
         method: String,
         params: [String: Any],
-        timeout: TimeInterval = TerminalController.defaultBrowserProfileOperationTimeout
+        timeout: TimeInterval = TerminalController.defaultBrowserProfileOperationTimeout,
+        beginTimeout: TimeInterval? = nil
     ) -> V2CallResult {
         switch method {
         case "browser.profiles.list":
@@ -465,7 +481,9 @@ extension TerminalController {
             }
 
             let deleting = method == "browser.profiles.delete"
+            let deadline = DispatchTime.now() + timeout
             let gate = V2BrowserAwaitGate()
+            let begun = DispatchSemaphore(value: 0)
             let semaphore = DispatchSemaphore(value: 0)
             let lock = NSLock()
             nonisolated(unsafe) var response: V2CallResult = .err(
@@ -476,6 +494,7 @@ extension TerminalController {
 
             Task { @MainActor in
                 guard gate.begin() else { return }
+                begun.signal()
 
                 let resolution = self.v2ResolveBrowserProfileParam(rawProfile)
                 guard case .profile(let profile) = resolution else {
@@ -518,7 +537,17 @@ extension TerminalController {
                 }
             }
 
-            guard semaphore.wait(timeout: .now() + timeout) == .success else {
+            // C11H-331: a main that never started the hop reserved nothing and
+            // never will, so the reply says the main thread timed out (safe to
+            // retry), not that cleanup is in progress.
+            if begun.wait(timeout: .now() + (beginTimeout ?? timeout)) == .timedOut, gate.abandonIfNotBegun() {
+                return .err(
+                    code: "main_thread_timeout",
+                    message: String(localized: "browser.profile.error.mainThreadTimeout", defaultValue: "Main thread did not respond within deadline"),
+                    data: ["profile": rawProfile]
+                )
+            }
+            guard semaphore.wait(timeout: deadline) == .success else {
                 gate.cancel()
                 lock.lock()
                 defer { lock.unlock() }
@@ -556,6 +585,10 @@ extension TerminalController {
                 result = .err(code: "invalid_params", message: "Panel is not a browser", data: ["surface_id": surfaceId.uuidString])
                 return
             }
+            if browserPanel.showViewer != nil {
+                result = Self.showViewerDisplayOnly(surfaceId)
+                return
+            }
             result = body(workspaceManager, ws, surfaceId, browserPanel)
         }
         return result
@@ -565,11 +598,15 @@ extension TerminalController {
     /// worker must not carry the `v2BrowserWithPanel` body through `v2MainSync`,
     /// because that body may wait for WebKit or a notification. Keep this
     /// phase deliberately limited to routing, guards, and immutable snapshots.
+    /// `activates`: the command acts on the page (navigation, a click, key or
+    /// form input, a script) or waits for a download, so a download in the
+    /// next 10 s may proceed (C11H-377). A read never passes it.
     @MainActor
     func v2ResolveBrowserOffMainTargetOnMain(
         params: [String: Any],
         requireDocument: Bool,
-        selectorRaw: String? = nil
+        selectorRaw: String? = nil,
+        activates: Bool = false
     ) -> V2BrowserOffMainTargetOutcome {
         // Worker-policy methods bypass processV2Command's normal ref refresh.
         // Refresh before resolving a handle so a first worker call cannot fall
@@ -593,6 +630,10 @@ extension TerminalController {
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }
+        if browserPanel.showViewer != nil { return .result(Self.showViewerDisplayOnly(surfaceId)) }
+        // C11H-377: a local agent acting on this panel (the relay refuses
+        // every browser method) opens its download window; a read does not.
+        if activates { browserPanel.noteLocalBrowserCommand() }
 
         if requireDocument,
            let refusal = v2BrowserNoDocumentResultIfNeeded(browserPanel: browserPanel, surfaceId: surfaceId) {
@@ -641,14 +682,16 @@ extension TerminalController {
     nonisolated func v2ResolveBrowserOffMainTarget(
         params: [String: Any],
         requireDocument: Bool,
-        selectorRaw: String? = nil
+        selectorRaw: String? = nil,
+        activates: Bool = false
     ) -> V2BrowserOffMainTargetOutcome {
         if Thread.isMainThread {
             return MainActor.assumeIsolated {
                 v2ResolveBrowserOffMainTargetOnMain(
                     params: params,
                     requireDocument: requireDocument,
-                    selectorRaw: selectorRaw
+                    selectorRaw: selectorRaw,
+                    activates: activates
                 )
             }
         }
@@ -657,7 +700,8 @@ extension TerminalController {
             self.v2ResolveBrowserOffMainTargetOnMain(
                 params: params,
                 requireDocument: requireDocument,
-                selectorRaw: selectorRaw
+                selectorRaw: selectorRaw,
+                activates: activates
             )
         } ?? .result(v2BrowserMainHopTimeoutResult())
     }
@@ -693,11 +737,12 @@ extension TerminalController {
         params: [String: Any],
         requireDocument: Bool,
         selectorRaw: String? = nil,
+        activates: Bool = false,
         _ body: (V2BrowserOffMainTarget) -> V2CallResult
     ) -> V2CallResult {
         assert(!Thread.isMainThread, "Browser callback commands require a socket worker")
         switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: requireDocument,
-                                            selectorRaw: selectorRaw) {
+                                            selectorRaw: selectorRaw, activates: activates) {
         case .result(let result): return result
         case .ready(let target): return body(target)
         }
@@ -1822,13 +1867,15 @@ extension TerminalController {
     nonisolated func v2BrowserSelectorAction(
         params: [String: Any],
         actionName: String,
+        activates: Bool = false,
         scriptBuilder: (_ selectorLiteral: String) -> String
     ) -> V2CallResult {
         guard let selectorRaw = v2BrowserSelector(params) else {
             return .err(code: "invalid_params", message: "Missing selector", data: nil)
         }
 
-        return v2BrowserWithWorkerPanel(params: params, requireDocument: true, selectorRaw: selectorRaw) { target in
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true, selectorRaw: selectorRaw,
+                                        activates: activates) { target in
             let surfaceId = target.surfaceId
             guard let selector = target.resolvedSelector else {
                 return .err(code: "not_found", message: "Element reference not found", data: ["selector": selectorRaw])
@@ -1905,7 +1952,7 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing script", data: nil)
         }
 
-        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: true) {
+        switch v2ResolveBrowserOffMainTarget(params: params, requireDocument: true, activates: true) {
         case .result(let result):
             return result
         case .ready(let target):
@@ -2282,7 +2329,7 @@ extension TerminalController {
     }
 
     nonisolated func v2BrowserClick(params: [String: Any]) -> V2CallResult {
-        v2BrowserSelectorAction(params: params, actionName: "click") { selectorLiteral in
+        v2BrowserSelectorAction(params: params, actionName: "click", activates: true) { selectorLiteral in
             """
             (() => {
               const el = document.querySelector(\(selectorLiteral));
@@ -2300,7 +2347,7 @@ extension TerminalController {
     }
 
     nonisolated func v2BrowserDblClick(params: [String: Any]) -> V2CallResult {
-        v2BrowserSelectorAction(params: params, actionName: "dblclick") { selectorLiteral in
+        v2BrowserSelectorAction(params: params, actionName: "dblclick", activates: true) { selectorLiteral in
             """
             (() => {
               const el = document.querySelector(\(selectorLiteral));
@@ -2345,7 +2392,7 @@ extension TerminalController {
         guard let text = v2String(params, "text") else {
             return .err(code: "invalid_params", message: "Missing text", data: nil)
         }
-        return v2BrowserSelectorAction(params: params, actionName: "type") { selectorLiteral in
+        return v2BrowserSelectorAction(params: params, actionName: "type", activates: true) { selectorLiteral in
             let textLiteral = v2JSONLiteral(text)
             return """
             (() => {
@@ -2371,7 +2418,7 @@ extension TerminalController {
         guard let text = v2RawString(params, "text") ?? v2RawString(params, "value") else {
             return .err(code: "invalid_params", message: "Missing text/value", data: nil)
         }
-        return v2BrowserSelectorAction(params: params, actionName: "fill") { selectorLiteral in
+        return v2BrowserSelectorAction(params: params, actionName: "fill", activates: true) { selectorLiteral in
             let textLiteral = v2JSONLiteral(text)
             return """
             (() => {
@@ -2397,7 +2444,7 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing key", data: nil)
         }
 
-        return v2BrowserWithWorkerPanel(params: params, requireDocument: true) { target in
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true, activates: true) { target in
             let surfaceId = target.surfaceId
             let keyLiteral = v2JSONLiteral(key)
             let script = """
@@ -2431,7 +2478,7 @@ extension TerminalController {
         guard let key = v2String(params, "key") else {
             return .err(code: "invalid_params", message: "Missing key", data: nil)
         }
-        return v2BrowserWithWorkerPanel(params: params, requireDocument: true) { target in
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true, activates: true) { target in
             let surfaceId = target.surfaceId
             let keyLiteral = v2JSONLiteral(key)
             let script = """
@@ -2463,7 +2510,7 @@ extension TerminalController {
         guard let key = v2String(params, "key") else {
             return .err(code: "invalid_params", message: "Missing key", data: nil)
         }
-        return v2BrowserWithWorkerPanel(params: params, requireDocument: true) { target in
+        return v2BrowserWithWorkerPanel(params: params, requireDocument: true, activates: true) { target in
             let surfaceId = target.surfaceId
             let keyLiteral = v2JSONLiteral(key)
             let script = """
@@ -2492,7 +2539,7 @@ extension TerminalController {
     }
 
     nonisolated func v2BrowserCheck(params: [String: Any], checked: Bool) -> V2CallResult {
-        v2BrowserSelectorAction(params: params, actionName: checked ? "check" : "uncheck") { selectorLiteral in
+        v2BrowserSelectorAction(params: params, actionName: checked ? "check" : "uncheck", activates: true) { selectorLiteral in
             """
             (() => {
               const el = document.querySelector(\(selectorLiteral));
@@ -2512,7 +2559,7 @@ extension TerminalController {
         guard let selectedValue else {
             return .err(code: "invalid_params", message: "Missing value", data: nil)
         }
-        return v2BrowserSelectorAction(params: params, actionName: "select") { selectorLiteral in
+        return v2BrowserSelectorAction(params: params, actionName: "select", activates: true) { selectorLiteral in
             let valueLiteral = v2JSONLiteral(selectedValue)
             return """
             (() => {

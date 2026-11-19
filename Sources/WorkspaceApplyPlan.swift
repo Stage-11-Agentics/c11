@@ -69,21 +69,26 @@ struct WorkspaceSpec: Codable, Sendable, Equatable {
     var customColor: String?
     /// Passed to `TabManager.addWorkspace(workingDirectory:)`.
     var workingDirectory: String?
-    /// Operator-authored workspace-level metadata. Shape matches
-    /// `SessionWorkspaceSnapshot.metadata: [String: String]?` so Phase 1
-    /// restore is a direct assignment. Strings-only per C11-13 alignment.
-    var metadata: [String: String]?
+    /// Authored JSON only. File defaults are discovered from the restored root.
+    var metadata: [String: PersistedJSONValue]?
 
     init(
         title: String? = nil,
         customColor: String? = nil,
         workingDirectory: String? = nil,
-        metadata: [String: String]? = nil
+        metadata: [String: PersistedJSONValue]? = nil
     ) {
         self.title = title
         self.customColor = customColor
         self.workingDirectory = workingDirectory
         self.metadata = metadata
+    }
+
+    /// Source compatibility for callers constructing string-only plans.
+    init(title: String? = nil, customColor: String? = nil,
+         workingDirectory: String? = nil, metadata: [String: String]) {
+        self.init(title: title, customColor: customColor, workingDirectory: workingDirectory,
+                  metadata: metadata.mapValues(PersistedJSONValue.string))
     }
 }
 
@@ -134,6 +139,10 @@ struct PanelSpec: Codable, Sendable, Equatable {
     var linkedAgentSurfacePlanId: String?
     /// Terminal-only declared agent identity used to validate link targets.
     var declaredAgentKind: String?
+    /// C11H-365 (L4): the linked machine a terminal ran on, by hc's machine
+    /// name; nil for this Mac. A terminal with a machine is restored on that
+    /// machine, and no resume line is ever synthesized for it.
+    var machine: String?
 
     init(
         id: String,
@@ -148,7 +157,8 @@ struct PanelSpec: Codable, Sendable, Equatable {
         paneMetadata: [String: PersistedJSONValue]? = nil,
         linkedAgentSurfacePlanId: String? = nil,
         declaredAgentKind: String? = nil,
-        submitCommand: Bool = false
+        submitCommand: Bool = false,
+        machine: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -163,6 +173,7 @@ struct PanelSpec: Codable, Sendable, Equatable {
         self.linkedAgentSurfacePlanId = linkedAgentSurfacePlanId
         self.declaredAgentKind = declaredAgentKind
         self.submitCommand = submitCommand
+        self.machine = machine
     }
 
     // Custom Codable: `submitCommand` is a defaulted non-optional Bool. Swift's
@@ -175,7 +186,7 @@ struct PanelSpec: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, title, description, workingDirectory, command, url
         case filePath, metadata, paneMetadata, submitCommand
-        case linkedAgentPanelPlanId, declaredAgentKind
+        case linkedAgentPanelPlanId, declaredAgentKind, machine
         // C11-337: legacy spelling, accepted forever.
         case linkedAgentSurfacePlanId
     }
@@ -199,6 +210,7 @@ struct PanelSpec: Codable, Sendable, Equatable {
         }
         declaredAgentKind = try c.decodeIfPresent(String.self, forKey: .declaredAgentKind)
         submitCommand = try c.decodeIfPresent(Bool.self, forKey: .submitCommand) ?? false
+        machine = try c.decodeIfPresent(String.self, forKey: .machine)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -217,6 +229,7 @@ struct PanelSpec: Codable, Sendable, Equatable {
         try c.encodeIfPresent(declaredAgentKind, forKey: .declaredAgentKind)
         // Omit when false so pre-existing serialized specs stay byte-identical.
         if submitCommand { try c.encode(submitCommand, forKey: .submitCommand) }
+        try c.encodeIfPresent(machine, forKey: .machine)
     }
 }
 
@@ -440,7 +453,9 @@ struct ApplyFailure: Codable, Sendable, Equatable {
     /// `"mailbox_non_string_value"`, `"unsupported_version"`,
     /// `"working_directory_not_applied"`, `"divider_apply_failed"`,
     /// `"divider_clamped"`, `"per_step_timeout_exceeded"`,
-    /// `"seed_panel_missing"`, `"restart_registry_declined"`.
+    /// `"seed_panel_missing"`, `"restart_registry_declined"`,
+    /// `"machine_link_unusable"` (a terminal leaf on a machine whose routed
+    /// link c11 won't use, refused before any panel exists; C11H-396).
     var code: String
     /// Matches a `StepTiming.step` when possible.
     var step: String

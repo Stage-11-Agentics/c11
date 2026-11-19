@@ -8,7 +8,7 @@ import Foundation
 /// dispatched by the CLI after authentication (the socket layer already gates them).
 ///
 /// All handlers parse/validate off the calling thread; the only main-actor hop is the minimal
-/// state update (`ThemeManager.shared.setActiveTheme(...)` / `forceReloadUserThemes()`).
+/// state update (`ThemeManager.shared.setActiveTheme(name:)` / `forceReloadUserThemes()`).
 /// This keeps the socket focus policy intact — no commands below steal macOS focus.
 public enum ThemeSocketMethods {
 
@@ -32,10 +32,27 @@ public enum ThemeSocketMethods {
     // MARK: - Read-only
 
     public static func list() -> [String: Any] {
-        let descriptors = Self.mainSync { ThemeManager.shared.availableThemes }
-        let lightName = Self.mainSync { ThemeManager.shared.activeLightName }
-        let darkName = Self.mainSync { ThemeManager.shared.activeDarkName }
+        let (descriptors, activeName, pairs): ([ThemeManager.ThemeDescriptor], String, [String: String]) =
+            Self.mainSync {
+                let themes = ThemeManager.shared
+                let descriptors = themes.availableThemes
+                var pairs: [String: String] = [:]
+                for descriptor in descriptors {
+                    let name = descriptor.identity.name
+                    if let pair = themes.theme(named: name)?.pairedTerminalTheme { pairs[name] = pair }
+                }
+                // The theme on screen: a stored name that no longer loads shows stage11.
+                return (descriptors, themes.active.identity.name, pairs)
+            }
+        return listPayload(descriptors: descriptors, active: activeName, pairs: pairs)
+    }
 
+    /// `theme.list`'s reply. `pairs` maps a theme name to the Ghostty theme it pairs with.
+    static func listPayload(
+        descriptors: [ThemeManager.ThemeDescriptor],
+        active activeName: String,
+        pairs: [String: String]
+    ) -> [String: Any] {
         let items: [[String: Any]] = descriptors.map { descriptor in
             var payload: [String: Any] = [
                 "name": descriptor.identity.name,
@@ -51,31 +68,31 @@ public enum ThemeSocketMethods {
             if let warning = descriptor.warning {
                 payload["warning"] = warning
             }
-            payload["is_active_light"] = descriptor.identity.name == lightName
-            payload["is_active_dark"] = descriptor.identity.name == darkName
+            payload["is_active"] = descriptor.identity.name == activeName
+            payload[TerminalThemePairing.pairKey] = TerminalThemePairing.payloadValue(pairs[descriptor.identity.name])
             return payload
         }
 
         return [
             "themes": items,
-            "active_light": lightName,
-            "active_dark": darkName
+            "active": activeName
         ]
     }
 
+    /// The one active theme and its terminal pair. c11 has no day or night slot, so a
+    /// `slot` parameter from an older caller is ignored.
     public static func get(params: [String: Any]) -> [String: Any] {
-        let lightName = Self.mainSync { ThemeManager.shared.activeLightName }
-        let darkName = Self.mainSync { ThemeManager.shared.activeDarkName }
-        let slot = (params["slot"] as? String)?.lowercased()
-
-        switch slot {
-        case "light":
-            return ["name": lightName, "slot": "light"]
-        case "dark":
-            return ["name": darkName, "slot": "dark"]
-        default:
-            return ["active_light": lightName, "active_dark": darkName]
+        let (name, pair): (String, String?) = Self.mainSync {
+            let themes = ThemeManager.shared
+            let name = themes.active.identity.name
+            return (name, themes.active.pairedTerminalTheme)
         }
+        return getPayload(active: name, pair: pair)
+    }
+
+    /// `theme.get`'s reply.
+    static func getPayload(active name: String, pair: String?) -> [String: Any] {
+        ["name": name, TerminalThemePairing.pairKey: TerminalThemePairing.payloadValue(pair)]
     }
 
     public static func paths(pathsOverride: ThemeManager.PathsOverride? = nil) -> [String: Any] {
@@ -173,25 +190,13 @@ public enum ThemeSocketMethods {
         guard let name = params["name"] as? String else {
             return ["ok": false, "error": "missing required parameter: name"]
         }
-        let slot = (params["slot"] as? String)?.lowercased() ?? "both"
-
-        let ok: Bool = Self.mainSync {
-            switch slot {
-            case "light":
-                return ThemeManager.shared.setActiveTheme(name: name, for: .light)
-            case "dark":
-                return ThemeManager.shared.setActiveTheme(name: name, for: .dark)
-            case "both":
-                return ThemeManager.shared.setActiveThemeForBothSlots(name: name)
-            default:
-                return false
-            }
-        }
-
+        // c11 shows one theme day and night; an older caller's `slot` is ignored.
+        let ok: Bool = Self.mainSync { ThemeManager.shared.setActiveTheme(name: name) }
         if !ok {
-            return ["ok": false, "error": "unknown theme or invalid slot"]
+            return ["ok": false, "error": "unknown theme: \(name)"]
         }
-        return ["ok": true, "name": name, "slot": slot]
+        let pair = Self.mainSync { ThemeManager.shared.theme(named: name)?.pairedTerminalTheme }
+        return ["ok": true, "name": name, TerminalThemePairing.pairKey: TerminalThemePairing.payloadValue(pair)]
     }
 
     public static func clearActive() -> [String: Any] {

@@ -61,10 +61,14 @@ extension CMUXCLI {
         if let s = value as? String { return s }
         if let n = value as? NSNumber {
             // NSNumber can wrap Bool — distinguish.
+            #if os(macOS)
             let cfType = CFNumberGetType(n)
             if CFGetTypeID(n) == CFBooleanGetTypeID() || cfType == .charType {
                 return n.boolValue ? "true" : "false"
             }
+            #else
+            if String(cString: n.objCType) == "c" { return n.boolValue ? "true" : "false" }
+            #endif
             return n.stringValue
         }
         if JSONSerialization.isValidJSONObject(value),

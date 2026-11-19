@@ -33,7 +33,7 @@ Per-PR live mode (current Mode A) is good for *discovery* — surfacing big arch
 
 2. **Operator review** — table surfaces, classifier holds. Operator responds with `go` / `redirect <pr#> <new-action>` / `ask <pr#>` / `walk` / `defer <pr#>`.
 
-3. **Implementation fleet** — for each ATTEMPT entry, spawn one parallel implementation agent. Each works on its own worktree from a pool (`/Users/atin/Projects/Stage11/code/c11-import-1` ... `c11-import-N`), each on its own `upstream/pr-<#>` branch, each opens its own c11 PR. Don't collide.
+3. **Implementation fleet** — for each ATTEMPT entry, spawn one parallel implementation agent. Each works on its own worktree from a pool (`~/src/c11-import-1` ... `c11-import-N`), each on its own `upstream/pr-<#>` branch, each opens its own c11 PR. Don't collide.
 
 4. **CUA pass (serialized)** — the one part that **cannot** parallelize: CUA drives the live desktop, only one cursor. After all N implementations land, validate them in turn.
 
@@ -62,7 +62,7 @@ PR #2916 (`Add --layout to workspace.create for programmatic split layouts`) was
 
 This is the **first real test of the compatibility-bias principle** — should be documented in the playbook as an example once landed.
 
-The in-flight note for #2916 lives at `upstream-triage/in-flight/pr-2916.md` in the catchup worktree (`/Users/atin/Projects/Stage11/code/c11-cmux-catchup`). Verify it captures the operator's call before resuming.
+The in-flight note for #2916 lives at `upstream-triage/in-flight/pr-2916.md` in the catchup worktree (`~/src/c11-cmux-catchup`). Verify it captures the operator's call before resuming.
 
 ## How to resume — concrete first move
 
@@ -72,15 +72,15 @@ When you sit back down to this:
 
 2. **Verify state:**
    ```bash
-   cd /Users/atin/Projects/Stage11/code/c11-cmux-catchup
+   cd ~/src/c11-cmux-catchup
    git status              # should be clean or have only the in-flight note for #2916
    git log --oneline -3
    ```
    If the catchup worktree is gone or dirty, recreate from main:
    ```bash
-   cd /Users/atin/Projects/Stage11/code/c11
+   cd ~/src/c11
    git fetch origin
-   git worktree add /Users/atin/Projects/Stage11/code/c11-cmux-catchup -b catchup/sweep-2026-04-15 origin/main
+   git worktree add ~/src/c11-cmux-catchup -b catchup/sweep-2026-04-15 origin/main
    ```
 
 3. **Encode the three pending pieces** (in this order, each as its own commit on c11/main):
@@ -134,6 +134,6 @@ cab67713  upstream-triage: probe checks HEAD == origin/main, not branch name
 ## Workspace state at handoff
 
 - c11 workspace named "CMUX Catch-Up" (workspace:7) — close at will.
-- `/Users/atin/Projects/Stage11/code/c11-cmux-catchup` worktree on `catchup/sweep-2026-04-15` branch — preserve if you want to keep the in-flight #2916 note; safe to delete and recreate.
+- `~/src/c11-cmux-catchup` worktree on `catchup/sweep-2026-04-15` branch — preserve if you want to keep the in-flight #2916 note; safe to delete and recreate.
 - `/tmp/c11-probe-3405` worktree on `triage-base` — disposable; safe to delete.
 - `feat/openai-cua-runner` branch on origin restored to `75455042` (matches the PR #100 source) — leave alone.

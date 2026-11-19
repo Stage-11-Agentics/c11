@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Copy c11's Sparkle EdDSA private key (keychain account c11mux) from this Mac's
-# login keychain into the dedicated release keychain on Atlas, so a release can
-# sign its appcast on Atlas while this Mac sleeps (C11-542).
+# login keychain into the dedicated release keychain on the signing host
+# (C11_SIGNING_HOST, from the environment or ~/.config/c11/dev-hosts), so a
+# release can sign its appcast there while this Mac sleeps (C11-542).
 #
 # OPERATOR-RUN, ONCE, on the Mac that holds the key:
 #   scripts/move-sparkle-key-to-atlas.sh
@@ -9,24 +10,26 @@
 # key: click Allow. Nothing else asks for input.
 #
 # AGENTS run only:
-#   scripts/move-sparkle-key-to-atlas.sh --check       # match | missing | mismatch on Atlas
+#   scripts/move-sparkle-key-to-atlas.sh --check       # match | missing | mismatch on the signing host
 #   scripts/move-sparkle-key-to-atlas.sh --self-test
-# which pushes a throwaway key through the same Atlas path (store, read back in
+# which pushes a throwaway key through the same signing-host path (store, read back in
 # a non-GUI ssh session, derive and compare the public key, delete) and never
 # touches the real key.
 #
 # The key is never in an argv, printed, logged, committed or left on disk. It
 # leaves this Mac as ssh stdin and reaches the keychain through `security -i`'s
-# stdin on Atlas. The temporary export lives in a 0700 directory removed on
-# every exit path. Atlas's keychain is unlocked through its launchd lease for
+# stdin on the signing host. The temporary export lives in a 0700 directory removed on
+# every exit path. The signing host's keychain is unlocked through its launchd lease for
 # the store and locked again by the same trap.
 set -euo pipefail
 
-HOST="${C11_SIGNING_HOST:-atlas}"
+# shellcheck source=dev-hosts.sh
+source "$(dirname "$0")/dev-hosts.sh"
+HOST="$(c11_dev_host C11_SIGNING_HOST)" || exit 2
 ACCOUNT="${C11_SPARKLE_ACCOUNT:-c11mux}"
 SERVICE="https://sparkle-project.org"
 EXPECTED_PUB="naW2p9Qixxto6tuJUi+NgmJU8EOx2vdRazhi0jwBALk="
-# Atlas paths, as Atlas's shell expands them.
+# Signing-host paths, as its shell expands them.
 REMOTE_KEYCHAIN="${C11_SIGNING_KEYCHAIN:-\$HOME/Library/Keychains/acetate-release.keychain-db}"
 REMOTE_HELPER="${C11_SIGNING_KEYCHAIN_HELPER:-\$HOME/.acetate-release/bin/release_keychain.sh}"
 
@@ -46,7 +49,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/c11-sparkle-move.XXXXXX")"
 chmod 700 "$TMP"
 trap '/bin/rm -rf "$TMP"' EXIT
 
-# Runs on Atlas. Reads the key from stdin, stores it, reads it back in this
+# Runs on the signing host. Reads the key from stdin, stores it, reads it back in this
 # non-GUI session, derives the public key and prints only "match" or
 # "mismatch". With a fourth argument "delete", removes the item afterwards.
 # shellcheck disable=SC2016
@@ -146,11 +149,11 @@ if [[ "$SELF_TEST" -eq 1 ]]; then
   exit 0
 fi
 
-# Safe to run twice: when Atlas already holds the right key, stop before the dialog.
-state="$(remote /dev/null "$ACCOUNT" "$EXPECTED_PUB" check)" || die "could not reach Atlas's signing keychain on $HOST"
+# Safe to run twice: when the signing host already holds the right key, stop before the dialog.
+state="$(remote /dev/null "$ACCOUNT" "$EXPECTED_PUB" check)" || die "could not reach the signing keychain on $HOST"
 if [[ "$CHECK_ONLY" -eq 1 ]]; then echo "$state"; exit 0; fi
 if [[ "$state" == "match" ]]; then
-  record "Already done: Atlas holds the $ACCOUNT key that matches every installed c11. Nothing changed."
+  record "Already done: $HOST holds the $ACCOUNT key that matches every installed c11. Nothing changed."
   exit 0
 fi
 
@@ -158,6 +161,6 @@ BIN="$("$ROOT/scripts/fetch-sparkle-tools.sh")" || die "could not fetch Sparkle 
 echo "Exporting the $ACCOUNT Sparkle key from this Mac's keychain (macOS may ask: click Allow)..."
 "$BIN/generate_keys" --account "$ACCOUNT" -x "$TMP/key" >/dev/null || die "generate_keys could not export the $ACCOUNT key"
 [[ -s "$TMP/key" ]] || die "export produced no key"
-echo "Storing it in Atlas's release keychain and checking it there..."
-result="$(remote "$TMP/key" "$ACCOUNT" "$EXPECTED_PUB")" || die "Atlas did not confirm the key: ${result:-no output}"
-record "Done: Atlas holds the $ACCOUNT key ($result with the public key every installed c11 trusts). The local export is deleted."
+echo "Storing it in $HOST's release keychain and checking it there..."
+result="$(remote "$TMP/key" "$ACCOUNT" "$EXPECTED_PUB")" || die "$HOST did not confirm the key: ${result:-no output}"
+record "Done: $HOST holds the $ACCOUNT key ($result with the public key every installed c11 trusts). The local export is deleted."

@@ -190,6 +190,208 @@ final class PrivateFileWriterTests: XCTestCase {
         }
     }
 
+    // MARK: - C11H-364: private folders, store writes, operator copies
+
+    func testEnsurePrivateDirectoryCreatesMissingFolders0700() throws {
+        let previousUmask = umask(mode_t(0o022))
+        defer { _ = umask(previousUmask) }
+        let folder = sandbox.appendingPathComponent("a/b/store", isDirectory: true)
+
+        try PrivateFileWriter.ensurePrivateDirectory(at: folder)
+
+        XCTAssertEqual(try permissions(folder), 0o700)
+        XCTAssertEqual(try permissions(sandbox.appendingPathComponent("a/b", isDirectory: true)), 0o700)
+    }
+
+    func testEnsurePrivateDirectoryTightensExisting0755Folder() throws {
+        let folder = sandbox.appendingPathComponent("loose", isDirectory: true)
+        XCTAssertEqual(mkdir(folder.path, mode_t(0o755)), 0)
+        XCTAssertEqual(chmod(folder.path, mode_t(0o755)), 0)
+
+        try PrivateFileWriter.ensurePrivateDirectory(at: folder)
+
+        XCTAssertEqual(try permissions(folder), 0o700)
+    }
+
+    func testEnsurePrivateDirectoryRefusesSymlinkAndLeavesItsTarget() throws {
+        let target = sandbox.appendingPathComponent("elsewhere", isDirectory: true)
+        XCTAssertEqual(mkdir(target.path, mode_t(0o755)), 0)
+        XCTAssertEqual(chmod(target.path, mode_t(0o755)), 0)
+        let link = sandbox.appendingPathComponent("store", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        XCTAssertThrowsError(try PrivateFileWriter.ensurePrivateDirectory(at: link)) { error in
+            XCTAssertEqual(error as? PrivateFileWriter.DirectoryError, .unsafeDirectory(link.standardizedFileURL.path))
+        }
+        XCTAssertEqual(try permissions(target), 0o755)
+    }
+
+    func testEnsurePrivateDirectoryFollowsOwnLinkOnlyWhenAllowed() throws {
+        // c11's migration leaves ~/.c11-snapshots as the user's own link to
+        // the folder it adopted; a home store may follow it.
+        let target = sandbox.appendingPathComponent("adopted", isDirectory: true)
+        XCTAssertEqual(mkdir(target.path, mode_t(0o755)), 0)
+        XCTAssertEqual(chmod(target.path, mode_t(0o755)), 0)
+        let link = sandbox.appendingPathComponent("alias", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        try PrivateFileWriter.ensurePrivateDirectory(at: link, allowOwnSymlink: true)
+
+        XCTAssertEqual(try permissions(target), 0o700)
+        // A link another account owns is never followed.
+        XCTAssertThrowsError(try PrivateFileWriter.ensurePrivateDirectory(
+            at: link, expectedOwner: getuid() &+ 1, allowOwnSymlink: true))
+    }
+
+    func testEnsurePrivateDirectoryRefusesFolderAnotherUserOwns() throws {
+        let folder = sandbox.appendingPathComponent("theirs", isDirectory: true)
+        XCTAssertEqual(mkdir(folder.path, mode_t(0o777)), 0)
+        XCTAssertEqual(chmod(folder.path, mode_t(0o777)), 0)
+
+        // Another account's folder, as seen from this uid: the owner differs.
+        XCTAssertThrowsError(try PrivateFileWriter.ensurePrivateDirectory(at: folder, expectedOwner: getuid() &+ 1))
+        XCTAssertEqual(try permissions(folder), 0o777)
+    }
+
+    func testWritePrivateStoreTightensFolderAndWrites0600() throws {
+        let previousUmask = umask(mode_t(0o022))
+        defer { _ = umask(previousUmask) }
+        let folder = sandbox.appendingPathComponent(".cmuxterm", isDirectory: true)
+        XCTAssertEqual(mkdir(folder.path, mode_t(0o755)), 0)
+        let store = folder.appendingPathComponent("tmux-compat-store.json")
+        try Data("old".utf8).write(to: store)
+        XCTAssertEqual(chmod(store.path, mode_t(0o644)), 0)
+
+        try PrivateFileWriter.writePrivateStore(Data("captured pane text".utf8), to: store)
+
+        XCTAssertEqual(try permissions(folder), 0o700)
+        XCTAssertEqual(try permissions(store), 0o600)
+        XCTAssertEqual(try Data(contentsOf: store), Data("captured pane text".utf8))
+    }
+
+    func testWritePrivateStoreOverrideFolderKeepsItsModeButFileIs0600() throws {
+        let previousUmask = umask(mode_t(0o022))
+        defer { _ = umask(previousUmask) }
+        let folder = sandbox.appendingPathComponent("override", isDirectory: true)
+        XCTAssertEqual(mkdir(folder.path, mode_t(0o755)), 0)
+        let store = folder.appendingPathComponent("claude-hook-sessions.json")
+
+        try PrivateFileWriter.writePrivateStore(Data("{}".utf8), to: store, tightenFolder: false)
+
+        XCTAssertEqual(try permissions(folder), 0o755)
+        XCTAssertEqual(try permissions(store), 0o600)
+    }
+
+    func testWriteCopyRefusesNonEmptyFolderAndDeletesNothing() throws {
+        let out = sandbox.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: out.appendingPathComponent("nested"), withIntermediateDirectories: true)
+        let keep = out.appendingPathComponent("nested/keep.txt")
+        try Data("operator file".utf8).write(to: keep)
+
+        XCTAssertThrowsError(try PrivateFileWriter.writeCopy(Data("snapshot".utf8), to: out)) { error in
+            XCTAssertEqual(error as? PrivateFileWriter.CopyError, .destinationIsNonEmptyDirectory(out.path))
+        }
+        XCTAssertEqual(try Data(contentsOf: keep), Data("operator file".utf8))
+        XCTAssertEqual(try fileType(out), mode_t(S_IFDIR))
+    }
+
+    func testWriteCopyReplacesEmptyFolderWith0600File() throws {
+        let previousUmask = umask(mode_t(0o022))
+        defer { _ = umask(previousUmask) }
+        let out = sandbox.appendingPathComponent("empty", isDirectory: true)
+        XCTAssertEqual(mkdir(out.path, mode_t(0o755)), 0)
+
+        try PrivateFileWriter.writeCopy(Data("snapshot".utf8), to: out)
+
+        XCTAssertEqual(try fileType(out), mode_t(S_IFREG))
+        XCTAssertEqual(try permissions(out), 0o600)
+    }
+
+    func testWriteCopyCreatesMissingParents0700AndKeepsExistingParentMode() throws {
+        let previousUmask = umask(mode_t(0o022))
+        defer { _ = umask(previousUmask) }
+        let existing = sandbox.appendingPathComponent("Desktop", isDirectory: true)
+        XCTAssertEqual(mkdir(existing.path, mode_t(0o755)), 0)
+        XCTAssertEqual(chmod(existing.path, mode_t(0o755)), 0)
+        let out = existing.appendingPathComponent("new/session.json")
+
+        try PrivateFileWriter.writeCopy(Data("snapshot".utf8), to: out)
+
+        XCTAssertEqual(try permissions(existing), 0o755)
+        XCTAssertEqual(try permissions(existing.appendingPathComponent("new", isDirectory: true)), 0o700)
+        XCTAssertEqual(try permissions(out), 0o600)
+    }
+
+    func testWriteCopyReplacesSymlinkWithoutWritingThroughIt() throws {
+        let target = sandbox.appendingPathComponent("victim.txt")
+        try Data("victim".utf8).write(to: target)
+        let out = sandbox.appendingPathComponent("session.json")
+        try FileManager.default.createSymbolicLink(at: out, withDestinationURL: target)
+
+        try PrivateFileWriter.writeCopy(Data("snapshot".utf8), to: out)
+
+        XCTAssertEqual(try fileType(out), mode_t(S_IFREG))
+        XCTAssertEqual(try Data(contentsOf: target), Data("victim".utf8))
+    }
+
+    // The CLI prints `Error: \(error)`; the refusal must read as its sentence.
+    func testDirectoryErrorPrintsItsLocalizedText() throws {
+        let notAFolder = sandbox.appendingPathComponent(".cmuxterm")
+        try Data("a file".utf8).write(to: notAFolder)
+
+        XCTAssertThrowsError(try PrivateFileWriter.writePrivateStore(
+            Data("{}".utf8), to: notAFolder.appendingPathComponent("tmux-compat-store.json"))) { error in
+            XCTAssertTrue(error is PrivateFileWriter.DirectoryError, "\(type(of: error))")
+            XCTAssertEqual(String(describing: error), error.localizedDescription)
+            XCTAssertTrue("\(error)".contains(notAFolder.path), "\(error)")
+        }
+    }
+
+    func testCopyErrorPrintsItsLocalizedText() throws {
+        let out = sandbox.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: out.appendingPathComponent("keep.txt"))
+
+        XCTAssertThrowsError(try PrivateFileWriter.writeCopy(Data("snapshot".utf8), to: out)) { error in
+            XCTAssertTrue(error is PrivateFileWriter.CopyError, "\(type(of: error))")
+            XCTAssertEqual(String(describing: error), error.localizedDescription)
+            XCTAssertTrue("\(error)".contains(out.path), "\(error)")
+        }
+    }
+
+    func testTightenExistingStoreRootsSetsRootsTo0700AndCreatesNothing() throws {
+        let home = sandbox.appendingPathComponent("home", isDirectory: true)
+        XCTAssertEqual(mkdir(home.path, mode_t(0o755)), 0)
+        // mkdir honours the process umask, which this test does not own.
+        XCTAssertEqual(chmod(home.path, mode_t(0o755)), 0)
+        let roots = PrivateFileWriter.storeRoots(home: home)
+        let snapshots = home.appendingPathComponent(".c11-snapshots", isDirectory: true)
+        let cmuxterm = home.appendingPathComponent(".cmuxterm", isDirectory: true)
+        let hookState = home.appendingPathComponent(".c11", isDirectory: true)
+        XCTAssertEqual(roots.map(\.lastPathComponent), [".c11-snapshots", ".cmuxterm", ".c11"])
+        // A 1.x store: a 0755 folder holding a 0644 file.
+        XCTAssertEqual(mkdir(snapshots.path, mode_t(0o755)), 0)
+        XCTAssertEqual(chmod(snapshots.path, mode_t(0o755)), 0)
+        let old = snapshots.appendingPathComponent("01OLD.json")
+        try Data("{}".utf8).write(to: old)
+        XCTAssertEqual(chmod(old.path, mode_t(0o644)), 0)
+        // A store that is the user's link to a 0755 folder is not followed.
+        let adopted = home.appendingPathComponent("adopted", isDirectory: true)
+        XCTAssertEqual(mkdir(adopted.path, mode_t(0o755)), 0)
+        XCTAssertEqual(chmod(adopted.path, mode_t(0o755)), 0)
+        try FileManager.default.createSymbolicLink(at: hookState, withDestinationURL: adopted)
+
+        let changed = PrivateFileWriter.tightenExistingStoreRoots(roots)
+
+        XCTAssertEqual(changed.map(\.lastPathComponent), [".c11-snapshots"])
+        XCTAssertEqual(try permissions(snapshots), 0o700)
+        XCTAssertEqual(try permissions(old), 0o644, "files inside are left alone")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cmuxterm.path), "a missing root stays missing")
+        XCTAssertEqual(try fileType(hookState), mode_t(S_IFLNK))
+        XCTAssertEqual(try permissions(adopted), 0o755)
+        XCTAssertEqual(try permissions(home), 0o755)
+    }
+
     private func makeACL(_ text: String, on url: URL) throws -> acl_t {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/chmod")

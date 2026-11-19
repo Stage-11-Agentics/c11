@@ -273,6 +273,11 @@ final class CmuxWebView: WKWebView {
     /// Set by the owning `BrowserPanel`: stamps the tab sheet's "touched" clock.
     /// A plain closure call that stores a `Date`; nothing is published.
     var onOperatorInput: (() -> Void)?
+    /// C11H-377: the address-bar focus tracker's handler for this web view.
+    var focusStateHandler: BrowserFocusStateHandler?
+    /// C11H-377: a show viewer's web view. Its context menu offers no
+    /// download, so no route reaches a download or a Save panel.
+    var refusesDownloads = false
 
     override func keyDown(with event: NSEvent) {
         panelLinkActivation?.record(event)
@@ -308,9 +313,16 @@ final class CmuxWebView: WKWebView {
     // clicks when a WKWebView is underneath — AppKit delivers the click to the deepest
     // NSView (WKWebView), not to sibling SwiftUI overlays. Notify the panel system so
     // bonsplit focus tracks which pane the user clicked in.
+    /// C11H-228: an Option-click taken by point and say never reaches the page.
+    private var swallowsNextMouseUp = false
+
     override func mouseDown(with event: NSEvent) {
         panelLinkActivation?.invalidate()
         onOperatorInput?()
+        if event.modifierFlags.contains(.option), ShowPointAndSayController.shared.click(webView: self, event: event) {
+            swallowsNextMouseUp = true
+            return
+        }
 #if DEBUG
         let windowNumber = window?.windowNumber ?? -1
         let firstResponderType = window?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
@@ -327,6 +339,10 @@ final class CmuxWebView: WKWebView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if swallowsNextMouseUp {
+            swallowsNextMouseUp = false
+            return
+        }
         panelLinkActivation?.record(event)
         super.mouseUp(with: event)
     }
@@ -999,9 +1015,36 @@ final class CmuxWebView: WKWebView {
         findLinkURLAtPoint(point, completion: completion)
     }
 
-    private func canOpenInDefaultBrowser(_ url: URL) -> Bool {
+    /// C11H-395: the show viewer this web view displays, set only on a show
+    /// viewer's web view (`attachShowViewer`). Its `c11-show:` links open as
+    /// the files it serves there.
+    private(set) weak var showViewer: ShowViewerSession?
+    /// Set for good once a show viewer is attached, so a web view whose
+    /// session is gone still knows it showed one.
+    private(set) var displaysShowViewer = false
+
+    func attachShowViewer(_ session: ShowViewerSession) {
+        showViewer = session
+        displaysShowViewer = true
+    }
+
+    /// C11H-395: a linked machine's viewer (C11H-353) hands no link to the
+    /// default browser; its menu has no Open Link in Default Browser.
+    /// C11H-399: the session decides, and it fails closed: a show viewer's
+    /// web view whose session is gone refuses too. Ordinary web views never do.
+    var refusesDefaultBrowser: Bool {
+        guard displaysShowViewer else { return false }
+        return !(showViewer?.handsOutDefaultBrowser ?? false)
+    }
+
+    /// What Open Link in Default Browser hands macOS for `url`: an http(s)
+    /// link as itself, a show viewer's `c11-show:` link as the file it serves,
+    /// and nothing else. macOS is never handed a `c11-show:` address.
+    func defaultBrowserTarget(forLink url: URL) -> URL? {
+        guard !refusesDefaultBrowser else { return nil }
+        if ShowPageGuard.isShowScheme(url) { return showViewer?.defaultBrowserFile(url) }
         let scheme = url.scheme?.lowercased() ?? ""
-        return scheme == "http" || scheme == "https"
+        return scheme == "http" || scheme == "https" ? url : nil
     }
 
     private func openContextMenuLinkInDefaultBrowser(_ url: URL) {
@@ -1129,7 +1172,8 @@ final class CmuxWebView: WKWebView {
                         return
                     }
                     do {
-                        try parsed.data.write(to: destURL, options: .atomic)
+                        // C11H-365 (L14): marked for Gatekeeper like any download.
+                        try ContextMenuDataSave.write(parsed.data, to: destURL, pageURL: menuPageURL)
                         self.debugContextDownload(
                             "browser.ctxdl.data trace=\(traceID) stage=saveSuccess path=\(destURL.path)"
                         )
@@ -1425,6 +1469,11 @@ final class CmuxWebView: WKWebView {
         debugContextDownload(
             "browser.ctxdl.menu open itemCount=\(menu.items.count) point=(\(Int(lastContextMenuPoint.x)),\(Int(lastContextMenuPoint.y)))"
         )
+        if refusesDownloads {
+            for item in menu.items where isDownloadImageMenuItem(item) || isDownloadLinkedFileMenuItem(item) {
+                menu.removeItem(item)
+            }
+        }
         var openLinkInsertionIndex: Int?
         var hasDefaultBrowserOpenLinkItem = false
 
@@ -1491,7 +1540,7 @@ final class CmuxWebView: WKWebView {
             }
         }
 
-        if let openLinkInsertionIndex, !hasDefaultBrowserOpenLinkItem {
+        if let openLinkInsertionIndex, !hasDefaultBrowserOpenLinkItem, !refusesDefaultBrowser {
             let item = NSMenuItem(
                 title: String(localized: "browser.contextMenu.openLinkInDefaultBrowser", defaultValue: "Open Link in Default Browser"),
                 action: #selector(contextMenuOpenLinkInDefaultBrowser(_:)),
@@ -1544,8 +1593,10 @@ final class CmuxWebView: WKWebView {
         _ = sender
         let point = lastContextMenuPoint
         resolveContextMenuLinkURL(at: point) { [weak self] url in
-            guard let self, let url, !self.refuseContextMenuPanelLink(url), self.canOpenInDefaultBrowser(url) else { return }
-            self.openContextMenuLinkInDefaultBrowser(url)
+            guard let self, let url, !self.refuseContextMenuPanelLink(url) else { return }
+            // C11H-395: a link that maps to nothing opens nothing; say so.
+            guard let target = self.defaultBrowserTarget(forLink: url) else { NSSound.beep(); return }
+            self.openContextMenuLinkInDefaultBrowser(target)
         }
     }
 
@@ -1842,5 +1893,45 @@ final class CmuxWebView: WKWebView {
                 }
             }
         }
+    }
+}
+
+/// C11H-365 (L14): a context-menu save of a `data:` link or image writes the
+/// page's own bytes, not a download WebKit made, so c11 marks the file the way
+/// a browser download is marked (`com.apple.quarantine`, type web download)
+/// and Gatekeeper checks it when it is opened. A file that can't be marked is
+/// removed and the save fails, so no unmarked copy is left behind.
+enum ContextMenuDataSave {
+    typealias Mark = (URL, [String: Any]) throws -> Void
+
+    static func write(_ data: Data, to destination: URL, pageURL: URL?, mark: Mark = setQuarantine) throws {
+        try data.write(to: destination, options: .atomic)
+        do {
+            try mark(destination, quarantineProperties(pageURL: pageURL))
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
+    }
+
+    /// The page the menu opened on is recorded as the origin when it is a web
+    /// page; a `data:` URL itself is never recorded.
+    static func quarantineProperties(pageURL: URL?) -> [String: Any] {
+        var properties: [String: Any] = [
+            kLSQuarantineAgentNameKey as String: "c11",
+            kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload as String,
+            kLSQuarantineTimeStampKey as String: Date(),
+        ]
+        if let pageURL, ["http", "https"].contains(pageURL.scheme?.lowercased() ?? "") {
+            properties[kLSQuarantineOriginURLKey as String] = pageURL
+        }
+        return properties
+    }
+
+    static func setQuarantine(_ url: URL, _ properties: [String: Any]) throws {
+        var values = URLResourceValues()
+        values.quarantineProperties = properties
+        var target = url
+        try target.setResourceValues(values)
     }
 }

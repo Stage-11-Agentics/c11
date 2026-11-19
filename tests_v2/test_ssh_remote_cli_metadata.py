@@ -164,7 +164,7 @@ def main() -> int:
             _must("-o StrictHostKeyChecking=accept-new" in ssh_command, f"ssh command prefix mismatch: {ssh_command!r}")
             _must("-o ControlMaster=auto" in ssh_command, f"ssh command should opt into connection reuse: {ssh_command!r}")
             _must("-o ControlPersist=600" in ssh_command, f"ssh command should keep master alive for reuse: {ssh_command!r}")
-            _must("ControlPath=/tmp/cmux-ssh-" in ssh_command, f"ssh command should use shared control path template: {ssh_command!r}")
+            _must("/c11-ssh/" in _extract_control_path(ssh_command) and not _extract_control_path(ssh_command).startswith("/tmp/"), f"ssh command should keep its master socket in the per-user c11-ssh folder: {ssh_command!r}")
             _must("RemoteCommand=" in ssh_command, f"SSH should bootstrap the interactive shell: {ssh_command!r}")
             _must("-R " not in ssh_command, f"SSH should not create a reverse command forward: {ssh_command!r}")
 
@@ -270,7 +270,7 @@ def main() -> int:
 
             _must(bool(workspace_id_without_name), f"cmux ssh without --name should still create workspace: {payload2}")
             _must(
-                "ControlPath=/tmp/cmux-ssh-" in ssh_command_without_name,
+                "/c11-ssh/" in _extract_control_path(ssh_command_without_name),
                 f"cmux ssh without --name should still include control path defaults: {ssh_command_without_name!r}",
             )
             _must(

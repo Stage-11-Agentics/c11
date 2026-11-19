@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Five-minute real OpenCode proof in an existing Atlas sandbox guest.
+"""Five-minute real OpenCode proof in an existing build-host sandbox guest.
 Stages only the host executable and a credential-free synthetic provider.
 The caller owns sandbox-up/down. --disable-native-control must fail the native
 assertion while leaving the guarded operator draft untouched.

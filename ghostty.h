@@ -505,6 +505,10 @@ typedef struct {
   ghostty_surface_io_mode_e io_mode;
   ghostty_io_write_cb io_write_cb;
   void* io_write_userdata;
+  // Kitty graphics accept only directly transmitted data; file,
+  // temporary-file and shared-memory media are refused before any
+  // file-system access, with one reply for every path.
+  bool kitty_graphics_direct_only;
 } ghostty_surface_config_s;
 
 typedef struct {
@@ -1090,6 +1094,30 @@ void ghostty_config_load_default_files(ghostty_config_t);
 void ghostty_config_load_recursive_files(ghostty_config_t);
 void ghostty_config_finalize(ghostty_config_t);
 bool ghostty_config_get(ghostty_config_t, void*, const char*, uintptr_t);
+// Read-only visitation of the selected loaded command and explicit config env.
+// Call on the config's owning thread; do not mutate/free it during visitation.
+// All strings are borrowed only for the callback. No process environment is read.
+// With initial=true, initial-command wins when set, otherwise command is used.
+// Command callbacks precede env callbacks. NONE emits once with count=0; SHELL
+// emits once with count=1; DIRECT emits each argv element in order (or once with
+// count=0 for an empty argv). Empty entries have a valid pointer and length zero.
+// Env contains only surviving explicit env entries, with no inherited defaults.
+// False means a callback was null and neither callback was invoked.
+typedef enum {
+  GHOSTTY_CONFIG_COMMAND_NONE = 0,
+  GHOSTTY_CONFIG_COMMAND_SHELL = 1,
+  GHOSTTY_CONFIG_COMMAND_DIRECT = 2,
+} ghostty_config_command_kind_e;
+typedef void (*ghostty_config_command_cb)(void*, ghostty_config_command_kind_e,
+                                         uintptr_t, uintptr_t, const char*, uintptr_t);
+typedef void (*ghostty_config_env_cb)(void*, const char*, uintptr_t,
+                                     const char*, uintptr_t);
+bool ghostty_config_visit_launch(ghostty_config_t, bool, ghostty_config_command_cb,
+                                ghostty_config_env_cb, void*);
+typedef void (*ghostty_config_launch_field_cb)(void*, const char*, uintptr_t,
+                                              const char*, uintptr_t);
+bool ghostty_config_visit_launch_fields(ghostty_config_t,
+                                       ghostty_config_launch_field_cb, void*);
 ghostty_input_trigger_s ghostty_config_trigger(ghostty_config_t,
                                                const char*,
                                                uintptr_t);
@@ -1120,6 +1148,10 @@ void ghostty_surface_free(ghostty_surface_t);
 void* ghostty_surface_userdata(ghostty_surface_t);
 ghostty_app_t ghostty_surface_app(ghostty_surface_t);
 ghostty_surface_config_s ghostty_surface_inherited_config(ghostty_surface_t, ghostty_surface_context_e);
+// Call on the app thread with a live surface. Returns its current requested
+// font size in points, independent of display scale or pending renderer work.
+// Does not access font faces or take the font-grid lock. Returns 0 for null.
+float ghostty_surface_font_size(ghostty_surface_t);
 void ghostty_surface_update_config(ghostty_surface_t, ghostty_config_t);
 bool ghostty_surface_needs_confirm_quit(ghostty_surface_t);
 bool ghostty_surface_process_exited(ghostty_surface_t);
@@ -1139,6 +1171,23 @@ bool ghostty_surface_key_is_binding(ghostty_surface_t,
                                     ghostty_input_key_s,
                                     ghostty_binding_flags_e*);
 void ghostty_surface_text(ghostty_surface_t, const char*, uintptr_t);
+void ghostty_surface_process_output(ghostty_surface_t, const char*, uintptr_t);
+typedef void (*ghostty_encoded_paste_cb)(void*, const char*, uintptr_t,
+                                       const char*, uintptr_t);
+
+bool ghostty_surface_encode_paste(ghostty_surface_t, const char*, uintptr_t, bool, uintptr_t, ghostty_encoded_paste_cb, void*);
+// Manual IO only, on the owning thread. Capture one canonical key event and
+// optionally its release (release_after_press requires a press event). Applies
+// configured modifier remapping and keyboard/linefeed modes from one snapshot.
+// Does not run bindings, change selection/key state, queue IO, or send bytes.
+// byte_limit must cover 16*strlen(event.text) + 512 (NULL text has length zero).
+// Overflow or insufficient capacity returns false without a callback. Success
+// invokes callback exactly once, synchronously outside terminal locks; bytes
+// are borrowed only during that call. An encoded event may have zero bytes.
+typedef void (*ghostty_encoded_key_cb)(void*, const uint8_t*, uintptr_t);
+bool ghostty_surface_encode_key(ghostty_surface_t, ghostty_input_key_s, bool,
+                                uintptr_t, ghostty_encoded_key_cb, void*);
+
 void ghostty_surface_preedit(ghostty_surface_t, const char*, uintptr_t);
 bool ghostty_surface_mouse_captured(ghostty_surface_t);
 bool ghostty_surface_mouse_button(ghostty_surface_t,
@@ -1149,6 +1198,11 @@ void ghostty_surface_mouse_pos(ghostty_surface_t,
                                double,
                                double,
                                ghostty_input_mods_e);
+uintptr_t ghostty_surface_hyperlink_at(ghostty_surface_t,
+                                       double,
+                                       double,
+                                       char*,
+                                       uintptr_t);
 void ghostty_surface_mouse_scroll(ghostty_surface_t,
                                   double,
                                   double,
@@ -1164,6 +1218,8 @@ void ghostty_surface_split_resize(ghostty_surface_t,
                                   uint16_t);
 void ghostty_surface_split_equalize(ghostty_surface_t);
 bool ghostty_surface_binding_action(ghostty_surface_t, const char*, uintptr_t);
+// Borrow only while the read/confirm request is live, before completion.
+bool ghostty_clipboard_request_get_type(const void*, ghostty_clipboard_request_e*);
 void ghostty_surface_complete_clipboard_request(ghostty_surface_t,
                                                 const char*,
                                                 void*,

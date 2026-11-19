@@ -2,7 +2,7 @@
 
 > **Draft, 2026-10-01.** The lead finalizes this after the last ticket writer, the bug audits and the bug tickets are done.
 >
-> **Launch:** planning mode runs on **Hyperion's c11** (Atin, 2026-10-01: planning is API-bound and light). Use a new workspace named "c11 1.0" rooted at `~/Projects/Stage11/code/c11`: `c11 launch-agent --type claude-code --model opus --new-workspace`. Build mode moves to Atlas once `atlas-prep.md` shows Xcode, Codex 0.159, Grok and current c11 all verified. Paste everything below the line as the prompt.
+> **Launch:** planning mode runs on **the laptop's c11** (Atin, 2026-10-01: planning is API-bound and light). Use a new workspace named "c11 1.0" rooted at `~/src/c11`: `c11 launch-agent --type claude-code --model opus --new-workspace`. Build mode moves to the build host once `atlas-prep.md` shows Xcode, Codex 0.159, Grok and current c11 all verified. Paste everything below the line as the prompt.
 
 ---
 
@@ -41,9 +41,9 @@ Atin expects this to move fast: **the whole release, close to overnight.** Plan 
 - **Plan review:** only the journal spec (C11-272) gets an independent plan review before code, one cycle. Re-review only if the review changes the architecture.
 - **One Merge Captain** lands PRs on `main` after the exact-head gates pass. **Never cut a release** without Atin's named approval.
 
-## Planning mode: start now, before Atlas can build
+## Planning mode: start now, before the build host can build
 
-You start on Hyperion. Atlas is being prepared: Xcode, Codex 0.159, Grok and a current c11 (see `atlas-prep.md`). Until C11-216 lands, run in **planning mode**. Atin asked for this explicitly, so pre-planning ahead of dependencies is allowed here.
+You start on the laptop. The build host is being prepared: Xcode, Codex 0.159, Grok and a current c11 (see `atlas-prep.md`). Until C11-216 lands, run in **planning mode**. Atin asked for this explicitly, so pre-planning ahead of dependencies is allowed here.
 
 1. Owners write plans for every P0 and P1 ticket that doesn't depend on an unmerged design.
 2. Codex writes the journal spec (C11-272), and Grok runs its plan review.
@@ -52,14 +52,14 @@ You start on Hyperion. Atlas is being prepared: Xcode, Codex 0.159, Grok and a c
    - the hook fixture corpus (C11-271), captured from production c11 sessions;
    - doctrine and skill text;
    - ticket clarifications.
-5. **No builds and no tests on Hyperion.** Build-dependent implementation waits.
+5. **No builds and no tests on the laptop.** Build-dependent implementation waits.
 6. Keep each plan with its ticket (`lattice plan`).
 
-When `atlas-prep.md` shows Atlas ready, land C11-216 first, then switch to build mode. **The run stays on Hyperion.** Only builds go to Atlas, via C11-216's remote-build path: copy the checkout over, build under Atlas's lock, copy the app back. c11 has barely been used on Atlas (Atin, 2026-10-01). So Atlas runs c11 only for the soak, on tagged builds, which also makes the soak the first real test of c11 on Atlas.
+When `atlas-prep.md` shows the build host ready, land C11-216 first, then switch to build mode. **The run stays on the laptop.** Only builds go to the build host, via C11-216's remote-build path: copy the checkout over, build under the build host's lock, copy the app back. c11 has barely been used on the build host (Atin, 2026-10-01). So the build host runs c11 only for the soak, on tagged builds, which also makes the soak the first real test of c11 on the build host.
 
 ## Hard rules
 
-1. **Builds and tests run on Atlas,** through the scripts that take the build lock. One build at a time per machine. Launch tagged builds only, with `C11_QA_LAUNCH` set.
+1. **Builds and tests run on the build host,** through the scripts that take the build lock. One build at a time per machine. Launch tagged builds only, with `C11_QA_LAUNCH` set.
 2. **Doctrine.** c11 never writes into agent tools' config (`~/.claude/settings.json`, `~/.codex/*`, `~/.config/opencode/*`). Hooks go per process at launch only. Read `PHILOSOPHY.md` and the "unopinionated about the terminal" section of `CLAUDE.md`. The journal workstream amends that doctrine in a bounded way (C11-278); nothing else does.
 3. **C11-188 guardrail.**
    - Every acceptance criterion names an observed incident, a fixture or an analytics question.
@@ -84,10 +84,10 @@ When `atlas-prep.md` shows Atlas ready, land C11-216 first, then switch to build
 
 | Wave | Contents | Gate to the next wave |
 |---|---|---|
-| 0, planning mode (now) | Plans for P0 and P1 tickets. Journal spec and its review. Soak harness design. Fixture corpus. | Atlas builds a tagged artifact (C11-216). |
+| 0, planning mode (now) | Plans for P0 and P1 tickets. Journal spec and its review. Soak harness design. Fixture corpus. | the build host builds a tagged artifact (C11-216). |
 | 1, foundation | C11-216. Soak baseline on current `main`. Attention bug batch (C11-263). CLI batch. Ghostty patch set with the 08-25 freeze root. Hang and crash bug tickets. | The baseline is published, fixtures replay, Ghostty CI is green. |
 | 2, core | Journal store and fold (C11-273), then producers and consumers. Feed (C11-264 to C11-266). Workspace groups model, sidebar, validation (C11-259 to C11-261). Focus history (C11-262). Analytics (C11-277). Remaining bug tracks. | One integrated build shows bypass questions, completions and flags correctly and jumps to the right tab. Groups pass at 50+ workspaces. |
-| 3, sign-off | **One integrated sign-off build plus a numbered script for Atin.** His pass is the merge approval. Overnight 40-agent soak on Atlas, with budgets fixed in advance. Locale pass. Release engineering. | Atin's named approval of the exact signed artifact. |
+| 3, sign-off | **One integrated sign-off build plus a numbered script for Atin.** His pass is the merge approval. Overnight 40-agent soak on the build host, with budgets fixed in advance. Locale pass. Release engineering. | Atin's named approval of the exact signed artifact. |
 
 If a core gate fails, drop P2 first, then hold the release. Never ship around a failing gate.
 

@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import { subscribeNativeMailbox, doorbellText } from '../Resources/bin/mailbox-native.mjs';
 
 // Real Unix-socket traffic and reconnect timers, with no harness or credentials.
 async function fixture(t, receive) {
-  const root = await mkdtemp('/tmp/c11-native-test-');
+  const base = process.env.C11_TEST_ROOT || `${process.env.HOME}/c11h-run/evidence/C11H-8`;
+  await mkdir(base, { recursive: true });
+  const root = await mkdtemp(`${base}/native-`);
   const socketPath = root + '/mail.sock';
   const sockets = new Set();
   const subscriptions = [];
@@ -38,9 +40,10 @@ async function fixture(t, receive) {
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
   const subscribe = (sessionID, deliver = () => {}, onSettled, onDeliveryPending, onDeliverySettled,
-    { route = 'pi_extension', supportsAttemptReplay = false } = {}) => {
+    { route = 'pi_extension', supportsAttemptReplay = false, expectedUid } = {}) => {
     const stop = subscribeNativeMailbox({ socketPath, panelID: 'same-panel', agentPID: process.pid,
-      sessionID, route, supportsAttemptReplay, deliver, onSettled, onDeliveryPending, onDeliverySettled });
+      sessionID, route, supportsAttemptReplay, deliver, onSettled, onDeliveryPending, onDeliverySettled,
+      ...(expectedUid === undefined ? {} : { expectedUid }) });
     stops.push(stop);
     return stop;
   };
@@ -56,6 +59,18 @@ async function until(predicate) {
     await delay(10);
   }
 }
+
+test('a socket another user owns is never connected to (C11H-364)', { timeout: 5000 }, async t => {
+  const { subscribe, subscriptions } = await fixture(t, () => {});
+  // The fixture's socket is ours; expecting another uid stands in for a
+  // listener another account planted at the same name.
+  subscribe('foreign', () => {}, undefined, undefined, undefined, { expectedUid: process.getuid() + 1 });
+  await delay(600);
+  assert.equal(subscriptions.length, 0);
+  subscribe('own');
+  await until(() => subscriptions.length === 1);
+  assert.equal(subscriptions[0].frame.params.session_id, 'own');
+});
 
 test('explicit subscribe rejection stops reconnecting', { timeout: 5000 }, async t => {
   const f = await fixture(t, (socket, frame) => {
@@ -82,6 +97,23 @@ test('not_ready retries after session restore and later delivers', { timeout: 50
   });
   f.subscribe('restoring', text => delivered.push(text));
   await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'after-restore'));
+  assert.equal(f.subscriptions.length, 2);
+  assert.deepEqual(delivered, [doorbellText]);
+});
+
+test('hc inventory pending retries birth, then subscribes without consuming mail', { timeout: 5000 }, async t => {
+  const delivered = [];
+  const f = await fixture(t, (socket, frame, subscriptions) => {
+    if (frame.method !== 'mailbox.native.subscribe') return;
+    if (subscriptions.length === 1) {
+      send(socket, { ok: false, error: { code: 'hc_inventory_pending', data: { retryable: true, pre_dispatch: true } } });
+      return;
+    }
+    accept(socket);
+    send(socket, { type: 'deliver', delivery_id: 'after-birth', text: doorbellText });
+  });
+  f.subscribe('born', text => delivered.push(text));
+  await until(() => f.frames.some(frame => frame.type === 'accepted' && frame.delivery_id === 'after-birth'));
   assert.equal(f.subscriptions.length, 2);
   assert.deepEqual(delivered, [doorbellText]);
 });

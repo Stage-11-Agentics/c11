@@ -265,6 +265,8 @@ final class EventEmitter {
         let resume = newPolicy.enabled && newPolicy.analyticsEnabled && (!previous.enabled || !previous.analyticsEnabled)
         let active = appActive, locked = screenLocked, asleep = sleeping
         lock.unlock()
+        // C11H-320: fleet's in-memory final messages follow the switch at once.
+        if previous.keepText && !newPolicy.keepText { AgentReportStore.shared.scrubText() }
         if resume {
             if let active { emit(active ? .appActivated : .appDeactivated, payload: ["snapshot": true]) }
             if let locked { emit(locked ? .screenLocked : .screenUnlocked, payload: ["snapshot": true]) }
@@ -334,7 +336,9 @@ final class EventEmitter {
         panel: UUID,
         kind: String,
         title: String? = nil,
-        parentPanelId: UUID? = nil
+        parentPanelId: UUID? = nil,
+        origin: PanelOrigin = .unknown,
+        originDetail: String? = nil
     ) {
         var payload: [String: Any] = ["kind": kind]
         if let title { payload["title"] = title }
@@ -343,6 +347,8 @@ final class EventEmitter {
         } else {
             payload["parent_panel_id"] = NSNull()
         }
+        payload["origin"] = origin.rawValue
+        payload["origin_detail"] = originDetail ?? NSNull()
         emit(.surfaceCreated, workspace: workspace, surface: panel, payload: payload)
     }
 
@@ -406,6 +412,36 @@ final class EventEmitter {
         emit(.workspaceReordered, payload: payload)
     }
 
+    /// c11 (C11H-197): the set of displays, their arrangement, resolution or
+    /// visible frames changed. `displays` is the full `display.list` shape.
+    func emitDisplayChanged(displays: [[String: Any]], added: [String], removed: [String]) {
+        emit(.displayChanged, payload: ["displays": displays, "added": added, "removed": removed])
+    }
+
+    /// c11 (C11H-197): a main window settled in a new frame or on a new display.
+    /// `source` is `socket` for `window.move`, else `app` (the operator, macOS).
+    func emitWindowMoved(windowId: UUID, payload: [String: Any]) {
+        var body = payload
+        body["window_id"] = windowId.uuidString
+        emit(.windowMoved, payload: body)
+    }
+
+    /// c11 (C11H-235): a signal c11 did not send ended a local terminal's
+    /// root. One per ended terminal and panel, from whichever path found the
+    /// end: `live` (its attachment saw it), `hidden` (a panel whose terminal
+    /// was never attached this launch) or `launch` (found ended at startup).
+    @discardableResult
+    func emitTerminalEndedBySignal(workspace: UUID, panel: UUID, payload: [String: Any]) -> Bool {
+        emit(.terminalEndedBySignal, workspace: workspace, surface: panel, payload: payload)
+    }
+
+    /// c11 (C11H-235): several kept outside-signal ends together, the one
+    /// alarm for them (its flag is the one system notification).
+    @discardableResult
+    func emitTerminalMassSignalEnd(payload: [String: Any]) -> Bool {
+        emit(.terminalMassSignalEnd, payload: payload)
+    }
+
     func emitWorkspaceSelected(previous: UUID?, selected: UUID, cause: String = "menu", method: String? = nil, callerPanelId: UUID? = nil) {
         var payload: [String: Any] = [:]
         if let previous { payload["previous"] = previous.uuidString }
@@ -451,6 +487,87 @@ final class EventEmitter {
         emit(.metadataChanged, workspace: workspace, surface: surface, payload: payload)
     }
 
+    /// Workspace changes include key names for opaque JSON, not copies of
+    /// arbitrary agent payloads in activity history. Canonical display values
+    /// are bounded by their write validators. There is no synthetic panel ID.
+    func emitWorkspaceMetadataChanged(
+        workspace: UUID,
+        changedKeys: [String],
+        removedKeys: [String],
+        source: String,
+        revision: UInt64,
+        current: [String: Any],
+        prior: [String: Any]
+    ) {
+        let canonical = WorkspaceMetadataKey.canonical
+        let changed = Set(changedKeys).union(removedKeys)
+        func recorded(_ values: [String: Any]) -> [String: Any] {
+            values.filter {
+                guard canonical.contains($0.key), changed.contains($0.key),
+                      let normalized = try? WorkspaceMetadataValidator.normalizedValue(key: $0.key, value: $0.value) else { return false }
+                // Validate the bytes actually recorded, not only a trimmed
+                // identity; old snapshots may contain unbounded padding.
+                return $0.key != WorkspaceMetadataKey.captain
+                    || ($0.value as? String) == (normalized as? String)
+            }
+        }
+        // Legacy snapshot migration preserves even formerly unbounded strings;
+        // those stay readable from metadata without bypassing event value caps.
+        let values = recorded(current)
+        let oldValues = recorded(prior)
+        emit(.metadataChanged, workspace: workspace, payload: [
+            EventEnvelope.PayloadKey.scope: "workspace",
+            "changed_keys": changedKeys.sorted(),
+            "removed_keys": removedKeys.sorted(),
+            "source": source,
+            "revision": revision,
+            "values": values,
+            "prior": oldValues,
+        ])
+    }
+
+    /// The same record for a workspace group's object. A group is not a
+    /// workspace, so the envelope carries no workspace ID; `group_id` names it.
+    func emitWorkspaceGroupMetadataChanged(
+        group: UUID,
+        changedKeys: [String],
+        removedKeys: [String],
+        source: String,
+        revision: UInt64,
+        current: [String: Any],
+        prior: [String: Any]
+    ) {
+        let payload = Self.workspaceGroupMetadataPayload(group: group, changedKeys: changedKeys,
+            removedKeys: removedKeys, source: source, revision: revision, current: current, prior: prior)
+        emit(.metadataChanged, payload: payload)
+    }
+
+    static func workspaceGroupMetadataPayload(
+        group: UUID, changedKeys: [String], removedKeys: [String], source: String,
+        revision: UInt64, current: [String: Any], prior: [String: Any]
+    ) -> [String: Any] {
+        let canonical = WorkspaceMetadataKey.canonical
+        let changed = Set(changedKeys).union(removedKeys)
+        func recorded(_ values: [String: Any]) -> [String: Any] {
+            values.filter {
+                guard canonical.contains($0.key), changed.contains($0.key),
+                      let normalized = try? WorkspaceMetadataValidator.normalizedValue(key: $0.key, value: $0.value) else { return false }
+                return $0.key != WorkspaceMetadataKey.captain
+                    || ($0.value as? String) == (normalized as? String)
+            }
+        }
+        return [
+            EventEnvelope.PayloadKey.scope: "workspace_group",
+            "group_id": group.uuidString,
+            "changed_keys": changedKeys.sorted(),
+            "removed_keys": removedKeys.sorted(),
+            "source": source,
+            "revision": revision,
+            "values": recorded(current),
+            "prior": recorded(prior),
+        ]
+    }
+
     func emitWaiting(entered: Bool, workspace workspaceId: UUID, surface: UUID?) {
         emit(entered ? .waitingEntered : .waitingLeft, workspace: workspaceId, surface: surface)
     }
@@ -493,15 +610,46 @@ final class EventEmitter {
         )
     }
 
+    /// C11H-246: one record per flag notification change. The payload is
+    /// built by `FlagNotificationRecord` (action, cause, identifier, level,
+    /// sound, source_host); it carries no reason text.
+    func emitNotificationFlag(workspace: UUID?, surface: UUID?, payload: [String: Any]) {
+        emit(.notificationFlag, workspace: workspace, surface: surface, payload: payload)
+    }
+
+    /// C11H-319: a routine system notification, built by
+    /// `RoutineNotificationRecord` (action, channel, identifier, sound
+    /// fields); it carries no title or body.
+    func emitNotificationRoutine(workspace: UUID?, surface: UUID?, payload: [String: Any]) {
+        emit(.notificationRoutine, workspace: workspace, surface: surface, payload: payload)
+    }
+
     func emitFlagLowered(
         workspace: UUID,
         surface: UUID,
         by actor: PanelAttentionActor,
-        answer: String? = nil
+        answer: String? = nil,
+        cause: PanelFlagLowerCause? = nil
     ) {
+        emit(
+            .flagLowered,
+            workspace: workspace,
+            surface: surface,
+            payload: Self.flagLoweredPayload(by: actor, answer: answer, cause: cause)
+        )
+    }
+
+    /// `cause` appears only when c11 lowered the flag on its own (C11H-330),
+    /// so an operator's or agent's lower keeps its existing shape.
+    static func flagLoweredPayload(
+        by actor: PanelAttentionActor,
+        answer: String?,
+        cause: PanelFlagLowerCause?
+    ) -> [String: Any] {
         var payload: [String: Any] = ["by": actor.rawValue]
         if let answer { payload["answer"] = answer }
-        emit(.flagLowered, workspace: workspace, surface: surface, payload: payload)
+        if let cause { payload["cause"] = cause.rawValue }
+        return payload
     }
 
     func emitFlagSuppressed(
@@ -611,10 +759,15 @@ final class EventEmitter {
         replyTo: String? = nil,
         inReplyTo: String? = nil,
         urgent: Bool? = nil,
-        textRecorded: Bool? = nil
+        textRecorded: Bool? = nil,
+        relayMachine: String? = nil
     ) -> Bool {
         let recordedBody = Self.recordedText(body)
         var payload: [String: Any] = ["id": id, "from": from, "body": recordedBody.value, "bytes": recordedBody.bytes]
+        // C11H-360: the linked machine relayed mail came from, so history
+        // names it even when no envelope copy is left (`via` is the
+        // delivery route in `mailbox.delivered`).
+        if let relayMachine { payload["relay_machine"] = relayMachine }
         if let to { payload["to"] = to }
         if let bodyRef { payload["body_ref"] = bodyRef }
         if let topic { payload["topic"] = topic }
@@ -757,6 +910,34 @@ final class EventEmitter {
         )
     }
 
+    /// C11H-98: a resume was refused before any decision because an agent is
+    /// still running in the panel's terminal (hc reports it in the
+    /// foreground). Its own event, so a log shows the refusal and not only the
+    /// absence of a decision. `stage` is where the check ran: `plan`,
+    /// `scrape`, `hc-restore`, `hc-recovery`, `submit` or `cli`.
+    @discardableResult
+    func emitConversationResumeRefused(
+        workspace: UUID,
+        surface: UUID,
+        agentKind: String,
+        conversationKind: String?,
+        conversationId: String?,
+        stage: String
+    ) -> Bool {
+        emit(
+            .conversationResumeRefused,
+            workspace: workspace,
+            surface: surface,
+            payload: [
+                "reason_code": "live-agent",
+                "agent_kind": agentKind,
+                "kind": conversationKind ?? NSNull(),
+                "conversation_id": conversationId ?? NSNull(),
+                "stage": stage,
+            ]
+        )
+    }
+
     /// One per launch, when the startup conversation audit has finished every
     /// phase (C11-468). Durations are milliseconds.
     @discardableResult
@@ -811,10 +992,23 @@ final class EventEmitter {
         return emit(.hangPrecursor, payload: payload)
     }
 
+    /// C11H-238: one ended main-thread stall. Emitted from the hang
+    /// monitor's watchdog thread; `emit` is any-thread and never waits on main.
+    @discardableResult
+    func emitMainStall(_ stall: MainThreadStall) -> Bool {
+        emit(.mainStall, payload: stall.payload)
+    }
+
     // MARK: - Core
 
     func emitSupervisor(_ type: EventEnvelope.EventType, workspace: UUID, panel: UUID, payload: [String: Any]) {
         guard EventEnvelope.supervisorTypes.contains(type.rawValue) else { return }
+        emit(type, workspace: workspace, surface: panel, payload: payload)
+    }
+
+    /// C11H-320 PR 3: one agent edge (`agent.blocked` …). Codes and times only.
+    func emitAgent(_ type: EventEnvelope.EventType, workspace: UUID, panel: UUID, payload: [String: Any]) {
+        guard EventEnvelope.agentTypes.contains(type.rawValue) else { return }
         emit(type, workspace: workspace, surface: panel, payload: payload)
     }
 

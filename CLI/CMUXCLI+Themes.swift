@@ -15,10 +15,8 @@ import Sentry
 
 extension CMUXCLI {
 
-    static let cmuxThemeOverrideBundleIdentifier = "com.stage11.c11"
-    static let cmuxThemesBlockStart = "# cmux themes start"
-    static let cmuxThemesBlockEnd = "# cmux themes end"
-    static let cmuxThemesReloadNotificationName = "com.stage11.c11.themes.reload-config"
+    static let cmuxThemeOverrideBundleIdentifier = C11Identity.releaseBundleIdentifier
+    static let cmuxThemesReloadNotificationName = C11Identity.themesReloadNotificationName
 
     struct ThemeSelection {
         let rawValue: String?
@@ -308,30 +306,54 @@ extension CMUXCLI {
             darkTheme = try darkOpt.map { try validatedThemeName($0, availableThemes: availableThemes) } ?? current.dark
         }
 
-        guard let rawThemeValue = encodedThemeValue(light: lightTheme, dark: darkTheme) else {
-            throw CLIError(message: "terminal-theme set requires at least one terminal theme")
-        }
-
-        let configURL = try writeManagedThemeOverride(rawThemeValue: rawThemeValue)
-        let reloadStatus = reloadThemesIfPossible()
+        let written = try applyTerminalThemes(light: lightTheme, dark: darkTheme)
 
         if jsonOutput {
-            let payload: [String: Any] = [
-                "ok": true,
-                "light": lightTheme ?? NSNull(),
-                "dark": darkTheme ?? NSNull(),
-                "raw_value": rawThemeValue,
-                "config_path": configURL.path,
-                "reload_requested": reloadStatus.requested,
-                "reload_target_bundle_id": reloadStatus.targetBundleIdentifier
-            ]
+            var payload = written.payload
+            payload["ok"] = true
             print(jsonString(payload))
             return
         }
 
-        print(
-            "OK terminal_light=\(lightTheme ?? "-") terminal_dark=\(darkTheme ?? "-") ghostty_config=\(configURL.path) reload=requested"
-        )
+        print("OK \(written.summary)")
+    }
+
+    struct TerminalThemeWrite {
+        let light: String?
+        let dark: String?
+        let rawValue: String
+        let configURL: URL
+        let reload: ThemeReloadStatus
+
+        var payload: [String: Any] {
+            [
+                "light": light ?? NSNull(),
+                "dark": dark ?? NSNull(),
+                "raw_value": rawValue,
+                "config_path": configURL.path,
+                "reload_requested": reload.requested,
+                "reload_target_bundle_id": reload.targetBundleIdentifier
+            ]
+        }
+
+        var summary: String {
+            "terminal_light=\(light ?? "-") terminal_dark=\(dark ?? "-") ghostty_config=\(configURL.path) reload=\(reload.requested ? "requested" : "skipped")"
+        }
+    }
+
+    /// The terminal-theme path: c11's managed override in its own `config.ghostty`
+    /// (never the operator's Ghostty config), then a reload request to the app.
+    func applyTerminalThemes(light: String?, dark: String?) throws -> TerminalThemeWrite {
+        // Ghostty accepts a light/dark pair only with both halves: a slot with no theme
+        // takes the other's.
+        let light = light ?? dark
+        let dark = dark ?? light
+        guard let rawThemeValue = encodedThemeValue(light: light, dark: dark) else {
+            throw CLIError(message: "terminal-theme set requires at least one terminal theme")
+        }
+        let configURL = try writeManagedThemeOverride(rawThemeValue: rawThemeValue)
+        let reloadStatus = reloadThemesIfPossible()
+        return TerminalThemeWrite(light: light, dark: dark, rawValue: rawThemeValue, configURL: configURL, reload: reloadStatus)
     }
 
     func runThemesClear(jsonOutput: Bool) throws {
@@ -423,9 +445,9 @@ extension CMUXCLI {
         case let (lightTheme?, darkTheme?):
             return "light:\(lightTheme),dark:\(darkTheme)"
         case let (lightTheme?, nil):
-            return "light:\(lightTheme)"
+            return "light:\(lightTheme),dark:\(lightTheme)"
         case let (nil, darkTheme?):
-            return "dark:\(darkTheme)"
+            return "light:\(darkTheme),dark:\(darkTheme)"
         case (nil, nil):
             return nil
         }
@@ -464,7 +486,18 @@ extension CMUXCLI {
             return
         }
         let sub = first.lowercased()
-        let rest = Array(commandArgs.dropFirst())
+        var rest = Array(commandArgs.dropFirst())
+
+        // c11 (C11H-197): `--window <ref>` (or the global --window) targets one
+        // window's own theme instead of the app theme.
+        if ["get", "set", "clear"].contains(sub) {
+            let (windowRaw, withoutWindow) = parseOption(rest, name: "--window")
+            if let target = windowRaw ?? client.scopedWindow {
+                try runWindowTheme(sub: sub, args: withoutWindow, windowRaw: target, client: client, jsonOutput: jsonOutput)
+                return
+            }
+            rest = withoutWindow
+        }
 
         switch sub {
         case "list":
@@ -502,10 +535,7 @@ extension CMUXCLI {
             print(jsonString(response))
             return
         }
-        let activeLight = response["active_light"] as? String ?? "?"
-        let activeDark = response["active_dark"] as? String ?? "?"
-        print("Chrome light: \(activeLight)")
-        print("Chrome dark:  \(activeDark)")
+        print("Theme: \(response["active"] as? String ?? "?")")
         print("")
 
         let items = response["themes"] as? [[String: Any]] ?? []
@@ -513,63 +543,190 @@ extension CMUXCLI {
             let name = item["name"] as? String ?? "?"
             let source = item["source"] as? String ?? "?"
             let display = item["display_name"] as? String ?? name
-            let tags = [
-                (item["is_active_light"] as? Bool == true) ? "light" : nil,
-                (item["is_active_dark"] as? Bool == true) ? "dark" : nil,
-                source
-            ].compactMap { $0 }
+            let tags = [(item["is_active"] as? Bool == true) ? "active" : nil, source].compactMap { $0 }
             let tagText = tags.isEmpty ? "" : " [\(tags.joined(separator: ","))]"
-            print("\(name)  \"\(display)\"\(tagText)")
+            let pairText = TerminalThemePairing.normalized(item[TerminalThemePairing.pairKey] as? String)
+                .map { "  terminal: \($0)" } ?? ""
+            print("\(name)  \"\(display)\"\(tagText)\(pairText)")
             if let warning = item["warning"] as? String {
                 print("  warning: \(warning)")
             }
         }
     }
 
-    func runUiThemesGet(args: [String], client: SocketClient, jsonOutput: Bool) throws {
-        let (slotOpt, rest) = parseOption(args, name: "--slot")
-        guard rest.isEmpty else {
-            throw CLIError(message: "themes get: unexpected argument '\(rest[0])'")
+    /// c11 shows one theme day and night; `--slot` from the day/night design is refused
+    /// with the command that replaces it.
+    func refuseRetiredThemeSlot(_ args: [String], command: String) throws {
+        if args.contains(where: { $0 == "--slot" || $0.hasPrefix("--slot=") }) {
+            throw CLIError(message: "themes \(command): c11 has one theme for day and night, so --slot is gone. Run 'c11 themes \(command)\(command == "set" ? " <name>" : "")'.")
         }
-        var params: [String: Any] = [:]
-        if let slot = slotOpt { params["slot"] = slot }
-        let response = try client.sendV2(method: "theme.get", params: params)
+    }
+
+    func runUiThemesGet(args: [String], client: SocketClient, jsonOutput: Bool) throws {
+        try refuseRetiredThemeSlot(args, command: "get")
+        guard args.isEmpty else {
+            throw CLIError(message: "themes get: unexpected argument '\(args[0])'")
+        }
+        let response = try client.sendV2(method: "theme.get")
         if jsonOutput {
             print(jsonString(response))
             return
         }
-        if let name = response["name"] as? String, let slot = response["slot"] as? String {
-            print("Chrome \(slot): \(name)")
-        } else {
-            let l = response["active_light"] as? String ?? "?"
-            let d = response["active_dark"] as? String ?? "?"
-            print("Chrome light: \(l)")
-            print("Chrome dark:  \(d)")
-        }
+        let pair = TerminalThemePairing.normalized(response[TerminalThemePairing.pairKey] as? String)
+            .map { " (terminal: \($0))" } ?? ""
+        print("Theme: \(response["name"] as? String ?? "?")\(pair)")
     }
 
     func runUiThemesSet(args: [String], client: SocketClient, jsonOutput: Bool) throws {
-        let (slotOpt, rest) = parseOption(args, name: "--slot")
+        try refuseRetiredThemeSlot(args, command: "set")
+        let (rest, withTerminal) = parseFlag(args, name: "--with-terminal")
         let positional = rest.filter { !$0.hasPrefix("-") }
         guard let name = positional.first else {
-            throw CLIError(message: "themes set requires a c11 chrome theme name. Example: c11 themes set phosphor --slot both")
+            throw CLIError(message: "themes set requires a theme name. Example: c11 themes set nocturne")
         }
         if positional.count > 1 {
             throw CLIError(message: "themes set: unexpected extra argument '\(positional[1])'")
         }
-        var params: [String: Any] = ["name": name]
-        if let slot = slotOpt { params["slot"] = slot }
-        let response = try client.sendV2(method: "theme.set_active", params: params)
-        if jsonOutput {
-            print(jsonString(response))
+        // The pair is read and checked before anything changes, so a broken pair changes nothing.
+        let pair: String? = try withTerminal ? pairedTerminalThemeBeforeSet(name: name, client: client) : nil
+        let response = try client.sendV2(method: "theme.set_active", params: ["name": name])
+        let ok = (response["ok"] as? Bool) == true
+        guard withTerminal, ok else {
+            if jsonOutput {
+                print(jsonString(response))
+                return
+            }
+            guard ok else {
+                let msg = response["error"] as? String ?? "failed"
+                throw CLIError(message: "themes set failed: \(msg)")
+            }
+            print("OK theme=\(name)")
             return
         }
-        if (response["ok"] as? Bool) == true {
-            let applied = response["slot"] as? String ?? "both"
-            print("OK set \(applied)=\(name)")
-        } else {
-            let msg = response["error"] as? String ?? "failed"
-            throw CLIError(message: "themes set failed: \(msg)")
+
+        func output(_ terminal: [String: Any]) {
+            var payload = response
+            payload["terminal"] = terminal
+            print(jsonString(payload))
+        }
+        guard let pair else {
+            if jsonOutput {
+                output(terminalThemePayload(pair: nil, written: nil, reason: "no_pair"))
+                return
+            }
+            print("OK theme=\(name) terminal=unchanged (\(name) names no paired terminal theme)")
+            return
+        }
+        // The chrome is already set: a failure from here says so, and what it left alone.
+        func fail(_ reason: String, _ detail: String) throws -> Never {
+            if jsonOutput {
+                output(terminalThemePayload(pair: pair, written: nil, reason: reason, error: detail))
+            }
+            throw CLIError(message: "themes set --with-terminal: theme set to \(name); terminal unchanged: \(detail)")
+        }
+        let written: TerminalThemeWrite
+        do {
+            written = try applyTerminalThemes(light: pair, dark: pair)
+        } catch {
+            try fail("write_failed", (error as? CLIError)?.message ?? error.localizedDescription)
+        }
+        if jsonOutput {
+            output(terminalThemePayload(pair: pair, written: written, reason: nil))
+            return
+        }
+        print("OK theme=\(name) \(written.summary)")
+    }
+
+    /// The `terminal` object of `themes set --with-terminal --json`: the same keys in every
+    /// case, null where a case has no value.
+    func terminalThemePayload(pair: String?, written: TerminalThemeWrite?, reason: String?, error: String? = nil) -> [String: Any] {
+        [
+            "applied": written != nil,
+            "reason": reason ?? NSNull(),
+            "error": error ?? NSNull(),
+            "paired_theme": TerminalThemePairing.payloadValue(pair),
+            "light": written?.light ?? NSNull(),
+            "dark": written?.dark ?? NSNull(),
+            "raw_value": written?.rawValue ?? NSNull(),
+            "config_path": written?.configURL.path ?? NSNull(),
+            "reload_requested": written?.reload.requested ?? false,
+            "reload_target_bundle_id": written?.reload.targetBundleIdentifier ?? NSNull()
+        ]
+    }
+
+    /// The installed Ghostty theme `name` pairs with, or nil when it names none. Throws,
+    /// changing nothing, when the app cannot report pairs or the pair is not installed.
+    func pairedTerminalThemeBeforeSet(name: String, client: SocketClient) throws -> String? {
+        let listing = try client.sendV2(method: "theme.list")
+        guard listing["ok"] as? Bool != false, let items = listing["themes"] as? [[String: Any]] else {
+            let detail = listing["error"] as? String ?? "the app returned no theme list"
+            throw CLIError(message: "themes set --with-terminal: could not read terminal pairs (\(detail)); nothing changed")
+        }
+        // An unknown name is left to theme.set_active, which reports it.
+        guard let item = items.first(where: { $0["name"] as? String == name }) else { return nil }
+        switch TerminalThemePairing.lookup(in: item) {
+        case .unsupported:
+            throw CLIError(message: "themes set --with-terminal: this c11 app does not report terminal pairs; nothing changed")
+        case .unpaired:
+            return nil
+        case let .paired(pair):
+            guard let installed = try? validatedThemeName(pair, availableThemes: availableThemeNames()) else {
+                throw CLIError(message: "themes set --with-terminal: '\(name)' pairs with terminal theme '\(pair)', which is not installed; nothing changed. Run 'c11 terminal-theme list'.")
+            }
+            return installed
+        }
+    }
+
+    /// c11 (C11H-197): `themes get|set|clear --window <ref>`. A window theme
+    /// repaints that window's chrome; terminal colours stay app-wide.
+    func runWindowTheme(sub: String, args: [String], windowRaw: String, client: SocketClient, jsonOutput: Bool) throws {
+        try refuseRetiredThemeSlot(args, command: sub)
+        let windowId = try resolveWindowTarget(windowRaw, client: client)
+        switch sub {
+        case "get":
+            guard args.isEmpty else { throw CLIError(message: "themes get: unexpected argument '\(args[0])'") }
+            let response = try client.sendV2(method: "theme.get", params: ["window_id": windowId])
+            if jsonOutput {
+                print(jsonString(response))
+                return
+            }
+            let window = response["window"] as? [String: Any] ?? [:]
+            let effective = window["effective"] as? String ?? "?"
+            let ref = window["ref"] as? String ?? windowId
+            let source = window["override"] is String ? "window theme" : "app theme"
+            print("Theme: \(effective) (\(source), window \(ref))")
+        case "set", "clear":
+            var name: String?
+            if sub == "set" {
+                let (rest, withTerminal) = parseFlag(args, name: "--with-terminal")
+                if withTerminal {
+                    throw CLIError(message: "themes set --window: terminal colours are app-wide, so --with-terminal cannot target one window; nothing changed")
+                }
+                let positional = rest.filter { !$0.hasPrefix("-") }
+                guard let first = positional.first else {
+                    throw CLIError(message: "themes set requires a theme name. Example: c11 themes set nocturne --window window:2")
+                }
+                if positional.count > 1 { throw CLIError(message: "themes set: unexpected extra argument '\(positional[1])'") }
+                name = first
+            } else if let extra = args.first {
+                throw CLIError(message: "themes clear: unexpected argument '\(extra)'")
+            }
+            let response = try CapabilityFeatures.current.dispatch(.windowTheme) {
+                try client.sendV2(method: "window.set_theme", params: ["window_id": windowId, "theme": name ?? NSNull()])
+            }
+            if jsonOutput {
+                print(jsonString(response))
+                return
+            }
+            let ref = response["window_ref"] as? String ?? windowId
+            if let name {
+                print("OK window=\(ref) theme=\(name)")
+            } else {
+                let effective = (response["theme"] as? [String: Any])?["effective"] as? String ?? "app"
+                print("OK window=\(ref) theme cleared (follows the app theme, \(effective))")
+            }
+        default:
+            throw CLIError(message: "Unknown themes subcommand: \(sub)")
         }
     }
 

@@ -1,11 +1,14 @@
 import Darwin
 import Foundation
 
-/// Process observation only: `started` proves neither TUI readiness nor prompt ingestion.
-/// Invoke off-main. Native inspection has no subprocess, AppKit, or screen parsing.
+/// Process observation, then one bounded screen look. `started` proves neither TUI readiness
+/// nor prompt ingestion; `waiting_dialog` says the TUI is up but stopped on a chooser that a
+/// blind Return would answer (Claude's folder-trust check highlights `No, exit`).
+/// Invoke off-main. Native inspection has no subprocess or AppKit; the screen look is injected.
 enum AgentStartupProbe {
     enum Status: String, Equatable {
         case started, pending, failed
+        case waitingDialog = "waiting_dialog"
     }
 
     struct Evidence: Equatable {
@@ -17,6 +20,53 @@ enum AgentStartupProbe {
     struct Result: Equatable {
         let status: Status
         let process: Evidence?
+        /// Which chooser is up (`trust`, `plan`), only with `waiting_dialog`.
+        var dialog: String? = nil
+    }
+
+    /// What the screen look reports: the prompt state and, for a dialog, which one.
+    struct ScreenRead: Equatable {
+        let state: PromptInputState
+        let dialog: PromptChooserKind?
+    }
+
+    /// Only Claude Code draws a chooser the classifier recognizes. Other kinds keep
+    /// the process-only result and pay no wait.
+    static func looksAtScreen(kind: String) -> Bool { kind == "claude-code" }
+
+    /// After a `started` result, look at the screen until it shows a chooser (report
+    /// `waiting_dialog`), a composer (the TUI is ready: keep `started`), or the settle
+    /// window ends (keep `started`: the process is up and the screen is not yet drawn).
+    /// An unreadable screen never changes the result.
+    static func settleOnScreen(
+        _ result: Result,
+        expectedKind: String,
+        deadline: Date,
+        readScreen: () -> ScreenRead?,
+        now: () -> Date = Date.init,
+        sleep: (TimeInterval) -> Void = Thread.sleep(forTimeInterval:)
+    ) -> Result {
+        guard result.status == .started, looksAtScreen(kind: expectedKind) else { return result }
+        let settleDeadline = min(deadline, now().addingTimeInterval(2.5))
+        while true {
+            if let read = readScreen() {
+                switch read.state {
+                case .dialog:
+                    return Result(
+                        status: .waitingDialog,
+                        process: result.process,
+                        dialog: read.dialog?.rawValue ?? "dialog"
+                    )
+                case .empty, .suggestion, .draft:
+                    return result
+                case .unknown, .unavailable:
+                    break
+                }
+            }
+            let remaining = settleDeadline.timeIntervalSince(now())
+            guard remaining > 0 else { return result }
+            sleep(min(0.2, remaining))
+        }
     }
 
     struct ProcessSnapshot: Equatable {

@@ -15,7 +15,7 @@ final class WorkspaceManagerSessionSnapshotTests: XCTestCase {
         let oldWorkspace = try XCTUnwrap(manager.selectedWorkspace)
         let oldTerminal = try XCTUnwrap(oldWorkspace.focusedTerminalPanel)
         oldWorkspace.setCustomTitle("Retirement fixture")
-        oldWorkspace.metadata = ["fixture": "preserved"]
+        oldWorkspace.setOperatorMetadata(["fixture": "preserved"])
         try PanelMetadataStore.shared.setMetadata(workspaceId: oldWorkspace.id, surfaceId: oldTerminal.id,
                                                partial: ["fixture.tag": "preserved"], mode: .merge, source: .declare)
         let snapshot = manager.sessionSnapshot(includeScrollback: false)
@@ -98,7 +98,9 @@ final class WorkspaceManagerSessionSnapshotTests: XCTestCase {
         }
         let manager = WorkspaceManager()
         let initial = try XCTUnwrap(manager.selectedWorkspace)
-        let panelId = try XCTUnwrap(initial.focusedTerminalPanel?.id)
+        let initialTerminal = try XCTUnwrap(initial.focusedTerminalPanel)
+        initialTerminal.surface.useExecShellForTesting()
+        let panelId = initialTerminal.id
         let sessionId = "11111111-1111-4111-8111-111111111111"
         await ConversationStore.shared.push(surfaceId: panelId.uuidString, kind: "codex", id: sessionId,
                                             source: .hook, state: .suspended)
@@ -107,7 +109,20 @@ final class WorkspaceManagerSessionSnapshotTests: XCTestCase {
             initial.teardownAllPanels()
             Task { await ConversationStore.shared.clear(surfaceId: panelId.uuidString) }
         }
-        let snapshot = manager.sessionSnapshot(includeScrollback: false)
+        var snapshot = manager.sessionSnapshot(includeScrollback: false)
+        // Save the terminal as an exec shell. A persistent hc terminal is
+        // never resumed from the snapshot (C11H-98), so without this neither
+        // restore would schedule a resume and the test would prove nothing.
+        var saved = 0
+        for w in snapshot.workspaces.indices {
+            for p in snapshot.workspaces[w].panels.indices where snapshot.workspaces[w].panels[p].id == panelId {
+                var terminal = snapshot.workspaces[w].panels[p].terminal ?? SessionTerminalPanelSnapshot()
+                terminal.hcIdentity = HCPanelIdentity(panelID: panelId, persistence: .nonpersistent, origin: .restored)
+                snapshot.workspaces[w].panels[p].terminal = terminal
+                saved += 1
+            }
+        }
+        XCTAssertEqual(saved, 1, "fixture must save the terminal it resumes")
         manager.restoreSessionSnapshot(snapshot)
         let displaced = try XCTUnwrap(manager.selectedWorkspace)
         let oldTerminal = try XCTUnwrap(displaced.terminalPanel(for: panelId))
@@ -118,7 +133,22 @@ final class WorkspaceManagerSessionSnapshotTests: XCTestCase {
         manager.restoreSessionSnapshot(snapshot)
         let replacement = try XCTUnwrap(manager.selectedWorkspace?.terminalPanel(for: panelId))
         XCTAssertNil(replacement.surface.surface, "fixture must not execute a real harness")
-        try await Task.sleep(for: .seconds(SessionPersistencePolicy.agentRestartDelay + 0.5))
+        XCTAssertNil(replacement.hcIdentity, "the restored terminal is the saved exec shell")
+        // A command decision records no outcome until its submission runs, so
+        // each workspace's own outcome marks the end of its scheduled attempt.
+        // Wait for both (bounded), then check what the displaced one typed.
+        let bound = SessionPersistencePolicy.agentRestartDelay + 2
+        let displacedDone = await waitForC11HostCondition(timeout: bound) {
+            displaced.launchResumeOutcomes[panelId] != nil
+        }
+        XCTAssertTrue(displacedDone, "the displaced restore's scheduled resume must finish")
+        let replacementDone = await waitForC11HostCondition(timeout: bound) {
+            replacement.surface.pendingInitialInputForTests.contains(sessionId)
+        }
+        XCTAssertTrue(replacementDone, "the replacement's scheduled resume must arrive")
+        if case .resumed? = displaced.launchResumeOutcomes[panelId] {
+            XCTFail("the displaced restore resumed into its retained terminal")
+        }
 
         XCTAssertEqual(oldTerminal.surface.pendingInitialInputForTests, "")
         XCTAssertFalse(oldTerminal.surface.pendingSubmitOnFlushForTests)
@@ -174,11 +204,11 @@ final class WorkspaceManagerSessionSnapshotTests: XCTestCase {
             XCTFail("Expected initial workspace")
             return
         }
-        workspace.metadata = [
+        workspace.setOperatorMetadata([
             WorkspaceMetadataKey.description: "Backend refactor",
             WorkspaceMetadataKey.icon: "🦊",
             "custom.tag": "v2"
-        ]
+        ])
 
         let snapshot = manager.sessionSnapshot(includeScrollback: false)
         XCTAssertEqual(snapshot.workspaces.count, 1)
@@ -212,12 +242,28 @@ final class WorkspaceManagerSessionSnapshotTests: XCTestCase {
             XCTFail("Expected initial workspace")
             return
         }
-        workspace.metadata = ["description": "one"]
+        workspace.setOperatorMetadata(["description": "one"])
         let before = manager.sessionAutosaveFingerprint()
-        workspace.metadata = ["description": "two"]
+        workspace.setOperatorMetadata(["description": "two"])
         let after = manager.sessionAutosaveFingerprint()
         XCTAssertNotEqual(before, after,
             "Autosave fingerprint must change on value-only metadata edit (plan contract).")
+    }
+
+    func testAutosaveFingerprintTracksJSONOnlyAndSourceOnlyMetadataChanges() throws {
+        let manager = WorkspaceManager()
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let before = manager.sessionAutosaveFingerprint()
+        try WorkspaceMetadataStore.shared.setMetadata(workspaceId: workspace.id,
+            partial: ["nested": ["ready": true]], source: .osc)
+        let jsonChanged = manager.sessionAutosaveFingerprint()
+        XCTAssertNotEqual(before, jsonChanged)
+        try WorkspaceMetadataStore.shared.setMetadata(workspaceId: workspace.id,
+            partial: ["nested": ["ready": true]], source: .explicit)
+        XCTAssertNotEqual(jsonChanged, manager.sessionAutosaveFingerprint())
+        let snapshot = manager.sessionSnapshot(includeScrollback: false)
+        XCTAssertEqual(snapshot.workspaces[0].metadataValues?["nested"], .object(["ready": .bool(true)]))
+        XCTAssertEqual(snapshot.workspaces[0].metadataSources?["nested"]?.source, "explicit")
     }
 
     func testSessionSnapshotExcludesRemoteWorkspacesFromRestore() throws {
@@ -393,6 +439,41 @@ extension WorkspaceManagerSessionSnapshotTests {
         XCTAssertTrue(restored.workspaceGroups.isEmpty)
         XCTAssertTrue(restored.workspaces.allSatisfy { $0.groupId == nil })
         XCTAssertEqual(Set(restored.workspaces.map(\.id)), Set([first.id, second.id]))
+    }
+
+    /// C11H-299: the manager registers, saves, restores and drops a group's
+    /// object; a write after restore reaches the restored group.
+    func testGroupObjectLifecycleThroughSessionSnapshotAndRestore() throws {
+        let store = WorkspaceMetadataStore.groups
+        let manager = WorkspaceManager()
+        let member = try XCTUnwrap(manager.selectedWorkspace)
+        let group = try manager.createWorkspaceGroup(name: "Acme")
+        XCTAssertTrue(store.contains(workspaceId: group.id), "a created group accepts writes")
+        try manager.addWorkspacesToGroup(id: group.id, workspaceIds: [member.id])
+        let before = manager.sessionAutosaveFingerprint()
+        try store.setMetadata(workspaceId: group.id, partial: ["captain": "acme-captain"])
+        XCTAssertNotEqual(manager.sessionAutosaveFingerprint(), before, "a group-object edit reaches autosave")
+        let saved = manager.sessionSnapshot(includeScrollback: false)
+        XCTAssertEqual(saved.workspaceGroupMetadata?[group.id.uuidString]?.metadataValues?["captain"], .string("acme-captain"))
+
+        // A relaunch starts with an empty store; the snapshot alone must
+        // bring the object back and register the group for writes.
+        store.removeWorkspace(workspaceId: group.id)
+        XCTAssertFalse(store.contains(workspaceId: group.id))
+        let restored = WorkspaceManager()
+        restored.restoreSessionSnapshot(try JSONDecoder().decode(SessionWorkspaceManagerSnapshot.self,
+                                                                 from: JSONEncoder().encode(saved)))
+        XCTAssertEqual(store.getMetadata(workspaceId: group.id).metadata["captain"] as? String, "acme-captain")
+        XCTAssertTrue(store.contains(workspaceId: group.id), "a restored group is registered for writes")
+        try store.setMetadata(workspaceId: group.id, partial: ["captain": "next-captain"], requireRegistered: true)
+        XCTAssertEqual(restored.sessionSnapshot(includeScrollback: false)
+            .workspaceGroupMetadata?[group.id.uuidString]?.metadataValues?["captain"], .string("next-captain"))
+
+        try restored.deleteWorkspaceGroup(id: group.id)
+        XCTAssertFalse(store.contains(workspaceId: group.id), "a deleted group's object goes with it")
+        XCTAssertNil(store.getMetadata(workspaceId: group.id).metadata["captain"])
+        XCTAssertNil(restored.sessionSnapshot(includeScrollback: false).workspaceGroupMetadata)
+        try? manager.deleteWorkspaceGroup(id: group.id)
     }
 
     func testEveryFolderPropertyAndMembershipChangeTriggersAutosaveFingerprint() throws {
@@ -638,5 +719,81 @@ extension WorkspaceManagerSessionSnapshotTests {
         XCTAssertEqual(store.rawUnreadCount(forWorkspaceId: suppressed.id), 0)
         XCTAssertEqual(coordinator.projection.headersById[group.id]?.summary,
                        WorkspaceGroupHeaderSummary(memberCount: 3, flaggedCount: 1, waitingCount: 1, unreadCount: 3))
+    }
+}
+
+/// C11H-342: the manager keeps one root order for groups and ungrouped workspaces.
+extension WorkspaceManagerSessionSnapshotTests {
+    private func rootFixture() throws -> (WorkspaceManager, first: Workspace, second: Workspace, third: Workspace,
+                                          member: Workspace, group: WorkspaceGroup) {
+        let manager = WorkspaceManager()
+        let first = try XCTUnwrap(manager.selectedWorkspace)
+        let second = manager.addWorkspace(select: false)
+        let third = manager.addWorkspace(select: false)
+        let member = manager.addWorkspace(select: false)
+        let group = try manager.createWorkspaceGroup(name: "Fleet")
+        try manager.addWorkspacesToGroup(id: group.id, workspaceIds: [member.id])
+        XCTAssertEqual(manager.workspaceRootEntries.first?.id, group.id, "groups first until something moves")
+        // Lay out first, second, Fleet, third.
+        try manager.moveWorkspaceToGroup(workspaceId: first.id, groupId: nil, before: group.id)
+        try manager.moveWorkspaceToGroup(workspaceId: second.id, groupId: nil, after: first.id)
+        try manager.moveWorkspaceToGroup(workspaceId: third.id, groupId: nil, after: group.id)
+        XCTAssertEqual(manager.workspaceRootEntries.map(\.id), [first.id, second.id, group.id, third.id])
+        return (manager, first, second, third, member, group)
+    }
+
+    func testRootOrderSurvivesSaveAndRestoreAndAnOlderSnapshotDrawsGroupsFirst() throws {
+        let (manager, _, _, _, _, group) = try rootFixture()
+        let drawn = manager.workspaceRootEntries.map(\.id)
+        let saved = manager.sessionSnapshot(includeScrollback: false)
+        XCTAssertEqual(saved.workspaceRootOrder, drawn)
+        let restored = WorkspaceManager()
+        restored.restoreSessionSnapshot(try JSONDecoder().decode(SessionWorkspaceManagerSnapshot.self,
+                                                                 from: JSONEncoder().encode(saved)))
+        XCTAssertEqual(restored.workspaceRootEntries.map(\.id), drawn)
+        var older = saved
+        older.workspaceRootOrder = nil
+        let legacy = WorkspaceManager()
+        legacy.restoreSessionSnapshot(older)
+        XCTAssertEqual(legacy.workspaceRootEntries.map(\.id),
+                       [group.id] + older.workspaces.filter { $0.groupId == nil }.map(\.id),
+                       "a session saved before the root order draws groups first, as it did")
+    }
+
+    func testFlatMovesToTheTopCarryNoGroupAlong() throws {
+        let (manager, first, second, third, _, group) = try rootFixture()
+        manager.moveWorkspaceToTopForNotification(second.id)
+        XCTAssertEqual(manager.workspaceRootEntries.map(\.id), [second.id, first.id, group.id, third.id])
+        manager.moveWorkspacesToTop([third.id])
+        XCTAssertEqual(manager.workspaceRootEntries.map(\.id), [third.id, second.id, first.id, group.id])
+        _ = try manager.applyBatchWorkspaceReorder(orderedWorkspaceIds: [first.id])
+        XCTAssertEqual(manager.workspaceRootEntries.map(\.id), [first.id, third.id, second.id, group.id])
+    }
+
+    /// REPAIR-1: the palette's and the menu's Move Up/Down call exactly these two
+    /// methods, for the action and for its enablement.
+    func testMoveUpDownEnablementAndActionPassAGroupThatIsTheOnlyNeighbour() throws {
+        let manager = WorkspaceManager()
+        let only = try XCTUnwrap(manager.selectedWorkspace)
+        let group = try manager.createWorkspaceGroup(name: "Empty")
+        XCTAssertEqual(manager.workspaceRootEntries.map(\.id), [group.id, only.id])
+        XCTAssertEqual(manager.workspaces.firstIndex { $0.id == only.id }, 0, "flat index 0: the old check disabled Move Up")
+        XCTAssertTrue(manager.canStepWorkspaceInSidebar(only.id, by: -1))
+        XCTAssertFalse(manager.canStepWorkspaceInSidebar(only.id, by: 1))
+        XCTAssertTrue(manager.stepWorkspaceInSidebar(only.id, by: -1))
+        XCTAssertEqual(manager.workspaceRootEntries.map(\.id), [only.id, group.id])
+        XCTAssertFalse(manager.canStepWorkspaceInSidebar(only.id, by: -1))
+        XCTAssertTrue(manager.canStepWorkspaceInSidebar(only.id, by: 1), "flat-last: the old check disabled Move Down")
+        XCTAssertFalse(manager.stepWorkspaceInSidebar(only.id, by: -1))
+    }
+
+    func testDeletedGroupsMembersTakeItsPlaceAndStepsPassAGroup() throws {
+        let (manager, first, second, third, member, group) = try rootFixture()
+        XCTAssertTrue(manager.stepWorkspaceInSidebar(third.id, by: -1))
+        XCTAssertEqual(manager.workspaceRootEntries.map(\.id), [first.id, second.id, third.id, group.id])
+        XCTAssertTrue(manager.stepWorkspaceInSidebar(third.id, by: 1))
+        try manager.deleteWorkspaceGroup(id: group.id)
+        XCTAssertEqual(manager.workspaceRootEntries.map(\.id), [first.id, second.id, member.id, third.id])
+        XCTAssertNil(member.groupId)
     }
 }

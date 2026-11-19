@@ -143,12 +143,12 @@ final class OmpConversationTests: XCTestCase {
     /// omp's slug strips the home prefix and maps `/`→`-` (verified against the
     /// real store; differs from pi's full-path `--<…>--` convention).
     func testOmpSessionSlugStripsHomeAndMapsSlashes() {
-        let home = URL(fileURLWithPath: "/Users/atin")
+        let home = URL(fileURLWithPath: "/Users/demo")
         XCTAssertEqual(
-            OmpScraper.sessionSlug(forCwd: "/Users/atin/Projects/Stage11/code/c11", homeDirectory: home),
+            OmpScraper.sessionSlug(forCwd: "/Users/demo/Projects/Stage11/code/c11", homeDirectory: home),
             "-Projects-Stage11-code-c11")
         XCTAssertEqual(
-            OmpScraper.sessionSlug(forCwd: "/Users/atin/Projects/GLM-UniHub", homeDirectory: home),
+            OmpScraper.sessionSlug(forCwd: "/Users/demo/Projects/GLM-UniHub", homeDirectory: home),
             "-Projects-GLM-UniHub", "existing dashes + case preserved")
         XCTAssertEqual(
             OmpScraper.sessionSlug(forCwd: "/work/x", homeDirectory: home),

@@ -170,10 +170,13 @@ struct TitlebarControlsColors: Equatable {
     let foreground: Color
     let backdrop: Color
     let backdropNSColor: NSColor
+    /// The titlebar is light (computed once here, not per body pass).
+    let isLight: Bool
 
     init(titlebarBackground: NSColor) {
         let base = (titlebarBackground.usingColorSpace(.sRGB) ?? titlebarBackground).withAlphaComponent(1)
         let light = base.isLightColor
+        isLight = light
         foreground = light ? Color.black.opacity(0.78) : Color.white.opacity(0.82)
         backdropNSColor = base.blended(withFraction: Self.backdropFraction, of: light ? .black : .white) ?? base
         backdrop = Color(nsColor: backdropNSColor)
@@ -286,8 +289,78 @@ func titlebarShortcutHintVerticalOffset(for config: TitlebarControlsStyleConfig)
     max(0, floor(config.buttonSize - titlebarShortcutHintHeight(for: config)))
 }
 
+/// Schema-2 titlebar control values: `chrome.titleBar.controlFill` and
+/// `controlForeground`, `geometry.controlRadius`, and `states.notification`
+/// for the badge. Every field is optional; `.unset` keeps the style preset.
+struct TitlebarControlTheme: Equatable {
+    var fill: Color?
+    var foreground: Color?
+    /// The button radius; the backdrop rounds by the same amount plus its inset.
+    var radius: CGFloat?
+    var badge: NSColor?
+    /// The theme's `states.waiting` and `waitingInk`: the badge's fallback.
+    var waiting: NSColor?
+    var waitingInk: NSColor?
+
+    static let unset = TitlebarControlTheme()
+
+    @MainActor
+    static func current(
+        _ manager: ThemeManager,
+        colorScheme: ColorScheme,
+        windowThemeName: String? = nil
+    ) -> TitlebarControlTheme {
+        guard manager.themeOwnsChrome(windowThemeName: windowThemeName) else { return .unset }
+        let context = manager.makeContext(colorScheme: colorScheme, windowThemeName: windowThemeName)
+        return TitlebarControlTheme(
+            fill: manager.style(.controlFill, context: context),
+            foreground: manager.style(.controlForeground, context: context),
+            radius: manager.style(.controlRadius, context: context),
+            badge: manager.style(.stateNotification, context: context),
+            waiting: manager.style(.stateWaiting, context: context),
+            waitingInk: manager.style(.stateWaitingInk, context: context)
+        )
+    }
+
+    /// The badge sits on the control backdrop: the theme's `controlFill` when it
+    /// is mostly opaque, else the titlebar behind it, whose lightness follows the
+    /// titlebar background (a light terminal theme gives a light titlebar), not
+    /// the colour scheme, which c11 keeps dark.
+    static func badgeSitsOnLight(fill: NSColor?, titlebarIsLight: Bool) -> Bool {
+        guard let fill = fill?.usingColorSpace(.sRGB), fill.alphaComponent >= 0.5 else { return titlebarIsLight }
+        return fill.isLightColor
+    }
+
+    func buttonRadius(_ config: TitlebarControlsStyleConfig) -> CGFloat {
+        radius ?? config.buttonCornerRadius
+    }
+
+    /// The unread badge counts the agents waiting on the operator: the theme's
+    /// `states.notification`, else its `states.waiting`, else c11's waiting
+    /// colour for the slot (C11H-344: white on dark, near-black on light), each
+    /// with its ink.
+    func badgeColors(lightSlot: Bool) -> (fill: Color, ink: Color) {
+        if let badge {
+            return (Color(nsColor: badge), badge.isLightColor ? .black : .white)
+        }
+        var states = ThemeStatePalette.unset
+        states.waiting = waiting.map { $0.hexString(includeAlpha: $0.alphaComponent < 0.999) }
+        states.waitingInk = waitingInk.map { $0.hexString() }
+        let palette = Workspace.resolvedSurfaceTabActivityColors(lightBackground: lightSlot, states: states)
+        let fill = palette.waitingHex.flatMap(NSColor.init(hex:)) ?? .labelColor
+        let ink = palette.waitingInkHex.flatMap(NSColor.init(hex:)) ?? .windowBackgroundColor
+        return (Color(nsColor: fill), Color(nsColor: ink))
+    }
+
+    func backdropRadius(_ config: TitlebarControlsStyleConfig) -> CGFloat {
+        guard let radius else { return config.backdropCornerRadius }
+        return radius > 0 ? radius + TitlebarControlsStyleConfig.backdropInsets.top : 0
+    }
+}
+
 struct TitlebarControlButton<Content: View>: View {
     let config: TitlebarControlsStyleConfig
+    var cornerRadius: CGFloat? = nil
     let action: () -> Void
     @ViewBuilder let content: () -> Content
     @State private var isHovering = false
@@ -313,7 +386,7 @@ struct TitlebarControlButton<Content: View>: View {
     @ViewBuilder
     private var hoverBackground: some View {
         if config.hoverBackground && isHovering {
-            RoundedRectangle(cornerRadius: config.buttonCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius ?? config.buttonCornerRadius, style: .continuous)
                 .fill(Color.primary.opacity(0.08))
         }
     }
@@ -337,7 +410,21 @@ struct TitlebarControlsView: View {
     @State private var isHoveringControls = false
     @State private var isNotificationsPopoverShown = false
     @StateObject private var modifierKeyMonitor = TitlebarShortcutHintModifierMonitor()
+    @ObservedObject private var themeManager = ThemeManager.shared
+    @Environment(\.colorScheme) private var colorScheme
+    // c11 (C11H-197): the window's theme override. Inside a window's SwiftUI
+    // root (full-screen and hidden-titlebar controls) it arrives by environment;
+    // the native title bar accessory is its own hosting view, so it looks its
+    // window up once it has one and follows the store.
+    @Environment(\.c11WindowThemeName) private var environmentWindowThemeName
+    @ObservedObject private var windowAttributes = WindowAttributesStore.shared
+    @State private var hostWindowId: UUID?
     private let titlebarHintBaseXShift: CGFloat = -10
+
+    private var windowThemeName: String? {
+        if let environmentWindowThemeName { return environmentWindowThemeName }
+        return hostWindowId.flatMap { windowAttributes.themeName(for: $0) }
+    }
 
     private enum HintSlot: Int, CaseIterable {
         case toggleSidebar
@@ -402,6 +489,16 @@ struct TitlebarControlsView: View {
                 }
                 .frame(width: 0, height: 0)
             )
+            .background(
+                // Not deduped: the window may register as a main window after the
+                // accessory first sees it, so the lookup retries on later updates.
+                WindowAccessor(dedupeByWindow: false) { window in
+                    let resolved = AppDelegate.shared?.mainWindowId(for: window)
+                    guard resolved != hostWindowId else { return }
+                    DispatchQueue.main.async { hostWindowId = resolved }
+                }
+                .frame(width: 0, height: 0)
+            )
             .onHover { hovering in
                 isHoveringControls = hovering
             }
@@ -434,61 +531,64 @@ struct TitlebarControlsView: View {
     @ViewBuilder
     private func controlsGroup(config: TitlebarControlsStyleConfig) -> some View {
         let hintLayoutItems = titlebarHintLayoutItems(config: config)
+        let theme = TitlebarControlTheme.current(themeManager, colorScheme: colorScheme, windowThemeName: windowThemeName)
+        let buttonRadius = theme.buttonRadius(config)
         let buttons = Group {
-            TitlebarControlButton(config: config, action: {
+            TitlebarControlButton(config: config, cornerRadius: buttonRadius, action: {
                 #if DEBUG
                 dlog("titlebar.toggleSidebar")
                 #endif
                 cycleSidebarColumns()
             }) {
-                iconLabel(systemName: "sidebar.left", config: config)
+                iconLabel(systemName: "sidebar.left", config: config, radius: buttonRadius)
             }
-            .foregroundStyle(controlForeground(config: config))
+            .foregroundStyle(controlForeground(config: config, theme: theme))
             .contextMenu { sidebarColumnsMenu }
             .accessibilityIdentifier("titlebarControl.toggleSidebar")
             .accessibilityLabel(String(localized: "titlebar.sidebar.accessibilityLabel", defaultValue: "Toggle Sidebar"))
 
-            TitlebarControlButton(config: config, action: {
+            TitlebarControlButton(config: config, cornerRadius: buttonRadius, action: {
                 #if DEBUG
                 dlog("titlebar.notifications")
                 #endif
                 onToggleNotifications()
             }) {
                 ZStack(alignment: .topTrailing) {
-                    iconLabel(systemName: "bell", config: config)
+                    iconLabel(systemName: "bell", config: config, radius: buttonRadius)
 
                     if notificationStore.unreadCount > 0 {
+                        let badgeColors = theme.badgeColors(lightSlot: controlBackdropIsLight(theme))
                         Text("\(min(notificationStore.unreadCount, 99))")
                             .font(.system(size: max(8, config.badgeSize - 5), weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(badgeColors.ink)
                             .frame(width: config.badgeSize, height: config.badgeSize)
                             .background(
-                                Circle().fill(cmuxAccentColor())
+                                Circle().fill(badgeColors.fill)
                             )
                             .offset(x: config.badgeOffset.width, y: config.badgeOffset.height)
                     }
                 }
                 .frame(width: config.buttonSize, height: config.buttonSize)
             }
-            .foregroundStyle(controlForeground(config: config))
+            .foregroundStyle(controlForeground(config: config, theme: theme))
             .accessibilityIdentifier("titlebarControl.showNotifications")
             .background(NotificationsAnchorView { viewModel.notificationsAnchorView = $0 })
             .accessibilityLabel(String(localized: "titlebar.notifications.accessibilityLabel", defaultValue: "Notifications"))
 
-            TitlebarControlButton(config: config, action: {
+            TitlebarControlButton(config: config, cornerRadius: buttonRadius, action: {
                 #if DEBUG
                 dlog("titlebar.newTab")
                 #endif
                 onNewTab()
             }) {
-                iconLabel(systemName: "plus", config: config)
+                iconLabel(systemName: "plus", config: config, radius: buttonRadius)
             }
-            .foregroundStyle(controlForeground(config: config))
+            .foregroundStyle(controlForeground(config: config, theme: theme))
             .accessibilityIdentifier("titlebarControl.newTab")
             .accessibilityLabel(String(localized: "titlebar.newWorkspace.accessibilityLabel", defaultValue: "New Workspace"))
 
-            historyControl(back: true, config: config)
-            historyControl(back: false, config: config)
+            historyControl(back: true, config: config, theme: theme)
+            historyControl(back: false, config: config, theme: theme)
         }
 
         let content = Group {
@@ -508,32 +608,39 @@ struct TitlebarControlsView: View {
 
         paddedContent
             .background(
-                RoundedRectangle(cornerRadius: config.backdropCornerRadius, style: .continuous)
-                    .fill(sidebarState.titlebarControlsBackdrop)
+                RoundedRectangle(cornerRadius: theme.backdropRadius(config), style: .continuous)
+                    .fill(theme.fill ?? sidebarState.titlebarControlsBackdrop)
             )
             .overlay(alignment: .topLeading) {
                 titlebarShortcutHintOverlay(items: hintLayoutItems, config: config)
             }
     }
 
-    private func historyControl(back: Bool, config: TitlebarControlsStyleConfig) -> some View {
+    private func historyControl(back: Bool, config: TitlebarControlsStyleConfig, theme: TitlebarControlTheme) -> some View {
         let destination = back ? history.navigationState.back : history.navigationState.forward
         let action: KeyboardShortcutSettings.Action = back ? .focusHistoryBack : .focusHistoryForward
         let label = back ? String(localized: "menu.history.back", defaultValue: "Back")
             : String(localized: "menu.history.forward", defaultValue: "Forward")
-        return TitlebarControlButton(config: config, action: { _ = history.navigate(back: back) }) {
-            iconLabel(systemName: back ? "arrow.left" : "arrow.right", config: config)
+        return TitlebarControlButton(config: config, cornerRadius: theme.buttonRadius(config), action: { _ = history.navigate(back: back) }) {
+            iconLabel(systemName: back ? "arrow.left" : "arrow.right", config: config, radius: theme.buttonRadius(config))
                 .opacity(destination == nil ? 0.35 : 1)
         }
-        .foregroundStyle(controlForeground(config: config))
+        .foregroundStyle(controlForeground(config: config, theme: theme))
         .disabled(destination == nil)
         .accessibilityIdentifier(back ? "titlebarControl.historyBack" : "titlebarControl.historyForward")
         .accessibilityLabel(label)
         .safeHelp(action.tooltip(historyHelp(back: back, destination: destination)))
     }
 
-    private func controlForeground(config: TitlebarControlsStyleConfig) -> Color {
-        config.controlForeground(customTitlebarForeground: sidebarState.customTitlebarForeground)
+    private func controlBackdropIsLight(_ theme: TitlebarControlTheme) -> Bool {
+        TitlebarControlTheme.badgeSitsOnLight(
+            fill: theme.fill.map { NSColor($0) },
+            titlebarIsLight: sidebarState.titlebarControlsBackdropIsLight
+        )
+    }
+
+    private func controlForeground(config: TitlebarControlsStyleConfig, theme: TitlebarControlTheme) -> Color {
+        theme.foreground ?? config.controlForeground(customTitlebarForeground: sidebarState.customTitlebarForeground)
     }
 
     private func historyHelp(back: Bool, destination: FocusHistoryEntry?) -> String {
@@ -687,7 +794,7 @@ struct TitlebarControlsView: View {
     }
 
     @ViewBuilder
-    private func iconLabel(systemName: String, config: TitlebarControlsStyleConfig) -> some View {
+    private func iconLabel(systemName: String, config: TitlebarControlsStyleConfig, radius: CGFloat) -> some View {
         let icon = Image(systemName: systemName)
             .font(.system(size: config.iconSize, weight: .semibold))
             .frame(width: config.buttonSize, height: config.buttonSize)
@@ -695,7 +802,7 @@ struct TitlebarControlsView: View {
         if config.buttonBackground {
             icon
                 .background(
-                    RoundedRectangle(cornerRadius: config.buttonCornerRadius)
+                    RoundedRectangle(cornerRadius: radius)
                         .fill(Color(nsColor: .controlBackgroundColor).opacity(0.7))
                 )
         } else {
@@ -883,7 +990,9 @@ private final class TitlebarShortcutHintModifierMonitor: ObservableObject {
     private func cancelPendingHintShow(resetVisible: Bool) {
         pendingShowWorkItem?.cancel()
         pendingShowWorkItem = nil
-        if resetVisible {
+        // Only on a change: this runs on every keyDown, and assigning a
+        // @Published value re-evaluates the titlebar body even when it is equal.
+        if resetVisible, isModifierPressed {
             isModifierPressed = false
         }
     }

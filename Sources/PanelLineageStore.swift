@@ -1,10 +1,79 @@
 import Foundation
 
+/// Who made a panel, recorded once when it first appears and kept across
+/// moves and relaunches. Only what was observed at creation is recorded:
+/// nodes from before origins existed, and creators that could not be
+/// resolved, are `unknown`, never a guess.
+enum PanelOrigin: String, Codable, CaseIterable, Sendable {
+    /// An operator UI action: click, shortcut, menu, sidebar.
+    case `operator`
+    /// A socket call made from a panel (`parent_panel_id` names it).
+    case panel
+    /// c11 itself; `origin_detail` names the reason (`launch`, `restore`,
+    /// `chaos`; `config` is reserved for a saved config c11 opens at launch).
+    case app
+    /// A socket or CLI call with no caller panel (cron, LaunchAgent, bare shell).
+    case external
+    /// Not recorded: persisted before origins existed, or the creator was lost.
+    case unknown
+}
+
+/// The origin a creation path asks for. `PanelLineageStore.insert` turns it
+/// into the node's recorded origin.
+struct PanelOriginRequest: Equatable, Sendable {
+    var origin: PanelOrigin
+    var detail: String?
+
+    static let `operator` = PanelOriginRequest(origin: .operator)
+    static let external = PanelOriginRequest(origin: .external)
+    static let unknown = PanelOriginRequest(origin: .unknown)
+    static func app(_ reason: String) -> PanelOriginRequest { .init(origin: .app, detail: reason) }
+
+    /// The app reasons c11 records.
+    enum AppReason {
+        /// The workspace c11 opens when it starts with no session to restore,
+        /// and the welcome or default grid it fills that workspace with.
+        static let launch = "launch"
+        static let restore = "restore"
+        static let chaos = "chaos"
+        static let config = "config"
+    }
+
+    /// Picks what a new panel records from what its creation path observed.
+    /// Precedence: a caller panel, then a socket request (its caller panel,
+    /// else external), then an app scope, then the startup session restore,
+    /// then an external scope, then an operator scope; otherwise unknown.
+    static func resolve(
+        creatorPanelId: UUID?,
+        socketRequest socketCallerPanelId: UUID?,
+        inSocketRequest: Bool,
+        appReason: String?,
+        restoringSession: Bool,
+        externalScope: Bool,
+        operatorScope: Bool
+    ) -> (creatorPanelId: UUID?, origin: PanelOriginRequest) {
+        if let creatorPanelId { return (creatorPanelId, PanelOriginRequest(origin: .panel)) }
+        if inSocketRequest {
+            if let socketCallerPanelId { return (socketCallerPanelId, PanelOriginRequest(origin: .panel)) }
+            return (nil, .external)
+        }
+        if let appReason { return (nil, .app(appReason)) }
+        if restoringSession { return (nil, .app(AppReason.restore)) }
+        if externalScope { return (nil, .external) }
+        if operatorScope { return (nil, .operator) }
+        return (nil, .unknown)
+    }
+}
+
 /// App-level creation lineage for a panel UUID. It is projected into panel
 /// APIs, but never written into panel metadata or a workspace snapshot.
 struct PanelLineageNode: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var parentPanelId: UUID?
+    var origin: PanelOrigin = .unknown
+    var originDetail: String?
+    /// When the panel first appeared; nil for nodes recorded before C11H-260's launch origin.
+    var createdAt: Date?
     var workspaceId: UUID
     var workspaceTitle: String
     var lastTitle: String
@@ -14,9 +83,74 @@ struct PanelLineageNode: Codable, Equatable, Identifiable, Sendable {
 
     var isClosed: Bool { closedAt != nil }
 
+    /// ISO 8601 with the local numeric offset (`2026-11-13T10:57:04-08:00`,
+    /// `+00:00` at zero), never `Z`.
+    static func localTimestamp(_ date: Date, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = timeZone
+        // `xxxxx` writes +00:00 where `XXXXX` (and ISO8601DateFormatter) write Z.
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssxxxxx"
+        return formatter.string(from: date)
+    }
+
+    init(
+        id: UUID,
+        parentPanelId: UUID?,
+        origin: PanelOrigin = .unknown,
+        originDetail: String? = nil,
+        createdAt: Date? = nil,
+        workspaceId: UUID,
+        workspaceTitle: String,
+        lastTitle: String,
+        panelType: String,
+        agentType: String?,
+        closedAt: Date?
+    ) {
+        self.id = id
+        self.parentPanelId = parentPanelId
+        self.origin = origin
+        self.originDetail = originDetail
+        self.createdAt = createdAt
+        self.workspaceId = workspaceId
+        self.workspaceTitle = workspaceTitle
+        self.lastTitle = lastTitle
+        self.panelType = panelType
+        self.agentType = agentType
+        self.closedAt = closedAt
+    }
+
+    /// Nodes persisted before origins existed carry no `origin`. One with a
+    /// parent was made from that panel (the parent was observed); every other
+    /// reads as `unknown`, as does a value this build does not know.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        parentPanelId = try container.decodeIfPresent(UUID.self, forKey: .parentPanelId)
+        if let rawOrigin = try container.decodeIfPresent(String.self, forKey: .origin) {
+            origin = PanelOrigin(rawValue: rawOrigin) ?? .unknown
+        } else {
+            origin = parentPanelId == nil ? .unknown : .panel
+        }
+        originDetail = origin == .unknown
+            ? nil
+            : try container.decodeIfPresent(String.self, forKey: .originDetail)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+        workspaceId = try container.decode(UUID.self, forKey: .workspaceId)
+        workspaceTitle = try container.decode(String.self, forKey: .workspaceTitle)
+        lastTitle = try container.decode(String.self, forKey: .lastTitle)
+        panelType = try container.decode(String.self, forKey: .panelType)
+        agentType = try container.decodeIfPresent(String.self, forKey: .agentType)
+        closedAt = try container.decodeIfPresent(Date.self, forKey: .closedAt)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id
         case parentPanelId = "parent_panel_id"
+        case origin
+        case originDetail = "origin_detail"
+        case createdAt = "created_at"
         case workspaceId = "workspace_id"
         case workspaceTitle = "workspace_title"
         case lastTitle = "last_title"
@@ -34,10 +168,16 @@ struct PanelLineageStore: Equatable, Sendable {
         self.nodes = nodes.reduce(into: [:]) { $0[$1.id] = $1 }
     }
 
+    /// Records a panel's first appearance, or refreshes a known node (a move
+    /// re-inserts it). A known node keeps its parent and origin. A new node
+    /// with a creator panel is `panel` when that creator has a node; a
+    /// creator the store has never seen is `unknown`, never `operator`.
     @discardableResult
     mutating func insert(
         panelId: UUID,
         creatorPanelId: UUID?,
+        origin requested: PanelOriginRequest = .unknown,
+        at date: Date = Date(),
         workspaceId: UUID,
         workspaceTitle: String,
         title: String,
@@ -51,10 +191,28 @@ struct PanelLineageStore: Equatable, Sendable {
         } else {
             candidateParentId = creatorPanelId
         }
-        let parentId = candidateParentId.flatMap { nodes[$0] == nil ? nil : $0 }
+        let resolvedParentId = candidateParentId.flatMap { nodes[$0] == nil ? nil : $0 }
+        let parentId = resolvedParentId == panelId ? nil : resolvedParentId
+        let origin: PanelOrigin
+        let originDetail: String?
+        if let existing {
+            // A child whose creator is gone from the graph has lost its creator.
+            origin = existing.origin == .panel && parentId == nil ? .unknown : existing.origin
+            originDetail = origin == existing.origin ? existing.originDetail : nil
+        } else if creatorPanelId != nil {
+            origin = parentId == nil ? .unknown : .panel
+            originDetail = nil
+        } else {
+            // `panel` needs a creator; a request for it without one is not an observation.
+            origin = requested.origin == .panel ? .unknown : requested.origin
+            originDetail = origin == .app ? requested.detail : nil
+        }
         nodes[panelId] = PanelLineageNode(
             id: panelId,
-            parentPanelId: parentId == panelId ? nil : parentId,
+            parentPanelId: parentId,
+            origin: origin,
+            originDetail: originDetail,
+            createdAt: existing == nil ? date : existing?.createdAt,
             workspaceId: workspaceId,
             workspaceTitle: workspaceTitle,
             lastTitle: title,

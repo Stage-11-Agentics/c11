@@ -19,7 +19,8 @@ one that hid the last outage for over a week — a client that should be reporti
 having gone silent. It runs daily from `.github/workflows/sentry-quota-watch.yml`.
 
 Auth: a read-only Sentry *user* token (`sntryu_...`), taken from $SENTRY_USER_AUTH_TOKEN
-or, failing that, from ~/Projects/Gregorovich/keys.txt. The token is never printed.
+or, failing that, from the keys file C11_KEYS_FILE names (in the environment or
+~/.config/c11/dev-hosts; scripts/dev_hosts.py). The token is never printed.
 
 Exit codes:
     0  healthy: nothing dropped in the window and the quota is not exhausted
@@ -42,7 +43,6 @@ from pathlib import Path
 
 API = "https://sentry.io/api/0"
 DEFAULT_ORG = "stage-11-kl"
-KEYS_FILE = Path.home() / "Projects" / "Gregorovich" / "keys.txt"
 KEY_NAME = "SENTRY_USER_AUTH_TOKEN"
 
 # Outcomes that mean "Sentry threw the event away". `accepted` and `filtered`
@@ -84,12 +84,18 @@ def read_token() -> str:
     token = os.environ.get(KEY_NAME, "").strip()
     if token:
         return token
-    if KEYS_FILE.exists():
-        for line in KEYS_FILE.read_text().splitlines():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from dev_hosts import lookup
+
+    configured = lookup("C11_KEYS_FILE")
+    keys_file = Path(os.path.expanduser(configured)) if configured else None
+    if keys_file and keys_file.is_file():
+        for line in keys_file.read_text().splitlines():
             if line.startswith(f"{KEY_NAME}="):
                 return line.split("=", 1)[1].strip()
     sys.exit(
-        f"error: no {KEY_NAME}. Export it, or add it to {KEYS_FILE}.\n"
+        f"error: no {KEY_NAME}. Export it, or add it to the keys file C11_KEYS_FILE names"
+        f" ({keys_file or 'unset'}).\n"
         "       It is the read-only user token (sntryu_...), not the org token."
     )
 

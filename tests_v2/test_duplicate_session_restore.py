@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Read-only oracle for C11-299 on an isolated tagged Atlas sandbox build.
+"""Read-only oracle for C11-299 on an isolated tagged build-host sandbox build.
 
 Never run against the operator's session. This script does not launch, stop,
 seed, or save an app. Supply the guest socket explicitly through --socket.
 
-Scenario (after Atlas builds are enabled):
+Scenario (after build-host builds are enabled):
 1. Stop a disposable tagged app. Copy fixtures/duplicate-session.json to that
    tag's session-com.stage11.c11.debug.<tag>.json in the guest c11 state folder.
 2. Launch that tag with C11_QA_LAUNCH=resume, capturing stderr to a log.

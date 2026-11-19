@@ -101,15 +101,32 @@ extension TerminalController {
         dlog("v2.\(request.method) isMain=\(Thread.isMainThread) tid=\(pthread_mach_thread_np(pthread_self()))")
         #endif
 
+        switch request.method {
+        case "workspace.group.set_metadata", "workspace.group.get_metadata", "workspace.group.clear_metadata":
+            // Off-main like the workspace object; one bounded main hop finds the group.
+            return v2Result(id: request.id, v2WorkspaceGroupMetadata(request.method, params: request.params))
+        default: break
+        }
         if request.method.hasPrefix("workspace.group.") || request.method == "workspace.reorder_batch" {
             return v2Result(id: request.id, v2WorkspaceGroupCommand(request.method, params: request.params))
+        }
+
+        if request.method.hasPrefix("browser."),
+           let refusal = Self.showViewerBrowserRefusal(method: request.method, params: request.params) {
+            return v2Result(id: request.id, refusal)
         }
 
         switch request.method {
         case "system.capabilities":
             return v2Ok(id: request.id, result: v2Capabilities())
+        case "hc.diagnostics":
+            return v2Result(id: request.id, v2HCDiagnostics())
+        case "hc.call":
+            return v2Result(id: request.id, v2HCCall(params: request.params))
         case "system.fleet":
             return v2FleetWorker(id: request.id, params: request.params)
+        case "workspace.set_metadata", "workspace.get_metadata", "workspace.clear_metadata":
+            return v2Result(id: request.id, v2WorkspaceMetadata(request.method, params: request.params))
         case "history.list":
             return v2Result(id: request.id, v2HistoryList(params: request.params))
         case "window.resize":
@@ -118,6 +135,10 @@ extension TerminalController {
             return v2PortalSnapshotWorker(id: request.id, params: request.params)
         case "conversation.resume":
             return v2Result(id: request.id, v2ConversationResume(params: request.params))
+        case "restore.status":
+            return v2Result(id: request.id, v2RestoreStatus())
+        case "restore.run":
+            return v2Result(id: request.id, v2RestoreRun(params: request.params))
         case "conversation.claim":
             return v2Result(id: request.id, v2ConversationClaim(params: request.params))
         case "conversation.push":
@@ -132,6 +153,8 @@ extension TerminalController {
             return v2Error(id: request.id, code: "stream_required", message: String(localized: "mailbox.native.error.streamRequired", defaultValue: "Open a persistent socket stream for native mailbox delivery."))
         case "agent.prompt_cache.report":
             return v2Result(id: request.id, v2PromptCacheReport(params: request.params))
+        case "agent.report":
+            return v2Result(id: request.id, v2AgentReport(params: request.params))
         case "agents.list":
             return v2Result(id: request.id, v2AgentsList(params: request.params))
         case "journal.clear":
@@ -150,14 +173,22 @@ extension TerminalController {
             return v2Result(id: request.id, v2PanelReadSelection(params: request.params))
         case "panel.input_state":
             return v2Result(id: request.id, v2PanelInputState(params: request.params))
+        case "panel.retry_input":
+            return v2Result(id: request.id, v2PanelRetryInput(params: request.params))
         case "panel.read_text":
             return v2Result(id: request.id, v2PanelReadText(params: request.params))
         case "panel.clear_history":
             return v2Result(id: request.id, v2PanelClearHistory(params: request.params))
+        case "panel.end_status":
+            return v2Result(id: request.id, v2PanelEndStatus(params: request.params))
         case "agent.launch":
             return v2Result(id: request.id, v2AgentLaunch(params: request.params))
+        case "agent.launch_status":
+            return v2Result(id: request.id, v2AgentLaunchStatus(params: request.params))
         case "config.launch":
             return v2Result(id: request.id, v2ConfigLaunch(params: request.params))
+        case "chaos.draw", "chaos.cast":
+            return v2Result(id: request.id, v2Chaos(method: request.method, params: request.params))
         // C11-165 COR-3: off-main handlers that block on a user click / async
         // submission. Each must have a matching entry in socketWorkerV2Methods;
         // a mismatch here would return method_not_found instead of executing.
@@ -169,6 +200,20 @@ extension TerminalController {
         case "config.list", "config.recent", "config.stats",
              "config.save", "config.edit", "config.rm", "config.reorder", "config.default":
             return v2Result(id: request.id, TerminalController.v2ConfigNonLaunch(method: request.method, params: request.params))
+        case "machine.unlink":
+            return v2Result(id: request.id, self.v2MachineUnlink(params: request.params))
+        case "machine.link_session":
+            return v2Result(id: request.id, TerminalController.v2MachineLinkSession())
+        // C11H-246: the routine notification dial, a defaults value.
+        case "debug.notification.delivered":
+            return v2Result(id: request.id, TerminalController.v2DebugDeliveredNotifications())
+        case "notification.level.get", "notification.level.set":
+            return v2Result(id: request.id, TerminalController.v2NotificationLevel(method: request.method, params: request.params))
+        // C11H-319: the three sound channels, defaults values.
+        case "notification.sound.get", "notification.sound.set":
+            return v2Result(id: request.id, TerminalController.v2NotificationSound(method: request.method, params: request.params))
+        case "machine.list", "machine.set", "machine.rm":
+            return v2Result(id: request.id, TerminalController.v2MachineRoster(method: request.method, params: request.params))
         case "flag.raise", "flag.lower", "flag.list", "flag.delegate", "flag.undelegate",
              "flag.kind.list", "flag.kind.set", "flag.kind.rm":
             return v2Result(
@@ -190,6 +235,8 @@ extension TerminalController {
             return v2Result(id: request.id, v2BrowserDownloadWait(params: request.params))
         case let method where method.hasPrefix("markdown."):
             return v2Result(id: request.id, v2DispatchMarkdownWorker(method, params: request.params))
+        case let method where Self.showWorkerMethods.contains(method):
+            return v2Result(id: request.id, v2ShowCommand(method, params: request.params))
         case "browser.profiles.list", "browser.profiles.add", "browser.profiles.rename",
              "browser.profiles.clear", "browser.profiles.delete":
             return v2Result(
@@ -225,8 +272,13 @@ extension TerminalController {
                     ?? request?.params["caller_tab_id"] as? String
                     ?? request?.params["caller_surface_id"] as? String).flatMap(UUID.init(uuidString:)),
             callerTTYDevice: SocketCommandContext.current?.callerTTYDevice,
-            callerPID: SocketCommandContext.current?.callerPID
+            callerPID: SocketCommandContext.current?.callerPID,
+            hcInventory: SocketCommandContext.current?.hcInventory,
+            verifiedHCTerminal: SocketCommandContext.current?.verifiedHCTerminal
         )
+        context.relayMachine = SocketCommandContext.current?.relayMachine
+        context.relayLink = SocketCommandContext.current?.relayLink
+        context.relayReadScope = SocketCommandContext.current?.relayReadScope
         return SocketCommandContext.withContext(context) {
             var response = executeSocketCommand(command)
             if let prefix = request?.legacyRefPrefix {
@@ -580,35 +632,9 @@ extension TerminalController {
             return nil
         }
 
-        guard Self.socketFastPathState.shouldPublishShellActivity(
-            workspaceId: scope.workspaceId,
-            panelId: scope.panelId,
-            state: state
-        ) else {
-            return "OK"
-        }
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated {
-                guard let app = AppDelegate.shared else { return }
-                // C11-171: resolve the workspace from the PANEL, not from `--tab`
-                // (shell integration sends the surface uuid in `--tab`). Without
-                // this the report silently no-ops and derived liveness never fires.
-                guard let target = TerminalController.resolveShellActivityTarget(
-                    panelId: scope.panelId,
-                    workspaceForPanel: { panel in
-                        app.workspaceContainingPanel(
-                            panelId: panel,
-                            preferredWorkspaceId: scope.workspaceId
-                        )?.workspace.id
-                    }
-                ), let workspaceManager = app.workspaceManagerFor(workspaceId: target.workspaceId) else { return }
-                workspaceManager.updateSurfaceShellActivity(
-                    workspaceId: target.workspaceId,
-                    surfaceId: target.panelId,
-                    state: state
-                )
-            }
-        }
+        // C11-171: the workspace comes from the PANEL, not from `--tab`.
+        Self.dispatchShellActivityReport(scope: scope, state: state,
+                                         kickAgent: parsed.options["agent-kick"] == "1")
         return "OK"
     }
 
@@ -731,13 +757,11 @@ extension TerminalController {
 
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
-                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
-                    return
-                }
-                let validSurfaceIds = Set(workspace.panels.keys)
-                guard validSurfaceIds.contains(scope.panelId) else { return }
-                AgentDetector.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
+                // The shells send the panel id in `--tab` (C11-171): find the
+                // workspace from the panel, or the kick never lands.
+                guard let workspace = TerminalController.shellReportWorkspace(
+                    panelId: scope.panelId, preferredWorkspaceId: scope.workspaceId) else { return }
+                AgentDetector.shared.kick(workspaceId: workspace.id, panelId: scope.panelId)
             }
         }
         return "OK"
@@ -839,6 +863,12 @@ extension TerminalController {
 
         case "notify_target":
             return notifyTarget(args)
+
+        case "notify_turn_end":
+            return notifyTarget(args, origin: .turnEnd)
+
+        case "notify_needs_you":
+            return notifyTarget(args, origin: .needsYou)
 
         case "list_notifications":
             return listNotifications()
@@ -1208,13 +1238,18 @@ extension TerminalController {
         if method.hasPrefix("agent.") { return v2DispatchAgent(method, id: id, params: params) }
         if method.hasPrefix("config.") { return v2DispatchConfig(method, id: id, params: params) }
         if method.hasPrefix("window.") { return v2DispatchWindow(method, id: id, params: params) }
+        // c11 (C11H-197): displays live beside windows.
+        if method.hasPrefix("display.") { return v2DispatchWindow(method, id: id, params: params) }
         if method.hasPrefix("workspace.") { return v2DispatchWorkspace(method, id: id, params: params) }
         if method.hasPrefix("area.") { return v2DispatchPane(method, id: id, params: params) }
         // `panel.action` is the panel context-menu verb set (Misc); every other `panel.*` is the panel domain.
         if method == "panel.action" { return v2DispatchMisc(method, id: id, params: params) }
         if method.hasPrefix("panel.") { return v2DispatchSurface(method, id: id, params: params) }
         if method.hasPrefix("debug.") { return v2DispatchDebug(method, id: id, params: params) }
-        if method.hasPrefix("browser.") { return v2DispatchBrowser(method, id: id, params: params) }
+        if method.hasPrefix("browser.") {
+            if let refusal = Self.showViewerBrowserRefusal(method: method, params: params) { return v2Result(id: id, refusal) }
+            return v2DispatchBrowser(method, id: id, params: params)
+        }
         if method.hasPrefix("theme.") { return v2DispatchTheme(method, id: id, params: params) }
         if method.hasPrefix("system.") || method.hasPrefix("auth.") || method.hasPrefix("app.") { return v2DispatchSystem(method, id: id, params: params) }
         if method.hasPrefix("snapshot.") { return v2DispatchSnapshot(method, id: id, params: params) }
@@ -1239,6 +1274,8 @@ extension TerminalController {
         switch method {
         case "agent.launch":
             return v2Result(id: id, self.v2AgentLaunch(params: params))
+        case "agent.launch_status":
+            return v2Result(id: id, self.v2AgentLaunchStatus(params: params))
         default:
             return v2Error(id: id, code: "method_not_found", message: "Unknown method")
         }
@@ -1330,9 +1367,47 @@ extension TerminalController {
         }
         let launchDelegated = (params["delegated"] as? Bool) ?? (params["suppressed"] as? Bool) ?? false
         let newWorkspace = v2Bool(params, "new_workspace") ?? false
+        // C11H-199: `split` puts the agent in a new area beside its target area
+        // (right, down, left, up) instead of a new panel inside it, so a caller
+        // can lay out agents without leaving an idle shell in each area.
+        let splitDirection: SplitDirection?
+        if let rawSplit = v2RawString(params, "split")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawSplit.isEmpty {
+            let parsed: SplitDirection? = {
+                switch rawSplit.lowercased() {
+                case "right": return .right
+                case "down": return .down
+                case "left": return .left
+                case "up": return .up
+                default: return nil
+                }
+            }()
+            guard let parsed else {
+                return .err(code: "invalid_params", message: "split must be one of: right, down, left, up", data: nil)
+            }
+            guard !newWorkspace else {
+                return .err(code: "invalid_params", message: "split is not supported with new_workspace", data: nil)
+            }
+            splitDirection = parsed
+        } else {
+            splitDirection = nil
+        }
+
+        // Ticket 12: --on <machine>. The agent's shell runs there; a --cwd is
+        // a path on that machine and is not resolved against this Mac.
+        let machineParam: V2MachineParam
+        switch v2ResolveMachineParam(params, panelType: .terminal) {
+        case .failure(let error): return error
+        case .success(let value): machineParam = value
+        }
+        if machineParam.isRemote, newWorkspace {
+            return .err(code: "invalid_params",
+                message: "launch-agent: --on is not supported with --new-workspace; create the workspace, then launch with --on",
+                data: nil)
+        }
 
         let cwdOverride: String?
-        switch CwdParamResolution.resolve(params["cwd"]) {
+        switch machineParam.isRemote ? .inherit : CwdParamResolution.resolve(params["cwd"]) {
         case .inherit:
             cwdOverride = nil
         case .path(let path):
@@ -1464,7 +1539,8 @@ extension TerminalController {
         let missionRoot = newWorkspace
             ? (cwdResolution.source != .launchingSurface ? cwdResolution.path : nil)
             : existingMissionRoot
-        let missionContext = WorkspaceMissionLaunchContext(mission: WorkspaceMissionFile.read(root: missionRoot))
+        // Local launches only: a remote terminal never gets this Mac's mission path (C11H-51).
+        let missionContext = WorkspaceMissionLaunchContext.forLaunch(isRemote: machineParam.isRemote, missionRoot: missionRoot)
         let request = AgentLaunchRequest(
             kind: kindRaw,
             model: v2RawString(params, "model"),
@@ -1475,7 +1551,8 @@ extension TerminalController {
             extraEnv: missionContext.environment(v2StringMap(params, "env") ?? [:]),
             // C11-180: `config launch` rides its saved config's full-command
             // recipe field through here so this stays the one launch composer.
-            commandOverride: v2RawString(params, "command_override")
+            commandOverride: v2RawString(params, "command_override"),
+            promptHeadline: v2RawString(params, "prompt_headline")
         )
         let stagedPrompt: LaunchPromptStore.StagedPrompt?
         do {
@@ -1511,6 +1588,14 @@ extension TerminalController {
         }
 
         let title = v2RawString(params, "title")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        // C11H-260: the commit runs on a main-queue hop that does not carry
+        // this worker's socket context, so carry the fact of a socket request
+        // to lineage. Without one, the caller is the sidebar's Chaos button:
+        // c11's own launch. A request's source tag never makes it operator.
+        let launchIsSocketRequest = SocketCommandContext.current != nil
+        let launchOrigin: PanelOriginRequest? = !launchIsSocketRequest
+            && v2RawString(params, "source") == AgentLaunchSource.chaos.rawValue
+            ? .app(PanelOriginRequest.AppReason.chaos) : nil
         let commit: @MainActor () -> V2CallResult = {
             var result: V2CallResult = .err(code: "internal_error", message: "Failed to launch agent", data: nil)
             if launchFlagReason != nil,
@@ -1542,6 +1627,7 @@ extension TerminalController {
             let callerWantsFocus = self.v2Bool(params, "focus") ?? true
             let focus = self.v2FocusAllowed(requested: callerWantsFocus)
 
+            var launchKey: String?
             let ws: Workspace
             let panel: TerminalPanel
             let paneUUID: UUID?
@@ -1554,7 +1640,8 @@ extension TerminalController {
                 // skips shell rc, which changes PATH-wrapper resolution.
                 // autoWelcome is suppressed: this workspace hosts an agent,
                 // not the onboarding grid.
-                let created = PanelLineage.shared.withCreator(launchCallerSurfaceId) {
+                let created = PanelLineage.shared.withCreator(launchCallerSurfaceId, socketRequest: launchIsSocketRequest,
+                                                              fallback: launchOrigin) {
                     workspaceManager.addWorkspace(
                         workingDirectory: cwdResolution.path,
                         establishRootFromWorkingDirectory: cwdResolution.source != .launchingSurface,
@@ -1594,12 +1681,52 @@ extension TerminalController {
                     result = .err(code: "not_found", message: "Area not found", data: nil)
                     return result
                 }
-                guard let created = PanelLineage.shared.withCreator(launchCallerSurfaceId, operation: {
-                    target.newTerminalSurface(
+                // C11H-116: a retry of a launch that is still pending is the same launch, not a second agent.
+                let machineName: String = { if case .on(let machine) = machineParam.request { return machine }; return "local" }()
+                launchKey = LaunchIdentity.key(workspaceID: target.id, machine: machineName, request: request,
+                    cwd: machineParam.isRemote ? machineParam.remoteCwd : cwdResolution.path)
+                if let launchKey, let pending = target.pendingLaunchPanel(forKey: launchKey) {
+                    if let stagedPrompt { LaunchPromptStore.shared.discard(stagedPrompt) }
+                    var agent: [String: Any] = ["type": plan.kind]
+                    agent["model"] = plan.model.isEmpty ? NSNull() : plan.model
+                    agent["task"] = self.v2OrNull(request.task)
+                    result = .ok([
+                        "agent": agent,
+                        "deduplicated": true,
+                        "startup": "pending",
+                        "workspace_id": target.id.uuidString,
+                        "workspace_ref": self.v2Ref(kind: .workspace, uuid: target.id),
+                        "surface_id": pending.id.uuidString,
+                        "surface_ref": self.v2Ref(kind: .surface, uuid: pending.id),
+                        "warnings": ["A launch with the same agent, task and prompt is still pending in this workspace; no second agent was started."]
+                    ])
+                    return result
+                }
+                guard let created = PanelLineage.shared.withCreator(launchCallerSurfaceId, socketRequest: launchIsSocketRequest,
+                                                                    fallback: launchOrigin, operation: { () -> TerminalPanel? in
+                    let launchCwd = machineParam.isRemote ? machineParam.remoteCwd : cwdResolution.path
+                    // Agents go to another machine only when asked (--on);
+                    // the resolved local cwd must never become a remote one.
+                    let launchMachine: HCMachineRequest = machineParam.isRemote ? machineParam.request : .local
+                    if let splitDirection {
+                        guard let sourcePanelId = target.bonsplitController.selectedTab(inPane: paneId)
+                            .flatMap({ target.tabIdFromBonsplitTabId($0.id) }) else { return nil }
+                        return target.newTerminalSplit(
+                            from: sourcePanelId,
+                            orientation: splitDirection.orientation,
+                            insertFirst: splitDirection.insertFirst,
+                            focus: focus,
+                            workingDirectory: launchCwd,
+                            startupEnvironment: plan.env,
+                            machine: launchMachine
+                        )
+                    }
+                    return target.newTerminalSurface(
                         inPane: paneId,
                         focus: focus,
-                        workingDirectory: cwdResolution.path,
-                        startupEnvironment: plan.env
+                        workingDirectory: launchCwd,
+                        startupEnvironment: plan.env,
+                        machine: launchMachine
                     )
                 }) else {
                     result = .err(code: "internal_error", message: "Failed to create panel", data: nil)
@@ -1607,7 +1734,7 @@ extension TerminalController {
                 }
                 ws = target
                 panel = created
-                paneUUID = paneId.id
+                paneUUID = splitDirection == nil ? paneId.id : (target.paneIdForPanel(created.id)?.id ?? paneId.id)
                 // A surface created in an unselected workspace stays lazily
                 // unattached (`tty: null`) and would never flush a queued
                 // command — kick the background start like
@@ -1618,6 +1745,7 @@ extension TerminalController {
                 }
             }
 
+            panel.launchKey = launchKey
             do {
                 try AgentLaunchAttentionSequencer.stampThenSend(
                     stampIdentity: {
@@ -1658,12 +1786,26 @@ extension TerminalController {
                         // Attention is committed before the launch line can
                         // run, so even a fast completion cannot escape
                         // dispatch-time suppression.
-                        panel.submitLaunchPlan(LaunchPromptDelivery.Plan(
-                            launchLine: missionContext.command(plan.launchLine), delayedPrompt: plan.delayedPrompt
-                        )) { [weak workspaceManager, weak panel] in
+                        let isLive: @MainActor () -> Bool = { [weak workspaceManager, weak panel] in
                             guard let workspaceManager, let panel,
                                   let live = workspaceManager.workspaces.first(where: { $0.id == ws.id }) else { return false }
                             return live.terminalPanel(for: panel.id) === panel
+                        }
+                        if machineParam.isRemote, let stagedPrompt {
+                            // Ticket 12: the prompt file must exist on that
+                            // machine; compose with the path it lands at.
+                            panel.submitRemoteLaunch(promptURL: stagedPrompt.url, isLive: isLive) { remotePath in
+                                guard case .success(let remote) = AgentLaunchPlanner.plan(
+                                    request: request, userDefault: userDefault, projectConfig: projectConfig,
+                                    userTemplate: userTemplate, promptFilePath: remotePath
+                                ) else { return nil }
+                                return LaunchPromptDelivery.Plan(launchLine: remote.launchLine, delayedPrompt: remote.delayedPrompt)
+                            }
+                        } else {
+                            // A remote launch has no mission context, so its line goes out unchanged.
+                            panel.submitLaunchPlan(LaunchPromptDelivery.Plan(
+                                launchLine: missionContext.command(plan.launchLine), delayedPrompt: plan.delayedPrompt
+                            ), isLive: isLive)
                         }
                     }
                 )
@@ -1674,6 +1816,11 @@ extension TerminalController {
                 result = .err(code: "internal_error", message: "\(error)", data: nil)
                 return result
             }
+
+            // Pathfinder: watch the first minute for a start that failed on
+            // screen; `agent.launch_status` (launch-agent --wait-ready) reads it.
+            ws.watchAgentLaunch(panel: panel, kind: plan.kind, launchLine: plan.launchLine,
+                                hasPrompt: stagedPrompt != nil, localFolder: cwdResolution.path)
 
             // Make the just-minted refs resolvable by the caller's next command.
             self.v2RefreshKnownRefs()
@@ -1700,8 +1847,12 @@ extension TerminalController {
                 "pane_ref": paneUUID.map { self.v2Ref(kind: .pane, uuid: $0) } ?? NSNull(),
                 "surface_id": panel.id.uuidString,
                 "surface_ref": self.v2Ref(kind: .surface, uuid: panel.id),
-                "cwd": self.v2OrNull(cwdResolution.path),
-                "cwd_source": self.v2OrNull(cwdResolution.source?.rawValue),
+                // C11H-218: an --on launch reports the folder on that machine (nil: its home-relative default),
+                // never this Mac's workspace root, which it did not use.
+                "cwd": machineParam.isRemote ? self.v2OrNull(machineParam.remoteCwd) : self.v2OrNull(cwdResolution.path),
+                "cwd_source": machineParam.isRemote
+                    ? self.v2OrNull(machineParam.remoteCwd == nil ? nil : AgentLaunchWorkingDirectorySource.explicit.rawValue)
+                    : self.v2OrNull(cwdResolution.source?.rawValue),
                 "config_source": self.v2OrNull(projectConfigMatch?.sourcePath),
                 "warnings": warnings,
                 "warning_details": cwdWarning.map { [$0.payload] } ?? []
@@ -1771,7 +1922,7 @@ extension TerminalController {
               let wsRaw = payload["workspace_id"] as? String, let wsId = UUID(uuidString: wsRaw),
               let panelRaw = payload["surface_id"] as? String, let panelId = UUID(uuidString: panelRaw) else { return outcome }
         let probeDeadline = min(responseDeadline, Date().addingTimeInterval(5))
-        let startup = AgentStartupProbe.observe(ttyName: {
+        let observed = AgentStartupProbe.observe(ttyName: {
             let snapshot = AgentLaunchDeadlineGate<String?>(deadline: probeDeadline) {
                 MainActor.assumeIsolated {
                     guard let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }),
@@ -1782,10 +1933,60 @@ extension TerminalController {
             snapshot.enqueueOnMain()
             return snapshot.wait() ?? nil
         }, expectedKind: plan.kind, deadline: probeDeadline)
+        // A running Claude can sit on its folder-trust chooser with `No, exit`
+        // highlighted: a blind Return would end the seat. Look at the screen once
+        // the process is seen and say so instead of `started`.
+        let startup = AgentStartupProbe.settleOnScreen(
+            observed,
+            expectedKind: plan.kind,
+            deadline: probeDeadline,
+            readScreen: {
+                let gate = AgentLaunchDeadlineGate<AgentStartupProbe.ScreenRead?>(
+                    deadline: min(probeDeadline, Date().addingTimeInterval(1))
+                ) {
+                    MainActor.assumeIsolated {
+                        guard let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }),
+                              let terminal = ws.terminalPanel(for: panelId),
+                              let surface = terminal.surface.surface,
+                              let region = self.capturePromptInputRegion(surface: surface, harness: plan.kind) else { return nil }
+                        let classification = PromptInputClassifier.classify(region, harness: plan.kind)
+                        let state = classification.state
+                        return AgentStartupProbe.ScreenRead(
+                            state: state,
+                            dialog: state == .dialog
+                                ? (classification.dialogKind.flatMap(PromptChooserKind.init(rawValue:))
+                                    ?? PromptInputClassifier.chooserKind(region, harness: plan.kind))
+                                : nil
+                        )
+                    }
+                }
+                gate.enqueueOnMain()
+                return gate.wait() ?? nil
+            }
+        )
         payload["startup"] = startup.status.rawValue
+        if let dialog = startup.dialog {
+            payload["startup_dialog"] = dialog
+        }
         if let process = startup.process {
             payload["startup_process"] = ["pid": process.pid, "executable": process.executable]
         }
+        return .ok(payload)
+    }
+
+    /// `agent.launch_status` — Pathfinder: the launch watch's verdict for a
+    /// panel `agent.launch` created (`pending`, `ready`, `failed`,
+    /// `needs_operator`, `quiet`). Lock-guarded read; never touches main.
+    nonisolated func v2AgentLaunchStatus(params: [String: Any]) -> V2CallResult {
+        guard let raw = (params["surface_id"] as? String) ?? (params["panel_id"] as? String),
+              let panelId = UUID(uuidString: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return .err(code: "invalid_params", message: "agent.launch_status requires panel_id (a UUID)", data: nil)
+        }
+        guard let report = AgentLaunchWatcher.report(panelId: panelId) else {
+            return .err(code: "not_found", message: "No launch watch for that panel (not launched by launch-agent, or over ten minutes ago)", data: nil)
+        }
+        var payload = report.payload
+        payload["panel_id"] = panelId.uuidString
         return .ok(payload)
     }
 

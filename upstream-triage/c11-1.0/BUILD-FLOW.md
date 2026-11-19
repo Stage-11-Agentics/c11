@@ -7,7 +7,7 @@
 ```mermaid
 flowchart LR
   GO([Atin: go]) --> MC[Merge Captain up]
-  MC --> F216[C11-216 Atlas builds]
+  MC --> F216[C11-216 the build host builds]
   F216 --> M1[C11-270 M1: 3h baseline]
   F216 --> W1[Wave 1 lanes implement]
   M1 --> G1{Wave 1 gate}
@@ -28,7 +28,7 @@ Each lane is one live seat (14 total). A lane works its tickets one at a time, o
 
 | Lane | Owner | Ticket chain | Waits on (other lanes) |
 |---|---|---|---|
-| Atlas | Codex | **216** → 312 → 292 → 293 | 292 waits on every P0/P1 |
+| The build host | Codex | **216** → 312 → 292 → 293 | 292 waits on every P0/P1 |
 | Fixtures | Codex | 271 (PR #495, reviewed) → **263** | 263 waits on 271 |
 | Soak | Codex | **270 M1** (3h baseline) … 270 M2 (end) | M1 after 216; M2 on the sign-off build |
 | Journal | Astra | 273 | 263 (attention fixes), spec 272 done |
@@ -48,12 +48,12 @@ Bold = the lane's first ticket in wave 1. External dependency: **C11-257** (agen
 ## Waves
 
 **Wave 1, foundation (starts at go).**
-1. Merge Captain launches. Early landings that need no Atlas build: PR #496 (skill short-prompt rule), C11-312 (signing workflow, CI only).
-2. **C11-216** first: the first real tagged build on Atlas from a delegator worktree (Xcode 26.3). Everything that needs a build waits on it.
-3. Then, in parallel: C11-270 **M1 baseline** (3h on Atlas, no other builds during it), and the wave-1 lanes implement: 294, 263, 284/279/283/280, 306/258/269/305, 299/297/300/296/303, 287/288/290/304, 259, 262. During M1, owners verify with GitHub CI (compile + logic tests, about 6-12 min per run), not Atlas.
-4. C11-271 lands after its fixture test passes on Atlas.
+1. Merge Captain launches. Early landings that need no build host build: PR #496 (skill short-prompt rule), C11-312 (signing workflow, CI only).
+2. **C11-216** first: the first real tagged build on the build host from a delegator worktree (Xcode 26.3). Everything that needs a build waits on it.
+3. Then, in parallel: C11-270 **M1 baseline** (3h on the build host, no other builds during it), and the wave-1 lanes implement: 294, 263, 284/279/283/280, 306/258/269/305, 299/297/300/296/303, 287/288/290/304, 259, 262. During M1, owners verify with GitHub CI (compile + logic tests, about 6-12 min per run), not the build host.
+4. C11-271 lands after its fixture test passes on the build host.
 
-**Gate 1:** M1 baseline published, fixtures replay on Atlas, Ghostty CI green with the new checksum.
+**Gate 1:** M1 baseline published, fixtures replay on the build host, Ghostty CI green with the new checksum.
 
 **Wave 2, core.** 273 (journal store), then 274/275/276 producers, 231/277 consumers and analytics, 264 → 265 → 266 Feed; 260 groups sidebar, then 261 validation at 60 workspaces; 282, 295, 302, 301 after 294; 298, 307 after 312; the rest of the bug lanes.
 
@@ -67,12 +67,12 @@ Bold = the lane's first ticket in wave 1. External dependency: **C11-257** (agen
 
 | Resource | Plan | Why |
 |---|---|---|
-| Owners implementing at once | 6 at go, up to 8-10 | Implementation runs on Hyperion and is API-bound (Codex is effectively unlimited); dependencies, not tokens, limit it |
+| Owners implementing at once | 6 at go, up to 8-10 | Implementation runs on the laptop and is API-bound (Codex is effectively unlimited); dependencies, not tokens, limit it |
 | Reviewers | 1 per PR, in parallel | Cross-model within Codex; Grok and one Fable review allowed on large items |
 | Merge Captain | 1, lands one PR at a time | `main` is unprotected, so CI on each PR head runs in parallel; the captain only serializes rebase + final check + merge |
-| Atlas builds | **2 at a time** (Atin approved; drop to 1 if load stays above ~40) | Measured 2026-10-01: a cold Debug build takes 68 s alone; two at once finish in 106 s (vs 136 s back to back) at peak load 19 on 24 cores. Builds are not the bottleneck; reviews and the soak windows are |
-| Soak windows | M1 3h, M2 10h + 2.5h | No other Atlas builds during them |
+| The build host builds | **2 at a time** (Atin approved; drop to 1 if load stays above ~40) | Measured 2026-10-01: a cold Debug build takes 68 s alone; two at once finish in 106 s (vs 136 s back to back) at peak load 19 on 24 cores. Builds are not the bottleneck; reviews and the soak windows are |
+| Soak windows | M1 3h, M2 10h + 2.5h | No other the build host builds during them |
 
 ## Honest timeline
 
-Optimistic, wall clock from go: C11-216 about 1-2h; M1 baseline 3h, overlapping wave-1 implementation; wave-1 landings and wave 2 about 8-12h, paced by review rounds and landing (builds are about a minute each); locale + sign-off build about 2h; then your pass, plus a 10h overnight M2 and 2.5h constrained run. **Roughly a day and a half to a signed 1.0**, not one night: the soak windows alone are 15.5h of serial Atlas time. Everything except the final soak can land in about one long day.
+Optimistic, wall clock from go: C11-216 about 1-2h; M1 baseline 3h, overlapping wave-1 implementation; wave-1 landings and wave 2 about 8-12h, paced by review rounds and landing (builds are about a minute each); locale + sign-off build about 2h; then your pass, plus a 10h overnight M2 and 2.5h constrained run. **Roughly a day and a half to a signed 1.0**, not one night: the soak windows alone are 15.5h of serial build-host time. Everything except the final soak can land in about one long day.

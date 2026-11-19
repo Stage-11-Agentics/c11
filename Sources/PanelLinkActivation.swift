@@ -8,11 +8,12 @@ enum PanelLinkTarget: Equatable {
     case workspace(UUID)
 
     static func isLink(_ text: String) -> Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("c11://")
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return PanelLinkFormat.acceptedSchemes.contains { text.hasPrefix("\($0)://") }
     }
 
     static func usesScheme(_ url: URL) -> Bool {
-        url.scheme?.lowercased() == "c11"
+        url.scheme.map { PanelLinkFormat.acceptedSchemes.contains($0.lowercased()) } ?? false
     }
 
     /// Consume malformed scheme URLs too: Foundation may reject their spelling,
@@ -20,7 +21,7 @@ enum PanelLinkTarget: Equatable {
     static func usesScheme(_ text: String) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let url = URL(string: text), usesScheme(url) { return true }
-        return text.prefix(4).lowercased() == "c11:"
+        return PanelLinkFormat.acceptedScheme(prefixOf: text) != nil
     }
 
     init?(_ text: String) {
@@ -30,14 +31,14 @@ enum PanelLinkTarget: Equatable {
         // are not aliases for a native target.
         guard text.utf8.count <= 128,
               let components = URLComponents(string: text),
-              components.scheme?.lowercased() == "c11",
+              let scheme = components.scheme?.lowercased(), PanelLinkFormat.acceptedSchemes.contains(scheme),
               components.user == nil, components.password == nil, components.port == nil,
               components.query == nil, components.fragment == nil,
               let host = components.host?.lowercased(),
               components.percentEncodedPath == components.path,
               components.path.count == 37, components.path.first == "/",
               let id = UUID(uuidString: String(components.path.dropFirst())),
-              text.lowercased() == "c11://\(host)/\(id.uuidString.lowercased())" else { return nil }
+              text.lowercased() == "\(scheme)://\(host)/\(id.uuidString.lowercased())" else { return nil }
         switch host {
         case "panel": self = .panel(id)
         case "workspace": self = .workspace(id)
@@ -48,6 +49,8 @@ enum PanelLinkTarget: Equatable {
 
 enum PanelLinkNotice {
     case invalid, unavailable, destinationChanged, localOnly, activation, terminalActivation
+    /// C11H-247: a `c11-show:` address typed or picked anywhere but its own viewer.
+    case showAddress
 
     /// The notice for a refused terminal Cmd-click. A click on a window that is
     /// not key, or on a hidden view, says nothing about the target, which may
@@ -70,6 +73,9 @@ enum PanelLinkNotice {
             return String(localized: "panelLink.notice.activation", defaultValue: "Open c11 links by clicking them or pressing Return in a local page.")
         case .terminalActivation:
             return String(localized: "panelLink.notice.terminalActivation", defaultValue: "Command-click a c11 link to open its panel or workspace.")
+        case .showAddress:
+            return String(localized: "show.address.refused",
+                          defaultValue: "A c11-show address opens only in the viewer that shows it. Nothing was searched.")
         }
     }
 }
@@ -239,6 +245,12 @@ final class PanelLinkActivation: NSObject, WKScriptMessageHandler {
         noticePresenter.show(notice, in: webView)
     }
 
+    /// C11H-247: a notice that stays until the operator clicks it.
+    func showText(_ text: String, sticky: Bool) {
+        guard let webView else { return }
+        noticePresenter.show(text: text, in: webView, sticky: sticky)
+    }
+
     static func log(target: String, origin: String, activation: String, result: String) {
         // JSON string encoding keeps hostile URLs on one structured log line.
         let data = try? JSONSerialization.data(withJSONObject: [
@@ -260,7 +272,7 @@ final class PanelLinkActivation: NSObject, WKScriptMessageHandler {
         const anchor = event.composedPath().find(node => node instanceof Element && node.matches('a[href]'));
         if (!anchor) return;
         const href = anchor.getAttribute('href') || '';
-        if (!/^\s*c11:\/\//i.test(href)) return;
+        if (!/^\s*c11?:\/\//i.test(href)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
         // This value is read from the isolated world's native Event prototype,
@@ -282,14 +294,14 @@ final class PanelLinkActivation: NSObject, WKScriptMessageHandler {
 
 /// One non-modal notice implementation for web and portal-hosted terminals.
 @MainActor
-final class PanelLinkNoticePresenter {
+final class PanelLinkNoticePresenter: NSObject {
     private var noticeView: NSView?
 
     func show(_ notice: PanelLinkNotice, in host: NSView) {
         show(text: notice.text, in: host)
     }
 
-    func show(text: String, in host: NSView) {
+    func show(text: String, in host: NSView, sticky: Bool = false) {
         noticeView?.removeFromSuperview()
         let card = NSVisualEffectView()
         card.material = .popover
@@ -317,6 +329,10 @@ final class PanelLinkNoticePresenter {
             label.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -10)
         ])
         noticeView = card
+        if sticky {
+            card.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(dismissSticky(_:))))
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self, weak card] in
             guard let self, let card, self.noticeView === card else { return }
             card.removeFromSuperview()
@@ -324,20 +340,94 @@ final class PanelLinkNoticePresenter {
         }
     }
 
+
+    @objc private func dismissSticky(_ sender: NSClickGestureRecognizer) {
+        guard let card = sender.view, noticeView === card else { return }
+        card.removeFromSuperview()
+        noticeView = nil
+    }
 }
 
 struct TerminalPanelLinkPolicy {
-    var isNativeCommandClick: Bool
+    /// A real mouse-up: Cmd-click through Ghostty, or a click c11 took on a
+    /// c11 link while the program held the mouse. Never synthesized input.
+    var isNativeClick: Bool
     var isSocketCommand: Bool
     var isKeyWindow: Bool
     var isVisible: Bool
 
     var refusalReason: String? {
         if isSocketCommand { return "socket_command" }
-        if !isNativeCommandClick { return "missing_native_input" }
+        if !isNativeClick { return "missing_native_input" }
         if !isKeyWindow { return "window_not_key" }
         if !isVisible { return "view_hidden" }
         return nil
+    }
+}
+
+/// A click on a c11 link while the program in the terminal holds the mouse
+/// (C11H-325). Ghostty resolves links only while it is not reporting the
+/// mouse, so c11 reads the cell's OSC 8 target itself. A plain click or a
+/// Cmd-click on a c11 link is held back from the program: released on the
+/// same link, it navigates; dragged past the threshold, or released off the
+/// link, the press is replayed to the program, so a selection still starts
+/// where the operator pressed. Every other click, an https link included,
+/// goes to the program untouched; without capture, Ghostty's own Cmd-click
+/// path handles links.
+struct CapturedPanelLinkClick: Equatable {
+    let href: String
+    /// The press, in view coordinates, for the replay.
+    let origin: CGPoint
+
+    /// Movement, in points, past which a held press becomes a drag.
+    static let dragThreshold: CGFloat = 3
+
+    /// Plain or Cmd. Shift stays Ghostty's (it lifts the program's grab and
+    /// already resolves Shift+Cmd links); Option and Control are the program's.
+    static func takesModifiers(_ modifiers: NSEvent.ModifierFlags) -> Bool {
+        modifiers.intersection([.command, .control, .option, .shift]).isSubset(of: .command)
+    }
+
+    /// Cmd alone shows the true-destination preview, as without capture.
+    static func previewsWith(_ modifiers: NSEvent.ModifierFlags) -> Bool {
+        modifiers.intersection([.command, .control, .option, .shift]) == .command
+    }
+
+    /// At mouse-down. The closures run only when the cheaper checks before
+    /// them pass, so an Option or Control click never reads the cell.
+    static func begin(modifiers: NSEvent.ModifierFlags,
+                      at origin: CGPoint,
+                      mouseCaptured: () -> Bool,
+                      hrefAtPointer: () -> String?) -> CapturedPanelLinkClick? {
+        guard takesModifiers(modifiers), mouseCaptured(),
+              let href = hrefAtPointer(), PanelLinkTarget.usesScheme(href) else { return nil }
+        return CapturedPanelLinkClick(href: href, origin: origin)
+    }
+
+    /// During a drag: true once the pointer is far enough from the press that
+    /// the program should have it (replay the press, then follow the drag).
+    func becomesDrag(at point: CGPoint) -> Bool {
+        hypot(point.x - origin.x, point.y - origin.y) >= Self.dragThreshold
+    }
+
+    /// At mouse-up: the link to hand to the native-input policy, or nil when
+    /// the release left the link (the held click then goes to the program).
+    func finish(hrefAtPointer: () -> String?) -> String? {
+        hrefAtPointer() == href ? href : nil
+    }
+}
+
+/// What the captured Cmd-hover last read under the pointer (C11H-325), so a
+/// mouse move within the same cell's target skips the decode, the destination
+/// lookup and the formatting. It compares raw OSC 8 bytes and the preview
+/// state that read left behind: once the preview is cleared some other way,
+/// the same target is read again.
+struct CapturedPanelLinkHover: Equatable {
+    let target: [UInt8]
+    let shown: Bool
+
+    func covers(_ bytes: UnsafeRawBufferPointer, previewShowing: Bool) -> Bool {
+        previewShowing == shown && bytes.elementsEqual(target)
     }
 }
 
@@ -351,6 +441,8 @@ final class TerminalPanelLinkPreview {
 
     private var card: NSView?
     private var displayedText: String?
+
+    var isShowing: Bool { card != nil }
 
     func clear() {
         card?.removeFromSuperview()

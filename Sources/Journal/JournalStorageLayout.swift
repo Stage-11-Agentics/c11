@@ -15,6 +15,8 @@ struct JournalBudgets {
     var spoolBytes: Int64 = 16 * 1024 * 1024
     var spoolFiles = 1024
     var spoolFileBytes = 64 * 1024
+    /// Wall-clock budget for one offline spool write; past it the write gives up.
+    var spoolWriteNanos: UInt64 = 25_000_000
     var queueEntries = 256
     var queueBytes = 1024 * 1024
 }
@@ -25,7 +27,7 @@ struct JournalStorageLayout {
     var spool: URL { directory.appendingPathComponent("spool", isDirectory: true) }
 
     static func resolve(bundleID: String?, supportDirectory: URL? = nil) throws -> JournalStorageLayout {
-        guard let bundleID, bundleID.hasPrefix("com.stage11.c11"), bundleID.utf8.count <= 128,
+        guard let bundleID, C11Identity.isFamilyBundleIdentifier(bundleID), bundleID.utf8.count <= 128,
               bundleID.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 46 || $0 == 45 }),
               !bundleID.contains("..") else { throw JournalError.unavailable }
         let support = supportDirectory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")

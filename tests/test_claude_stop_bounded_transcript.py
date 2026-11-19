@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """B028: exercise the built CLI Stop route with an isolated socket and state.
 
-Run on Atlas with C11_CLI_BIN naming the CLI built from this checkout. No app,
+Run on the build host with C11_CLI_BIN naming the CLI built from this checkout. No app,
 real conversation, or operator socket is used. Swift logic tests measure the
 read cap; this fixture proves that the executable uses that reader and fallback.
 """

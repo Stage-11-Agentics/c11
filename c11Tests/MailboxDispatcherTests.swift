@@ -112,6 +112,87 @@ final class MailboxDispatcherTests: XCTestCase {
         return surfaceId
     }
 
+    // MARK: - C11H-360: linked-machine panels never take a local panel's name
+
+    private func dispatchRelayRouting(to: String, local: [UUID], linked: [UUID: String],
+                                      localAnswersAnywhere: Bool = false) throws -> Set<UUID> {
+        let resolver = MailboxPanelResolver(workspaceId: workspaceId, linkedMachines: { linked },
+                                            localAnswersAnywhere: { _ in localAnswersAnywhere },
+                                            livePanels: { local + Array(linked.keys) })
+        let dispatcher = MailboxDispatcher(workspaceId: workspaceId, stateURL: tempState, resolver: resolver)
+        self.dispatcher = dispatcher
+        let envelope = try MailboxEnvelope.build(from: "sender", to: to, body: "for \(to)")
+        try writeEnvelope(envelope)
+        dispatcher.dispatchOne(url: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id)))
+        dispatcher.log.flush()
+        return Set((local + Array(linked.keys)).filter { (try? readInboxFile(panel: $0, id: envelope.id)) != nil })
+    }
+
+    private func seedLinked(title: String, source: MetadataSource = .explicit, address: String? = nil) -> UUID {
+        let surfaceId = UUID()
+        var partial: [String: Any] = [MetadataKey.title: title]
+        if let address { partial["mailbox.address"] = address }
+        _ = try? PanelMetadataStore.shared.setMetadata(workspaceId: workspaceId, surfaceId: surfaceId,
+                                                       partial: partial, mode: .merge, source: source)
+        return surfaceId
+    }
+
+    func testLinkedPanelNeverTakesALocalPanelsName() throws {
+        let local = seedSurface(name: "watcher-360")
+        let byTitle = seedLinked(title: "watcher-360")
+        XCTAssertEqual(try dispatchRelayRouting(to: "watcher-360", local: [local], linked: [byTitle: "studio"]), [local])
+        // Even an address on the linked panel loses to a local title.
+        let byAddress = seedLinked(title: "other", address: "watcher-360")
+        XCTAssertEqual(try dispatchRelayRouting(to: "watcher-360", local: [local], linked: [byAddress: "studio"]), [local])
+    }
+
+    func testLinkedPanelLosesToALocalPanelInAnotherWorkspace() throws {
+        let linked = seedLinked(title: "reviewer-360")
+        XCTAssertEqual(try dispatchRelayRouting(to: "reviewer-360", local: [], linked: [linked: "studio"],
+                                                localAnswersAnywhere: true), [])
+        // Alone with the name, a linked panel is still reachable.
+        XCTAssertEqual(try dispatchRelayRouting(to: "reviewer-360", local: [], linked: [linked: "studio"]), [linked])
+        XCTAssertEqual(try dispatchRelayRouting(to: "id:\(linked.uuidString)", local: [], linked: [linked: "studio"],
+                                                localAnswersAnywhere: true), [linked])
+    }
+
+    /// C11H-360 (L7): the accepted event names the machine relayed mail came
+    /// from, so history keeps it with no envelope copy left; local mail's
+    /// event carries no such field.
+    func testAcceptedEventCarriesTheRelayMachine() throws {
+        let instance = "dispatcher-relay-origin"
+        let eventLog = EventLog(url: EventLogLayout.logURL(state: tempState, instance: instance), instance: instance)
+        EventEmitter.shared.startForTesting(log: eventLog, instance: instance)
+        defer { EventEmitter.shared.resetForTesting() }
+        let recipient = seedSurface(name: "origin-recipient")
+        let dispatcher = makeDispatcher(surfaces: [recipient])
+        let local = try MailboxEnvelope.build(from: "reviewer", to: "origin-recipient", body: "local words")
+        let relayed = try MailboxEnvelope.build(from: "reviewer", to: "origin-recipient", body: "remote words")
+            .relayed(originHost: "demo-mac-studio", machine: "studio", id: MailboxULID.make())
+        for envelope in [local, relayed] {
+            try writeEnvelope(envelope)
+            dispatcher.dispatchOne(url: MailboxLayout.outboxURL(state: tempState, workspaceId: workspaceId)
+                .appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id)))
+        }
+        dispatcher.log.flush()
+        eventLog.flush()
+        let accepted = MessagesPageSource.load(stateURL: tempState).events.filter { $0.type == "mailbox.accepted" }
+        let byId = Dictionary(accepted.compactMap { event in (event.payload["id"] as? String).map { ($0, event) } },
+                              uniquingKeysWith: { first, _ in first })
+        XCTAssertEqual(byId[relayed.id]?.payload["relay_machine"] as? String, "studio")
+        XCTAssertNotNil(byId[local.id])
+        XCTAssertNil(byId[local.id]?.payload["relay_machine"])
+    }
+
+    func testLinkedPanelsTerminalTitleIsNotAMailName() throws {
+        let osc = seedLinked(title: "builder-360", source: .osc)
+        XCTAssertEqual(try dispatchRelayRouting(to: "builder-360", local: [], linked: [osc: "studio"]), [])
+        // A local panel's terminal title still is.
+        let localOSC = seedLinked(title: "builder-360", source: .osc)
+        XCTAssertEqual(try dispatchRelayRouting(to: "builder-360", local: [localOSC], linked: [:]), [localOSC])
+    }
+
     private func makeDispatcher(surfaces: [UUID]) -> MailboxDispatcher {
         let resolver = MailboxPanelResolver(
             workspaceId: workspaceId,
@@ -881,6 +962,51 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertFalse(events.contains("cleaned"))
         let resolved = try readLog().first { $0["event"] as? String == "resolved" }
         XCTAssertEqual(resolved?["recipients"] as? [String], [])
+    }
+
+    func testCaptainHolderClosingAfterResolutionLeavesDurableRejectionAndReceipt() throws {
+        let captain = seedSurface(name: "captain", delivery: "silent")
+        let lookalike = seedSurface(name: "role:lead", delivery: "silent")
+        setAddress("role:lead", on: captain)
+        _ = try PanelMetadataStore.shared.setMetadata(workspaceId: workspaceId, surfaceId: lookalike,
+            partial: ["mailbox.role": "role:lead"], mode: .merge, source: .explicit)
+        let caller = UUID()
+        let resolved = try MailboxCaptainSendTarget.resolve(callerPanelId: caller) {
+            ["resolution": "unique", "captain": "role:lead", "requested_recipient": "panel:role:lead",
+             "caller_panel_id": caller.uuidString, "sender_workspace_id": self.workspaceId.uuidString,
+             "target_workspace_id": self.workspaceId.uuidString, "panel_ids": [captain.uuidString],
+             "recipients": [["requested_panel_id": captain.uuidString]]]
+        }
+        let envelope = try MailboxEnvelope.build(from: "sender", to: resolved.recipient, body: "report")
+        let outboxFile = try MailboxSendTarget.verified(resolved.workspaceId).writeEnvelope(envelope, stateURL: tempState)
+
+        // The holder closed after resolution. Its stale metadata remains, and a
+        // live title/role lookalike remains, but neither is an exact live holder.
+        let dispatcher = makeDispatcher(surfaces: [lookalike])
+        var handlerCalls = 0
+        dispatcher.registerHandler(name: "silent") { _, _, _ in
+            handlerCalls += 1
+            return .init(outcome: .ok)
+        }
+        dispatcher.dispatchOne(url: outboxFile)
+        dispatcher.log.flush()
+        XCTAssertEqual(handlerCalls, 0)
+        let rejected = MailboxLayout.rejectedURL(state: tempState, workspaceId: workspaceId)
+        let retained = try MailboxEnvelope.validate(data: Data(contentsOf:
+            rejected.appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id))))
+        XCTAssertEqual(retained.to, "panel:role:lead")
+        XCTAssertEqual(retained.body, "report")
+        let reason = try String(contentsOf: rejected.appendingPathComponent(envelope.id + ".err"), encoding: .utf8)
+        XCTAssertTrue(reason.contains("panel:role:lead"), reason)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outboxFile.path))
+        XCTAssertThrowsError(try readInboxFile(panel: lookalike, id: envelope.id))
+        let events = try readLog().compactMap { $0["event"] as? String }
+        XCTAssertEqual(events, ["received", "resolved", "rejected"])
+        let receipt = try MailboxReceiptStatus.status(id: envelope.id,
+            workspacesRoot: tempState.appendingPathComponent(MailboxLayout.workspacesDirectoryName))
+        XCTAssertEqual(receipt.state, .rejected)
+        XCTAssertTrue(receipt.rejectedReason?.contains("panel:role:lead") == true)
+        XCTAssertTrue(receipt.recipients.isEmpty)
     }
 
     // MARK: - Dedupe

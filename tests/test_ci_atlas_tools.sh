@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Behavioral coverage for the process-scoped Atlas CI helpers.
+# Behavioral coverage for the process-scoped build-host CI helpers.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,7 +22,7 @@ chmod +x "$TMP_DIR/zig/zig"
 selected="$(C11_ZIG_DIR="$TMP_DIR/zig" PATH="/usr/bin:/bin" "$ROOT_DIR/scripts/ensure-zig.sh")"
 [[ "$selected" == "$TMP_DIR/zig" ]] || fail "ensure-zig selected '$selected'"
 
-# The Atlas wrapper reaches the command with a slot and the nested build lock,
+# The build-host wrapper reaches the command with a slot and the nested build lock,
 # and releases the lock on completion.
 mkdir -p "$TMP_DIR/bin"
 cat > "$TMP_DIR/bin/probe" <<'EOF'
@@ -32,6 +32,7 @@ printf '%s:%s\n' "${C11_ATLAS_BUILD_SLOT:-}" "${C11_ATLAS_LOCK_OWNER:-}" > "${PR
 EOF
 chmod +x "$TMP_DIR/bin/probe"
 printf '0\n' > "$TMP_DIR/load"
+export C11_ATLAS_ADMISSION_LOG="$TMP_DIR/admission.jsonl"
 PROBE_OUTPUT="$TMP_DIR/probe" \
   C11_ATLAS_BUILD_SLUG=fixture \
   C11_ATLAS_SLOTS_DIR="$TMP_DIR/slots" \
@@ -40,11 +41,11 @@ PROBE_OUTPUT="$TMP_DIR/probe" \
   "$ROOT_DIR/scripts/ci-atlas-run.sh" probe
 
 IFS=: read -r slot owner < "$TMP_DIR/probe"
-[[ "$slot" =~ ^[12]$ ]] || fail "wrapper did not acquire slot: $slot"
+[[ "$slot" =~ ^(1|[3-5])$ ]] || fail "wrapper did not acquire slot: $slot"
 [[ "$owner" =~ ^[0-9]+$ ]] || fail "wrapper did not acquire nested lock: $owner"
 [[ ! -d "$TMP_DIR/slots/build-$slot" ]] || fail "nested build lock leaked"
 
-# Exercise the poller-reserved and shared fleet slots under normal and high load.
+# Exercise the poller-reserved slot and the three fleet lanes.
 python3 "$ROOT_DIR/tests/test_atlas_build_slots.py"
 
 set +e
@@ -56,4 +57,4 @@ rc=$?
 set -e
 [[ "$rc" -eq 9 ]] || fail "wrapper changed command exit status to $rc"
 
-echo "PASS: Atlas wrapper admits commands and keeps Zig/build state process-scoped"
+echo "PASS: build-host wrapper admits commands and keeps Zig/build state process-scoped"

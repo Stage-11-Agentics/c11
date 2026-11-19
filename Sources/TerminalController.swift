@@ -241,6 +241,21 @@ final class SocketCommandContext: @unchecked Sendable {
     let callerPanelId: UUID?
     let callerTTYDevice: UInt32?
     let callerPID: pid_t?
+    let hcInventory: HCInventorySnapshot?
+    /// The terminal/root/peer births proven by local HC admission.
+    let verifiedHCTerminal: HCVerifiedTerminal?
+    /// C11H-228: the verified caller's machine when the request came through
+    /// the machine relay; `c11 show` reads the caller's files there. Set only
+    /// by the relay executor, never from params.
+    var relayMachine: String?
+    /// C11H-359 (L3): the link that verified the relayed caller (its shard's
+    /// session, machine and secret id). `c11 show` reads through this link
+    /// only. Set only by the relay executor, never from params.
+    var relayLink: C11RelayLinkRef?
+    /// C11H-371: what a relayed read may see (the verified caller's panel and
+    /// the workspace that holds it). Read handlers keep their reply inside it.
+    /// Set only by the relay executor, never from params; nil for local calls.
+    var relayReadScope: C11RelayPolicy.ReadScope?
     var blockedTarget: UUID?
     /// A command-palette session adopts the request that drives it (a simulated
     /// shortcut, a debug call). Once adopted, the operator-only wrappers around
@@ -249,12 +264,15 @@ final class SocketCommandContext: @unchecked Sendable {
     var holdsOperatorWrappers = false
 
     init(method: String, allowsFocus: Bool, callerPanelId: UUID? = nil, callerTTYDevice: UInt32? = nil,
-         callerPID: pid_t? = nil) {
+         callerPID: pid_t? = nil, hcInventory: HCInventorySnapshot? = nil,
+         verifiedHCTerminal: HCVerifiedTerminal? = nil) {
         self.method = method
         self.allowsFocus = allowsFocus
         self.callerPanelId = callerPanelId
         self.callerTTYDevice = callerTTYDevice
         self.callerPID = callerPID
+        self.hcInventory = hcInventory
+        self.verifiedHCTerminal = verifiedHCTerminal
     }
 
     /// The origin of the palette session now running, or nil when an operator drives it.
@@ -395,6 +413,7 @@ class TerminalController {
         // newly accepted worker's main.async update, so older state cannot win.
         // Do not seed the worker dedupe cache here: a newer report may already
         // have reached that cache off-main while this batch is being drained.
+        HCBackendComposition.shared.setInitialRestoreReady(ready)
         for (panelId, report) in reports {
             if let ttyName = report.ttyName {
                 applyReportedTTY(ttyName, panelId: panelId, preferredWorkspaceId: report.preferredWorkspaceId)
@@ -562,6 +581,11 @@ class TerminalController {
         .pane: [:],
         .surface: [:],
     ]
+
+    /// C11H-23: where durable panel numbers come from (tests inject one).
+    var panelAllocations: PanelAllocationRegistry = .shared
+    /// C11H-23: the registry number each cached `panel:N` ref was built from.
+    private var v2CachedPanelNumbers: [UUID: Int] = [:]
 
     // Handle maps are process-lifetime tombstones: closing/moving an object
     // never frees its ordinal for reuse. Lifecycle hooks register new objects;
@@ -739,9 +763,12 @@ class TerminalController {
     /// shared singleton mid-process. Password-mode tests (C11-347) pass a
     /// `socketPasswordSource` so they never read this machine's real password.
     static func makeForTesting(
-        socketPasswordSource: SocketControlPasswordStore.Source = .shipped
+        socketPasswordSource: SocketControlPasswordStore.Source = .shipped,
+        panelAllocations: PanelAllocationRegistry? = nil
     ) -> TerminalController {
-        TerminalController(socketPasswordSource: socketPasswordSource)
+        let controller = TerminalController(socketPasswordSource: socketPasswordSource)
+        if let panelAllocations { controller.panelAllocations = panelAllocations }
+        return controller
     }
 
     private nonisolated func shouldContinueAcceptLoop(generation: UInt64) -> Bool {
@@ -802,8 +829,15 @@ class TerminalController {
             allowsFocus: Self.socketCommandAllowsInAppFocusMutations(commandKey: commandKey, isV2: isV2),
             callerPanelId: SocketCommandContext.current?.callerPanelId,
             callerTTYDevice: SocketCommandContext.current?.callerTTYDevice,
-            callerPID: SocketCommandContext.current?.callerPID
+            callerPID: SocketCommandContext.current?.callerPID,
+            hcInventory: SocketCommandContext.current?.hcInventory,
+            verifiedHCTerminal: SocketCommandContext.current?.verifiedHCTerminal
         )
+        // A relayed request stays relayed across the rebuild (C11H-359).
+        context.relayMachine = SocketCommandContext.current?.relayMachine
+        context.relayLink = SocketCommandContext.current?.relayLink
+        // C11H-371: a relayed read stays scoped across the rebuild.
+        context.relayReadScope = SocketCommandContext.current?.relayReadScope
         return SocketCommandContext.withContext(context, body)
     }
 
@@ -956,21 +990,68 @@ class TerminalController {
             }
         }
 
-        func shouldPublishShellActivity(
+        /// A shell-state report publishes only what it changes; a repeated
+        /// prompt still changes when the prompt was last empty (C11H-272).
+        func shellActivityPublish(
             workspaceId: UUID,
             panelId: UUID,
             state: Workspace.PanelShellActivityState
-        ) -> Bool {
+        ) -> ShellActivityPublish {
             let key = SocketPanelKey(workspaceId: workspaceId, panelId: panelId)
             return queue.sync {
                 if lastReportedShellStates[key] == state {
-                    return false
+                    return state == .promptIdle ? .repeatedPrompt : .unchanged
                 }
                 if lastReportedShellStates.count >= maxTrackedShellStates {
                     lastReportedShellStates.removeAll(keepingCapacity: true)
                 }
                 lastReportedShellStates[key] = state
-                return true
+                return .changed
+            }
+        }
+    }
+
+    /// C11H-272: what one `report_shell_state` changes. A repeated prompt is
+    /// news too: it is the latest moment the prompt was empty (an empty Return
+    /// or Ctrl-C at the prompt), which a resume into a live shell waits for.
+    /// A repeated `running` says nothing new.
+    enum ShellActivityPublish: Equatable {
+        case changed
+        case repeatedPrompt
+        case unchanged
+    }
+
+    /// Test seam: the workspace a shell report's panel lives in. Nil in production.
+    nonisolated(unsafe) static var shellReportWorkspaceForTesting: (@MainActor (UUID) -> Workspace?)?
+
+    /// The workspace a shell report or kick targets, found from its panel:
+    /// the shells send the panel id in `--tab` too (C11-171).
+    @MainActor static func shellReportWorkspace(panelId: UUID, preferredWorkspaceId: UUID) -> Workspace? {
+        if let lookup = shellReportWorkspaceForTesting { return lookup(panelId) }
+        return AppDelegate.shared?.workspaceContainingPanel(panelId: panelId, preferredWorkspaceId: preferredWorkspaceId)?.workspace
+    }
+
+    /// The app half of a scoped `report_shell_state`, from the socket worker.
+    /// A changed state or a repeated prompt hops to main once; the setter does
+    /// only the prompt-time assignment for a repeat. `kickAgent` is the
+    /// prompt's detector kick (`--agent-kick`), carried by the same report so a
+    /// prompt costs the shell one write (C11H-272).
+    nonisolated static func dispatchShellActivityReport(
+        scope: (workspaceId: UUID, panelId: UUID),
+        state: Workspace.PanelShellActivityState,
+        kickAgent: Bool
+    ) {
+        let publish = socketFastPathState.shellActivityPublish(
+            workspaceId: scope.workspaceId, panelId: scope.panelId, state: state)
+        guard publish != .unchanged || kickAgent else { return }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let workspace = shellReportWorkspace(panelId: scope.panelId,
+                                                           preferredWorkspaceId: scope.workspaceId) else { return }
+                if publish != .unchanged {
+                    workspace.updatePanelShellActivityState(panelId: scope.panelId, state: state)
+                }
+                if kickAgent { AgentDetector.shared.kick(workspaceId: workspace.id, panelId: scope.panelId) }
             }
         }
     }
@@ -1435,6 +1516,35 @@ class TerminalController {
         return result == 0
     }
 
+    /// Keeps the shared `/tmp` name a pre-C11H-364 build bound for this
+    /// channel pointing at the new listener, so a terminal stamped with that
+    /// name before an update still reaches c11. Only a missing name, our own
+    /// link or our own dead socket is replaced; the alias is never removed on
+    /// stop, so no other account can take the name while c11 is down.
+    static func installLegacySocketAlias(boundPath: String) {
+        guard let legacyPath = SocketControlSettings.legacyAliasPath(forBoundPath: boundPath) else { return }
+        let outcome = C11UserRuntime.installLegacyAlias(
+            at: legacyPath,
+            target: boundPath,
+            hasLiveListener: { socketHasLiveListener(path: $0) }
+        )
+        guard outcome != .installed else { return }
+        let detail: String
+        switch outcome {
+        case .keptForeign(let owner): detail = "owner_uid=\(owner)"
+        case .keptLivePeer: detail = "live_peer"
+        case .keptOther: detail = "not_a_socket"
+        case .failed(let code): detail = "errno=\(code)"
+        case .installed: detail = "installed"
+        }
+        print("TerminalController: socket.legacy_alias.refused path=\(legacyPath) \(detail)")
+        sentryBreadcrumb(
+            "socket.legacy_alias.refused",
+            category: "socket",
+            data: ["path": legacyPath, "detail": detail]
+        )
+    }
+
     /// A unique, build-local socket path to bind when the requested path is held
     /// by a live peer (C11-155). The shared prod default falls back to the
     /// user-scoped stable path; any other path gets a pid-stamped sibling so it
@@ -1481,6 +1591,18 @@ class TerminalController {
 
     private nonisolated static func ensureSocketParentDirectoryExists(path: String) -> Int32? {
         let parentURL = URL(fileURLWithPath: path).deletingLastPathComponent()
+        // c11's per-user folder must be 0700 and ours before anything binds in
+        // it; a symlink or a folder another account owns is refused (C11H-364).
+        if C11UserRuntime.isInsideDirectory(path) {
+            do {
+                try C11UserRuntime.ensureDirectory()
+                return nil
+            } catch let error as POSIXError {
+                return error.code.rawValue
+            } catch {
+                return EACCES
+            }
+        }
         do {
             try FileManager.default.createDirectory(
                 at: parentURL,
@@ -1667,6 +1789,7 @@ class TerminalController {
 
         SocketControlSettings.recordLastSocketPath(activeSocketPath)
         CodexLaunchBoundaryMarkerStore.recordBoundSocketPath(activeSocketPath)
+        Self.installLegacySocketAlias(boundPath: activeSocketPath)
 
         let generation = withListenerState {
             isRunning = true
@@ -1705,8 +1828,7 @@ class TerminalController {
                 guard let workspace = workspaceManager.workspaces.first(where: { $0.id == workspaceId }) else { return }
                 let validSurfaceIds = Set(workspace.panels.keys)
                 guard validSurfaceIds.contains(panelId) else { return }
-                workspace.panelListeningPorts[panelId] = ports.isEmpty ? nil : ports
-                workspace.recomputeListeningPorts()
+                workspace.applyScannedListeningPorts(ports, forPanel: panelId)
             }
         }
 
@@ -2334,39 +2456,29 @@ class TerminalController {
     private func handleClient(_ socket: Int32, peerPid: pid_t?, nativePeer: MailboxStdinBuffer.AgentProcess?) {
         defer { close(socket) }
 
-        // In c11Only mode, verify the connecting process is a descendant of c11.
-        // In allowAll mode (env-var only), skip the ancestry check.
-        if accessMode == .c11Only {
-            // Use pre-captured peer PID if available (captured in accept loop before
-            // the peer can disconnect), falling back to live lookup.
-            let pid = peerPid ?? getPeerPid(socket)
-            if let pid {
-                guard isDescendant(pid) else {
-                    _ = Self.writeSocketResponse(
-                        "ERROR: Access denied — only processes started inside c11 can connect", to: socket)
-                    return
-                }
-            }
-            // If pid is nil, LOCAL_PEERPID failed (peer disconnected before we
-            // could read it — common with ncat --send-only). We still verify the
-            // peer runs as the same user via LOCAL_PEERCRED. This is the same
-            // security boundary as the socket file permissions (0600), so it does
-            // not widen the attack surface. We also require that the peer actually
-            // sent data (checked in the read loop below) — a connect-only probe
-            // with no data is harmless.
-            if pid == nil {
-                guard peerHasSameUID(socket) else {
-                    _ = Self.writeSocketResponse("ERROR: Unable to verify client process", to: socket)
-                    return
-                }
-            }
+        // hc holders outlive this app and are not its descendants. This gate
+        // restores same-user functionality, not a security boundary (plan risk 3).
+        let pid = peerPid ?? getPeerPid(socket)
+        if accessMode == .c11Only, pid == nil, !peerHasSameUID(socket) {
+            _ = Self.writeSocketResponse("ERROR: Unable to verify client process", to: socket)
+            return
         }
+        let peer = nativePeer.flatMap { process in
+            process.startTime.map { HCProcessIdentity(pid: process.pid, startTimeMicroseconds: $0) }
+        }
+        let directDescendant = pid.map(isDescendant) ?? false
 
         serveClientCommandLines(
             socket: socket,
             callerTTYDevice: socketCallerTTYDevice(peerPid: peerPid ?? getPeerPid(socket)),
             callerPID: peerPid ?? getPeerPid(socket),
             nativePeer: nativePeer,
+            admission: {
+                HCProcessAdmission.shared.checkOnSocketWorker(
+                    peer: peer,
+                    requiresOwnership: self.accessMode == .c11Only && pid != nil && !directDescendant
+                )
+            },
             shouldContinue: { withListenerState { isRunning } },
             execute: { processCommandUsingSocketExecutionPolicy($0) }
         )
@@ -2382,19 +2494,31 @@ class TerminalController {
         callerTTYDevice: UInt32?,
         callerPID: pid_t? = nil,
         nativePeer: MailboxStdinBuffer.AgentProcess? = nil,
+        admission: (() -> HCAdmissionCheck)? = nil,
         shouldContinue: () -> Bool,
         execute: (String) -> String
     ) {
         var authenticated = false
+        var pendingStreamResponse: String?
         Self.serveCommandLines(
             socket: socket,
             shouldContinue: shouldContinue,
             respond: { command in
+                // A pending subscription has not become a stream. Keep the
+                // authenticated line connection alive for its bounded retry.
+                if let response = pendingStreamResponse {
+                    pendingStreamResponse = nil
+                    return response
+                }
                 if let authResponse = authResponseIfNeeded(for: command, authenticated: &authenticated) {
                     return authResponse
                 }
+                let checked = admission?()
+                if let rejection = checked?.rejectionResponse(command: command, pid: callerPID) { return rejection }
                 let connection = SocketCommandContext(method: "connection", allowsFocus: false,
-                                                      callerTTYDevice: callerTTYDevice, callerPID: callerPID)
+                                                      callerTTYDevice: callerTTYDevice, callerPID: callerPID,
+                                                      hcInventory: checked?.inventory,
+                                                      verifiedHCTerminal: checked?.verifiedTerminal)
                 return SocketCommandContext.withContext(connection) {
                     execute(command)
                 }
@@ -2405,6 +2529,15 @@ class TerminalController {
                        (request.method == "markdown.visible" && request.params["watch"] as? Bool == true)) else { return false }
                 if let authResponse = self.authResponseIfNeeded(for: command, authenticated: &authenticated) {
                     _ = Self.writeSocketResponse(authResponse, to: streamSocket)
+                    return true
+                }
+                let checked = admission?()
+                if let rejection = checked?.rejectionResponse(command: command, pid: callerPID) {
+                    if checked?.decision == .pending {
+                        pendingStreamResponse = rejection
+                        return false
+                    }
+                    _ = Self.writeSocketResponse(rejection, to: streamSocket)
                     return true
                 }
                 if let startupResponse = self.startupNotReadyResponse(for: command) {
@@ -2437,7 +2570,9 @@ class TerminalController {
                     allowsFocus: false,
                     callerPanelId: nil,
                     callerTTYDevice: callerTTYDevice,
-                    callerPID: callerPID
+                    callerPID: callerPID,
+                    hcInventory: checked?.inventory,
+                    verifiedHCTerminal: checked?.verifiedTerminal
                 )
                 SocketCommandContext.withContext(context) {
                     self.withSocketCommandPolicy(commandKey: request.method, isV2: true) {
@@ -2579,13 +2714,28 @@ class TerminalController {
 
     nonisolated static let socketWorkerV2Methods: Set<String> = [
         "agent.event.append",
+        // C11H-228: the file check and the load wait run here; the viewer's
+        // panel work is one bounded async hop to main.
+        "show.open",
+        "show.close",
         // Static build facts plus a listener-lock snapshot; no AppKit or
         // workspace state is read by system.capabilities.
         "system.capabilities",
+        // Lock-guarded hc diagnostics read. No AppKit and no main hop.
+        "hc.diagnostics",
+        // `c11 hc ls|get|server|run`: waits on the managed session on this
+        // connection's own worker (bounded, 34 s) and reads no AppKit state.
+        "hc.call",
         "system.fleet",
+        "workspace.set_metadata",
+        "workspace.get_metadata",
+        "workspace.clear_metadata",
         // Cache telemetry: validated and folded into a lock-guarded store on
         // the worker; the liveness sweep reads it, so no main-thread hop.
         "agent.prompt_cache.report",
+        // C11H-320: a hook's account, final message and failure, folded into
+        // a lock-guarded store the fleet worker reads; no main-thread hop.
+        "agent.report",
         "mailbox.native.subscribe",
         "agents.list",
         "journal.clear",
@@ -2611,6 +2761,11 @@ class TerminalController {
         "workspace.group.set_color",
         "workspace.group.set_icon",
         "workspace.group.focus",
+        // C11H-299: the group's JSON object, validated on the worker like the
+        // workspace object; one bounded async main hop resolves the group.
+        "workspace.group.set_metadata",
+        "workspace.group.get_metadata",
+        "workspace.group.clear_metadata",
         "history.list",
         // Resize dimensions are validated on the worker; live window resolution
         // and the bounded AppKit frame operation share one main-actor hop.
@@ -2620,6 +2775,9 @@ class TerminalController {
         // C11-468: store read and transcript stats off-main; one main hop
         // decides and schedules the typing.
         "conversation.resume",
+        // C11H-196: restore records; one bounded main hop reads or schedules.
+        "restore.status",
+        "restore.run",
         // Conversation claims and route writes can wait briefly on the actor
         // store; keep that bounded wait off main and hop only for legacy
         // target-handle resolution. Literal panel UUIDs need no AppKit lookup.
@@ -2630,14 +2788,22 @@ class TerminalController {
         "panel.read_text",
         "panel.read_selection",
         "panel.input_state",
+        "panel.retry_input",
         // C11-499: a lock-guarded panel location lookup the CLI makes per command.
         "panel.locate",
         "panel.clear_history",
+        // C11H-24: waits (bounded) for hc to confirm an explicit end.
+        "panel.end_status",
         // Launch planning reads project config and probes git; keep those
         // bounded I/O operations off-main, then hop to main only for model/UI
         // snapshots and the final surface creation.
         "agent.launch",
+        // Pathfinder: a lock-guarded read of the launch watch's verdict.
+        "agent.launch_status",
         "config.launch",
+        // C11H-199: deck and folder I/O, then agent.launch, which hops to main only for creation.
+        "chaos.draw",
+        "chaos.cast",
         // C11-165 COR-3: these block their caller on a semaphore waiting for a
         // user click / async submission; on the default (main-actor) policy
         // that wait freezes the app. Run them off-main; each hops to main only
@@ -2664,6 +2830,23 @@ class TerminalController {
         "flag.kind.list",
         "flag.kind.set",
         "flag.kind.rm",
+        // C11H-246: the notification dial; its set hops to main only for
+        // the defaults write.
+        "notification.level.get",
+        "notification.level.set",
+        // C11H-319: the sound channels; the set hops to main only for the
+        // defaults write.
+        "notification.sound.get",
+        "notification.sound.set",
+        // C11H-246: Debug-only read of Notification Center (an XPC round trip).
+        "debug.notification.delivered",
+        // C11H-126: the machine roster is a defaults store; no main hop.
+        "machine.list",
+        "machine.set",
+        "machine.rm",
+        "machine.unlink",
+        // C11H-391: starts the links session's core (a bounded async hop).
+        "machine.link_session",
         // C11-217: WebKit waits are worker-owned. Their WebKit invocations hop
         // back to main for the short call, but the socket worker owns the
         // potentially long completion wait.
@@ -2798,6 +2981,8 @@ class TerminalController {
         "set_status",
         "set_agent_pid",
         "notify_target",
+        "notify_turn_end",
+        "notify_needs_you",
     ]
 
     nonisolated static func executionPolicy(forV2Method method: String) -> SocketCommandExecutionPolicy {
@@ -2854,9 +3039,11 @@ class TerminalController {
     func v2TreeWindowNode(
         summary: AppDelegate.MainWindowSummary,
         index: Int,
-        workspaceNodes: [[String: Any]]
+        workspaceNodes: [[String: Any]],
+        geometry: MainWindowGeometry? = nil,
+        captainProjection: WorkspaceCaptainProjection? = nil
     ) -> [String: Any] {
-        return [
+        var node: [String: Any] = [
             "id": summary.windowId.uuidString,
             "ref": v2Ref(kind: .window, uuid: summary.windowId),
             "index": index,
@@ -2865,16 +3052,38 @@ class TerminalController {
             "workspace_count": workspaceNodes.count,
             "selected_workspace_id": v2OrNull(summary.selectedWorkspaceId?.uuidString),
             "selected_workspace_ref": v2Ref(kind: .workspace, uuid: summary.selectedWorkspaceId),
-            "workspace_groups": AppDelegate.shared?.workspaceManagerFor(windowId: summary.windowId).map { v2WorkspaceGroupRecords($0) } ?? [],
+            "workspace_groups": AppDelegate.shared?.workspaceManagerFor(windowId: summary.windowId).map {
+                v2WorkspaceGroupRecords($0, captainProjection: captainProjection)
+            } ?? [],
+            // C11H-342: the sidebar's root items in draw order.
+            "root_order": AppDelegate.shared?.workspaceManagerFor(windowId: summary.windowId).map {
+                v2WorkspaceRootOrder($0)
+            } ?? [],
             "workspaces": workspaceNodes
         ]
+        // c11 (C11H-197): name, theme, display and frame.
+        if let geometry {
+            node.merge(WindowGeometryPayload.window(geometry)) { current, _ in current }
+        }
+        return node
+    }
+
+    /// c11 (C11H-197): the window and display block `identify` adds for a window.
+    func v2IdentifyWindowGeometry(_ windowId: UUID?) -> [String: Any] {
+        guard let windowId, let geometry = AppDelegate.shared?.mainWindowGeometry(windowId: windowId) else {
+            return ["window_name": NSNull(), "display": NSNull()]
+        }
+        return ["window_name": geometry.name ?? NSNull(), "display": WindowGeometryPayload.displayRef(geometry.display)]
     }
 
     func v2TreeWorkspaceNode(
         workspace: Workspace,
         index: Int,
-        selected: Bool
+        selected: Bool,
+        captainProjection: WorkspaceCaptainProjection? = nil,
+        workspaceMetadataSnapshot: WorkspaceMetadataStore.ReadSnapshot? = nil
     ) -> [String: Any] {
+        let captainProjection = captainProjection ?? WorkspaceCaptainCoordinator.captureCurrent()
         var paneByPanelId: [UUID: UUID] = [:]
         var indexInPaneByPanelId: [UUID: Int] = [:]
         var selectedInPaneByPanelId: [UUID: Bool] = [:]
@@ -2893,18 +3102,28 @@ class TerminalController {
 
         var surfacesByPane: [UUID: [[String: Any]]] = [:]
         let focusedSurfaceId = workspace.focusedPanelId
+        let relayScope = SocketCommandContext.current?.relayReadScope
         for (surfaceIndex, panel) in orderedPanels(in: workspace).enumerated() {
             let paneUUID = paneByPanelId[panel.id]
             let selectedInPane = selectedInPaneByPanelId[panel.id] ?? false
-            let lineage = PanelLineage.shared.node(panelId: panel.id)
-            let parentLineage = lineage?.parentPanelId.flatMap { PanelLineage.shared.node(panelId: $0) }
+            var lineage = PanelLineage.shared.node(panelId: panel.id)
+            var parentLineage = lineage?.parentPanelId.flatMap { PanelLineage.shared.node(panelId: $0) }
+            // C11H-371: a relayed tree names no parent outside this workspace.
+            if relayScope != nil, lineage?.parentPanelId != nil, parentLineage?.workspaceId != workspace.id {
+                lineage?.parentPanelId = nil
+                parentLineage = nil
+            }
 
             var item: [String: Any] = [
                 "id": panel.id.uuidString,
+                "is_captain": captainProjection.isCaptain(panel.id),
                 "ref": v2Ref(kind: .surface, uuid: panel.id),
                 "parent_panel_id": v2OrNull(lineage?.parentPanelId?.uuidString),
                 "parent_panel_ref": v2Ref(kind: .surface, uuid: lineage?.parentPanelId),
                 "parent_panel_title": v2OrNull(parentLineage?.lastTitle),
+                "origin": (lineage?.origin ?? .unknown).rawValue,
+                "origin_detail": v2OrNull(lineage?.originDetail),
+                "created_at": v2OrNull(lineage?.createdAt.map { PanelLineageNode.localTimestamp($0) }),
                 "index": surfaceIndex,
                 "type": panel.panelType.rawValue,
                 "title": workspace.panelTitle(panelId: panel.id) ?? panel.displayTitle,
@@ -2919,6 +3138,21 @@ class TerminalController {
             v2SetSeenFields(&item, panelId: panel.id)
             v2SetPromptCacheField(&item, panelId: panel.id)
             v2SetLocationFields(&item, workspace: workspace, panel: panel)
+            // Read cached runtime observations; tree must not trigger scans or
+            // require the panel to be visible to diagnose restart recovery.
+            let sample = PanelMetricsSampler.shared.sample(forSurfaceId: panel.id)
+            item["cpu_percent"] = v2OrNull(sample?.cpuPct)
+            item["rss_mb"] = v2OrNull(sample?.rssMb)
+            item["agent_pid"] = v2OrNull(workspace.mailboxAgentPID(surfaceId: panel.id))
+            let (metadata, sources) = Self.canonicalMetadataSnapshot(workspaceId: workspace.id, surfaceId: panel.id)
+            item["model"] = v2OrNull(AgentModelPrecedence.effective(
+                model: metadata[MetadataKey.model] as? String, modelSource: sources[MetadataKey.model],
+                modelLabel: metadata[MetadataKey.modelLabel] as? String, labelSource: sources[MetadataKey.modelLabel],
+                detected: metadata[AgentModelDetector.MetadataKeys.detected] as? String).model)
+            // C11H-278: when the description text last changed (null without one).
+            item.merge(Workspace.descriptionAgeFields(
+                updatedAt: PanelMetadataStore.shared.descriptionUpdatedAt(workspaceId: workspace.id, surfaceId: panel.id)
+            )) { _, new in new }
 
             if panel.panelType == .browser, let browserPanel = panel as? BrowserPanel {
                 item["url"] = browserPanel.currentURL?.absoluteString ?? ""
@@ -3031,7 +3265,10 @@ class TerminalController {
             contentArea = NSNull()
         }
 
-        return [
+        let workspaceMetadata = workspaceMetadataSnapshot ?? WorkspaceMetadataStore.shared.readSnapshot()
+        var result: [String: Any] = [
+            "metadata": workspaceMetadata.metadata[workspace.id] ?? [:],
+            "metadata_sources": workspaceMetadata.sources[workspace.id] ?? [:],
             "id": workspace.id.uuidString,
             "ref": v2Ref(kind: .workspace, uuid: workspace.id),
             "index": index,
@@ -3043,6 +3280,19 @@ class TerminalController {
             "content_area": contentArea,
             "areas": panes
         ]
+        let captain = captainProjection.summary(for: workspace.id)
+        var captainFields = captain.jsonObject
+        // C11H-371: a relayed tree names no Captain holder outside this
+        // workspace; the address and whether one is present stay.
+        if let relayScope {
+            captainFields["captain_panel_ids"] = captain.holders
+                .filter { $0.workspaceID == relayScope.workspace }.map(\.panelID.uuidString)
+            if captain.holders.contains(where: { $0.workspaceID != relayScope.workspace }) {
+                captainFields["captain_title"] = NSNull()
+            }
+        }
+        result.merge(captainFields) { _, derived in derived }
+        return result
     }
 
     /// Walk the workspace's split tree and produce a root-to-leaf path of
@@ -3164,20 +3414,54 @@ class TerminalController {
     }
 
     func v2EnsureHandleRef(kind: V2HandleKind, uuid: UUID) -> String {
-        if let existing = v2RefByUUID[kind]?[uuid] {
+        // C11H-23: panel numbers are durable. They come from the allocation
+        // registry (keyed by UUID, loaded before anything mints), so a
+        // surviving shell's `C11_PANEL_NUM` still names it after a restart.
+        // The registry is the authority; the map below only caches it. Other
+        // kinds stay process-local.
+        let durablePanelNumber = kind == .surface
+            ? panelAllocations.panelNumber(for: uuid)
+            : nil
+        if let existing = v2RefByUUID[kind]?[uuid],
+           durablePanelNumber == nil || v2CachedPanelNumbers[uuid] == durablePanelNumber {
             return existing
         }
-        let next = v2NextHandleOrdinal[kind] ?? 1
+        let next = durablePanelNumber ?? v2NextHandleOrdinal[kind] ?? 1
         let ref = "\(kind.rawValue):\(next)"
         var byUUID = v2RefByUUID[kind] ?? [:]
         var byRef = v2UUIDByRef[kind] ?? [:]
+        if let stale = byUUID[uuid] {
+            byRef.removeValue(forKey: stale)
+            // C11-576's guard admits every known ref; a ref this panel no
+            // longer holds must fail closed, not fall back to the focused panel.
+            v2KnownRefs.remove(stale)
+        }
+        if let durablePanelNumber { v2CachedPanelNumbers[uuid] = durablePanelNumber }
         byUUID[uuid] = ref
         byRef[ref] = uuid
         v2RefByUUID[kind] = byUUID
         v2UUIDByRef[kind] = byRef
-        v2NextHandleOrdinal[kind] = next + 1
+        v2NextHandleOrdinal[kind] = max(v2NextHandleOrdinal[kind] ?? 1, next + 1)
         v2KnownRefs.insert(ref)
         return ref
+    }
+
+    /// `panel:N` for each id, exactly as `v2EnsureHandleRef` would return it,
+    /// reading the allocation ledger once rather than once per panel (fleet's
+    /// main copy mints one per agent row, C11H-320).
+    func v2PanelRefs(_ ids: [UUID]) -> [UUID: String] {
+        let ledger = panelAllocations.ledger
+        let cached = v2RefByUUID[.surface] ?? [:]
+        var refs: [UUID: String] = [:]
+        refs.reserveCapacity(ids.count)
+        for id in ids {
+            if let number = ledger.record(for: id)?.number, v2CachedPanelNumbers[id] == number, let existing = cached[id] {
+                refs[id] = existing
+            } else {
+                refs[id] = v2EnsureHandleRef(kind: .surface, uuid: id)
+            }
+        }
+        return refs
     }
 
     func v2ResolveHandleRef(_ handle: String) -> UUID? {
@@ -3195,6 +3479,15 @@ class TerminalController {
                     return id
                 }
             }
+        }
+        // C11H-23: a durable panel number this process has not displayed yet
+        // (a restored or recovered panel) still resolves to its UUID.
+        let panelPrefix = "\(V2HandleKind.surface.rawValue):"
+        if canonical.hasPrefix(panelPrefix),
+           let number = Int(canonical.dropFirst(panelPrefix.count)),
+           let id = panelAllocations.panelId(forNumber: number) {
+            _ = v2EnsureHandleRef(kind: .surface, uuid: id)
+            return id
         }
         return nil
     }
@@ -4313,19 +4606,48 @@ class TerminalController {
     // memory escapes; copied prompt bytes are transient classifier input and
     // never enter a response, log, or persistent store. `harness` is the
     // panel's terminal type: a Grok panel also reads the screen's bottom rows,
-    // where its composer stays while the cursor is parked elsewhere.
+    // where its composer stays while the cursor is parked elsewhere, and a
+    // Claude Code, Codex, OpenCode or Pi panel reads them when a wide screen
+    // clipped the cursor window.
     @MainActor
     func capturePromptInputRegion(surface: ghostty_surface_t, harness: String?, forSupervisor: Bool = false) -> PromptRegionSnapshot? {
-        guard var snapshot = readPromptRegion(surface: surface, anchor: "cursor", read: ghostty_surface_try_read_prompt_region) else {
-            return nil
+        Self.capturePromptInputRegion(harness: harness, forSupervisor: forSupervisor) { anchor in
+            switch anchor {
+            case .cursor:
+                return readPromptRegion(surface: surface, anchor: "cursor", read: ghostty_surface_try_read_prompt_region)
+            case .bottom:
+                return readPromptRegion(surface: surface, anchor: "bottom", read: ghostty_surface_try_read_prompt_region_bottom)
+            }
         }
-        if PromptInputClassifier.readsScreenBottom(harness: harness, forSupervisor: forSupervisor),
-           let bottom = readPromptRegion(surface: surface, anchor: "bottom", read: ghostty_surface_try_read_prompt_region_bottom) {
+    }
+
+    /// Which native window a prompt read takes.
+    enum PromptRegionAnchor: Equatable {
+        case cursor
+        case bottom
+    }
+
+    /// The capture's reads, with the native screen behind `read`. The cursor
+    /// window first; the bottom window for a Grok or Claude Code panel, a Pi
+    /// supervisor read, or a Codex, OpenCode or Pi panel whose cursor window
+    /// came back clipped. Nothing is classified here. Pure, so a read of hc's
+    /// paint off the main thread takes the same windows (C11H-306).
+    nonisolated static func capturePromptInputRegion(
+        harness: String?,
+        forSupervisor: Bool,
+        read: (PromptRegionAnchor) -> PromptRegionSnapshot?
+    ) -> PromptRegionSnapshot? {
+        guard var snapshot = read(.cursor) else { return nil }
+        if PromptInputClassifier.readsScreenBottom(harness: harness, forSupervisor: forSupervisor)
+            || PromptInputClassifier.readsScreenBottom(harness: harness, afterCursorRead: snapshot)
+            || PromptInputClassifier.readsClaudeDialogBottom(harness: harness),
+           let bottom = read(.bottom) {
             snapshot.screenBottom = PromptRegionRows(
                 complete: bottom.complete,
                 rows: bottom.rows,
                 cells: bottom.cells,
-                text: bottom.text
+                text: bottom.text,
+                wrapFlags: bottom.wrapFlags
             )
         }
         return snapshot
@@ -4393,13 +4715,16 @@ class TerminalController {
         surface: ghostty_surface_t,
         includeScrollback: Bool,
         isAbandoned: () -> Bool,
+        regions: [ghostty_point_tag_e]? = nil,
         read: (ghostty_surface_t, ghostty_selection_s, UnsafeMutablePointer<ghostty_text_s>) -> ghostty_text_read_status_e = ghostty_surface_try_read_text,
         free: (ghostty_surface_t, UnsafeMutablePointer<ghostty_text_s>) -> Void = ghostty_surface_free_text
     ) -> Result<TerminalReadBytes, V2CallResult> {
         var bytes = TerminalReadBytes()
-        let tags = includeScrollback
+        // `regions` overrides the default set (C11H-261 reads ACTIVE alone:
+        // the bottom of the terminal, wherever the operator has scrolled).
+        let tags = regions ?? (includeScrollback
             ? [GHOSTTY_POINT_SCREEN, GHOSTTY_POINT_SURFACE, GHOSTTY_POINT_ACTIVE]
-            : [GHOSTTY_POINT_VIEWPORT]
+            : [GHOSTTY_POINT_VIEWPORT])
         for tag in tags {
             guard !isAbandoned() else { return .failure(Self.terminalReadTimeout()) }
             let selection = ghostty_selection_s(
@@ -4714,6 +5039,7 @@ class TerminalController {
                 // The bar (and its height) follows the description and the
                 // mailbox address; publish so it shows, updates and hides
                 // without waiting on unrelated state.
+                GraphChurnMeter.note(.metadataSend)
                 ws.objectWillChange.send()
             }
             if descriptionApplied && autoExpand {
@@ -4957,7 +5283,16 @@ class TerminalController {
                 data: ["surface_id": surfaceId.uuidString]
             ))
         }
-        guard terminalPanel.surface.surface != nil else {
+        let liveness = HCProcessAdmission.captureLiveness(
+            identity: terminalPanel.hcIdentity, panelID: surfaceId,
+            inventory: SocketCommandContext.current?.hcInventory
+        )
+        if liveness == .pending {
+            return .failure(.err(code: "hc_inventory_pending", message: String(
+                localized: "hc.admission.pending", defaultValue: "Terminal inventory is not ready. Retry this request."),
+                data: ["retryable": true, "pre_dispatch": true]))
+        }
+        guard liveness == .live || (liveness == .unmanaged && terminalPanel.surface.surface != nil) else {
             return .failure(.err(
                 code: "surface_not_live",
                 message: "terminal panel is not live",
@@ -5466,6 +5801,8 @@ class TerminalController {
           notify <title>|<subtitle>|<body>   - Notify focused tab
           notify_surface <id|idx> <payload>  - Notify a specific tab
           notify_target <workspace_id> <surface_id> <payload> - Notify by workspace+tab
+          notify_turn_end <workspace_id> <surface_id> <payload> - notify_target for an agent's turn end
+          notify_needs_you <workspace_id> <surface_id> [ask=<session>/<request>] <payload> - notify_target for an agent stopped on the operator
           list_notifications              - List all notifications
           clear_notifications [--tab=X]    - Clear notifications (all or per-workspace; --tab=X is a workspace id)
           set_app_focus <active|inactive|clear> - Override app focus state
@@ -6747,7 +7084,10 @@ class TerminalController {
         return located.workspace
     }
 
-    func notifyTarget(_ args: String) -> String {
+    /// `notify_turn_end` is `notify_target` sent by the bundled Claude Stop
+    /// hook: the notification is tagged as a turn end for the waiting check
+    /// (C11H-261). An older CLI sends `notify_target`, which is never judged.
+    func notifyTarget(_ args: String, origin: TerminalNotificationOrigin = .other) -> String {
         guard let workspaceManager = workspaceManager else { return "ERROR: TabManager not available" }
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "ERROR: Usage: notify_target <workspace_id> <surface_id> <title>|<subtitle>|<body>" }
@@ -6776,13 +7116,24 @@ class TerminalController {
                 result = "ERROR: Panel not found"
                 return
             }
+            // C11H-319: `notify_needs_you` may lead its payload with the ask's
+            // `ask=<session>/<request>` token, so a repeat of one ask sounds once.
+            var payload = payload
+            var ask: NeedsYouAsk?
+            if origin == .needsYou, payload.hasPrefix(NeedsYouAsk.tokenPrefix) {
+                let split = payload.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+                ask = NeedsYouAsk(token: split[0])
+                payload = split.count > 1 ? split[1] : ""
+            }
             let (title, subtitle, body) = parseNotificationPayload(payload)
             TerminalNotificationStore.shared.addNotification(
                 workspaceId: workspace.id,
                 surfaceId: panelId,
                 title: title,
                 subtitle: subtitle,
-                body: body
+                body: body,
+                origin: origin,
+                ask: ask
             )
         }
         return result
@@ -7887,6 +8238,7 @@ class TerminalController {
         let body = delivery.body
         let wantsReturn = delivery.wantsReturn
         let operatorInputAtDispatch = terminalSurface.lastOperatorInputAt
+        let inputGenerationAtDispatch = terminalSurface.captureInputGeneration()
 
         // One input transaction from the first byte to the submit Return, so
         // no other writer (the mailbox push, another send, the text box)
@@ -7908,6 +8260,10 @@ class TerminalController {
                     preserveNewlines: preserveNewlines
                 )
                 onReturnDispatched?(queued && wantsReturn)
+                return finish()
+            }
+            guard terminalSurface.isInputGenerationCurrent(inputGenerationAtDispatch) else {
+                onReturnDispatched?(false)
                 return finish()
             }
             if !body.isEmpty {
@@ -7936,7 +8292,8 @@ class TerminalController {
                             operatorInputAtDispatch: operatorInputAtDispatch,
                             operatorInputAtReturn: terminalSurface.lastOperatorInputAt,
                             dispatchState: initialNoOpRead?.state,
-                            freshState: refreshedRead?.state
+                            freshState: refreshedRead?.state,
+                            generationIsCurrent: terminalSurface.isInputGenerationCurrent(inputGenerationAtDispatch)
                         )
                     }
                 } else {
@@ -7980,23 +8337,21 @@ class TerminalController {
         }
     }
 
-    private func handleControlScalar(_ scalar: UnicodeScalar, surface: ghostty_surface_t) -> Bool {
+    /// The key a `socketTextChunks` control scalar stands for.
+    nonisolated static func socketControlKeycode(_ scalar: UnicodeScalar) -> UInt32? {
         switch scalar.value {
-        case 0x0A, 0x0D:
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_Return))
-            return true
-        case 0x09:
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_Tab))
-            return true
-        case 0x1B:
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_Escape))
-            return true
-        case 0x7F:
-            sendKeyEvent(surface: surface, keycode: UInt32(kVK_Delete))
-            return true
-        default:
-            return false
+        case 0x0A, 0x0D: return UInt32(kVK_Return)
+        case 0x09: return UInt32(kVK_Tab)
+        case 0x1B: return UInt32(kVK_Escape)
+        case 0x7F: return UInt32(kVK_Delete)
+        default: return nil
         }
+    }
+
+    private func handleControlScalar(_ scalar: UnicodeScalar, surface: ghostty_surface_t) -> Bool {
+        guard let keycode = Self.socketControlKeycode(scalar) else { return false }
+        sendKeyEvent(surface: surface, keycode: keycode)
+        return true
     }
 
     private static func keycodeForLetter(_ letter: Character) -> UInt32? {
@@ -8879,7 +9234,8 @@ class TerminalController {
                     from: focusedPanelId,
                     orientation: orientation,
                     insertFirst: insertFirst,
-                    focus: focus
+                    focus: focus,
+                    machine: .inherit
                 )?.id
             }
 
@@ -8892,83 +9248,32 @@ class TerminalController {
 
     // MARK: - Option Parsing (sidebar metadata commands)
 
+    /// The same tokens the relay's sidebar reservation check reads
+    /// (C11H-360): one tokenizer for the handler and the check.
     private func tokenizeArgs(_ args: String) -> [String] {
-        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-
-        var tokens: [String] = []
-        var current = ""
-        var inQuote = false
-        var quoteChar: Character = "\""
-        var cursor = trimmed.startIndex
-
-        while cursor < trimmed.endIndex {
-            let char = trimmed[cursor]
-            if inQuote {
-                if char == quoteChar {
-                    inQuote = false
-                    cursor = trimmed.index(after: cursor)
-                    continue
-                }
-                if char == "\\" {
-                    let nextIndex = trimmed.index(after: cursor)
-                    if nextIndex < trimmed.endIndex {
-                        let next = trimmed[nextIndex]
-                        switch next {
-                        case "n":
-                            current.append("\n")
-                            cursor = trimmed.index(after: nextIndex)
-                            continue
-                        case "r":
-                            current.append("\r")
-                            cursor = trimmed.index(after: nextIndex)
-                            continue
-                        case "t":
-                            current.append("\t")
-                            cursor = trimmed.index(after: nextIndex)
-                            continue
-                        case "\"", "'", "\\":
-                            current.append(next)
-                            cursor = trimmed.index(after: nextIndex)
-                            continue
-                        default:
-                            break
-                        }
-                    }
-                }
-                current.append(char)
-                cursor = trimmed.index(after: cursor)
-                continue
-            }
-
-            if char == "'" || char == "\"" {
-                inQuote = true
-                quoteChar = char
-                cursor = trimmed.index(after: cursor)
-                continue
-            }
-
-            if char.isWhitespace {
-                if !current.isEmpty {
-                    tokens.append(current)
-                    current = ""
-                }
-                cursor = trimmed.index(after: cursor)
-                continue
-            }
-
-            current.append(char)
-            cursor = trimmed.index(after: cursor)
-        }
-
-        if !current.isEmpty {
-            tokens.append(current)
-        }
-        return tokens
+        Self.tokenizeArgsStatic(args)
     }
 
     private func parseOptions(_ args: String) -> (positional: [String], options: [String: String]) {
-        let tokens = tokenizeArgs(args)
+        Self.walkOptions(tokenizeArgs(args), stopAtDashes: true)
+    }
+
+    private func parseOptionsNoStop(_ args: String) -> (positional: [String], options: [String: String]) {
+        Self.walkOptions(tokenizeArgs(args), stopAtDashes: false)
+    }
+
+    /// v1 sidebar commands whose handler reads options past a `--`
+    /// (`upsertSidebarMetadata`, through `parseOptionsNoStop`); every other
+    /// sidebar handler stops at it (`parseOptions`). The relay's reservation
+    /// check (C11H-360) reads a relayed line the same way.
+    nonisolated static let v1OptionsReadPastDashes: Set<String> = ["set_status", "report_meta"]
+
+    /// The one option walker the v1 sidebar handlers read their arguments
+    /// with. `stopAtDashes`: after a `--` every token is positional
+    /// (`parseOptions`); otherwise a `--` is skipped and options keep being
+    /// read (`parseOptionsNoStop`). `--key=value`, or `--key value` when the
+    /// next token is not an option; a later option replaces an earlier one.
+    nonisolated static func walkOptions(_ tokens: [String], stopAtDashes: Bool) -> (positional: [String], options: [String: String]) {
         guard !tokens.isEmpty else { return ([], [:]) }
 
         var positional: [String] = []
@@ -8980,43 +9285,8 @@ class TerminalController {
             if stopParsingOptions {
                 positional.append(token)
             } else if token == "--" {
-                stopParsingOptions = true
+                if stopAtDashes { stopParsingOptions = true }
             } else if token.hasPrefix("--") {
-                if let eqIndex = token.firstIndex(of: "=") {
-                    let key = String(token[token.index(token.startIndex, offsetBy: 2)..<eqIndex])
-                    let value = String(token[token.index(after: eqIndex)...])
-                    options[key] = value
-                } else {
-                    let key = String(token.dropFirst(2))
-                    if i + 1 < tokens.count && !tokens[i + 1].hasPrefix("--") {
-                        options[key] = tokens[i + 1]
-                        i += 1
-                    } else {
-                        options[key] = ""
-                    }
-                }
-            } else {
-                positional.append(token)
-            }
-            i += 1
-        }
-        return (positional, options)
-    }
-
-    private func parseOptionsNoStop(_ args: String) -> (positional: [String], options: [String: String]) {
-        let tokens = tokenizeArgs(args)
-        guard !tokens.isEmpty else { return ([], [:]) }
-
-        var positional: [String] = []
-        var options: [String: String] = [:]
-        var i = 0
-        while i < tokens.count {
-            let token = tokens[i]
-            if token == "--" {
-                i += 1
-                continue
-            }
-            if token.hasPrefix("--") {
                 if let eqIndex = token.firstIndex(of: "=") {
                     let key = String(token[token.index(token.startIndex, offsetBy: 2)..<eqIndex])
                     let value = String(token[token.index(after: eqIndex)...])
@@ -9262,19 +9532,10 @@ class TerminalController {
                 // status never false-decays into the derived pill. The canonical
                 // metadata_sources `ts` deliberately stays "last changed"; only
                 // this visible sidebar entry tracks "last reported".
-                if let existing = workspace.statusEntries[key] {
-                    workspace.statusEntries[key] = SidebarStatusEntry(
-                        key: existing.key,
-                        value: existing.value,
-                        icon: existing.icon,
-                        color: existing.color,
-                        url: existing.url,
-                        priority: existing.priority,
-                        format: existing.format,
-                        timestamp: Date(),
-                        staleFromRestart: false
-                    )
-                }
+                // C11H-238: the reported time is kept at once (display order and
+                // socket reads use it) and published to the views coalesced,
+                // within `Workspace.statusHeartbeatFlushDelay`.
+                workspace.noteStatusHeartbeat(key: key)
                 // Still update PID tracking even if the status display hasn't changed.
                 if let pidValue {
                     workspace.registerAgentPID(pidValue, key: key, panelId: explicitSurfaceId)
@@ -9560,6 +9821,7 @@ class TerminalController {
                 result = parsed.options["tab"] != nil ? "ERROR: Tab not found" : "ERROR: No tab selected"
                 return
             }
+            GraphChurnMeter.note(.logWrite)
             workspace.logEntries.append(SidebarLogEntry(message: message, level: level, source: source, timestamp: Date()))
             let configuredLimit = UserDefaults.standard.object(forKey: "sidebarMaxLogEntries") as? Int ?? 50
             let limit = max(1, min(500, configuredLimit))
@@ -9646,6 +9908,7 @@ class TerminalController {
                 result = parsed.options["tab"] != nil ? "ERROR: Tab not found" : "ERROR: No tab selected"
                 return
             }
+            GraphChurnMeter.note(.progressWrite)
             workspace.progress = SidebarProgressState(value: clamped, label: label)
             // C11-171: mirror `progress` into the evented surface store so
             // `get_metadata` sees a last-updated `ts` (TEL-1). No event fires —
@@ -9955,29 +10218,9 @@ class TerminalController {
         }
 
         if let scope = Self.explicitSocketScope(options: parsed.options) {
-            guard Self.socketFastPathState.shouldPublishShellActivity(
-                workspaceId: scope.workspaceId,
-                panelId: scope.panelId,
-                state: state
-            ) else {
-                return "OK"
-            }
-            DispatchQueue.main.async {
-                guard let app = AppDelegate.shared else { return }
-                // C11-171: resolve the workspace from the PANEL, not from `--tab`
-                // (shell integration sends the surface uuid in `--tab`). Without
-                // this the report silently no-ops and derived liveness never fires.
-                guard let target = Self.resolveShellActivityTarget(
-                    panelId: scope.panelId,
-                    workspaceForPanel: { panel in
-                        app.workspaceContainingPanel(
-                            panelId: panel,
-                            preferredWorkspaceId: scope.workspaceId
-                        )?.workspace.id
-                    }
-                ), let workspaceManager = app.workspaceManagerFor(workspaceId: target.workspaceId) else { return }
-                workspaceManager.updateSurfaceShellActivity(workspaceId: target.workspaceId, surfaceId: target.panelId, state: state)
-            }
+            // C11-171: the workspace comes from the PANEL, not from `--tab`.
+            Self.dispatchShellActivityReport(scope: scope, state: state,
+                                             kickAgent: parsed.options["agent-kick"] == "1")
             return "OK"
         }
 
@@ -10144,7 +10387,7 @@ class TerminalController {
         let validSurfaceIds = Set(workspace.panels.keys)
         workspace.pruneSurfaceMetadata(validSurfaceIds: validSurfaceIds)
         guard validSurfaceIds.contains(panelId) else { return }
-        workspace.panelTTYNames[panelId] = ttyName
+        workspace.noteReportedTTY(panelId: panelId, ttyName: ttyName)
         PortScanner.shared.registerTTY(workspaceId: workspaceId, panelId: panelId, ttyName: ttyName)
         AgentDetector.shared.registerTTY(workspaceId: workspaceId, panelId: panelId, ttyName: ttyName)
         // C11-25 fix DoD #5: install a Sendable PID provider so
@@ -10203,7 +10446,7 @@ class TerminalController {
                 return
             }
 
-            workspace.panelTTYNames[surfaceId] = ttyName
+            workspace.noteReportedTTY(panelId: surfaceId, ttyName: ttyName)
             PortScanner.shared.registerTTY(workspaceId: workspace.id, panelId: surfaceId, ttyName: ttyName)
             AgentDetector.shared.registerTTY(workspaceId: workspace.id, panelId: surfaceId, ttyName: ttyName)
             // C11-25 fix DoD #5: install a Sendable PID provider so the
@@ -10221,13 +10464,11 @@ class TerminalController {
         let parsed = parseOptions(args)
         if let scope = Self.explicitSocketScope(options: parsed.options) {
             DispatchQueue.main.async {
-                guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: scope.workspaceId),
-                      let workspace = workspaceManager.workspaces.first(where: { $0.id == scope.workspaceId }) else {
-                    return
-                }
-                let validSurfaceIds = Set(workspace.panels.keys)
-                guard validSurfaceIds.contains(scope.panelId) else { return }
-                AgentDetector.shared.kick(workspaceId: scope.workspaceId, panelId: scope.panelId)
+                // The shells send the panel id in `--tab` (C11-171): find the
+                // workspace from the panel, or the kick never lands.
+                guard let workspace = Self.shellReportWorkspace(panelId: scope.panelId,
+                                                                preferredWorkspaceId: scope.workspaceId) else { return }
+                AgentDetector.shared.kick(workspaceId: workspace.id, panelId: scope.panelId)
             }
             return "OK"
         }
@@ -10398,6 +10639,18 @@ class TerminalController {
                 lines.append("  model_source=\(chip.modelSource ?? "none")")
             } else {
                 lines.append("agent_chip=none")
+            }
+
+            // C11H-278: each panel's description and when it was last edited.
+            let descriptions = workspace.sidebarDescriptionEntries()
+            let now = Date()
+            lines.append("description_count=\(descriptions.count)")
+            for entry in descriptions {
+                let fields = Workspace.descriptionAgeFields(updatedAt: entry.updatedAt, now: now)
+                let updatedAt = fields["description_updated_at"] as? String ?? "unknown"
+                let age = (fields["description_age_seconds"] as? Int).map(String.init) ?? "unknown"
+                let oneLine = entry.description.split(whereSeparator: \.isNewline).joined(separator: " ")
+                lines.append("  \(v2Ref(kind: .surface, uuid: entry.panelId)) updated_at=\(updatedAt) age_seconds=\(age) \(oneLine)")
             }
 
             lines.append("log_count=\(workspace.logEntries.count)")
@@ -10926,13 +11179,14 @@ class TerminalController {
                 : "ERROR: TabManager not available"
         }
 
-        let missionTarget: (id: UUID, root: String?)? = legacyAgentLaunchMainSync {
+        let missionTarget: (id: UUID, root: String?, isRemote: Bool)? = legacyAgentLaunchMainSync {
             workspaceManager.workspaces.first {
                 (workspaceId == nil || $0.id == workspaceId) && $0.terminalPanel(for: surfaceId) != nil
-            }.map { ($0.id, $0.missionRoot) }
+            }.map { ($0.id, $0.missionRoot, $0.terminalPanel(for: surfaceId)?.hcRemoteTarget != nil) }
         }
         guard let missionTarget else { return "ERROR: surface not found: \(surfaceId.uuidString)" }
-        let missionContext = WorkspaceMissionLaunchContext(mission: WorkspaceMissionFile.read(root: missionTarget.root))
+        // A terminal on another machine never gets this Mac's mission path (C11H-51).
+        let missionContext = WorkspaceMissionLaunchContext.forLaunch(isRemote: missionTarget.isRemote, missionRoot: missionTarget.root)
         let stagedPrompt: LaunchPromptStore.StagedPrompt?
         do {
             if let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

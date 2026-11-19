@@ -156,6 +156,9 @@ extension NSApplication {
 
     @objc(handlePerformActionScriptCommand:)
     func handlePerformActionScriptCommand(_ command: NSScriptCommand) -> NSNumber? {
+        // C11H-260: AppleScript is a caller outside c11 with no panel.
+        let originScope = PanelLineage.shared.enterOrigin(.external)
+        defer { PanelLineage.shared.exitOrigin(originScope) }
         guard validateScript(command: command) else { return nil }
 
         guard let action = command.directParameter as? String else {
@@ -175,6 +178,9 @@ extension NSApplication {
 
     @objc(handleNewWindowScriptCommand:)
     func handleNewWindowScriptCommand(_ command: NSScriptCommand) -> ScriptWindow? {
+        // C11H-260: AppleScript is a caller outside c11 with no panel.
+        let originScope = PanelLineage.shared.enterOrigin(.external)
+        defer { PanelLineage.shared.exitOrigin(originScope) }
         guard validateScript(command: command) else { return nil }
 
         guard let appDelegate = AppDelegate.shared else {
@@ -189,6 +195,9 @@ extension NSApplication {
 
     @objc(handleNewTabScriptCommand:)
     func handleNewTabScriptCommand(_ command: NSScriptCommand) -> ScriptWorkspace? {
+        // C11H-260: AppleScript is a caller outside c11 with no panel.
+        let originScope = PanelLineage.shared.enterOrigin(.external)
+        defer { PanelLineage.shared.exitOrigin(originScope) }
         guard validateScript(command: command) else { return nil }
 
         guard let appDelegate = AppDelegate.shared else {
@@ -553,6 +562,9 @@ final class ScriptTerminal: NSObject {
 
     @objc(handleSplitCommand:)
     func handleSplit(_ command: NSScriptCommand) -> Any? {
+        // C11H-260: AppleScript is a caller outside c11 with no panel.
+        let originScope = PanelLineage.shared.enterOrigin(.external)
+        defer { PanelLineage.shared.exitOrigin(originScope) }
         guard NSApp.validateScript(command: command) else { return nil }
 
         guard let directionCode = command.evaluatedArguments?["direction"] as? UInt32,

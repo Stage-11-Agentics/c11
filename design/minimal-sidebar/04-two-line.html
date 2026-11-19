@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en" data-scheme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C11H-221 · 04 Two-line card</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23000000'/%3E%3Cg fill='%23e8e8e8' transform='translate(34.96 387.08) scale(0.35913 -0.35913)'%3E%3Cpath transform='translate(0)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3Cpath transform='translate(600)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root {
+  --font-ui: -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-display: -apple-system, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  --win-w: 1470px; --win-h: 956px; --titlebar: 40px;
+  --today-w: 255px; --today2-w: 415px;
+}
+:root[data-scheme="dark"] {
+  --void: #07080a; --surface: #0b0c0f; --raised: #111318; --rule: #1a1d22; --rule-2: #262a31;
+  --text: #e4e6ea; --text-2: #8a909a; --text-dim: #5b606a;
+  --sidebar: #050607; --card: #0b0c0f; --card-active: #0f1115;
+  --accent: #c9d6ea; --amber: #e0b35a; --live: #7fb0ff; --flag: #b08cff; --flag-merge: #e06a6a; --flag-cos: #6fcf97; --steel: #2b3a56; --cache: #5287d6;
+  --idle: #9aa0a9; --working: #7fb0ff; --waiting: #e0b35a; --cold: #3a4a6a;
+  --term-bg: #07080a; --term-fg: #d6d9de; --term-dim: #5b606a; --term-green: #8fd1a8; --term-pink: #e38aa6; --term-violet: #b4a0e8;
+  --proto-bg: #0e0f12; --proto-fg: #a7acb5; --proto-rule: #1d2026; --proto-ink: #e8e8e8;
+  --chip-ink: #111214;
+}
+:root[data-scheme="light"] {
+  --void: #f4f4f6; --surface: #ffffff; --raised: #ececef; --rule: #d3d4d8; --rule-2: #c2c4c9;
+  --text: #111214; --text-2: #4b5059; --text-dim: #868b94;
+  --sidebar: #eaebee; --card: #ffffff; --card-active: #f7f7f8;
+  --accent: #111214; --amber: #9b7415; --live: #2f62b5; --flag: #6b4fbf; --flag-merge: #b83a3a; --flag-cos: #2d8a52; --steel: #8d939c; --cache: #2c5597;
+  --idle: #585d66; --working: #2f62b5; --waiting: #9b7415; --cold: #a3a8b0;
+  --term-bg: #ffffff; --term-fg: #1d2024; --term-dim: #868b94; --term-green: #2d8a52; --term-pink: #b4426a; --term-violet: #6b4fbf;
+  --proto-bg: #e6e7ea; --proto-fg: #4b5059; --proto-rule: #cfd1d6; --proto-ink: #111214;
+  --chip-ink: #ffffff;
+}
+/* theme role sets (key K). Nocturne is the default above; these two map the same roles. */
+:root[data-theme="stage11"][data-scheme="dark"] { --void: #282c33; --surface: #17191d; --raised: #353a42; --rule: #2a2d33; --rule-2: #3a3d44; --text: #f2f2f4; --text-2: #a9adb5; --text-dim: #7a7f88;
+  --sidebar: #16181c; --card: #17191d; --card-active: #111317; --accent: #cfa94f; --amber: #cfa94f; --waiting: #cfa94f; --live: #3b9cff; --working: #3b9cff; --flag: #a15cff; --cold: #244a8a; --idle: #9aa0a9;
+  --radius-card: 10px; --radius-row: 6px; --radius-mark: 2px; --radius-pill: 10px; --term-bg: #282c33; }
+:root[data-theme="stage11"][data-scheme="light"] { --void: #ececec; --surface: #f5f3ef; --raised: #e4e2dd; --rule: #d6d3cc; --rule-2: #c4c1b9; --sidebar: #e6e4df; --card: #f5f3ef; --card-active: #fbfaf7;
+  --accent: #111214; --amber: #9b7415; --waiting: #9b7415; --live: #1d2024; --working: #1d2024; --flag: #6b4fbf; --cold: #8d939c; --idle: #585d66; --radius-card: 10px; --radius-row: 6px; --radius-mark: 2px; --radius-pill: 10px; }
+:root[data-theme="datasheet"][data-scheme="dark"] { --void: #111214; --surface: #111214; --raised: #1a1b1f; --rule: #2c2e33; --rule-2: #2c2e33; --text: rgba(255,255,255,.92); --text-2: rgba(255,255,255,.58); --text-dim: rgba(255,255,255,.46);
+  --sidebar: #0c0d0f; --card: #111214; --card-active: #111214; --accent: #ffffff; --amber: #ff4f1f; --waiting: #ff4f1f; --live: #ffffff; --working: rgba(255,255,255,.92); --flag: #ffffff; --flag-merge: #ff4f1f; --cold: rgba(255,255,255,.46); --idle: rgba(255,255,255,.58);
+  --radius-card: 0px; --radius-row: 0px; --radius-mark: 0px; --radius-pill: 0px; --font-display: var(--font-ui); --term-bg: #111214; }
+:root[data-theme="datasheet"][data-scheme="light"] { --void: #f7f7f8; --surface: #ffffff; --raised: #f2f2f4; --rule: #d3d4d8; --rule-2: #111214; --text: #111214; --text-2: #111214; --text-dim: rgba(17,18,20,.5);
+  --sidebar: #f7f7f8; --card: #ffffff; --card-active: #ffffff; --accent: #111214; --amber: #ff4f1f; --waiting: #ff4f1f; --live: #111214; --working: #111214; --flag: #111214; --flag-merge: #ff4f1f; --cold: rgba(17,18,20,.5); --idle: #111214;
+  --radius-card: 0px; --radius-row: 0px; --radius-mark: 0px; --radius-pill: 0px; --font-display: var(--font-ui); }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--proto-bg); color: var(--proto-fg); }
+body { font-family: var(--font-ui); font-size: 13px; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: default; }
+a { color: inherit; }
+.mono, .cap { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.cap { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; }
+
+/* ---------- prototype bar (outside the window) ---------- */
+.bar { position: sticky; top: 0; z-index: 20; height: 44px; display: flex; align-items: center; gap: 14px; padding: 0 16px;
+  background: var(--proto-bg); border-bottom: 1px solid var(--proto-rule); font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.bar .back { text-decoration: none; color: var(--proto-fg); opacity: .7; }
+.bar .ttl { color: var(--proto-ink); font-weight: 600; }
+.bar .idea { text-transform: none; letter-spacing: 0; font-family: var(--font-ui); font-size: 12.5px; color: var(--proto-fg); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.bar .ctl { display: flex; gap: 6px; margin-left: auto; }
+.bar .ctl button, .bar .ctl a { height: 24px; padding: 0 9px; border: 1px solid var(--proto-rule); color: var(--proto-fg); font: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.bar .ctl button[aria-pressed="true"] { background: var(--proto-ink); color: var(--proto-bg); border-color: var(--proto-ink); }
+.bar .ctl b { font-weight: 500; opacity: .55; }
+
+/* ---------- stage: the laptop window plus today's sidebar strips ---------- */
+.stagewrap { padding: 18px 16px 10px; overflow-x: auto; }
+.stage { display: flex; gap: 22px; align-items: flex-start; transform-origin: top left; }
+.laptop { width: var(--win-w); height: var(--win-h); flex: none; display: flex; flex-direction: column; background: var(--void); color: var(--text);
+  border: 1px solid var(--rule-2); border-radius: 10px; overflow: hidden; position: relative; }
+.capwrap { position: relative; }
+.cap-label { position: absolute; left: 0; top: -16px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--proto-fg); white-space: nowrap; }
+.cap-label b { color: var(--proto-ink); font-weight: 600; }
+.todaywrap { flex: none; position: relative; }
+.todaywrap .sb { height: calc(var(--win-h) - var(--titlebar)); border: 1px solid var(--rule-2); border-radius: 8px; }
+.todaywrap.hidden { display: none; }
+
+/* titlebar */
+.titlebar { height: var(--titlebar); flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--void); border-bottom: 1px solid var(--rule); font-size: 14px; }
+.lights { display: flex; gap: 8px; margin-right: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.ctlg { display: flex; gap: 3px; }
+.ctlg .c { width: 32px; height: 26px; display: grid; place-items: center; border-radius: 4px; background: var(--raised); color: var(--text); position: relative; font-size: 15px; }
+.ctlg .c.dim { opacity: .4; }
+.ctlg .c .badge { position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--amber); color: var(--chip-ink); font: 600 10px/16px var(--font-mono); text-align: center; }
+.win-title { display: flex; align-items: center; gap: 8px; margin-left: 10px; font-weight: 600; font-family: var(--font-display); font-size: 14px; }
+.win-title .folder { width: 15px; height: 12px; border-radius: 2px; background: #e58f3a; position: relative; }
+.win-title .folder::before { content: ""; position: absolute; left: 0; top: -3px; width: 6px; height: 3px; border-radius: 1px 1px 0 0; background: #e58f3a; }
+.win-path { margin-left: auto; color: var(--text-dim); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em; }
+
+/* body */
+.wbody { flex: 1; display: flex; min-height: 0; }
+.sb { flex: none; display: flex; flex-direction: column; background: var(--sidebar); position: relative; overflow: hidden; }
+.sb .scroll { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+
+/* areas: two terminals */
+.areas { flex: 1; display: flex; gap: 1px; padding: 0 1px 1px 0; min-width: 0; background: var(--void); }
+.area { flex: 1; display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; background: var(--term-bg); }
+.area.focus { border-color: var(--accent); }
+.area.flash { animation: areaflash 0.9s ease-out 2; }
+@keyframes areaflash { 0%, 100% { box-shadow: inset 0 0 0 0 transparent; } 30%, 70% { box-shadow: inset 0 0 0 3px var(--accent); } }
+.strip { height: 38px; flex: none; display: flex; align-items: stretch; background: var(--void); border-bottom: 1px solid var(--rule); font-size: 12.5px; }
+.tabs { flex: 1; min-width: 0; display: flex; align-items: stretch; overflow: hidden; }
+.tab { flex: none; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-right: 1px solid var(--rule); color: var(--text-2); white-space: nowrap; max-width: 220px; position: relative; }
+.tab .num { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; }
+.tab.active { background: var(--raised); color: var(--text); box-shadow: inset 0 1px 0 var(--accent); }
+.tab.active .num { color: var(--accent); }
+.tab .x { margin-left: 2px; opacity: .6; }
+.count { display: flex; align-items: center; gap: 6px; padding: 0 12px; color: var(--text); font-family: var(--font-mono); font-size: 12px; border-left: 1px solid var(--rule); }
+.count .dot { width: 6px; height: 6px; background: var(--amber); border-radius: 1px; }
+.tools { display: flex; align-items: center; gap: 6px; padding: 0 10px; border-left: 1px solid var(--rule); color: var(--text-dim); font-size: 13px; letter-spacing: .12em; }
+.descbar { height: 30px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 10px; background: var(--void); border-bottom: 1px solid var(--rule); font-size: 12.5px; color: var(--text); }
+.descbar .chip { height: 18px; padding: 0 8px; display: inline-flex; align-items: center; min-width: 110px; border: 1px solid var(--text); border-radius: 2px; color: var(--text); font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; }
+.descbar .d { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.descbar .mail { margin-left: auto; flex: none; font-family: var(--font-mono); font-size: 12px; color: var(--amber); }
+.term { flex: 1; min-height: 0; overflow: hidden; padding: 10px 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--term-fg); white-space: pre; }
+.term .dim { color: var(--term-dim); } .term .g { color: var(--term-green); } .term .p { color: var(--term-pink); } .term .v { color: var(--term-violet); } .term .b { color: var(--live); } .term b { font-weight: 700; }
+.prompt { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-top: 1px solid var(--rule); font-family: var(--font-mono); font-size: 12.5px; color: var(--term-fg); }
+.prompt .caret { width: 8px; height: 15px; background: var(--term-fg); }
+.status { height: 40px; flex: none; padding: 4px 12px; border-top: 1px solid var(--rule); font-family: var(--font-mono); font-size: 11px; line-height: 16px; white-space: pre; overflow: hidden; color: var(--term-fg); }
+.status .dim { color: var(--term-dim); } .status .g { color: var(--term-green); } .status .y { color: var(--amber); } .status .p { color: var(--term-pink); }
+
+/* ---------- the mark vocabulary (the app's 9 pt cell) ---------- */
+.mk { --mk: 9px; width: var(--mk); height: var(--mk); display: inline-block; flex: none; position: relative; vertical-align: middle; color: var(--idle); }
+.mk::after { content: ""; position: absolute; left: 0; right: 0; top: 0; bottom: var(--cut, 0px); border-radius: var(--radius-mark, 1px); }
+.mk.idle::after { border: 1px solid currentColor; }
+.mk.work { color: var(--working); }
+.mk.work::after { background: color-mix(in srgb, currentColor 25%, transparent); }
+.mk.work > i { position: absolute; left: .5px; top: .5px; width: calc(var(--mk) - 1px); height: calc(var(--mk) - 1px - var(--cut, 0px));
+  background-image: linear-gradient(currentColor, currentColor); background-size: 2px 2px; background-repeat: space; animation: stepfill 1.8s steps(1, end) infinite; }
+.mk.wait { color: var(--waiting); }
+.mk.wait::after { border: 1.5px solid currentColor; }
+.mk.wait::before { content: ""; position: absolute; left: 2.5px; right: 2.5px; top: 2.5px; bottom: calc(2.5px + var(--cut, 0px)); background: currentColor; animation: dip 1.6s ease-in-out infinite; z-index: 1; }
+.mk.cold { color: var(--cold); }
+.mk.cold::after { top: auto; bottom: calc(3.5px + var(--cut, 0px) / 2); height: 2px; background: currentColor; border-radius: 0; }
+.mk.cold.cache { color: var(--cache); }
+.mk.flag { color: var(--flag) !important; animation: breathe 2.4s ease-in-out infinite; }
+.mk.flag.kind-merge { color: var(--flag-merge) !important; }
+.mk.flag.kind-cos { color: var(--flag-cos) !important; }
+.mk.flag.wait::before { animation: flash 1s steps(1, end) infinite; }
+.mk.dg1 { --cut: 3px; } .mk.dg2 { --cut: 5px; }
+.mk.dg1 > s, .mk.dg2 > s { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: currentColor; }
+.mk.dg2 > s { box-shadow: 0 -2px 0 currentColor; }
+.mk.dg1.wait::before, .mk.dg2.wait::before { top: 2px; }
+.static .mk, .static .mk > i, .static .mk::before { animation: none !important; }
+@keyframes stepfill { 0% { clip-path: inset(100% 0 0 0); } 25% { clip-path: inset(66% 0 0 0); } 50% { clip-path: inset(33% 0 0 0); } 75% { clip-path: inset(0 0 0 0); } 100% { clip-path: inset(0 0 0 0); } }
+@keyframes dip { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+@keyframes flash { 0% { background: currentColor; } 50% { background: #fff; } }
+
+/* the signal row: marks in priority order, +N tail */
+.sig { display: inline-flex; align-items: center; gap: 3px; height: 11px; white-space: nowrap; }
+.sig .more { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .02em; color: var(--text-dim); margin-left: 2px; line-height: 1; font-variant-numeric: tabular-nums; }
+.sig .none { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-dim); }
+
+/* the count cluster: fixed slots, tabular, dim at zero */
+.cnts { display: inline-flex; gap: 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: .02em; font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; }
+.cnt { width: 32px; display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.cnt.z { color: var(--text-dim); opacity: .55; }
+.ci { width: 7px; height: 7px; display: inline-block; flex: none; position: relative; vertical-align: middle; }
+.ci.a { background: currentColor; border-radius: 1px; }
+.ci.w { border: 1.5px solid var(--waiting); border-radius: 1px; } .ci.w::after { content: ""; position: absolute; inset: 1px; background: var(--waiting); }
+.cnt.w:not(.z) { color: var(--waiting); }
+.ci.d { border: 1px solid currentColor; border-radius: 1px; height: 5px; top: -1px; } .ci.d::after { content: ""; position: absolute; left: -1px; right: -1px; bottom: -3px; height: 1px; background: currentColor; }
+.ci.t { width: 9px; border: 1px solid currentColor; border-radius: 1px; } .ci.t::after { content: ""; position: absolute; left: 1px; bottom: 1px; width: 3px; height: 1px; background: currentColor; }
+
+/* ---------- today's sidebar: the card as it ships, Nocturne, Large chrome scale ---------- */
+.sb.today { padding: 10px 10px 12px; gap: 10px; }
+#laptop .sb.today { border: 0; border-radius: 0; height: auto; }
+.sb.today .newgroup { height: 34px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; border: 1px solid var(--rule); border-radius: 4px;
+  font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-2); }
+.sb.today .scroll { display: flex; flex-direction: column; gap: 10px; }
+.sb.today .scroll.cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; align-content: start; }
+.sb.today .scroll.cols2 .tfolder { grid-column: 1 / -1; }
+.tfolder { height: 65px; flex: none; border-radius: 4px; background: var(--card); border: 1px solid var(--rule); padding: 8px 12px 6px 10px; position: relative; display: flex; flex-direction: column; justify-content: space-between; }
+.tfolder .r1 { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 17px; font-weight: 600; }
+.tfolder .r1 .chev { font-size: 12px; color: var(--text-2); } .tfolder .r1 .ic { width: 14px; height: 14px; border: 1.5px solid var(--text-2); border-radius: 2px; }
+.tfolder .r1 .dots { margin-left: auto; color: var(--text-2); letter-spacing: .1em; }
+.tfolder .r2 { display: flex; gap: 22px; padding-left: 30px; font-family: var(--font-mono); font-size: 13px; color: var(--text-dim); }
+.tfolder .r2 span { display: inline-flex; align-items: center; gap: 6px; }
+.tfolder .r2 i { width: 10px; height: 10px; border: 1.2px solid currentColor; display: inline-block; border-radius: 1px; }
+.tfolder .r2 .on { color: var(--waiting); }
+.tfolder::before { content: ""; position: absolute; left: -10px; top: 0; bottom: 0; width: 3px; background: var(--fcol, var(--text-dim)); }
+.tcard { flex: none; min-width: 0; border-radius: var(--radius-card, 4px); background: var(--card); border: 1px solid var(--rule); padding: 14px 14px 12px; color: var(--text); display: flex; flex-direction: column; position: relative; }
+.tcard.sel { background: var(--card-active); border-color: var(--accent); }
+.tcard.sel::after { content: ""; position: absolute; inset: 1px; border: 1px solid var(--amber); border-radius: 3px; pointer-events: none; opacity: .0; }
+.tcard.waiting:not(.sel) { border-color: #7a8390; }
+.tcard.colored:not(.sel) { border-color: var(--wcol); }
+.tcard .r1 { display: flex; align-items: center; gap: 5px; min-height: 19px; }
+.tcard .name { font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcard .pin { font-size: 10px; color: var(--text-2); }
+.tcard .ws { margin-left: auto; font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .1em; color: var(--text-dim); white-space: nowrap; }
+.tcard .ws b { color: var(--text-2); font-weight: 500; margin-left: 4px; }
+.tcard.sel .ws b { color: var(--accent); }
+.tcard .mission { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 16px; margin-top: 0; }
+.tcard .agents { display: flex; flex-direction: column; gap: 4px; padding-top: 7px; }
+.tcard .agent { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; line-height: 16px; }
+.tcard .agent .slot { width: 16px; height: 16px; display: grid; place-items: center; flex: none; }
+.tcard .agent .at { overflow: hidden; text-overflow: ellipsis; }
+.tcard .agent .at span { font-weight: 400; }
+.tcard .agent.dim { color: var(--text-2); }
+.tcard .more, .tcard .only { font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim); padding-left: 23px; line-height: 16px; }
+.tcard .only { padding-left: 0; }
+.tcard .foot { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 7px; }
+.tcard .census { font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 14px; }
+.tcard .marks { height: 14px; display: flex; align-items: center; justify-content: flex-end; white-space: nowrap; }
+.tcard .marks .more { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); margin-right: 4px; }
+.tcard .readout { font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim); text-align: right; opacity: .55; line-height: 12px; }
+.tcard .branch { font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 16px; margin-top: 3px; }
+.tcard .state { display: flex; align-items: center; gap: 6px; font-size: 13.5px; line-height: 17px; color: var(--text-2); margin-top: 2px; }
+.tcard .state.wait, .tcard .state.work { color: var(--live); }
+.tcard .state .ico { width: 12px; height: 12px; display: inline-grid; place-items: center; font-size: 11px; }
+.tcard .pr { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-2); line-height: 17px; }
+.tcard .pr u { text-decoration: underline; }
+.tcard .ports { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 16px; margin-top: 1px; }
+.tcard .rail { height: 2px; display: flex; gap: 2px; background: var(--rule); margin-top: 9px; }
+.tcard .rail i { display: block; height: 100%; }
+.tcard .rail .wait { background: var(--waiting); } .tcard .rail .work { background: var(--live); } .tcard .rail .idle { background: var(--rule-2); } .tcard .rail .cold { background: var(--steel); }
+.sb.today .foot { flex: none; display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
+.sb.today .pill { height: 46px; border: 1px solid var(--amber); border-radius: 4px; color: var(--amber); display: flex; align-items: center; gap: 10px; padding: 0 14px 0 16px;
+  font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; }
+.sb.today .pill .n { background: var(--amber); color: var(--chip-ink); border-radius: 2px; padding: 1px 5px; }
+.sb.today .pill .kb { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1; gap: 3px; font-weight: 400; }
+.sb.today .pill .kb .arrow { font-size: 16px; }
+.sb.today .pill .kb .keys { font-size: 10px; opacity: .8; }
+.sb.today .icons { display: flex; gap: 18px; padding-left: 4px; color: var(--text-dim); font-size: 14px; height: 20px; align-items: center; }
+
+/* ---------- shared pieces for the proposals ---------- */
+.sb.proto { padding: 8px 8px 10px; gap: 6px; }
+.sb.proto .top { height: 22px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 4px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim); }
+.sb.proto .top .plus { width: 16px; height: 16px; border: 1px solid var(--rule-2); border-radius: 2px; display: grid; place-items: center; font-size: 12px; color: var(--text-2); }
+.sb.proto .top .sum { margin-left: auto; white-space: nowrap; }
+.sb.proto .top .sum b { color: var(--waiting); font-weight: 500; }
+.sb.proto .foot { flex: none; padding-top: 6px; display: flex; gap: 6px; }
+.sb.proto .pill { height: 30px; flex: 1; border: 1px solid var(--amber); border-radius: var(--radius-pill, 3px); color: var(--amber); display: flex; align-items: center; gap: 8px; padding: 0 10px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.sb.proto .pill .n { background: var(--amber); color: var(--chip-ink); border-radius: 2px; padding: 0 4px; }
+.sb.proto .pill .kb { margin-left: auto; font-weight: 400; opacity: .8; }
+.sb.proto .pill.flagpill { border-color: var(--flag); color: var(--flag); }
+.sb.proto .pill.flagpill .n { background: var(--flag); }
+.sb.proto .pill:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.flagslot { width: 11px; height: 11px; display: inline-grid; place-items: center; flex: none; }
+.flagslot svg { width: 10px; height: 10px; }
+.wsnum { font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em; font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; }
+.wsnum.on { color: var(--waiting); } .wsnum.fl { color: var(--flag); }
+.row.sel .wsnum { color: var(--accent); }
+.wname { font-family: var(--font-ui); font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.row.sel .wname { color: var(--text); }
+.row:hover .wname { color: var(--text); }
+.row { position: relative; border: 1px solid transparent; border-radius: var(--radius-row, 3px); background: var(--card); }
+.row.sel { background: var(--card-active); border-color: var(--accent); }
+.row.colored:not(.sel) { border-color: var(--wcol); }
+.row:hover:not(.sel) { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.pfolder { display: flex; align-items: center; gap: 6px; height: 20px; padding: 0 6px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim); }
+.pfolder .chev { font-size: 9px; } .pfolder .fn { color: var(--text-2); } .pfolder .fc { margin-left: auto; } .pfolder .fw { color: var(--waiting); }
+.names-off .wname { display: none; }
+
+/* ---------- the hover flyout: the whole card, on demand, over the terminal ---------- */
+.flyout { position: absolute; z-index: 30; width: 320px; background: var(--card); color: var(--text); border: 1px solid var(--rule-2); border-radius: 4px; padding: 12px 14px 12px; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.flyout.show { display: block; }
+.flyout .r1 { display: flex; align-items: baseline; gap: 8px; }
+.flyout .name { font-family: var(--font-display); font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.flyout .ws { margin-left: auto; font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; color: var(--text-dim); }
+.flyout .mission { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.flyout .agents { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.flyout .agent { display: flex; align-items: center; gap: 7px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 20px; border-radius: var(--radius-mark, 1px); padding: 0 4px; margin: 0 -4px; }
+.flyout .agent.jump:hover { background: color-mix(in srgb, var(--text) 8%, transparent); cursor: default; }
+.flyout .agent .pn { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); width: 26px; flex: none; font-variant-numeric: tabular-nums; }
+.flyout .agent .at { overflow: hidden; text-overflow: ellipsis; }
+.flyout .census .hint { color: var(--text-dim); opacity: .8; text-transform: none; letter-spacing: 0; font-family: var(--font-ui); font-size: 11px; }
+.flyout .agent .slot { width: 14px; display: grid; place-items: center; flex: none; }
+.flyout .agent span { color: var(--text-2); }
+.flyout .agent.fl { color: var(--flag); }
+.flyout .census { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--rule); font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim); display: flex; flex-direction: column; gap: 3px; }
+.no-hover .flyout { display: none !important; }
+
+/* ---------- legend ---------- */
+.legend { padding: 8px 16px 28px; display: flex; flex-wrap: wrap; gap: 10px 28px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--proto-fg); align-items: center; }
+.legend .k { display: inline-flex; align-items: center; gap: 7px; }
+.legend .k .ci { color: var(--idle); }
+.legend .mk > i { animation: none; }
+.legend .k .ci.a { color: var(--proto-fg); }
+.legend .num { color: var(--proto-ink); font-weight: 600; }
+.legend .keys { margin-left: auto; opacity: .7; }
+.legend .keys b { color: var(--proto-ink); font-weight: 600; }
+
+.c-card { height: 42px; padding: 4px 9px 4px; margin-bottom: 4px; display: flex; flex-direction: column; justify-content: space-between; }
+.c-card .l1 { display: flex; align-items: center; gap: 6px; height: 18px; }
+.c-card .l2.flagband { background: var(--band, var(--flag)); color: var(--chip-ink); margin: 0 -5px; padding: 0 5px; height: 17px; border-radius: calc(var(--radius-mark, 1px) + 1px); }
+.c-card .l2.flagband .flagslot { margin-right: 5px; color: var(--chip-ink); }
+.c-card .l2.flagband .mk { color: var(--chip-ink) !important; animation: none; }
+.c-card .l2.flagband .mk > i, .c-card .l2.flagband .mk::before { animation: none; }
+.c-card .l2.flagband .cnts, .c-card .l2.flagband .cnt, .c-card .l2.flagband .cnt.z, .c-card .l2.flagband .cnt.w { color: var(--chip-ink); opacity: 1; }
+.c-card .l2.flagband .ci.w { border-color: var(--chip-ink); } .c-card .l2.flagband .ci.w::after { background: var(--chip-ink); }
+.c-card .l2.flagband .sig .more, .c-card .l2.flagband .sig .none { color: var(--chip-ink); opacity: .75; }
+.c-card .l2.flagband .sig { flex: 1; }
+.sb.proto .scroll.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6px; align-content: start; }
+.sb.proto .scroll.grid2 .pfolder { grid-column: 1 / -1; }
+.legband { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; background: var(--flag); color: var(--chip-ink); border-radius: 2px; }
+.legband .mk { color: var(--chip-ink) !important; animation: none; }
+.c-card .wname { font-family: var(--font-display); font-size: 14.5px; font-weight: 600; letter-spacing: -.012em; color: var(--text); flex: 1; }
+.c-card .pin { font-size: 9px; color: var(--text-2); }
+.c-card .l1 .wsnum { flex: none; margin-left: auto; }
+.c-card .l2 { display: flex; align-items: center; justify-content: space-between; height: 12px; }
+.c-card .cnts .cnt { width: 30px; }
+.c-card.sel .wname { color: var(--text); }
+.names-off .c-card .l1 .wsnum { margin-left: 0; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="back" href="index.html">← Index</a>
+  <span class="ttl">Minimal sidebar · 04 Two-line card</span>
+  <span class="idea">Chosen 2026-11-05. Full cards while they all fit; the moment they would scroll, every card becomes this two-line card. Press − and = to change the workspace count and watch it switch; [ and ] change the width (two columns at 405 pt).</span>
+  <span class="ctl">
+    <button data-t="scheme" aria-pressed="false">Light <b>L</b></button>
+    <button data-t="fit" aria-pressed="false">1:1 <b>Z</b></button>
+    <button data-t="names" aria-pressed="true">Names <b>N</b></button>
+    <button data-t="today" aria-pressed="true">Today <b>T</b></button>
+    <button data-t="hover" aria-pressed="true">Hover <b>H</b></button>
+    <button data-t="anim" aria-pressed="true">Motion <b>A</b></button>
+    <button data-t="counts" aria-pressed="false">Counts A·W·T <b>C</b></button>
+    <button data-t="theme" aria-pressed="false">Theme Nocturne <b>K</b></button>
+    <button data-t="narrower">− <b>[</b></button><span id="wval" style="min-width:52px;text-align:center">255 pt</span><button data-t="wider">+ <b>]</b></button>
+    <button data-t="fewer">− <b>-</b></button><span id="cval" style="min-width:44px;text-align:center">21 ws</span><button data-t="more">+ <b>=</b></button>
+  </span>
+</header>
+<div class="stagewrap"><div class="stage" id="stage">
+  <div class="capwrap"><div class="cap-label"><b>Proposal</b> · sidebar <span id="capw">255 pt</span> · window 1470 × 956 pt · <b id="vis2">–</b> / 21 whole</div><div class="laptop" id="laptop"></div></div>
+  <div class="todaywrap" id="today1"><div class="cap-label"><b>Today</b> · 1 col · 255 pt · <b id="t1n">–</b> / 21 whole</div><aside class="sb today" id="sbt1" style="width:255px"></aside></div>
+  <div class="todaywrap hidden" id="today2"><div class="cap-label"><b>Today</b> · 2 cols · 415 pt · <b id="t2n">–</b> / 21 whole</div><aside class="sb today" id="sbt2" style="width:415px"></aside></div>
+</div></div>
+
+<footer class="legend">
+  <span class="k"><span class="mk work"><i></i></span> working</span>
+  <span class="k"><span class="mk wait"></span> waiting on you</span>
+  <span class="k"><span class="mk idle"></span> idle</span>
+  <span class="k"><span class="mk cold"></span> cold</span>
+  <span class="k"><span class="mk cold cache"></span> cache expired</span>
+  <span class="k"><span class="mk wait flag"></span> flagged</span>
+  <span class="k"><span class="mk idle dg1"><s></s></span> delegate</span>
+  <span class="k"><i class="ci a"></i> agents</span>
+  <span class="k"><i class="ci w"></i> waiting</span>
+  <span class="k"><i class="ci t"></i> terminals · browsers · docs</span>
+  <span class="k">fully visible on a 14-inch screen: <span class="num" id="vis">–</span> of 21</span>
+  <span class="k"><span class="mk wait flag kind-merge"></span> named flag (merge issue)</span>
+  <span class="k"><span class="legband"><svg viewBox="0 0 10 10" style="width:10px;height:10px"><path d="M2 9.5V1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M2.5 1.2h5.6L6.4 3.4l1.7 2.2H2.5z" fill="currentColor"/></svg><span class="mk wait"></span><span class="mk idle"></span></span> flag band: the row's second line in the flag's color</span>
+  <span class="keys">keys <b>L</b> light · <b>Z</b> 1:1 · <b>N</b> names · <b>T</b> today strips · <b>H</b> hover · <b>A</b> motion · <b>C</b> counts · <b>K</b> theme · <b>[ ]</b> width · <b>- =</b> workspaces · <b>1-5</b> pages · <b>0</b> index</span>
+</footer>
+
+<script>
+window.addEventListener('error', e => { document.title = 'ERR ' + e.message + ' @' + e.lineno; });
+
+const A = (t, st, o = {}) => Object.assign({ t, st, s: '', d: 0, f: '', fk: '', c: false }, o);
+const WS = [
+  { n: 1, name: 'Chief of Jev', pinned: true, mission: "Run Atin's whole agent fleet so it takes only operator-level decisions.",
+    term: 3, browser: 2, doc: 0, branch: 'MASTER*', ports: [27311],
+    agents: [ A('Workspace Auditor', 'wait', { s: 'Audit done: 3 workspaces to close' }), A('Chief of Jev', 'idle', { s: 'Chief of Staff on Jevwatch' }) ] },
+  { n: 3, name: 'Harbor', folder: 'Clients', mission: 'Deliver the Harbor mobile app.', term: 1, browser: 0, doc: 0, branch: 'REVIEW-B10-PR (DETACHED @ 5A1)', ports: [61163],
+    agents: [ A('Harbor buildout spec', 'wait', { s: 'B1 done (PR #41)' }), A('B3 builder', 'idle', { d: 1 }), A('Design review', 'wait'), A('B4 builder', 'idle', { d: 1 }),
+      A('B5 builder', 'idle', { d: 1 }), A('B6 builder', 'work', { d: 1 }), A('B7 builder', 'idle', { d: 1 }), A('B8 builder', 'idle', { d: 1 }), A('B9 builder', 'idle', { d: 1 }),
+      A('B10 review', 'wait'), A('B11 builder', 'idle', { d: 1 }), A('B12 builder', 'idle', { d: 1 }), A('B13 builder', 'work', { d: 1 }), A('B14 builder', 'idle', { d: 1 }),
+      A('B15 builder', 'idle', { d: 1 }), A('B16 builder', 'idle', { d: 1 }), A('Merge Captain', 'idle'), A('Harbor orchestrator', 'work'), A('B12 review', 'wait'), A('B2 builder', 'idle', { d: 1 }) ] },
+  { n: 4, name: 'Inbound', mission: 'Excellent agentic access to email: a second brain for the inbox.', term: 0, browser: 1, doc: 0, branch: 'MASTER*', ports: [],
+    agents: [ A('Inbound', 'wait', { s: "Owns Inbound's 5 rows" }), A('Mailroom security check', 'wait', { s: 'Surveying the listener' }) ] },
+  { n: 16, name: 'MouthKeys', mission: 'Voice to keystrokes, on the Datasheet.', term: 3, browser: 0, doc: 0, branch: 'DESIGN/APP-SIGNAL', ports: [],
+    agents: [ A('Window build', 'work'), A('Wizard build', 'work'), A('Overlay QA', 'wait', { s: 'screenshot differs', f: 'Merge blocked: the overlay screenshot differs from baseline', fk: 'merge' }), A('Site copy', 'wait'), A('Icon pass', 'work', { d: 1 }) ] },
+  { n: 7, name: 'Constellation Bus', mission: 'A universal message and event backbone for the constellation.', term: 1, browser: 2, doc: 0, branch: '', ports: [51694, 52740, 63360, 63364],
+    pr: [['#29', 'open'], ['#24', 'merged']],
+    agents: [ A('Bus Lead', 'work', { s: 'Ruled D92 (SP-9 heads)' }), A('Bus Orchestrator', 'wait', { s: 'Status refresh needs a call' }), A('Relay seat', 'idle', { d: 1 }), A('Schema seat', 'idle', { d: 1 }),
+      A('Seat 3', 'idle'), A('Seat 4', 'idle'), A('Seat 5', 'idle'), A('Seat 6', 'idle'), A('Seat 7', 'idle'), A('Seat 8', 'idle'), A('Seat 9', 'idle'), A('Seat 10', 'idle'), A('Docs seat', 'cold'), A('Perf seat', 'cold') ] },
+  { n: 8, name: 'Stage11', mission: '', term: 0, browser: 0, doc: 1, branch: '', ports: [],
+    agents: [ A('Coevolution Application', 'idle', { s: 'Overwatch write-up' }), A('Vie / CoevCon research', 'idle', { d: 1, s: 'Findings in the doc' }), A('Registry sweep', 'idle') ] },
+  { n: 13, name: 'Workspace 13', mission: '', term: 0, browser: 0, doc: 0, branch: '(DETACHED @ F3E1DCA)', ports: [],
+    agents: [ A('Lattice login fix', 'work', { s: 'Fix built (same session)' }) ] },
+  { n: 6, name: 'C11H updates', mission: 'c11h: an incredible experience managing terminals scattered across a constellation.', term: 2, browser: 1, doc: 0, branch: 'MAIN', ports: [49773, 49881],
+    agents: [ A('Machine Chip Q', 'wait', { s: 'Supervising five builders' }), A('Upstream Sync Plan', 'work', { s: 'reading the diff' }), A('C11H-221 UX designer', 'work', { s: 'five prototypes' }),
+      A('C11H-191 Linuxbox relay', 'work', { d: 1 }), A('C11H-207 drag', 'work', { d: 1 }), A('Merge Captain', 'idle'), A('c11h Lead', 'work'), A('Release 1.8.1-h10', 'cold', { c: true }) ] },
+  { n: 2, name: 'Gregorovich', mission: "Atin's personal projects and the constellation.", term: 1, browser: 0, doc: 0, branch: 'MAIN', ports: [27180, 27183],
+    agents: [ A('Perf Monitor WS3', 'wait', { f: 'Need a call on the recorder format' }), A('Hangar publisher', 'idle') ] },
+  { n: 5, name: 'Glass V2', color: '#e35ba8', mission: "The Glass: Atin's phone as a native second seat.", term: 2, browser: 0, doc: 0, branch: 'GLASS-V2', ports: [52530, 63861],
+    agents: [ A('Glass Build Lead', 'wait', { s: 'Live-arrivals pass' }), A('Live-arrivals', 'work', { d: 1 }), A('Glass QA', 'work', { d: 1 }), A('Glass docs', 'idle') ] },
+  { n: 9, name: 'Lattice', mission: 'Agent-native task tracking, hosted.', term: 0, browser: 1, doc: 0, branch: 'MAIN', ports: [8420],
+    agents: [ A('Hosted orchestrator', 'work', { s: 'dispatching five seats' }), A('Seat L-1', 'work', { d: 1 }), A('Seat L-2', 'work', { d: 1 }), A('Seat L-3', 'work', { d: 1 }), A('Seat L-4', 'work', { d: 1 }), A('Seat L-5', 'work', { d: 1 }) ] },
+  { n: 10, name: 'Mailroom', mission: "Atin's Fastmail inbox as the agents keep it.", term: 1, browser: 0, doc: 0, branch: 'MAIN', ports: [],
+    agents: [ A('Mailroom', 'cold', { c: true, s: 'last digest 06:40' }) ] },
+  { n: 11, name: 'Chaos 20:41', mission: '', term: 0, browser: 0, doc: 0, branch: '', ports: [],
+    agents: [ A('Studio A', 'work', { s: 'a brass orrery in CSS' }), A('Studio B', 'work'), A('Studio C', 'work'), A('Studio D', 'work') ] },
+  { n: 12, name: 'Acetate', mission: 'The code-native DJ library manager.', term: 1, browser: 1, doc: 0, branch: 'MAIN', ports: [5173],
+    agents: [ A('ace sidecar watch', 'idle'), A('Library import', 'cold'), A('Set planner', 'idle') ] },
+  { n: 14, name: 'Gaffer', mission: 'One lighting system, one conversational surface.', term: 0, browser: 0, doc: 0, branch: 'MAIN', ports: [8737],
+    agents: [ A('Gaffer core', 'idle', { s: 'scene batch done' }) ] },
+  { n: 15, name: 'Constellation', mission: 'The map of the compute on the tailnet.', term: 1, browser: 0, doc: 0, branch: 'MAPS-GALLERY', ports: [],
+    agents: [ A('Map view 11', 'cold', { c: true }), A('Placement notes', 'idle') ] },
+  { n: 17, name: 'Northwind', folder: 'Clients', mission: 'Northwind engagement.', term: 0, browser: 0, doc: 0, branch: 'MAIN', ports: [],
+    agents: [ A('Northwind Phosphor', 'wait', { s: 'reading of the finished work' }) ] },
+  { n: 18, name: 'Larkspur', folder: 'Clients', mission: 'Larkspur engagement.', term: 0, browser: 1, doc: 0, branch: 'DEPLOY', ports: [3000],
+    agents: [ A('Larkspur deploy', 'work', { s: 'Cloudflare preview' }) ] },
+  { n: 19, name: 'Etch', mission: '', term: 2, browser: 0, doc: 0, branch: 'MAIN', ports: [], agents: [] },
+  { n: 20, name: 'Missions', mission: 'Where every project mission is set.', term: 0, browser: 0, doc: 0, branch: '', ports: [],
+    agents: [ A('Goal Interviewer', 'idle', { s: 'waiting for Atin' }) ] },
+  { n: 21, name: 'Train Watching Club', mission: 'A closing page for a kept record.', term: 0, browser: 1, doc: 0, branch: 'MAIN', ports: [],
+    agents: [ A('Closing page', 'cold') ] },
+];
+const SELECTED = 1;
+const FOLDERS = [{ name: 'Clients', color: '#8fa3c7' }];
+
+
+const PRI = { wait: 0, work: 1, idle: 2, cold: 3 };
+const S = { scheme: 'dark', fit: true, names: true, today: 1, hover: true, anim: true, counts: 'awt', width: 0, theme: 'nocturne', sel: 1, count: 21, proto: null };
+const pool = () => WS.slice(0, S.count);
+const THEMES = ['nocturne', 'stage11', 'datasheet'];
+const flagGlyph = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 9.5V1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M2.5 1.2h5.6L6.4 3.4l1.7 2.2H2.5z" fill="currentColor"/></svg>';
+const TILES_MIN = 405;   // two Tiles columns at the Large chrome scale (2 × 162 × 1.25)
+function cardsFit(cols) {
+  let m = document.getElementById('measure');
+  if (!m) { m = document.createElement('aside'); m.id = 'measure'; m.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;height:' + (956 - 40) + 'px'; document.getElementById('laptop').appendChild(m); }
+  m.className = 'sb today'; m.style.width = S.width + 'px'; renderToday(m, cols, S.width);
+  const sc = m.querySelector('.scroll'); return sc.scrollHeight <= sc.clientHeight + 1;
+}
+const byN = Object.fromEntries(WS.map(w => [w.n, w]));
+function order() {
+  const out = []; const used = new Set(); const WSP = pool();
+  const pinned = WSP.filter(w => w.pinned);
+  pinned.forEach(w => { out.push({ t: 'ws', w }); used.add(w.n); });
+  for (const f of FOLDERS) {
+    const members = WSP.filter(w => w.folder === f.name);
+    if (!members.length) continue;
+    out.push({ t: 'folder', f, members });
+    members.forEach(w => { out.push({ t: 'ws', w, inFolder: f }); used.add(w.n); });
+  }
+  WSP.filter(w => !used.has(w.n)).forEach(w => out.push({ t: 'ws', w }));
+  return out;
+}
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const waiting = w => w.agents.filter(a => a.st === 'wait' && !a.d).length + w.agents.filter(a => a.st === 'wait' && a.d && a.f).length;
+const flagged = w => w.agents.filter(a => a.f).length;
+const flagColor = w => { const a = w.agents.find(x => x.f); return a ? (a.fk ? `var(--flag-${a.fk})` : 'var(--flag)') : ''; };
+const working = w => w.agents.filter(a => a.st === 'work').length;
+const delegated = w => w.agents.filter(a => a.d).length;
+const present = a => (a.d && a.st === 'wait' && !a.f) ? 'idle' : a.st;   // a stopped delegate reads idle
+function sortSignal(agents) {
+  return [...agents].sort((a, b) => ((b.f ? 1 : 0) - (a.f ? 1 : 0)) || (PRI[present(a)] - PRI[present(b)]) || ((a.d || 0) - (b.d || 0)));
+}
+function mk(a, size) {
+  const st = present(a);
+  const cls = ['mk', st, a.f ? 'flag' : '', a.f && a.fk ? 'kind-' + a.fk : '', (a.c && st === 'cold') ? 'cache' : '', a.d ? 'dg' + Math.min(a.d, 2) : ''].filter(Boolean).join(' ');
+  return `<span class="${cls}"${size ? ` style="--mk:${size}px"` : ''}>${st === 'work' ? '<i></i>' : ''}${a.d ? '<s></s>' : ''}</span>`;
+}
+// the signal row: marks in priority order (flag, waiting, working, idle, cold), +N tail
+function signal(agents, maxW, gap = 3, size = 9) {
+  const s = sortSignal(agents); const n = s.length;
+  if (!n) return `<span class="sig"><span class="none">—</span></span>`;
+  const per = size + gap; let vis = n;
+  if (n * size + (n - 1) * gap > maxW) vis = Math.max(1, Math.floor((maxW - 22 + gap) / per));
+  const hid = n - vis;
+  return `<span class="sig" style="gap:${gap}px">${s.slice(0, vis).map(a => mk(a, size)).join('')}${hid > 0 ? `<span class="more">+${hid}</span>` : ''}</span>`;
+}
+function cnt(kind, n, label) { return `<span class="cnt ${kind}${n ? '' : ' z'}" title="${label}"><i class="ci ${kind}"></i>${n}</span>`; }
+function counts(w, kinds = ['a', 'w', 't']) {
+  const v = { a: w.agents.length, w: waiting(w), d: delegated(w), t: w.term + w.browser + w.doc };
+  const lbl = { a: 'agents', w: 'waiting on you', d: 'delegated', t: 'terminals, browsers, docs' };
+  return `<span class="cnts">${kinds.map(k => cnt(k, v[k], lbl[k])).join('')}</span>`;
+}
+function censusText(w) {
+  const p = [];
+  const one = (n, s, pl) => n ? `${n} ${n === 1 ? s : pl}` : '';
+  [one(w.agents.length, 'agent', 'agents'), one(w.term, 'terminal', 'terminals'), one(w.browser, 'browser', 'browsers'), one(w.doc, 'doc', 'docs')].forEach(x => x && p.push(x));
+  return p.length ? p.join(', ') : 'No panels';
+}
+function dominant(w) {
+  if (flagged(w)) return 'flag';
+  if (waiting(w)) return 'wait';
+  if (working(w)) return 'work';
+  if (w.agents.some(a => present(a) === 'idle')) return 'idle';
+  return w.agents.length ? 'cold' : 'none';
+}
+function relevant(w) { return sortSignal(w.agents); }
+// ---- today's card ----
+function todayMarks(w, W) {
+  const n = w.agents.length; if (!n) return '';
+  const fits = (slot, gap) => n * slot + (n - 1) * gap <= W;
+  let slot = 14, gap = 7, vis = n;
+  if (!fits(14, 7)) { if (fits(14, 2)) { gap = 2; } else if (fits(9, 2)) { slot = 9; gap = 2; } else { slot = 9; gap = 2; vis = Math.floor((W - 24 + 2) / 11); } }
+  const hid = n - vis; const shown = w.agents.slice(n - vis);
+  return `${hid ? `<span class="more">+${hid}</span>` : ''}${shown.map(a => `<span class="slotbox" style="width:${slot}px;height:14px;display:grid;place-items:center;margin-left:${gap}px">${mk(a)}</span>`).join('')}`;
+}
+function todayCard(w, innerW) {
+  const rel = relevant(w); const vis = rel.slice(0, 2);
+  const waitOverflow = Math.max(0, w.agents.filter(a => present(a) === 'wait').length - vis.filter(a => present(a) === 'wait').length);
+  const dom = dominant(w);
+  const state = dom === 'wait' || dom === 'flag' ? `<div class="state wait"><span class="ico">🔔</span>Needs input</div>` : dom === 'work' ? `<div class="state work"><span class="ico">⚡</span>Running</div>` : `<div class="state"><span class="ico">⏸</span>Idle</div>`;
+  const total = w.agents.length || 1;
+  const seg = ['wait', 'work', 'idle', 'cold'].map(s => [s, w.agents.filter(a => present(a) === s).length]).filter(x => x[1]);
+  const rail = w.agents.length ? seg.map(([s, c]) => `<i class="${s}" style="width:${(c / total * 100).toFixed(1)}%"></i>`).join('') : '';
+  return `<div class="tcard${w.n === SELECTED ? ' sel' : ''}${waiting(w) ? ' waiting' : ''}${w.color ? ' colored' : ''}" style="${w.color ? `--wcol:${w.color}` : ''}" data-ws="${w.n}">
+    <div class="r1"><span class="name">${esc(w.name)}</span>${w.pinned ? '<span class="pin">◆</span>' : ''}<span class="ws">WS<b>${w.n}</b></span></div>
+    ${w.mission ? `<div class="mission">${esc(w.mission)}</div>` : ''}
+    <div class="agents">${vis.length ? vis.map((a, i) => `<div class="agent${i ? ' dim' : ''}"><span class="slot">${mk(a)}</span><span class="at">${a.f ? esc(a.f) : esc(a.t) + (a.s ? `<span> · ${esc(a.s)}</span>` : '')}</span></div>`).join('') : '<div class="only">Terminals only · no agent panels</div>'}
+      ${waitOverflow ? `<div class="more">… and ${waitOverflow} more</div>` : ''}</div>
+    <div class="foot"><div class="census">${censusText(w)}</div><div class="marks">${todayMarks(w, innerW)}</div></div>
+    <div class="readout">−% −MB</div>
+    ${w.branch ? `<div class="branch">${esc(w.branch)}</div>` : ''}
+    ${state}
+    ${(w.pr || []).map(([n, s]) => `<div class="pr">⎇ <u>PR ${n}</u> ${s}</div>`).join('')}
+    ${w.ports.length ? `<div class="ports">${w.ports.map(p => ':' + p).join(', ')}</div>` : ''}
+    <div class="rail">${rail}</div>
+  </div>`;
+}
+function todayFolder(f, members) {
+  const wCount = members.reduce((s, w) => s + waiting(w), 0);
+  return `<div class="tfolder" style="--fcol:${f.color}"><div class="r1"><span class="chev">▾</span><span class="ic"></span>${esc(f.name)}<span class="dots">···</span></div>
+    <div class="r2"><span><i></i>${members.length}</span><span><i></i>0</span><span class="${wCount ? 'on' : ''}"><i></i>${wCount}</span><span><i></i>0</span></div></div>`;
+}
+function renderToday(el, cols, width) {
+  width = width || (cols === 2 ? 415 : 255);
+  const innerW = (cols === 2 ? (width - 20 - 12) / 2 : width - 20) - 28;
+  const items = order().map(it => it.t === 'folder' ? todayFolder(it.f, it.members) : todayCard(it.w, innerW)).join('');
+  el.innerHTML = `<div class="newgroup">⊞ New Group</div><div class="scroll${cols === 2 ? ' cols2' : ''}">${items}</div>
+    <div class="foot"><div class="pill">Waiting Agent <span class="n">${pool().reduce((s, w) => s + waiting(w), 0)}</span><span class="kb"><span class="arrow">→</span><span class="keys">⌥V</span></span></div><div class="icons"><span>⤢</span><span>?</span></div></div>`;
+}
+// ---- the laptop window ----
+const TERM_LEFT = `<span class="g">●</span> <b>Read</b>(design/minimal-sidebar/build.py)
+  <span class="dim">⎿</span>  Read <b>212</b> lines
+
+<span class="g">●</span> <b>Bash</b>(python3 build.py)
+  <span class="dim">⎿</span>  wrote index.html and 5 pages
+
+<span class="p">✻ Frolicking…</span> <span class="dim">(4m 12s · ↓ 18.4k tokens)</span>
+
+<span class="v">✦</span> <span class="dim">Heads up · the sidebar footer in Tiles holds one button per column.</span>
+  <span class="b">1</span>: Learn more   <span class="b">2</span>: Knew this already   <span class="b">0</span>: Dismiss`;
+const TERM_RIGHT = `<span class="dim">Last login: Thu Nov  5 20:41:12 on ttys014</span>
+<span class="g">demo@laptop</span> c11h-wt-221 % c11h sidebar-state --json --workspace workspace:6
+{
+  "layout": { "columns": 1, "double_wide": false, "effective_width": 255.4 },
+  "status_count": 1,
+  "focused_panel_ref": "panel:983"
+}
+<span class="g">demo@laptop</span> c11h-wt-221 % <span class="dim">▌</span>`;
+function area(focus, tabs, desc, term, status) {
+  return `<section class="area${focus ? ' focus' : ' jumpable'}"><div class="strip"><div class="tabs">${tabs.map(([n, t, st, act]) => `<div class="tab${act ? ' active' : ''}">${mk(A('', st))}<span class="num">${n}</span><span class="ttl">${t}</span><span class="x">×</span></div>`).join('')}</div>
+    <div class="count"><span class="dot"></span><span>⌄</span><span>${tabs.length}</span></div><div class="tools">A ▭ ⊕ ▯ ⊟ ⊞ + ×</div></div>
+    <div class="descbar"><span class="chip">Laptop</span><span class="d">${desc}</span><span class="mail">2 ✉ 2</span></div>
+    <div class="term">${term}</div><div class="prompt"><span class="dim">❯</span><span class="caret"></span></div>
+    <div class="status">${status}</div></section>`;
+}
+function laptop(sbWidth) {
+  return `<div class="titlebar"><div class="lights"><i></i><i></i><i></i></div><div class="ctlg"><span class="c">▣</span><span class="c">🔔<span class="badge">9</span></span><span class="c">+</span><span class="c">←</span><span class="c dim">→</span></div>
+    <div class="win-title"><span class="folder"></span>Chief of Jev</div><span class="win-path">1470 × 956 pt · 14-inch MacBook Pro</span></div>
+    <div class="wbody"><aside class="sb proto" id="sb" style="width:${sbWidth}px"></aside><main class="areas">
+    ${area(false, [['983', 'C11H-221 UX designer', 'work', true], ['812', 'CoS Panel', 'idle', false], ['977', 'Merge Captain', 'idle', false]], 'Five minimal sidebar prototypes; next, interview Atin until he picks one.', TERM_LEFT,
+      `<span class="g">20%</span>  <span class="y">[fable-5.1]</span>  205k<span class="dim">/$3.59/</span><span class="y">60m</span>  <b>ant-foxtrot</b>   <span class="dim">c11h-wt-221</span>  <span class="y">⌥ c11h/C11H-221 ±0</span>
+<span class="p">▶▶ bypass permissions on</span> <span class="dim">(shift+tab to cycle)</span>`)}
+    ${area(true, [['990', '~', 'idle', true]], 'No subtitle set', TERM_RIGHT, `<span class="dim">zsh · laptop · ~/src/c11h-wt-221</span>`)}
+    </main></div><div class="flyout" id="fly"></div>`;
+}
+// ---- the flyout: the card on demand, and a way to jump straight to one agent ----
+const panelNo = (w, i) => 100 + ((w.n * 37 + i * 11) % 880);
+function flyoutHTML(w) {
+  const rel = relevant(w); const shown = rel.slice(0, 15);
+  return `<div class="r1"><span class="name">${esc(w.name)}</span><span class="ws">WS ${w.n}</span></div>
+    ${w.mission ? `<div class="mission">${esc(w.mission)}</div>` : ''}
+    <div class="agents">${shown.length ? shown.map((a, i) => `<div class="agent jump${a.f ? ' fl' : ''}" data-jump-agent="${i}" title="Jump to panel ${panelNo(w, i)}"><span class="slot">${mk(a)}</span><span class="pn">${panelNo(w, i)}</span><span class="at">${a.f ? esc(a.f) : esc(a.t)}${a.s && !a.f ? `<span> · ${esc(a.s)}</span>` : ''}</span></div>`).join('') : '<div class="agent"><span>Terminals only · no agent panels</span></div>'}${rel.length > 15 ? `<div class="agent"><span>… and ${rel.length - 15} more</span></div>` : ''}</div>
+    <div class="census"><span>${esc(censusText(w))}</span>${w.branch ? `<span>${esc(w.branch)}</span>` : ''}<span class="hint">Click an agent to jump to its panel</span></div>`;
+}
+function jumpTo(w, a, i) {
+  const fly = document.getElementById('fly'); fly.classList.remove('show');
+  const area = document.querySelector('.area.jumpable'); if (!area) return;
+  const tabs = area.querySelector('.tabs'); const num = panelNo(w, i);
+  tabs.innerHTML = `<div class="tab active">${mk(a)}<span class="num">${num}</span><span class="ttl">${esc(a.t)}</span><span class="x">×</span></div>` + tabs.innerHTML.replace(/ active/g, '');
+  area.querySelector('.descbar .d').textContent = a.s || a.f || 'No subtitle set';
+  area.classList.remove('flash'); void area.offsetWidth; area.classList.add('flash');
+  S.sel = w.n; renderAll(S.proto);
+}
+function wireHover(sb) {
+  const fly = document.getElementById('fly'); const lap = document.getElementById('laptop');
+  let closeTimer = 0; const close = () => { clearTimeout(closeTimer); closeTimer = setTimeout(() => fly.classList.remove('show'), 180); };
+  fly.onmouseenter = () => clearTimeout(closeTimer); fly.onmouseleave = close;
+  const delay = new URLSearchParams(location.search).get('fly') ? 0 : 150;
+  sb.querySelectorAll('[data-ws]').forEach(row => {
+    let timer = 0;
+    row.addEventListener('mouseenter', () => {
+      if (!S.hover) return; clearTimeout(closeTimer); clearTimeout(timer);
+      timer = setTimeout(() => {
+        const w = byN[+row.dataset.ws]; fly.innerHTML = flyoutHTML(w);
+        fly.querySelectorAll('[data-jump-agent]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); jumpTo(w, relevant(w)[+el.dataset.jumpAgent], +el.dataset.jumpAgent); }));
+        const r = row.getBoundingClientRect(), l = lap.getBoundingClientRect(); const sc = S.scale || 1;
+        fly.style.left = (sb.offsetWidth - 4) + 'px'; fly.style.top = '44px'; fly.classList.add('show');
+        const top = Math.min((r.top - l.top) / sc, 956 - 24 - fly.offsetHeight); fly.style.top = Math.max(44, top) + 'px';
+      }, delay);
+    });
+    row.addEventListener('mouseleave', () => { clearTimeout(timer); close(); });
+  });
+}
+// ---- counting what fits ----
+function visibleRows(sb) {
+  if (sb.offsetParent === null) return '–';
+  const sc = sb.querySelector('.scroll'); if (!sc) return 0; const h = sc.clientHeight; let n = 0;
+  sb.querySelectorAll('[data-ws]').forEach(r => { if (r.offsetTop + r.offsetHeight <= h + 1) n++; });
+  return n;
+}
+function fit() {
+  const stage = document.getElementById('stage'); const wrap = stage.parentElement;
+  const total = [...stage.children].filter(c => !c.classList.contains('hidden')).reduce((s, c) => s + c.offsetWidth, 0) + 22 * ([...stage.children].filter(c => !c.classList.contains('hidden')).length - 1);
+  const avail = wrap.clientWidth - 32;
+  const sc = S.fit ? Math.min(1, avail / total) : 1;
+  S.scale = sc; stage.style.transform = `scale(${sc})`; stage.style.width = total + 'px'; wrap.style.height = (stage.offsetHeight * sc + 28) + 'px';
+}
+function applyToggles() {
+  document.documentElement.dataset.scheme = S.scheme;
+  document.documentElement.dataset.theme = S.theme;
+  const tb = document.querySelector('[data-t="theme"]'); if (tb) tb.firstChild.textContent = 'Theme ' + { nocturne: 'Nocturne', stage11: 'c11 stock', datasheet: 'Datasheet' }[S.theme] + ' ';
+  document.body.classList.toggle('names-off', !S.names);
+  document.body.classList.toggle('no-hover', !S.hover);
+  document.body.classList.toggle('static', !S.anim);
+  document.getElementById('today1').classList.toggle('hidden', S.today < 1);
+  document.getElementById('today2').classList.toggle('hidden', S.today < 2);
+  const cb = document.querySelector('[data-t="counts"]'); if (cb) cb.firstChild.textContent = { awt: 'Counts A·W·T ', wt: 'Counts W·T ', none: 'Counts off ' }[S.counts];
+  const wb = document.getElementById('wval'); if (wb) wb.textContent = S.width + ' pt';
+  const cv = document.getElementById('cval'); if (cv) cv.textContent = S.count + ' ws';
+  for (const [k, v] of [['scheme', S.scheme === 'light'], ['fit', !S.fit], ['names', S.names], ['today', S.today > 0], ['hover', S.hover], ['anim', S.anim]]) {
+    const b = document.querySelector(`[data-t="${k}"]`); if (b) b.setAttribute('aria-pressed', String(v));
+  }
+}
+function renderAll(proto) {
+  const sb = document.getElementById('sb'); sb.style.width = S.width + 'px'; sb.className = 'sb';
+  const cols = S.width >= TILES_MIN ? 2 : 1;
+  const mode = proto.autoFit && cardsFit(cols) ? 'cards' : 'compact';
+  if (mode === 'cards') { sb.classList.add('today'); renderToday(sb, cols, S.width); } else { sb.classList.add('proto'); proto.render(sb, cols); }
+  wireHover(sb);
+  sb.querySelectorAll('.row[data-ws]').forEach(r => r.addEventListener('click', () => { S.sel = +r.dataset.ws; renderAll(proto); }));
+  sb.querySelectorAll('[data-jump]').forEach(b => b.addEventListener('click', () => {
+    const pick = b.dataset.jump === 'flag' ? (w => flagged(w) > 0) : (w => waiting(w) > 0);
+    const list = order().filter(it => it.t === 'ws' && pick(it.w)).map(it => it.w.n); if (!list.length) return;
+    S.sel = list[(list.indexOf(S.sel) + 1) % list.length]; renderAll(proto);
+  }));
+  const cap = document.getElementById('capw');
+  if (cap) cap.textContent = proto.autoFit
+    ? `${S.width} pt · ${cols} col · ${S.count} workspaces · ${mode === 'cards' ? 'the cards fit, so full cards' : 'the cards would scroll, so compact'}`
+    : S.width + ' pt';
+  renderToday(document.getElementById('sbt1'), 1); renderToday(document.getElementById('sbt2'), 2);
+  requestAnimationFrame(() => {
+    const q = new URLSearchParams(location.search);
+    if (q.get('fly')) { const row = sb.querySelector(`[data-ws="${q.get('fly')}"]`); if (row) row.dispatchEvent(new Event('mouseenter')); }
+    document.getElementById('vis').textContent = visibleRows(sb); document.getElementById('vis2').textContent = visibleRows(sb);
+    document.getElementById('t1n').textContent = visibleRows(document.getElementById('sbt1'));
+    document.getElementById('t2n').textContent = visibleRows(document.getElementById('sbt2'));
+    fit();
+  });
+}
+function boot(proto) {
+  const q = new URLSearchParams(location.search);
+  if (q.get('scheme')) S.scheme = q.get('scheme');
+  if (q.get('names') === '0') S.names = false;
+  if (q.get('today')) S.today = +q.get('today');
+  if (q.get('fit') === '0') S.fit = false;
+  if (q.get('anim') === '0') S.anim = false;
+  if (q.get('counts')) S.counts = q.get('counts');
+  if (q.get('theme')) S.theme = q.get('theme');
+  if (q.get('sel')) S.sel = +q.get('sel');
+  if (q.get('count')) S.count = Math.max(1, Math.min(WS.length, +q.get('count')));
+  S.proto = proto;
+  S.width = +(q.get('width') || proto.width);
+  document.getElementById('laptop').innerHTML = laptop(S.width);
+  document.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => toggle(b.dataset.t, proto)));
+  applyToggles(); renderAll(proto);
+  window.addEventListener('resize', fit);
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    const nav = { '0': 'index.html', '1': '01-ledger.html', '2': '02-rail.html', '3': '03-mini-tiles.html', '4': '04-two-line.html', '5': '05-glyphs.html' };
+    if (nav[k]) { location.href = nav[k]; return; }
+    const map = { l: 'scheme', z: 'fit', n: 'names', t: 'today', h: 'hover', a: 'anim', c: 'counts', k: 'theme', '[': 'narrower', ']': 'wider', '-': 'fewer', '=': 'more' };
+    if (map[k]) toggle(map[k], proto);
+  });
+}
+function toggle(k, proto) {
+  if (k === 'scheme') S.scheme = S.scheme === 'dark' ? 'light' : 'dark';
+  if (k === 'fit') S.fit = !S.fit;
+  if (k === 'names') S.names = !S.names;
+  if (k === 'today') S.today = (S.today + 1) % 3;
+  if (k === 'hover') S.hover = !S.hover;
+  if (k === 'anim') S.anim = !S.anim;
+  if (k === 'counts') S.counts = { awt: 'wt', wt: 'none', none: 'awt' }[S.counts];
+  if (k === 'theme') S.theme = THEMES[(THEMES.indexOf(S.theme) + 1) % THEMES.length];
+  if (k === 'fewer') S.count = Math.max(1, S.count - 1);
+  if (k === 'more') S.count = Math.min(WS.length, S.count + 1);
+  if (k === 'narrower') S.width = Math.max(180, S.width - 15);
+  if (k === 'wider') S.width = Math.min(620, S.width + 15);
+  applyToggles(); renderAll(proto);
+}
+
+
+const PROTO = { width: 255, autoFit: true, render(sb, cols = 1) {
+  const colW = (S.width - 16 - 6 * (cols - 1)) / cols - 20;
+  const countsW = S.counts === 'awt' ? 92 : S.counts === 'wt' ? 62 : 0;
+  const rows = order().map(it => it.t === 'folder'
+    ? `<div class="pfolder"><span class="chev">▾</span><span class="fn">${esc(it.f.name)}</span><span class="fc">${it.members.length}</span></div>`
+    : (w => { const fl = flagged(w) > 0; const fc = flagColor(w); const bandW = fl ? 16 : 0;
+      return `<div class="row c-card${w.n === S.sel ? ' sel' : ''}${w.color ? ' colored' : ''}" style="${w.color ? `--wcol:${w.color};` : ''}${it.inFolder && cols === 1 ? 'margin-left:10px' : ''}" data-ws="${w.n}">
+        <div class="l1"><span class="wname">${esc(w.name)}</span>${w.pinned ? '<span class="pin">◆</span>' : ''}<span class="wsnum${fl ? ' fl' : waiting(w) ? ' on' : ''}"${fl ? ` style="color:${fc}"` : ''}>WS ${w.n}</span></div>
+        <div class="l2${fl ? ' flagband' : ''}"${fl ? ` style="--band:${fc}"` : ''}>${fl ? `<span class="flagslot">${flagGlyph}</span>` : ''}${signal(w.agents, colW - countsW - bandW - 6, 3)}${S.counts === 'none' ? '' : counts(w, S.counts === 'awt' ? ['a', 'w', 't'] : ['w', 't'])}</div></div>`; })(it.w)).join('');
+  const totalWait = pool().reduce((s, w) => s + waiting(w), 0);
+  const totalFlag = pool().reduce((s, w) => s + flagged(w), 0);
+  sb.innerHTML = `<div class="top"><span class="plus">+</span><span>Group</span><span class="sum">${pool().length} ws · <b>${totalWait} waiting</b></span></div><div class="scroll${cols === 2 ? ' grid2' : ''}">${rows}</div>
+    <div class="foot"><div class="pill" data-jump="wait">Waiting <span class="n">${totalWait}</span><span class="kb">⌥V</span></div>${totalFlag ? `<div class="pill flagpill" data-jump="flag">Flagged <span class="n">${totalFlag}</span><span class="kb">→</span></div>` : ''}</div>`;
+} };
+
+boot(PROTO);
+</script>
+</body>
+</html>

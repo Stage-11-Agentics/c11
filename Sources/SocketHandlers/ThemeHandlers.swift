@@ -15,7 +15,24 @@ extension TerminalController {
         case "theme.list":
             return v2Result(id: id, .ok(ThemeSocketMethods.list()))
         case "theme.get":
-            return v2Result(id: id, .ok(ThemeSocketMethods.get(params: params)))
+            // c11 (C11H-197): with window_id, also the window's own theme.
+            guard params["window_id"] != nil else {
+                return v2Result(id: id, .ok(ThemeSocketMethods.get(params: params)))
+            }
+            if let rejection = v2RejectUnresolvedTargetRefs(params) { return v2Result(id: id, rejection) }
+            guard let windowId = v2UUID(params, "window_id"),
+                  let geometry = v2MainSync({ AppDelegate.shared?.mainWindowGeometry(windowId: windowId) }) else {
+                return v2Error(id: id, code: "not_found", message: "Window not found")
+            }
+            var payload = ThemeSocketMethods.get(params: params)
+            payload["window"] = [
+                "id": windowId.uuidString,
+                "ref": v2Ref(kind: .window, uuid: windowId),
+                "name": geometry.name ?? NSNull(),
+                "override": geometry.themeOverride ?? NSNull(),
+                "effective": geometry.effectiveTheme
+            ] as [String: Any]
+            return v2Result(id: id, .ok(payload))
         case "theme.set_active":
             return v2Result(id: id, .ok(ThemeSocketMethods.setActive(params: params)))
         case "theme.clear_active":

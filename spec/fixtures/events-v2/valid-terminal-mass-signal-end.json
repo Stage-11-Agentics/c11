@@ -1,0 +1,20 @@
+{
+  "seq": 47,
+  "ts": "2026-11-07T07:17:05.300Z",
+  "type": "terminal.mass_signal_end",
+  "instance": "com.stage11.c11.debug.wr235",
+  "v": 2,
+  "payload": {
+    "mass_end_id": "9C8B7A65-4321-4FED-8CBA-0123456789AB",
+    "count": 3,
+    "signals": [15],
+    "signal_names": ["SIGTERM"],
+    "panels": [
+      "1A2B3C4D-5E6F-4789-8ABC-DEF012345678",
+      "2B3C4D5E-6F70-4891-9BCD-EF0123456789",
+      "3C4D5E6F-7081-4912-ACDE-F01234567890"
+    ],
+    "started_at": "2026-11-06T23:17:03-08:00",
+    "auto_resume": false
+  }
+}

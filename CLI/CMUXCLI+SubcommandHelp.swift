@@ -71,11 +71,17 @@ extension CMUXCLI {
             """
         case "fleet":
             return """
-            Usage: c11 fleet [--json]
+            Usage: c11 fleet [--json] [--workspace <ref>] [--group <ref|id|name>] [--lifecycle <a,b>]
+                             [--flagged] [--blocked] [--stalled] [--parent <ref>] [--since <seq|time>]
 
             Read every agent terminal across every window and workspace in one call.
             Ordinary terminals, browsers and markdown panels are excluded. No focus,
             selection, flag, seen-state or mailbox changes. --window does not narrow it.
+            Filters narrow the agent rows and AND together; --lifecycle takes working,
+            waiting, idle and cold. --since returns only rows changed after that
+            fleet_seq (or ISO 8601 time), with removed_panel_ids (agents gone, or rows
+            that left the filters). Rows carry blocked, stalled, context and restore;
+            c11 events tail --filter agent streams their blocked and stalled edges.
             JSON uses schema_version 1, durable UUIDs and explicit nulls for unknowns.
             Mail counts are the mailbox cell's last cached count, null until measured.
             See c11 guide api for the complete schema. Plain output is a short table.
@@ -118,7 +124,13 @@ extension CMUXCLI {
               rm <name|id>                          Remove a configuration.
               reorder <name|id> --to <index>        Move a configuration.
               default <name|id>|--pin-current       Set the default configuration.
-              launch <name|id> [fields]              Launch a configuration.
+              launch <name|id> [--area <id|ref> | --workspace <id|ref> | --new-workspace]
+                    [--cwd <path>] [--prompt <text> | --prompt-file <path>]
+                    [--title <text>] [--delegated | --suppressed] [--json]
+                                             Launch a configuration. The calling
+                                             panel is the new panel's parent.
+                                             --delegated matches launch-agent
+                                             (--suppressed is the same flag).
 
             """
         case "usage", "report":
@@ -185,23 +197,32 @@ extension CMUXCLI {
         case "themes":
             return """
             Usage: c11 themes list
-                   c11 themes get [--slot light|dark]
-                   c11 themes set <name> [--slot light|dark|both]
-                   c11 themes clear
+                   c11 themes get [--window <ref>]
+                   c11 themes set <name> [--with-terminal | --window <ref>]
+                   c11 themes clear [--window <ref>]
                    c11 themes reload
                    c11 themes path
                    c11 themes dump [--json] [--color-scheme light|dark]
                    c11 themes validate <path>
                    c11 themes diff <a> <b>
 
-            Manage c11 chrome themes: sidebar, title bars, panel bar, dividers,
-            browser chrome, markdown chrome, and workspace frame.
+            Manage the c11 theme: sidebar, title bars, panel bar, dividers,
+            browser chrome, markdown chrome, and workspace frame. c11 shows one
+            theme, day and night.
 
             Commands:
               list                      List available c11 chrome themes
-              get [--slot light|dark]   Read the active c11 chrome theme
-              set <name> [--slot ...]   Set a c11 chrome theme for light, dark, or both slots
+              get                       Read the theme and its paired terminal theme
+              set <name>                Set the theme
+                --with-terminal         Also set the theme's paired Ghostty terminal theme
+                                        (`c11 terminal-theme`), day and night. A theme with
+                                        no pair leaves the terminal unchanged
               clear                     Remove c11 chrome theme overrides
+              --window <ref>            With get, set or clear: one window's own theme,
+                                        overriding the app theme for that window's
+                                        chrome. Clear returns it to the app theme.
+                                        Terminal colours stay app-wide, so
+                                        --with-terminal cannot combine with --window
               reload                    Re-scan the user c11 themes directory
               path                      Print bundled and user c11 themes directories
               dump                      Print the resolved c11 chrome theme
@@ -210,10 +231,11 @@ extension CMUXCLI {
 
             Examples:
               c11 themes list
-              c11 themes set phosphor --slot both
+              c11 themes set nocturne --with-terminal
               c11 themes dump --json --color-scheme dark
               c11 themes validate path/to/mytheme.toml
               c11 themes clear
+              c11 themes set outrun-horizon --window "c11 Lab"
             """
         case "terminal-theme":
             return """
@@ -285,7 +307,8 @@ extension CMUXCLI {
             use a UUID, ref, --workspace scope, or global --window scope.
             Labels are bounded single-line text with terminal controls removed.
             Markdown labels are escaped; JSON encodes OSC 8 control bytes as escapes.
-            The generated c11:// URLs work inside c11 and do not register an OS URL handler.
+            The generated c11:// URLs open in c11; only the installed c11 registers the
+            scheme with macOS. c11:// links still open inside c11.
             """
         case "identify":
             return """
@@ -300,9 +323,59 @@ extension CMUXCLI {
             """
         case "list-windows":
             return """
-            Usage: c11 list-windows
+            Usage: c11 list-windows [--json]
 
-            List open windows.
+            List open windows: id, ref, name, display, frame and theme. Same as
+            `c11 window list`. Frames are global points, origin at the main
+            display's top-left, y down.
+            """
+        case "window":
+            return """
+            Usage: c11 window list [--json]
+                   c11 window name --window <ref> <name>
+                   c11 window name --window <ref> --clear
+                   c11 window move --window <ref> [--display <ref>]
+                                   [--frame x,y,w,h | --fill | --left-half | --right-half]
+
+            A window's own name, and placing it on a display. A name shows in the
+            window's title bar and in list-windows, tree and fleet, survives
+            relaunch, and is accepted anywhere a --window ref is ("c11 Lab").
+            Names are unique (ignoring case) and cannot look like a number, UUID
+            or ref. `window rename` is the same as `window name`.
+
+            window move never raises the window, activates c11, or switches the
+            visible workspace. Move windows only when the operator asks.
+              --display <ref>   display:N or N (left to right), the display UUID,
+                                its name ("DELL P2715Q (1)"), main, or builtin
+              --frame x,y,w,h   Global points without --display (the `frame`
+                                list-windows prints); relative to the display's
+                                top-left with --display (`frame_on_display`)
+              --fill, --left-half, --right-half
+                                The display's visible frame, or its left or right half
+            With --display alone the window keeps its size and offset. Full-screen
+            and minimized windows are refused.
+
+            --window takes a UUID, window:N, an index, a name, or self (the
+            caller's window).
+
+            Examples:
+              c11 window name --window self "c11 Lab"
+              c11 window move --window "c11 Lab" --display "DELL P2715Q (2)" --left-half
+              c11 window move --window window:2 --frame -5120,-271,1280,1440
+            """
+        case "display":
+            return """
+            Usage: c11 display list [--json]
+
+            Every connected display, numbered left to right as display:1, display:2...
+            with its UUID (stable across reboots), CGDirectDisplayID (this login
+            only), name, main and built-in flags, frame, visible frame (minus menu
+            bar and Dock), backing scale, and the windows on it.
+
+            Coordinates: global points, origin at the main display's top-left,
+            y down; the same convention as CGWindowList and Accessibility.
+            The `display.changed` event fires when displays connect, disconnect,
+            or change arrangement or resolution.
             """
         case "current-window":
             return """
@@ -346,7 +419,9 @@ extension CMUXCLI {
             return """
             Usage: c11 close-window --window <id|ref|index|self>
 
-            Close the specified window.
+            Close the specified window. This ends every hc terminal session in it
+            and every process they started, including background and nohup jobs.
+            Quitting c11 does not end sessions.
 
             Flags:
               --window <id|ref|index|self>   Window to close (required; self = the window of $C11_WORKSPACE_ID)
@@ -422,16 +497,19 @@ extension CMUXCLI {
               rename --group <g> --name <text>
               delete|ungroup|collapse|expand|pin|unpin|focus --group <g>
               add|remove --group <g> --workspaces <comma-separated-workspace-handles>
-              move --group <g> (--before <g>|--after <g>|--index <n>)
-              move --workspace <w> --to-group <g|none> [--before <w>|--after <w>]
+              move --group <g> (--before <g|w>|--after <g|w>|--index <n>)
+              move --workspace <w> --to-group <g|none> [--before <w|g>|--after <w|g>]
               set-color --group <g> (--color <hex>|--clear)
-              set-icon --group <g> (--icon <SF-symbol>|--clear)
+              set-icon --group <g> (--icon <emoji|SF-symbol>|--clear)
 
             Groups use UUIDs or ephemeral workspace_group:N refs, never names/indexes.
             Omitted --window uses the caller's window. Cross-window grouping is unsupported.
             Empty groups persist. Delete and ungroup both detach members without closing them.
             Add requires ungrouped members; use move to transfer between groups.
             Group pin and member pin are independent; moves stay inside pin segments.
+            Groups and ungrouped workspaces share one root order per pin segment: a group
+            move may name a workspace, and a move to --to-group none may name a group.
+            --index counts groups only. list prints the root order as order=.
             Focus selects a member without activating the app; an empty group returns empty_group.
             Other verbs preserve selection and focus. Collapse never changes tree JSON membership.
 
@@ -439,6 +517,7 @@ extension CMUXCLI {
               c11 workspace-group create --name "Backend" --json
               c11 workspace-group add --group workspace_group:1 --workspaces workspace:2,workspace:3
               c11 workspace-group move --workspace workspace:2 --to-group none
+              c11 workspace-group move --group workspace_group:1 --after workspace:4
               c11 workspace-group list --window window:1 --json
             """
 
@@ -726,6 +805,38 @@ extension CMUXCLI {
               c11 remote-daemon-status
               c11 remote-daemon-status --os linux --arch arm64
             """
+        case "core":
+            return """
+            Usage: c11 core [--workspace <id|ref>]
+
+            Open c11-core in a new terminal panel: c11's own hc core, its holder,
+            every terminal (launched, last active, cwd, agent, CPU and memory, c11
+            panel) and linked machines, refreshed every 2 s. From any terminal, run
+            c11-core directly; c11-core --help lists its actions (restart, open in
+            Terminal.app, reconnect, link <machine>) and its --json form.
+
+            Example:
+              c11 core
+            """
+        case "hc-diagnostics":
+            return """
+            Usage: c11 hc-diagnostics [--json]
+
+            List each terminal panel's id, terminal address, tty, pid, root form, lifecycle,
+            and serving hc build, plus session readiness, the holder-loss count and
+            login_rooted (local terminals still rooted at /usr/bin/login).
+            root is shell, login, other, or n/a (another machine's terminal, or none live).
+            abandoned lines name hc sessions whose core and holder are gone and count what their
+            terminals left running (c11-core abandoned lists the processes, c11-core end-abandoned
+            ends them); refreshed at most every 30 s.
+            Browser and markdown panels are omitted. The command reads c11; it does not query hc.
+
+            Flags:
+              --json    Print one JSON object. This is the proof form.
+
+            Example:
+              c11 hc-diagnostics --json
+            """
         case "health":
             return """
             Usage: c11 health [--since <duration> | --since-boot] [--rail <name>] [--json]
@@ -850,8 +961,15 @@ extension CMUXCLI {
             Show the target panel's creation root and its descendants. The
             default panel is the caller's C11_PANEL_ID.
 
-            JSON returns versioned nodes with parent_panel_id, live/closed
-            state, title, type, agent_type, delegation, and workspace details.
+            Each node records its origin: operator (an operator UI action),
+            panel (made from its parent panel), app (c11 itself; origin_detail
+            names launch, restore or chaos), external (a socket or CLI call
+            with no caller panel) or unknown (not recorded). Text output names
+            the origin of the root and of any node that is not a child.
+
+            JSON returns versioned nodes with parent_panel_id, origin,
+            origin_detail, live/closed state, title, type, agent_type,
+            delegation, and workspace details.
             """
         case "tree":
             return """
@@ -938,6 +1056,11 @@ extension CMUXCLI {
                                                   validated and must be an existing directory.
                                                   `inherit` (the default) uses the workspace root,
                                                   else the parent panel's cwd.
+              --on <machine>                      Run the new terminal on another machine
+                                                  (`c11 machine list`; `local` for this Mac). A split
+                                                  of a panel on another machine runs there too,
+                                                  starting in that panel's folder. --cwd is then a
+                                                  path on that machine. Browsers stay on this Mac.
               --allow-undersized                  Bypass the size-aware split policy for this call
                                                   (alias: --force).
 
@@ -953,6 +1076,7 @@ extension CMUXCLI {
               c11 new-area --type markdown --file ~/docs/README.md
               c11 new-area --title "Parent :: Code Review"
               c11 new-area --cwd /Users/me/project
+              c11 new-area --on <machine>
               c11 new-area --allow-undersized
             """
         case "launch-agent":
@@ -985,7 +1109,13 @@ extension CMUXCLI {
               --area <id|ref>          Target area (default: focused area)
               --workspace <id|ref>     Target workspace (default: $C11_WORKSPACE_ID)
               --new-workspace          Launch into a fresh workspace instead
+              --split <direction>      right, down, left or up: a new area beside the
+                                       target area, not a panel inside it.
+                                       Not with --new-workspace.
               --cwd <path>             Working directory for the agent
+              --on <machine>           Run the agent's terminal on another machine
+                                       (`c11 machine list`); --cwd is then a path there.
+                                       Not with --new-workspace.
               --prompt <text>          Initial prompt (one-shot argv where supported)
               --prompt-file <path>     Read the initial prompt from a file
               --title <text>           Panel title (default: launch placeholder)
@@ -995,7 +1125,15 @@ extension CMUXCLI {
               --delegated              Route routine stops to the caller; flags still escalate
               --suppressed             Alias for --delegated
               --env KEY=VALUE          Extra spawn env (repeatable)
+              --wait-ready <seconds>   Wait for c11's launch watch: ready, failed
+                                       (e.g. not installed, usage limit, not logged
+                                       in), needs_operator (folder trust), or quiet.
+                                       Adds "launch_watch" to --json. Exit 0 ready,
+                                       1 failed, 4 needs_operator, 5 quiet/timeout
               --json                   Print the machine-readable result object
+
+            Every agent launch is watched for its first minute: a start that
+            fails on screen sets the panel's description and raises a flag.
 
             Launches never steal focus or selection (socket focus policy) —
             the new panel is created in the background.
@@ -1005,6 +1143,7 @@ extension CMUXCLI {
               c11 launch-agent --type codex --model gpt-5.2 --new-workspace --json
               c11 launch-agent --type opencode --prompt-file /tmp/brief.md --area area:2
               c11 launch-agent --type codex --delegated
+              c11 launch-agent --type claude-code --on <machine> --cwd /Users/me/proj
               c11 launch-agent --type claude-code --flag 'Watch migration'
               c11 launch-agent --type claude-code --system-prompt-mode append \\
                 --system-prompt 'Prefer terse answers.'
@@ -1022,15 +1161,143 @@ extension CMUXCLI {
             Delegate aliases: suppress and unsuppress. Attention mutations
             require an explicit panel and never focus, select, or raise their target.
             """
+        case "machine":
+            return """
+            Usage:
+              c11 machine list [--json]
+              c11 machine set --id <machine> [--name <name> | --clear-name] [--color <#RRGGBB[AA]> | --clear-color] [--json]
+              c11 machine rm --id <machine> [--json]
+              c11 machine link --host <ssh-target> [--name <machine>] [--update] [--artifacts <folder>] [--yes] [--json]
+              c11 machine unlink --id <machine> [--session <session>] [--dry-run] [--yes] [--json]
+              c11 machine audit [--limit <n>] [--machine <machine>] [--kind <kind>] [--json]
+
+            The machine roster names and colors the where-it-runs chip on each
+            terminal's title bar. --id is hc's machine name (as c11 machine list shows it) or 'local'
+            for this Mac. Colors are any hex value, #RRGGBB or #RRGGBBAA; the
+            chip picks black or white text for contrast. Unset fields keep the
+            chip's default. Edits repaint open chips at once. list shows this
+            Mac, every machine hc has linked, and roster entries for machines
+            no longer linked.
+
+            link adds another Mac with Apple silicon, or an x86-64 Linux
+            machine with systemd, Python 3 and linger: over SSH with your keys
+            it installs c11's hc and the relay there, then links it (Settings
+            > Herder Topography > Add Machine does the same). A Linux
+            machine's hc and c11 come from c11's release the first time
+            (about 75 MB, cached), or from --artifacts <folder>; each must hash
+            to this build's pins. --update reinstalls on a
+            linked machine whose hc is older than this c11. unlink ends c11's
+            terminals on a machine and removes it; --session picks the link
+            when a machine is linked twice (c11h's old link and c11's own,
+            after the switch to c11 2.0). Both ask first in a
+            terminal and need --yes elsewhere: they are the operator's.
+            Linking gives c11 a shell on that machine as you (c11 guide
+            trust); inside a c11 terminal, link takes only the answer typed
+            at its prompt, never --yes.
+
+            audit prints c11's audit log on this Mac, oldest first: every
+            link, update, unlink, terminal started on another machine,
+            relayed call and file drop onto a terminal there (sent,
+            cancelled, refused or failed), each hc hash check and each hc
+            folder made private or refused, with local times (default: the
+            last 50; --limit 0 for all). It reads the files directly
+            (audit.jsonl and relay.jsonl in c11's audit folder), so it works
+            with c11 closed.
+            Kinds: link, update, unlink, remote_launch, relay, hc_verified,
+            hc_hash_mismatch, hc_serving_mismatch, dir_repaired, dir_refused,
+            file_transfer.
+            Repeated relayed calls of one kind in a minute fold into one line
+            with a count.
+            """
+        case "chaos":
+            return """
+            Usage:
+              c11 chaos draw [--mode two|four|ensemble|one] [--seed <n>] [--prompts] [--json]
+              c11 chaos cast [--mode two|four|ensemble|one] [--seed <n>] [--dry-run] [--json]
+
+            The Chaos Wizard, also the Chaos button beside Waiting Agent in the
+            sidebar, which casts two. draw shows two commissions (premise,
+            medium, constraint) from the deck; --prompts adds each agent's full
+            prompt. cast creates a run folder under the Chaos root (~/Chaos
+            unless the operator chose another) with one studio per piece, opens
+            a "Chaos HH:MM" workspace in the Chaos folder, two areas side by
+            side, and launches the default agent in each studio. Each agent's
+            first message names its piece; the rest of its prompt, including
+            the rule to write only inside its studio, is in a file it is told
+            to read. --mode four casts four in two columns of two; --mode
+            ensemble casts four, a different saved config on each; --mode one
+            casts a single piece. The same
+            --seed draws the same pieces. --dry-run prints the plan and the
+            prompts and launches nothing. A cast from the CLI never switches the
+            operator's workspace. A cast that stops partway prints what it
+            launched (with --json, "partial": true and "error") and exits non-zero. <root>/DECK.md replaces the built-in deck,
+            section by section; <root>/casts.jsonl records every cast and
+            <root>/gallery.html is the gallery. Claude Code asks to trust each
+            new studio unless a parent folder is trusted; trusting the Chaos
+            root once covers every studio under it.
+            """
+        case "notify-level":
+            return """
+            Usage:
+              c11 notify-level [--json]
+              c11 notify-level <silent|quiet|normal|chatty> [--json]
+
+            The operator's dial for routine notifications (turn ends, asks,
+            mail). With no stop, prints the current one.
+              silent  Feed and sidebar only
+              quiet   a banner, no sound
+              normal  banners and sound for turn ends and asks (default)
+              chatty  also mail and delegate completions
+            A raised flag is never dialed: it always posts, time-sensitive,
+            with the flag sound. The setting is the operator's; an agent
+            changes it only when the operator asks.
+            """
+        case "notify-sound":
+            return """
+            Usage:
+              c11 notify-sound [--json]
+              c11 notify-sound <turn-end|needs-you|flag> [--json]
+              c11 notify-sound <turn-end|needs-you|flag> <sound|path> [--json]
+
+            The operator's three notification sounds. With no sound, prints the
+            current ones.
+              turn-end   an agent finished its turn, and other routine notices (default Bottle)
+              needs-you  an agent stopped on you: a permission prompt, a question, a plan (default Glass)
+              flag       a raised flag, unless its kind has its own sound (default Hero)
+            A sound is default, none (not for flag), a macOS sound (Basso, Blow,
+            Bottle, Frog, Funk, Glass, Hero, Morse, Ping, Pop, Purr, Sosumi,
+            Submarine, Tink), or a path to an audio file (.aiff, .wav, .caf in a
+            codec notifications play are kept; anything else Core Audio reads,
+            such as .m4a, .mp3, .aac, is converted; 30 s at most). A bare name
+            like bell.wav counts as a path when that file is in the current
+            directory. A file is
+            copied into c11's sound store, so moving or deleting it later changes
+            nothing. The notify-level dial still governs turn-end and needs-you.
+            The settings are the operator's; an agent changes them only when the
+            operator asks.
+            """
         case "flag-kind":
             return """
             Usage:
               c11 flag-kind list [--json]
-              c11 flag-kind set --id <slug> --name <name> --color <green|red|pink|teal> [--emoji <emoji>] [--json]
+              c11 flag-kind set --id <slug> --name <name> --color <green|red|pink|teal|orange|lime|cyan|magenta> [--emoji <emoji>] [--evaporate-seconds <1-600>] [--sound <sound|path|flag>] [--json]
+              c11 flag-kind set --id <slug> --sound <sound|path|flag> [--json]
               c11 flag-kind rm --id <slug> [--json]
 
-            Set creates or updates a named flag kind. Removing a built-in kind
-            restores its shipped default. Supported colors are adaptive tokens.
+            Set creates or updates a named flag kind. With --name and --color
+            it replaces the kind's name, color, emoji and evaporate seconds.
+            With only --id and --sound it changes an existing kind's sound. A
+            kind without a sound plays the flag sound; --sound flag returns it
+            there. A sound is anything `c11 notify-sound` takes, or none.
+            Removing a built-in kind restores its shipped default. Supported
+            colors are adaptive tokens.
+
+            --evaporate-seconds N lowers a flag of this kind after the operator
+            has looked at its panel for N continuous seconds (c11 frontmost, the
+            panel's workspace selected, the panel focused). A bar fills along
+            the panel's top edge; looking away empties it, and any raise of
+            the flag starts it again. Leave it out to keep the flag until it
+            is lowered.
             """
         case "new-panel", "new-tab":
             return """
@@ -1052,22 +1319,31 @@ extension CMUXCLI {
                                                   validated and must be an existing directory.
                                                   `inherit` (the default) uses the workspace root,
                                                   else the area's terminal cwd.
+              --on <machine>                      Run the terminal on another machine
+                                                  (`c11 machine list`; `local` for this Mac). --cwd is
+                                                  then a path on that machine (default: its home).
+                                                  Browsers and markdown stay on this Mac.
 
             Example:
               c11 new-panel
               c11 new-panel --type browser --area area:1 --url https://example.com
               c11 new-panel --type markdown --file ~/docs/notes.md
               c11 new-panel --cwd .
+              c11 new-panel --on <machine> --cwd /Users/me/proj
             """
         case "close-panel", "close-tab":
             return """
             Usage: c11 close-panel --panel <id|ref|self> [flags]
 
             Close a panel. The target is required: there is no default.
+            Closing an hc terminal ends its session: every process it started,
+            including background and nohup jobs. The output reports whether hc
+            confirmed the end (ended) or has not yet (pending).
 
             Flags:
               --panel <id|ref|self>   Panel to close (required; self = $C11_PANEL_ID)
               --workspace <id|ref|self>   Workspace context (default: $C11_WORKSPACE_ID)
+              --expect-title <text>   Close only if the live panel title matches exactly
 
             Example:
               c11 close-panel --panel panel:3
@@ -1186,7 +1462,9 @@ extension CMUXCLI {
             return """
             Usage: c11 close-workspace --workspace <id|ref|index|self>
 
-            Close the specified workspace.
+            Close the specified workspace. This ends every hc terminal session in
+            it and every process they started, including background and nohup
+            jobs; the output reports each panel's end.
 
             Flags:
               --workspace <id|ref|index|self>   Workspace to close (required; self = $C11_WORKSPACE_ID)
@@ -1367,7 +1645,9 @@ extension CMUXCLI {
             return """
             Usage: c11 clear-history [--workspace <id|ref>] [--surface <id|ref>]
 
-            Clear terminal scrollback history.
+            Clear terminal scrollback history in this view. For an hc terminal the
+            clear is local: hc keeps the terminal's history, so it returns after
+            c11 restarts or reconnects, and the result says so.
 
             Flags:
               --workspace <id|ref>   Workspace context (default: $C11_WORKSPACE_ID)
@@ -1460,6 +1740,15 @@ extension CMUXCLI {
             The result never includes prompt or draft text. --panel is required;
             this command does not fall back to the focused panel.
             """)
+        case "retry-input":
+            return String(localized: "cli.retry_input.help", defaultValue: """
+            Usage: c11 retry-input --panel <id|ref> [--workspace <id|ref>] [--json]
+
+            Resume a terminal whose input paused after an interruption (a send or
+            send-key answers hc_input_inputFault or hc_input_uncertain). It clears
+            the pause and never resends the interrupted input. A half-typed line may
+            remain: clear it with `send-key --panel <id|ref> ctrl+u`. --panel is required.
+            """)
         case "read-screen":
             return """
             Usage: c11 read-screen [flags]
@@ -1551,6 +1840,8 @@ extension CMUXCLI {
               --body <text>          Notification body
               --workspace <id|ref>   Target workspace (default: $C11_WORKSPACE_ID)
               --panel <id|ref>   Target panel (default: $C11_PANEL_ID)
+              --needs-you            The agent stopped on the operator: plays the needs-you sound
+                                     (without it, the turn-end sound)
 
             Example:
               c11 notify --title "Build done" --body "All tests passed"
@@ -1882,27 +2173,46 @@ extension CMUXCLI {
                    c11 set-workspace-metadata --key <K> --value <V> [flags]
                    c11 set-workspace-metadata --json '{"description":"..."}' [flags]
 
-            Write one or more operator-authored metadata keys on a workspace via
-            workspace.set_metadata. Values are strings; canonical keys are
-            "description" (≤2048 chars) and "icon" (≤32 chars). Custom keys
-            must match [A-Za-z0-9_.-]+ and cap at 1024 chars each.
+            Write workspace JSON metadata via workspace.set_metadata (64 KiB total).
+            Values default to strings; custom values can be any JSON type. Keys
+            match [A-Za-z0-9_.-]+. Canonical description and icon remain strings;
+            captain is an exact mailbox.address (one line, at most 256 UTF-8 bytes).
+            Captain overrides the C11.md default; clearing it reveals that default.
+            With --group the same object belongs to a workspace group: authored
+            metadata only (any --source but derived), with no C11.md default. A
+            workspace's Captain is its own captain, else its group's.
 
             Flags:
               --workspace <id|ref>     Required outside c11; defaults to $C11_WORKSPACE_ID
-              --json '{...}'           Full JSON object of keys/values
+              --group <id|ref>         A workspace group instead (workspace_group:N or UUID)
+              --window <id|ref>        Window for a workspace_group:N ref (default: yours)
+              --json '{...}'           JSON object of keys/values (legacy input form)
+              --json-input '{...}'     Unambiguous JSON object input, including {}
+              --type <type>           string|number|bool|json for a single value
+              --mode <mode>           merge (default) or replace (explicit only)
+              --source <source>       explicit (default), declare, osc or heuristic
               --json                   Emit raw JSON result
+
+            Sources rank explicit > declare > osc > derived > heuristic. Derived
+            belongs to c11. Lower-priority writes report each skipped key.
 
             Examples:
               c11 set-workspace-metadata description "Backend API refactor"
               c11 set-workspace-metadata icon 🦊
+              c11 set-workspace-metadata captain project-lead
+              c11 set-workspace-metadata --group workspace_group:1 captain project-lead
+              c11 set-workspace-metadata --json-input '{"progress":0.5,"ready":true}'
             """
         case "get-workspace-metadata":
             return """
-            Usage: c11 get-workspace-metadata [<key>] [--workspace <id|ref>] [--json]
+            Usage: c11 get-workspace-metadata [<key>] [--key <K> ...] [--sources] [--workspace <id|ref> | --group <id|ref> [--window <id|ref>]] [--json]
 
             Read workspace metadata via workspace.get_metadata. With a key, prints
-            just that value. Without a key, prints all keys/values. The workspace is
+            just that value. Without a key, prints all keys/values. --sources includes
+            provenance; JSON output names it metadata_sources. The workspace is
             --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
+            --group reads a workspace group's object (workspace.group.get_metadata);
+            --window names the window for a workspace_group:N ref (default: yours).
 
             Examples:
               c11 get-workspace-metadata
@@ -1910,11 +2220,16 @@ extension CMUXCLI {
             """
         case "clear-workspace-metadata":
             return """
-            Usage: c11 clear-workspace-metadata [<key>] [--key <K> ...] [--workspace <id|ref>] [--json]
+            Usage: c11 clear-workspace-metadata [<key>] [--key <K> ...] [--source <source>] [--workspace <id|ref> | --group <id|ref> [--window <id|ref>]] [--json]
 
             Clear workspace metadata keys via workspace.clear_metadata. With no
-            key, clears the entire workspace metadata dictionary. The workspace is
+            key, clears all authored keys (explicit source only). --source defaults
+            to explicit. Clearing captain reveals the current C11.md default.
+            The workspace is
             --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
+            --group clears a workspace group's keys; its members then fall back
+            to their own captain, if any. --window names the window for a
+            workspace_group:N ref (default: yours).
 
             Examples:
               c11 clear-workspace-metadata description
@@ -1932,8 +2247,10 @@ extension CMUXCLI {
             Usage: c11 set-workspace-icon <glyph> [--workspace <id|ref>]
 
             Sugar for `c11 set-workspace-metadata icon <glyph>`. Supports emoji
-            or the prefix "sf:" + SF Symbol name (e.g. "sf:star.fill"). The workspace
-            is --workspace, or $C11_WORKSPACE_ID inside c11; never the selected workspace.
+            or the prefix "sf:" + SF Symbol name (e.g. "sf:star.fill"). The sidebar
+            draws it before the workspace name; the workspace's Set Icon… menu
+            writes the same value. The workspace is --workspace, or
+            $C11_WORKSPACE_ID inside c11; never the selected workspace.
             """
         case "set-app-focus":
             return """
@@ -2129,6 +2446,46 @@ extension CMUXCLI {
             return "Legacy alias for 'c11 browser focus-webview'. Run 'c11 browser --help' for details."
         case "is-webview-focused":
             return "Legacy alias for 'c11 browser is-webview-focused'. Run 'c11 browser --help' for details."
+        case "show":
+            return String(localized: "show.cli.help", defaultValue: """
+            Usage: c11 show <path|url> [--dir <folder>] [--wait <seconds>]
+                   c11 show close [<path|url>] [--dir <folder>]
+
+            Show a file or a URL to the operator, in a viewer beside the calling panel.
+            Works the same from any machine: on a linked machine the path is read from
+            that machine and the viewer opens in the operator's c11. Display only: the
+            agent can show, re-show and close what it showed, never drive the viewer.
+
+            A path is a file of at most 8 MB. .md opens in the markdown viewer; other
+            files open in a browser viewer. The viewer reloads when the file changes
+            while it is visible. Showing the same source again refreshes its viewer.
+            A URL (<scheme>://...) must be reachable from the operator's Mac.
+
+            show waits for the load check and answers whether the page loaded. It exits
+            1 when the page failed, rendered blank or did not load in time.
+
+            Options:
+              --dir <folder>      The page may fetch assets (js, css, json, fonts,
+                                  images) from this folder. svg is not served.
+              --wait <seconds>    How long to wait for the load check (1-60, default 15).
+
+            Output:
+              OK <action> <address> → panel:<ref> (<status>)
+              action: opened | refreshed | reopened; status: loaded | failed | blank | timeout
+              --json prints the full result.
+
+            On a linked machine while c11 is away, show records the request and exits 0:
+              OK recorded; c11 is away; it will load when the Mac wakes
+
+            show close closes the viewers this panel showed: the one for <path|url>, or
+            all of them.
+
+            Examples:
+              c11 show prototype.html --dir .
+              c11 show docs/plan.md
+              c11 show http://studio:5173
+              c11 show close prototype.html
+            """)
         case "markdown":
             return """
             Usage: c11 markdown open <path>[#fragment] [options]
@@ -2227,7 +2584,7 @@ extension CMUXCLI {
 
             Restore a workspace layout from a snapshot written by `c11 snapshot`.
             The argument is either a ULID (resolved under `~/.c11-snapshots/`,
-            the legacy `~/.cmux-snapshots/`, or — for set manifests written by
+            or — for set manifests written by
             `c11 snapshot --all` — `~/.c11-snapshots/sets/`), or an absolute
             path to a `.json` snapshot or set-manifest file. Set manifests
             rehydrate every workspace they reference; `--in-place` is rejected
@@ -2252,16 +2609,41 @@ extension CMUXCLI {
               c11 restore 01KQ0XYZ…
               c11 restore --in-place 01KQ0XYZ…
               C11_SESSION_RESUME=1 c11 restore ~/snapshots/phase1.json
+
+            Usage: c11 restore status [--json]
+                   c11 restore run (--panel <ref> | --all) [--dry-run] [--json]
+
+            After a reboot or a terminal host stop, c11 resumes every saved agent
+            conversation by itself, hidden panels included, a few at a time. Each
+            ended panel has one restore record: pending, resuming, resumed, failed
+            or skipped, with the reason.
+
+            status  List every ended panel's record and a summary. Reads c11 only.
+            run     Resume the conversation of a panel whose record is failed or
+                    skipped (--all: every such panel). A fresh terminal starts in
+                    the background and the resume is typed once, into its idle
+                    prompt, never into a running agent and never twice. Nothing is
+                    shown and no workspace is switched.
+
+            Flags:
+              --panel <ref>   One panel (UUID or panel:N).
+              --all           Every panel whose record offers a resume.
+              --dry-run       Report what would run; change nothing.
+              --json          Print one JSON object.
+
+            Examples:
+              c11 restore status
+              c11 restore run --all --dry-run
+              c11 restore run --panel panel:12
             """
         case "list-snapshots":
             return """
             Usage: c11 list-snapshots [--json] [--sets|--all]
 
-            List snapshots under `~/.c11-snapshots/` merged with the legacy
-            `~/.cmux-snapshots/` path. Newest first.
+            List snapshots under `~/.c11-snapshots/`. Newest first.
 
             Columns: SNAPSHOT_ID, CREATED_AT, WORKSPACE_TITLE, PANELS, ORIGIN, SOURCE.
-            SOURCE is `current` for `~/.c11-snapshots/`, `legacy` for the fallback.
+            SOURCE is `current` for `~/.c11-snapshots/`.
 
             Flags:
               --json    Emit raw snapshot.list result as JSON.
@@ -2304,8 +2686,8 @@ extension CMUXCLI {
                 Create a new workspace from a blueprint. Without `--blueprint`,
                 drops into an interactive picker that lists the built-in
                 blueprints plus any discovered under
-                `~/.config/c11/blueprints/`, `<repo>/.c11/blueprints/`, and
-                their legacy `cmux` siblings. Both `.md` (operator-edited
+                `~/.config/c11/blueprints/` and `<repo>/.c11/blueprints/`.
+                Both `.md` (operator-edited
                 markdown) and `.json` blueprint files are accepted.
 
                 With `--dir`, create a workspace rooted at a directory the way the

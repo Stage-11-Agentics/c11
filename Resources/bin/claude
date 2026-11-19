@@ -6,7 +6,8 @@
 # --settings flags so that Claude Code hooks fire back into c11 for
 # session-resume capture and lifecycle status. Outside c11 (or when the
 # socket is unreachable), it passes through to the real claude binary
-# unchanged.
+# unchanged. A surviving c11-owned hc terminal keeps per-launch hooks while
+# the app is down, so its original SessionStart bridge can reconnect later.
 #
 # === SESSION-RESUME WRAPPER PATTERN (REFERENCE IMPLEMENTATION) ================
 # c11's principle is: host and primitive, not configurator. c11 does not
@@ -20,7 +21,8 @@
 #
 #   1. Live in c11's bundle (Resources/bin/<tool>) and prepend onto PATH
 #      ONLY inside c11 terminals — gated on CMUX_SURFACE_ID and a live
-#      c11 socket. Pass through to the real binary outside.
+#      c11 socket. An already-running c11 hc terminal retains its per-launch
+#      hooks across app downtime; other unavailable sockets pass through.
 #   2. Make NO persistent writes to tenant config, dotfiles, or any path
 #      outside c11's runtime. /tmp is fine; ~/.claude/, ~/.codex/, etc.
 #      are not.
@@ -29,7 +31,7 @@
 #      hooks; codex does not — its wrapper relies on cwd-filter at restore
 #      time instead).
 #   4. Pass through to the real binary unchanged when outside a c11
-#      terminal or when the socket is unreachable. Failures are
+#      terminal or when an ordinary c11 socket is unreachable. Failures are
 #      best-effort: claude must still launch even when the socket is dead.
 #
 # Skill-driven self-reporting (`c11 set-metadata` / `c11 set-status` from
@@ -50,8 +52,15 @@
 unset C11_AGENT_INTERACTIVE_PID
 
 # Keep c11 membership available to both the early reentry and normal paths.
+# A terminal an older build opened carries the retired names (hidden fallbacks).
+for _c11_var in RELAY_BIN RELAY_AUTH RELAY_HC_SOCKET RELAY_SESSION AGENT_NOTE_DISABLED; do
+    _c11_old="C11H_$_c11_var" # c11-2.0:legacy
+    [[ -z "${!_c11_old:-}" ]] || [[ -n "$(eval "printf %s \"\${C11_$_c11_var:-}\"")" ]] || export "C11_$_c11_var=${!_c11_old}"
+done
+unset _c11_var _c11_old
+
 IN_C11=0
-if [[ -n "${CMUX_SURFACE_ID:-}" ]]; then
+if [[ -n "${C11_PANEL_ID:-${CMUX_SURFACE_ID:-}}" ]]; then
     IN_C11=1
 fi
 
@@ -59,12 +68,26 @@ fi
 find_real_claude() {
     local self_dir d candidate
     self_dir="$(cd "$(dirname "$0")" && pwd)"
+    # C11H-134: c11's relay bin/ on another machine holds a claude entry, or
+    # the operator's own shim that may exec this wrapper; neither is the real
+    # claude, and taking the shim would loop.
+    local relay_bin=""
+    [[ "${C11_RELAY_BIN:-}" == "$HOME/.local/share/c11/relay/"*/bin ]] && relay_bin="$C11_RELAY_BIN"
+    [[ "${C11_RELAY_BIN:-}" == "$HOME/.local/share/c11h/relay/"*/bin ]] && relay_bin="$C11_RELAY_BIN" # c11-2.0:legacy kit
     local IFS=:
     for d in $PATH; do
         [[ "$d" == "$self_dir" ]] && continue
+        [[ -n "$relay_bin" && "$d" == "$relay_bin" ]] && continue
         candidate="$d/claude"
         [[ -x "$candidate" ]] || continue
         if LC_ALL=C head -c 512 "$candidate" 2>/dev/null | LC_ALL=C grep -Fq '# c11 claude wrapper'; then
+            continue
+        fi
+        # A shim of the operator's that still ends in `exec <relay>/libexec/claude`
+        # (the old relay advice) would run this wrapper again, forever. Match that
+        # exec target only, anywhere in a small script, so a shim that merely names
+        # a relay path is still taken.
+        if LC_ALL=C head -c 65536 "$candidate" 2>/dev/null | LC_ALL=C grep -Eq '/c11/relay/[^/[:space:]]+/libexec/claude'; then
             continue
         fi
         printf '%s' "$candidate"
@@ -107,9 +130,9 @@ find_c11_bin() {
     return 1
 }
 
-# Return 0 only when CMUX_SOCKET_PATH points to a live c11 socket.
+# Return 0 only when the inherited app socket is live.
 c11_socket_available() {
-    local socket="${CMUX_SOCKET_PATH:-}"
+    local socket="${C11_SOCKET_PATH:-${CMUX_SOCKET_PATH:-}}"
     [[ -n "$socket" && -S "$socket" ]] || return 1
 
     local c11_bin
@@ -121,9 +144,46 @@ c11_socket_available() {
         "$c11_bin" --socket "$socket" ping >/dev/null 2>&1
 }
 
-# Pass through if not in a c11 terminal, hooks are disabled, or the c11
-# socket is unavailable (stale env / app not running).
-if [[ "$IN_C11" == "0" || "${CMUX_CLAUDE_HOOKS_DISABLED:-}" == "1" ]] || ! c11_socket_available; then
+# The one offline exception is the persistent tuple c11 placed in this
+# terminal before the app stopped. hc's terminal id is local to that socket;
+# an operator's foreign hc session, remote alias, or stale c11 env is not it.
+# This installs only this launch's hooks. No tenant configuration is written.
+c11_persistent_terminal() {
+    # The session base and hc root follow the app's path namespace: c11's own, or the
+    # retired line's while the app adopts its terminals (C11Paths, C11H-266).
+    { [[ "${HC_SESSION:-}" =~ ^c11(-[A-Za-z0-9._-]+)?$ &&
+         "${HC_SOCKET:-}" == "$HOME/.local/share/c11/run/${HC_SESSION}.sock" ]] ||
+      [[ "${HC_SESSION:-}" =~ ^c11h(-[A-Za-z0-9._-]+)?$ && # c11-2.0:legacy
+         "${HC_SOCKET:-}" == "$HOME/.local/share/c11h/run/${HC_SESSION}.sock" ]]; } && # c11-2.0:legacy
+    [[ "${HC_SESSION:-}" == "${C11_HC_SESSION:-}" &&
+       "${HC_SOCKET:-}" == "${C11_HC_SOCKET:-}" &&
+       "${HC_SOCKET:-}" == "${HC_TERMINAL_SOCKET:-}" &&
+       "${HC_TERMINAL_ID:-}" =~ ^t[1-9][0-9bcdfghjkmnpqrstvwxyz]*$ &&
+       "${C11_PANEL_ID:-}" =~ ^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$ &&
+       -n "${C11_SOCKET_PATH:-}" ]]
+}
+
+# C11H-134: a c11 terminal on another machine has no c11 socket. c11 gives
+# each terminal there C11_RELAY_BIN, the relay folder whose c11 reaches c11
+# through hc's link. Hooks run that c11. No tenant config is written.
+c11_relay_terminal() {
+    local relay_bin="${C11_RELAY_BIN:-}"
+    # The hooks file names this folder inside JSON and a shell command.
+    [[ ( "$relay_bin" == "$HOME/.local/share/c11/relay/"*/bin ||
+         "$relay_bin" == "$HOME/.local/share/c11h/relay/"*/bin ) && # c11-2.0:legacy namespace
+       "$relay_bin" =~ ^/[A-Za-z0-9._/@\ -]+$ && "$relay_bin" != *..* &&
+       -x "$relay_bin/c11" &&
+       "${HC_TERMINAL_ID:-}" =~ ^t[1-9][0-9bcdfghjkmnpqrstvwxyz]*$ &&
+       "${C11_PANEL_ID:-}" =~ ^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$ ]]
+}
+C11_RELAY_MODE=0
+if [[ "$IN_C11" == "1" ]] && c11_relay_terminal; then
+    C11_RELAY_MODE=1
+fi
+
+# Missing/stale ordinary c11 sockets still pass through unchanged.
+if [[ "$IN_C11" == "0" || "${C11_CLAUDE_HOOKS_DISABLED:-${CMUX_CLAUDE_HOOKS_DISABLED:-}}" == "1" ]] ||
+   { [[ "$C11_RELAY_MODE" == "0" ]] && ! c11_socket_available && ! c11_persistent_terminal; }; then
     # Preserve old behavior when passing through due to a stale socket.
     if [[ "$IN_C11" == "1" ]]; then
         unset CLAUDECODE
@@ -198,7 +258,9 @@ for arg in "$@"; do
         -[!-]*p*|-p?*) claude_interactive=0; break ;;
     esac
 done
-if [[ "$claude_interactive" == "1" ]]; then
+# C11H-134: through the relay this PID would name a process on the wrong
+# machine, so a relayed launch carries none (the relay drops it as well).
+if [[ "$claude_interactive" == "1" && "$C11_RELAY_MODE" == "0" ]]; then
     export C11_AGENT_INTERACTIVE_PID=$$
 fi
 
@@ -224,7 +286,9 @@ c11_set_agent_bg() {
         >/dev/null 2>&1) &
     disown 2>/dev/null || true
 }
-C11_SET_AGENT_BIN="$(find_c11_bin || true)"
+# C11H-134: the relay refuses both background calls; hc names the agent.
+C11_SET_AGENT_BIN=""
+[[ "$C11_RELAY_MODE" == "0" ]] && C11_SET_AGENT_BIN="$(find_c11_bin || true)"
 [[ -n "$C11_SET_AGENT_BIN" ]] && c11_set_agent_bg "$C11_SET_AGENT_BIN"
 
 # C11-24: wrapper-claim a placeholder ConversationRef so c11's conversation
@@ -249,11 +313,21 @@ c11_conversation_claim_bg() {
 }
 [[ -n "$C11_SET_AGENT_BIN" ]] && c11_conversation_claim_bg "$C11_SET_AGENT_BIN"
 
-# The inbox bridge is interactive-only and optional. Older Claude versions
-# without the exported messaging socket/token simply leave typed mail enabled.
+# The inbox bridge is interactive-only and opt-in (C11_CLAUDE_NATIVE_MAIL=1):
+# Claude wraps every peer-inbox turn in its own permission notice, so mail
+# defaults to the typed doorbell and the Stop drain. C11_CLAUDE_NATIVE_MAIL_DISABLED=1
+# still wins. Older Claude versions without the exported messaging socket/token
+# leave typed mail enabled even when opted in.
 # It shares this launch's settings file; no MCP or tenant configuration is used.
-SESSION_START_HOOKS='{"type":"command","command":"c11 claude-hook session-start","timeout":10}'
-if [[ "$claude_interactive" == "1" && "${C11_CLAUDE_NATIVE_MAIL_DISABLED:-}" != "1" ]]; then
+# SessionStart runs this launch's own c11 when it was resolved and quotes cleanly into the
+# JSON command: a different c11 earlier on PATH would add its own launch text to the note.
+c11_session_start_bin="c11"
+if [[ -n "$C11_SET_AGENT_BIN" && "$C11_SET_AGENT_BIN" != *[\'\"\\]* ]]; then
+    c11_session_start_bin="'$C11_SET_AGENT_BIN'"
+fi
+SESSION_START_HOOKS='{"type":"command","command":"'"$c11_session_start_bin"' claude-hook session-start","timeout":10}'
+if [[ "$claude_interactive" == "1" && "${C11_CLAUDE_NATIVE_MAIL:-}" == "1" &&
+      "${C11_CLAUDE_NATIVE_MAIL_DISABLED:-}" != "1" ]]; then
     SESSION_START_HOOKS+=',{"type":"command","command":"c11 claude-mailbox","timeout":5,"async":true}'
 fi
 
@@ -269,34 +343,79 @@ fi
 # - PermissionRequest: synchronous, timeout 1, stdout {} from the hook. It must not answer Claude.
 HOOKS_JSON='{"hooks":{"SessionStart":[{"matcher":"","hooks":['"$SESSION_START_HOOKS"']}],"Stop":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook stop","timeout":10}]}],"SessionEnd":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook session-end","timeout":1}]}],"Notification":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook notification","timeout":10}]}],"UserPromptSubmit":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook prompt-submit","timeout":10}]}],"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook pre-tool-use","timeout":5,"async":true}]}],"PostToolUse":[{"matcher":"AskUserQuestion|ExitPlanMode","hooks":[{"type":"command","command":"c11 claude-hook post-tool-use","timeout":5}]},{"matcher":"^(?!(AskUserQuestion|ExitPlanMode)$).*","hooks":[{"type":"command","command":"c11 claude-hook post-tool-use","timeout":5,"async":true}]}],"StopFailure":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook stop-failure","timeout":10}]}],"PermissionRequest":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook permission-request","timeout":1}]}],"SubagentStart":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook subagent-start","timeout":5,"async":true}]}],"SubagentStop":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook subagent-stop","timeout":5,"async":true}]}],"PreCompact":[{"matcher":"","hooks":[{"type":"command","command":"c11 claude-hook pre-compact","timeout":5,"async":true}]}]}}'
 
+# C11H-134: through the relay, each hook command is the relay's c11 by absolute
+# path, and only the turn and attention edges are hooked: the relay is a
+# polled hc document, not a channel for every tool call. The ask tools'
+# PreToolUse is kept (it is what shows a question or plan review as blocked).
+# Every edge but Stop (whose stdout carries mail) and the ask answer (which
+# must land before Stop) is async, so a slow or dropped link never holds
+# Claude. PermissionRequest (observe-only, a 1 s budget) and the native
+# mailbox bridge (its stream does not cross the relay) are left out.
+if [[ "$C11_RELAY_MODE" == "1" ]]; then
+    relay_hook() { # <subcommand> <timeout> <async>
+        printf '{"type":"command","command":"%s claude-hook %s","timeout":%s%s}' \
+            "'$C11_RELAY_BIN/c11'" "$1" "$2" "$([[ "$3" == 1 ]] && printf ',"async":true')"
+    }
+    relay_event() { # <event> <matcher> <hook json>
+        printf '"%s":[{"matcher":"%s","hooks":[%s]}]' "$1" "$2" "$3"
+    }
+    relay_asks='AskUserQuestion|ExitPlanMode'
+    HOOKS_JSON='{"hooks":{'"$(relay_event SessionStart "" "$(relay_hook session-start 10 1)")"
+    HOOKS_JSON+=','"$(relay_event UserPromptSubmit "" "$(relay_hook prompt-submit 10 1)")"
+    HOOKS_JSON+=','"$(relay_event Stop "" "$(relay_hook stop 10 0)")"
+    HOOKS_JSON+=','"$(relay_event StopFailure "" "$(relay_hook stop-failure 10 1)")"
+    HOOKS_JSON+=','"$(relay_event Notification "" "$(relay_hook notification 10 1)")"
+    HOOKS_JSON+=','"$(relay_event PreToolUse "$relay_asks" "$(relay_hook pre-tool-use 5 1)")"
+    HOOKS_JSON+=','"$(relay_event PostToolUse "$relay_asks" "$(relay_hook post-tool-use 5 0)")"
+    HOOKS_JSON+=','"$(relay_event SessionEnd "" "$(relay_hook session-end 5 1)")"'}}'
+fi
+
 # Claude Code 2.1.119 silently drops hooks loaded from inline
 # `--settings <json>` but honours them when loaded from
-# `--settings <path>`. Write to a per-PID tempfile and pass the path.
-# The file is overwritten on every wrapper run and leaks until /tmp
-# is reaped on reboot — acceptable for a small JSON blob with no
-# secrets. Confirmed in 2.1.119 (no working SessionStart hook with
-# inline JSON; identical JSON via file path fires correctly). If a
-# future claude version restores inline-JSON support, this rail can
-# be deleted without behavioural change.
+# `--settings <path>`. Write it to a file and pass the path. Confirmed
+# in 2.1.119 (no working SessionStart hook with inline JSON; identical
+# JSON via file path fires correctly). If a future claude version
+# restores inline-JSON support, this rail can be deleted without
+# behavioural change.
 #
-# If the tempfile write fails (e.g. unwritable TMPDIR, full /tmp,
+# C11H-354: the file goes in a fresh folder that mktemp creates (0700,
+# ours), under umask 077, so no other user can plant a symlink where it
+# is written; never a predictable name. Claude reads it after this
+# wrapper has exec'd, so it stays until the temp folder is reaped: a
+# small JSON blob with no secrets.
+#
+# If mktemp or the write fails (e.g. unwritable TMPDIR, full /tmp,
 # or sandboxed filesystem), fall back to passing inline JSON so
 # claude still launches and the rest of the operator's session
 # proceeds — hooks just won't fire that run. We surface the
 # fallback on stderr (claude's stderr is generally surfaced by
 # c11 terminals) so the regression is at least visible rather
 # than completely silent.
-HOOKS_FILE="${TMPDIR:-/tmp}/c11-claude-hooks-$$.json"
-if printf '%s' "$HOOKS_JSON" > "$HOOKS_FILE" 2>/dev/null; then
-    HOOKS_ARG="$HOOKS_FILE"
+HOOKS_ARG="$HOOKS_JSON"
+c11_hooks_tmp="${TMPDIR:-/tmp}"
+if c11_hooks_dir="$(umask 077 && mktemp -d "${c11_hooks_tmp%/}/c11-claude-hooks.XXXXXXXX" 2>/dev/null)" \
+    && [[ -n "$c11_hooks_dir" ]] \
+    && (umask 077 && printf '%s' "$HOOKS_JSON" > "$c11_hooks_dir/hooks.json") 2>/dev/null; then
+    HOOKS_ARG="$c11_hooks_dir/hooks.json"
 else
-    echo "c11: warning: could not write hooks tempfile ($HOOKS_FILE); falling back to inline --settings (claude 2.1.x will silently drop hooks)" >&2
-    HOOKS_ARG="$HOOKS_JSON"
+    echo "c11: warning: could not write the hooks file under ${c11_hooks_tmp}; falling back to inline --settings (claude 2.1.x will silently drop hooks)" >&2
 fi
+unset c11_hooks_tmp c11_hooks_dir
+
+# C11H-35: the per-launch c11 note, by Claude's own flag (no file, no config).
+c11_bin_dir="$(cd "$(dirname "$0")" && pwd)"
+C11_NOTE_ARGS=()
+# shellcheck source=/dev/null
+[[ -r "$c11_bin_dir/c11-agent-note.sh" ]] && . "$c11_bin_dir/c11-agent-note.sh" && c11_note_args claude "$c11_bin_dir" "$@"
+# The note is the one launch instruction. When it rides on the flag, the SessionStart hook
+# adds nothing; when it does not (the operator passed their own flag), the hook sends it.
+unset C11_AGENT_NOTE_SENT
+[[ ${#C11_NOTE_ARGS[@]} -gt 0 ]] && export C11_AGENT_NOTE_SENT=1
 
 if [[ "$SKIP_SESSION_ID" == true ]]; then
-    C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" --settings "$HOOKS_ARG" "$@"
+    C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" --settings "$HOOKS_ARG" ${C11_NOTE_ARGS[@]+"${C11_NOTE_ARGS[@]}"} "$@"
 else
-    SESSION_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
-    C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" --session-id "$SESSION_ID" --settings "$HOOKS_ARG" "$@"
+    # A Linux machine may lack uuidgen (Debian's uuid-runtime); its kernel makes one too (C11H-191).
+    SESSION_ID="$({ uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid; } | tr '[:upper:]' '[:lower:]')"
+    C11_CLAUDE_WRAPPER_REENTRY=1 exec "$REAL_CLAUDE" --session-id "$SESSION_ID" --settings "$HOOKS_ARG" ${C11_NOTE_ARGS[@]+"${C11_NOTE_ARGS[@]}"} "$@"
 fi

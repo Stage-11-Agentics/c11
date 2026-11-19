@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude inbox/typed acceptance in a running Claude-staged Atlas sandbox.
+"""Claude inbox/typed acceptance in a running Claude-staged build-host sandbox.
 Covers inline mail (the turn holds the message, no recv tool call, status reads
 read), batching, body_ref, a session resumed from another folder, and Claude-to-Claude.
 Usage: check-claude-native-mail.py RUN_ID [--out DIR] [--disable-native-control]
@@ -114,6 +114,7 @@ if sys.argv[2]=='1':settings['crossSessionInbound']='refuse'
         options = ['launch-agent', '--type', 'claude-code', '--workspace', workspace, '--title', address,
                    '--cwd', '/Users/admin/c11-sandbox/work', '--prompt', prompt,
                    '--env', 'CLAUDE_CONFIG_DIR=' + state, '--env', 'DISABLE_AUTOUPDATER=1', '--json']
+        options += ['--env', 'C11_CLAUDE_NATIVE_MAIL=1']
         if disabled:
             options += ['--env', 'C11_CLAUDE_NATIVE_MAIL_DISABLED=1']
         panel = json.loads(c11(*options))['panel_id']

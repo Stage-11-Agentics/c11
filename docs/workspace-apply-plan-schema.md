@@ -36,7 +36,14 @@ explicit `CodingKeys` or custom encode/decode are defined (see LayoutTreeSpec).
 
 All fields optional. `customColor` accepts a hex string (`#RRGGBB`) or a named palette color
 (e.g., `"Red"`, `"Blue"`). Unknown names return an `ApplyFailure` with code
-`unknown_color_name` without aborting the plan. `metadata` values must be strings.
+`unknown_color_name` without aborting the plan. `metadata` accepts JSON values,
+including nested objects, arrays, booleans, numbers, and null. The canonical
+`description`, `icon`, and `captain` keys retain their string validation rules.
+Workspace metadata entries apply independently in key order: an invalid key,
+invalid value, or entry that would exceed the 64 KiB object cap is skipped with
+an `ApplyResult.warnings` entry. Other valid entries still apply, and a skipped
+metadata entry does not fail workspace creation. Existing string-only blueprints
+remain supported.
 
 ## LayoutTreeSpec
 

@@ -145,13 +145,10 @@ final class CLISocketSentryTelemetry {
     /// against an org-wide error quota shared with every other Stage 11
     /// project. The events also carried absolute home-directory paths.
     ///
-    /// Set `C11_CLI_SENTRY_DSN` to re-enable it for a debugging session.
+    /// c11 re-enables it with `C11_CLI_SENTRY_DSN`; c11 ignores that (hard off).
     private static func resolveDSN(_ processEnv: [String: String]) -> String? {
-        let raw = processEnv["C11_CLI_SENTRY_DSN"] ?? processEnv["CMUX_CLI_SENTRY_DSN"]
-        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty
-        else { return nil }
-        return trimmed
+        // c11h: hard off, whatever the environment says (CLITelemetryPolicy).
+        CLITelemetryPolicy.configuredDSN(processEnv)
     }
 
     func breadcrumb(_ message: String, data: [String: Any] = [:]) {
@@ -270,7 +267,7 @@ final class CLISocketSentryTelemetry {
         }
         var sockets: [String] = []
         for name in entries.sorted() {
-            guard name.hasPrefix("cmux") || name.hasPrefix("c11"), name.hasSuffix(".sock") else { continue }
+            guard C11Identity.isOwnSocketFileName(name) else { continue }
             let fullPath = URL(fileURLWithPath: directory)
                 .appendingPathComponent(name, isDirectory: false)
                 .path

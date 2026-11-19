@@ -1,0 +1,23 @@
+# c11 Terminal Grid: paired with the Terminal Grid chrome theme (design/themes/gen-terminal-themes.py)
+palette = 0=#2d2d2d
+palette = 1=#ff6b6b
+palette = 2=#9aa8a0
+palette = 3=#c8b58a
+palette = 4=#9fb3c8
+palette = 5=#c9a2b4
+palette = 6=#9caeb4
+palette = 7=#b5b5b3
+palette = 8=#6a6b6e
+palette = 9=#fe9692
+palette = 10=#b0beb6
+palette = 11=#dfcba0
+palette = 12=#b5c9df
+palette = 13=#b1a6c8
+palette = 14=#b2c4ca
+palette = 15=#d8d8d4
+background = #0b0b0c
+foreground = #c8c8c4
+cursor-color = #ff6a1f
+cursor-text = #0b0b0c
+selection-background = #383838
+selection-foreground = #c8c8c4

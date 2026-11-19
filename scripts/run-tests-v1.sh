@@ -34,9 +34,10 @@ if [ ! -d "$APP" ]; then
 fi
 
 cleanup() {
-  pkill -x "c11" || true
-  pkill -x "cmux" || true
-  rm -f /tmp/c11*.sock /tmp/c11mux*.sock || true
+  # Path-scoped. Contains c11 and .app/Contents/MacOS/. Never pkill -x c11.
+  # Remove only this launch's socket. A glob would unlink c11's listener.
+  pkill -f "c11 DEV.app/Contents/MacOS/c11" || true
+  bash "$(dirname "$0")/c11-owned-socket.sh" cleanup "$RUN_TAG"
 }
 
 launch_and_wait() {
@@ -44,7 +45,7 @@ launch_and_wait() {
   # Wait briefly for the previous instance to fully terminate; LaunchServices can flake if we
   # relaunch too quickly.
   for _ in {1..50}; do
-    pgrep -x "c11" >/dev/null 2>&1 || pgrep -x "cmux" >/dev/null 2>&1 || break
+    pgrep -f "[c]11h DEV.app/Contents/MacOS/c11" >/dev/null 2>&1 || break
     sleep 0.1
   done
 
@@ -54,17 +55,16 @@ launch_and_wait() {
   # Launch directly with UI test mode enabled so startup follows deterministic test codepaths.
   C11_TAG="$RUN_TAG" CMUX_TAG="$RUN_TAG" C11_UI_TEST_MODE=1 CMUX_UI_TEST_MODE=1 "$APP/Contents/MacOS/c11" >/dev/null 2>&1 &
 
-  SOCK=""
+  SOCK="$(bash "$(dirname "$0")/c11-owned-socket.sh" path "$RUN_TAG")"
   for _ in {1..120}; do
-    SOCK=$(ls -t /tmp/c11-debug*.sock /tmp/c11*.sock /tmp/c11mux-debug*.sock /tmp/c11mux*.sock 2>/dev/null | head -1 || true)
-    if [ -n "$SOCK" ] && [ -S "$SOCK" ]; then
+    if [ -S "$SOCK" ]; then
       break
     fi
     sleep 0.25
   done
 
   if [ -z "$SOCK" ] || [ ! -S "$SOCK" ]; then
-    echo "ERROR: Socket not ready (looked for /tmp/c11*.sock)" >&2
+    echo "ERROR: Socket not ready (looked for $SOCK)" >&2
     exit 1
   fi
   export C11_SOCKET_PATH="$SOCK"

@@ -8,7 +8,7 @@ Phases:
             of agent panels with causal refs (hook push, Codex capture-runtime),
             one resolvable and one unresolvable Codex placeholder
   crash [nosave=1]
-            state save (unless nosave), kill -9 c11, purge caches
+            state save (unless nosave), path-scoped kill of Contents/MacOS/c11, purge caches
   relaunch [delay=SECONDS] [fail=1]
             start the app with C11_QA_LAUNCH=resume; delay/fail set the DEBUG
             startup-scrape seams
@@ -204,7 +204,10 @@ def crash(argv):
         out = os.path.join(STATE, f"snapshot-{int(time.time())}.json")
         c11(meta, "state", "save", "--out", out)
         shutil.copy(out, os.path.join(STATE, "last-snapshot.json"))
-    sh("sudo", "-n", "killall", "-9", "c11", check=False)
+    binary = os.path.join(meta["app"], "Contents", "MacOS", "c11")
+    # Path-scoped. Contains c11 and Contents/MacOS. Never killall c11.
+    if "c11" in binary and "Contents/MacOS" in binary:
+        sh("sudo", "-n", "pkill", "-9", "-f", binary, check=False)
     time.sleep(1.0)
     sh("sudo", "-n", "purge", check=False)
     print(json.dumps({"saved": out}))

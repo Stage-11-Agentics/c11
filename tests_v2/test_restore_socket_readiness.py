@@ -4,7 +4,7 @@
 No socket discovery, app launch, or tenant configuration changes are performed.
 The caller owns the verified display, UI slot, hard dismissal timer and teardown.
 
-1. On Atlas, with the guest app stopped, run `prepare --socket <guest-socket>
+1. On the build host, with the guest app stopped, run `prepare --socket <guest-socket>
    --evidence-dir <guest-dir>`. Copy its session.json to the tagged guest session
    path. Source <guest-dir>/shell-probe.zsh through a temporary ZDOTDIR startup
    file passed only to this launch; do not edit tenant dotfiles. The script/helper

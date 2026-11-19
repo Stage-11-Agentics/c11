@@ -1,7 +1,7 @@
 # C11-224 delegator brief
 
 You are the delegator for Lattice ticket **C11-224** in the c11 repo
-(`/Users/atin/Projects/Stage11/code/c11`). Load the `lattice` skill and read
+(`~/src/c11`). Load the `lattice` skill and read
 `lattice show C11-224` first; the ticket carries the full diagnosis. Work only in
 your own worktree, open a PR, drive it to green CI, and report back. Do not
 touch the main checkout.
@@ -55,7 +55,7 @@ CI too. Push and read CI.
 ## Worktree
 
 ```bash
-cd /Users/atin/Projects/Stage11/code/c11
+cd ~/src/c11
 git worktree add ../c11-worktrees/c11-224-tty-only-pid -b fix/C11-224-tty-only-pid origin/main
 cd ../c11-worktrees/c11-224-tty-only-pid
 git submodule update --init --recursive ghostty vendor/bonsplit

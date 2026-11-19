@@ -1,0 +1,209 @@
+# Nocturne: matte near-black, hairline rules, a display grotesk for names, tracked mono caps
+# for every label, one cold accent; amber only for what needs you. No glow, no ornaments.
+# Prototype key 6 (design/themes/c11-themes.html, [data-theme="nocturne"]).
+
+[identity]
+name         = "nocturne"
+display_name = "Nocturne"
+author       = "Stage 11 Agentics"
+version      = "0.01.001"
+schema       = 2
+
+[palette]
+void       = "#07080A"   # --chrome
+surface    = "#0B0C0F"   # --card
+raised     = "#111318"   # --tab-active
+rule       = "#1A1D22"   # --chrome-rule, --card-border, --card-rule
+text       = "#E4E6EA"   # --chrome-text, --tab-text
+textDim    = "#6F747D"   # --chrome-text-2, --tab-text-2
+cold       = "#C9D6EA"   # accent: selection, the focused frame
+amber      = "#E0B35A"   # needs you
+sidebar    = "#050607"   # --sidebar-bg, darker than the chrome
+cardActive = "#0F1115"   # --card-active
+chromeCtl  = "#15171B"   # --chrome-ctl
+cardText   = "#E8EAEE"
+cardText2  = "#8A909A"
+cardDim    = "#5B606A"
+live       = "#7FB0FF"   # --live
+violet     = "#B08CFF"   # --flag
+steel      = "#2B3A56"   # --cold
+
+[variables]
+background          = "$palette.void"
+surface             = "$palette.surface"
+foreground          = "$palette.text"
+foregroundSecondary = "$palette.textDim"
+accent              = "$palette.cold"
+accentAlt           = "$palette.amber"
+separator           = "$palette.rule"
+workspaceColor      = "$workspaceColor"
+ghosttyBackground   = "$ghosttyBackground"
+
+[chrome.windowFrame]
+color            = "$workspaceColor"
+thicknessPt      = 1.0
+inactiveOpacity  = 0.20
+unfocusedOpacity = 0.45
+
+[chrome.sidebar]
+tintOverlay                   = "$background"
+tintBase                      = "$palette.sidebar"
+tintBaseOpacity               = 1.0
+activeTabFill                 = "$palette.cardActive"
+activeTabFillFallback         = "$palette.cardActive"
+activeTabRail                 = "$accent"
+activeTabRailFallback         = "$accent"
+activeTabRailOpacity          = 0.9
+inactiveTabCustomOpacity      = 0.55
+inactiveTabMultiSelectOpacity = 0.35
+# Judgment: amber, not the cold accent (the brief maps --accent here). The approved colour
+# register and the prototype's badge (`.ctl .badge`) are amber: a count is something that needs you.
+badgeFill                     = "$accentAlt"
+borderLeading                 = "$separator"
+
+[chrome.dividers]
+color       = "$separator"
+thicknessPt = 1.0
+
+[chrome.titleBar]
+background          = "$background"
+backgroundOpacity   = 1.0
+foreground          = "$foreground"
+foregroundSecondary = "$foregroundSecondary"
+borderBottom        = "$separator"
+controlFill         = "$palette.chromeCtl"
+controlForeground   = "$foreground"
+
+[chrome.tabBar]
+background      = "$background"
+activeFill      = "$palette.raised"
+divider         = "$separator"
+activeIndicator = "$accent"
+text            = "$foreground"
+activeText      = "$foreground"
+textSecondary   = "$foregroundSecondary"
+number          = "$accent"
+
+[chrome.browserChrome]
+background  = "$background"
+omnibarFill = "$surface"
+
+[chrome.markdownChrome]
+background = "$background"
+
+[behavior]
+animateWorkspaceCrossfade = false
+
+# ---- schema 2 ----
+
+[type]
+ui      = "system"
+display = "system"
+mono    = "JetBrains Mono"
+
+# 13.5 / 13; SF Pro Display 600, -.01em
+[type.windowTitle]
+family   = "display"
+scale    = 1.04
+weight   = "semibold"
+tracking = -0.01
+
+# 16 / 17; SF Pro Display 600, -.015em
+[type.cardTitle]
+family   = "display"
+scale    = 0.94
+weight   = "semibold"
+tracking = -0.015
+
+# 10 / 11; .meta, .usage, .branch, .ports and .state share the tracked mono caps
+[type.cardLabel]
+family   = "mono"
+scale    = 0.91
+case     = "upper"
+tracking = 0.1
+
+# 12.5 / 13.5; weight stays the baseline 500
+[type.agentRow]
+scale = 0.93
+
+# 12 / 12.5 (.strip); the tab number's own .08em is not expressible
+[type.tab]
+scale = 0.96
+
+# 10 / 12; weight stays the baseline 600
+[type.chip]
+family   = "mono"
+scale    = 0.83
+case     = "upper"
+tracking = 0.1
+
+# 10.5 / 14; weight stays the baseline 600
+[type.pill]
+family   = "mono"
+scale    = 0.75
+case     = "upper"
+tracking = 0.1
+
+[geometry]
+cardRadius         = 4
+cardBorderPt       = 1
+cardActiveBorderPt = 1
+cardPaddingPt      = 14   # first value of `14px 14px 12px`
+pillRadius         = 4
+controlRadius      = 3
+chipRadius         = 2
+markRadius         = 1
+progressHeightPt   = 2
+progressRadius     = 0
+tabSelection       = "overline"   # .tab.active: inset 0 1px 0 accent
+
+[chrome.card]
+sheen = false   # the prototype cards are flat: no top sheen, no identity wash
+fill         = "$palette.surface"
+fillActive   = "$palette.cardActive"
+border       = "$separator"
+borderActive = "$accent"
+# Judgment: the prototype has no .card.waiting rule, so this is the baseline
+# mix, color-mix(borderActive 55%, border), computed: #C9D6EA over #1A1D22.
+borderWaiting = "#7A8390"
+text          = "$palette.cardText"
+textSecondary = "$palette.cardText2"
+textDim       = "$palette.cardDim"
+rule          = "$separator"
+accent        = "$accent"
+# Judgment: the bar's .g segment is amber (--attn) in the CSS, the one amber that is not a state.
+progress      = "$accentAlt"
+progressTrack = "$separator"
+
+[chrome.pill]
+style  = "outline"
+ink    = "$accentAlt"
+border = "$accentAlt"
+
+[chrome.descriptionBar]
+# Judgment: the CSS sets `.chip { background: none }`; an unset role would keep c11's 7% fill,
+# so the fill is written as fully transparent. --chrome-2 (#0A0B0E) is the bar itself, left unset.
+chipFill   = "#00000000"
+chipBorder = "$foreground.opacity(0.25)"   # baseline color-mix(chrome-text 25%), unchanged by the theme
+chipText   = "$foreground"
+
+[chrome.area]
+focusBorder   = "$accent"
+waitingBorder = "$accentAlt"
+thicknessPt   = 1
+
+[backdrop]
+kind  = "solid"
+color = "$palette.sidebar"
+
+[states]
+waiting     = "$accentAlt"
+waitingInk  = "$background"   # ink on the amber count badge (.waiting-pill .n)
+running     = "$palette.live"
+cold        = "$palette.steel"
+flag        = "$palette.violet"
+unread      = "$accentAlt"
+
+# Ghostty terminal theme for `c11 themes set <name> --with-terminal`
+[terminal]
+pairedTheme = "c11-nocturne"

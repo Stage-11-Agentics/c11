@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="en" data-theme="c11">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>c11h themes</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23000000'/%3E%3Cg fill='%23e8e8e8' transform='translate(34.96 387.08) scale(0.35913 -0.35913)'%3E%3Cpath transform='translate(0)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3Cpath transform='translate(600)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+/* ============================================================
+   c11h theme prototypes. One window, one set of mock content,
+   seven themes. The layout below is theme-agnostic; every theme
+   is a block of tokens plus a few flourishes further down.
+   Keys 1..7 switch themes. The hash remembers the choice.
+   ============================================================ */
+
+:root {
+  /* geometry shared by every theme */
+  --titlebar-h: 38px;
+  --strip-h: 30px;
+  --desc-h: 26px;
+  --prompt-h: 28px;
+  --status-h: 40px;
+  --sidebar-w: 272px;
+
+  /* defaults; every theme overrides these */
+  --font-ui: -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-title: var(--font-ui);
+  --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-term: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  --chrome: #282c33;          /* titlebar, strip, status */
+  --chrome-2: #1f2021;        /* description bar */
+  --chrome-ctl: #4f5157;      /* titlebar control group */
+  --chrome-text: #e6e7ea;
+  --chrome-text-2: #9ea3ab;
+  --chrome-rule: #15171a;
+
+  --sidebar: #16181c;
+  --sidebar-bg: var(--sidebar);
+  --card: #17191d;
+  --card-active: #111317;
+  --card-border: #2a2d33;
+  --card-border-active: #cfa94f;
+  --card-rule: #3a3d44;
+  --card-text: #f2f2f4;
+  --card-text-2: #a9adb5;
+  --card-text-dim: #7a7f88;
+  --card-radius: 10px;
+  --card-pad: 14px;
+
+  --accent: #cfa94f;          /* gold: waiting, selection */
+  --live: #3b9cff;            /* running */
+  --attn: #ff8c2e;            /* unread mail */
+  --flag: #a15cff;
+  --cold: #244a8a;
+
+  --tab-active: #353a42;
+  --tab-text: #d5d8dd;
+  --tab-text-2: #9aa0a8;
+  --area-border: #2a2e35;
+  --area-border-focus: #2f7ad8;
+  --area-border-wait: #cfa94f;
+  --radius: 6px;
+
+  --term-bg: #282c33;
+  --term-fg: #d8dbe0;
+  --term-dim: #8b9099;
+  --term-green: #6fcf6f;
+  --term-blue: #7fb0ff;
+  --term-pink: #f25c8c;
+  --term-yellow: #e2c85a;
+  --term-red: #ff6b6b;
+  --term-violet: #b48cff;
+
+  --proto-bg: #0a0b0d;
+  --proto-fg: #c9ccd2;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--proto-bg); color: var(--proto-fg); }
+body { font-family: var(--font-ui); font-size: 13px; -webkit-font-smoothing: antialiased; overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: default; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ---------- prototype bar (outside the window, not c11 chrome) ---------- */
+.proto-bar {
+  height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 12px;
+  background: #0a0b0d; border-bottom: 1px solid #1b1d21; font-family: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+  font-size: 11px; letter-spacing: .04em; color: #8b8f97; user-select: none;
+}
+.proto-bar .lbl { margin-right: 6px; color: #5c6068; text-transform: uppercase; }
+.proto-bar .chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px;
+  border: 1px solid #23262b; color: #aeb2ba; background: #0f1013; cursor: pointer; font: inherit; white-space: nowrap;
+}
+.proto-bar .chip b { font-weight: 600; color: #5c6068; }
+.proto-bar .chip[aria-pressed="true"] { background: #e8e8e8; color: #111; border-color: #e8e8e8; }
+.proto-bar .chip[aria-pressed="true"] b { color: #555; }
+.proto-bar .note { margin-left: auto; color: #5c6068; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- the window ---------- */
+.win {
+  position: absolute; inset: 36px 0 0 0; display: flex; flex-direction: column;
+  background: var(--chrome); color: var(--chrome-text); overflow: hidden;
+}
+
+/* titlebar */
+.titlebar {
+  height: var(--titlebar-h); flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+  background: var(--chrome); border-bottom: 1px solid var(--chrome-rule); font-size: 13px;
+}
+.lights { display: flex; gap: 8px; margin-right: 6px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.ctl-group { display: flex; gap: 4px; padding: 3px; background: color-mix(in srgb, var(--chrome-ctl) 40%, transparent); border-radius: var(--radius); }
+.ctl { width: 30px; height: 24px; display: grid; place-items: center; border-radius: calc(var(--radius) - 2px); background: var(--chrome-ctl); color: var(--chrome-text); position: relative; }
+.ctl.dim { opacity: .45; }
+.ctl svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.ctl .badge { position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: #111; font: 600 10px/16px var(--font-mono); text-align: center; }
+.win-title { display: flex; align-items: center; gap: 8px; margin-left: 8px; font-weight: 600; }
+.win-title .folder { width: 14px; height: 11px; border-radius: 2px; background: var(--attn); position: relative; }
+.win-title .folder::before { content: ""; position: absolute; left: 0; top: -3px; width: 6px; height: 3px; border-radius: 1px 1px 0 0; background: var(--attn); }
+.win-path { margin-left: auto; color: var(--chrome-text-2); font-size: 12px; }
+
+/* body */
+.body { flex: 1; display: flex; min-height: 0; }
+
+/* sidebar */
+.sidebar {
+  width: var(--sidebar-w); flex: none; display: flex; flex-direction: column; gap: 10px; padding: 10px 10px 12px;
+  background: var(--sidebar-bg); position: relative; overflow: hidden;
+}
+.sidebar > * { position: relative; z-index: 1; }
+.newgroup {
+  height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-radius: var(--card-radius);
+  background: var(--card); color: var(--card-text); border: 1px solid var(--card-border); font-size: 14px;
+}
+.newgroup svg { width: 18px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+.cards { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding-bottom: 4px; }
+.cards::-webkit-scrollbar { display: none; }
+.card {
+  flex: none; display: flex; flex-direction: column; gap: 6px; padding: var(--card-pad); border-radius: var(--card-radius);
+  background: var(--card); border: 1.5px solid var(--card-border); color: var(--card-text);
+}
+.card.waiting { border-color: color-mix(in srgb, var(--card-border-active) 55%, var(--card-border)); }
+.card.active { background: var(--card-active); border-color: var(--card-border-active); }
+.card .row1 { display: flex; align-items: baseline; gap: 8px; }
+.card .name { font-size: 17px; font-weight: 600; letter-spacing: -.01em; font-family: var(--font-title); }
+.card .ws { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--card-text-2); }
+.card .ws b { color: var(--card-text); font-weight: 600; margin-left: 4px; }
+.card .close { margin-left: auto; color: var(--card-text-2); font-size: 14px; line-height: 1; }
+.card .sub { color: var(--card-text-2); font-size: 12px; margin-top: -4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .agent { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .agent.dim { color: var(--card-text-2); }
+.card hr { border: 0; border-top: 1px solid var(--card-rule); margin: 4px 0 2px; width: 100%; }
+.card .meta { font-family: var(--font-mono); font-size: 11px; color: var(--card-text-dim); }
+.card .marks { display: flex; gap: 10px; align-items: center; min-height: 12px; }
+.card .marks.right { justify-content: flex-end; }
+.card .usage { font-family: var(--font-mono); font-size: 11px; color: var(--card-text-dim); text-align: right; }
+.card .branch { font-family: var(--font-mono); font-size: 11.5px; color: var(--card-text-2); }
+.card .state { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--live); }
+.card .state.waiting { color: var(--live); font-style: italic; }
+.card .state .ago { color: var(--card-text-dim); font-family: var(--font-mono); font-size: 11px; font-style: normal; }
+.card .state svg { width: 12px; height: 12px; fill: currentColor; }
+.card .ports { font-family: var(--font-mono); font-size: 11.5px; color: var(--card-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .bar { height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--card-text) 18%, transparent); display: flex; overflow: hidden; margin-top: 4px; }
+.card .bar i { display: block; height: 100%; }
+.card .bar .g { background: var(--accent); } .card .bar .w { background: var(--card-text); } .card .bar .d { background: color-mix(in srgb, var(--card-text) 30%, transparent); }
+
+/* lifecycle marks: a square, the state in its fill */
+.mk { width: 11px; height: 11px; display: inline-block; flex: none; position: relative; border-radius: 2px; }
+.mk.wait { border: 1.5px solid var(--accent); } .mk.wait::after { content: ""; position: absolute; inset: 2px; background: var(--accent); border-radius: 1px; }
+.mk.work { background: color-mix(in srgb, var(--card-text) 72%, transparent); }
+.mk.work.dots { background:
+  radial-gradient(circle, var(--card-text) 1px, transparent 1.2px) 1px 1px / 4.5px 4.5px repeat; border: 0; }
+.mk.idle { border: 1.5px solid var(--card-text-dim); }
+.mk.cold { border-bottom: 2px solid var(--cold); border-radius: 0; height: 9px; }
+.mk.busy { background: color-mix(in srgb, var(--card-text) 45%, transparent); }
+
+/* sidebar foot */
+.sb-foot { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+.waiting-pill {
+  display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 12px 0 14px; border-radius: 12px;
+  background: var(--accent); color: #111; font-weight: 600; font-size: 14px;
+}
+.waiting-pill .n { width: 20px; height: 20px; border-radius: 10px; background: rgba(0,0,0,.25); display: grid; place-items: center; font: 600 11px var(--font-mono); }
+.waiting-pill .kb { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1; gap: 3px; }
+.waiting-pill .kb .arrow { font-size: 18px; }
+.waiting-pill .kb .keys { font-family: var(--font-mono); font-size: 10px; opacity: .7; }
+.help { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--card-text) 55%, transparent); color: color-mix(in srgb, var(--card-text) 70%, transparent); display: grid; place-items: center; font-size: 12px; font-weight: 600; }
+
+/* areas */
+.areas { flex: 1; display: flex; gap: 5px; padding: 0 5px 5px 0; min-width: 0; background: var(--chrome); }
+.area { flex: 1; display: flex; flex-direction: column; min-width: 0; border: 1.5px solid var(--area-border); border-radius: var(--radius); overflow: hidden; background: var(--term-bg); }
+.area.wait { border-color: var(--area-border-wait); }
+.area.focus { border-color: var(--area-border-focus); }
+
+.strip { height: var(--strip-h); flex: none; display: flex; align-items: stretch; background: var(--chrome); border-bottom: 1px solid var(--chrome-rule); font-size: 12.5px; }
+.tabs { flex: 1; min-width: 0; display: flex; align-items: stretch; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+.tab { flex: none; display: flex; align-items: center; gap: 7px; padding: 0 9px 0 10px; border-right: 1px solid var(--chrome-rule); color: var(--tab-text-2); white-space: nowrap; max-width: 220px; position: relative; }
+.tab .num { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; flex: none; }
+.tab .ttl { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tab .x { flex: none; }
+.tab .x { margin-left: 2px; opacity: .6; font-size: 13px; }
+.tab.active { background: var(--tab-active); color: var(--tab-text); }
+.tab.active .num { color: var(--accent); }
+.tab .mk { width: 9px; height: 9px; }
+.strip .spacer { flex: 1; }
+.count { display: flex; align-items: center; gap: 6px; padding: 0 12px; color: var(--tab-text); font-family: var(--font-mono); font-size: 12px; border-left: 1px solid var(--chrome-rule); }
+.count .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.tools { display: flex; align-items: center; gap: 2px; padding: 0 6px; border-left: 1px solid var(--chrome-rule); color: var(--tab-text-2); }
+.tools .t { width: 24px; height: 22px; display: grid; place-items: center; }
+.tools .t svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+.tools .t.A { font-weight: 700; font-size: 13px; color: var(--tab-text); }
+.tools .sep { width: 1px; height: 16px; background: var(--chrome-rule); margin: 0 4px; }
+
+.descbar { height: var(--desc-h); flex: none; display: flex; align-items: center; gap: 10px; padding: 0 8px; background: var(--chrome-2); border-bottom: 1px solid var(--chrome-rule); font-size: 12.5px; color: var(--chrome-text); }
+.descbar .chip { height: 18px; padding: 0 8px; display: inline-flex; align-items: center; min-width: 118px; border: 1px solid color-mix(in srgb, var(--chrome-text) 25%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--chrome-text) 7%, transparent); font-weight: 600; font-size: 12px; }
+.descbar .d { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.descbar .mail { margin-left: auto; flex: none; white-space: nowrap; font-family: var(--font-mono); font-size: 12px; color: var(--attn); display: flex; align-items: center; gap: 5px; }
+
+.term { flex: 1; min-height: 0; overflow: hidden; padding: 10px 12px; font-family: var(--font-term); font-size: 12px; line-height: 1.5; color: var(--term-fg); background: var(--term-bg); white-space: pre; }
+.term .dim { color: var(--term-dim); } .term .g { color: var(--term-green); } .term .b { color: var(--term-blue); } .term .p { color: var(--term-pink); } .term .y { color: var(--term-yellow); } .term .v { color: var(--term-violet); } .term .r { color: var(--term-red); } .term b { font-weight: 700; }
+.prompt { height: var(--prompt-h); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-top: 1px solid color-mix(in srgb, var(--term-fg) 18%, transparent); font-family: var(--font-term); font-size: 12.5px; background: var(--term-bg); color: var(--term-fg); }
+.prompt .caret { width: 8px; height: 15px; background: var(--term-fg); }
+.status { height: var(--status-h); flex: none; padding: 4px 12px; border-top: 1px solid color-mix(in srgb, var(--term-fg) 18%, transparent); font-family: var(--font-term); font-size: 11.5px; line-height: 16px; white-space: pre; overflow: hidden; background: var(--term-bg); color: var(--term-fg); }
+.status .dim { color: var(--term-dim); } .status .g { color: var(--term-green); } .status .y { color: var(--term-yellow); } .status .p { color: var(--term-pink); } .status .r { color: var(--term-red); } .status .o { color: var(--attn); }
+
+/* ============================================================
+   THEMES
+   ============================================================ */
+
+/* 1. today: c11h as it ships, Sunset Mall behind the sidebar */
+[data-theme="today"] {
+  --sidebar-bg: linear-gradient(180deg, #2D1060 0%, #6B1F8F 42%, #C2307F 72%, #4A1366 100%);
+}
+
+/* 2. datasheet: Datasheet Mono, by the spec. Square, 1 px rules, mono
+      uppercase labels, international orange only on the live thing,
+      inversion for selection, brackets outside clickable things on hover. */
+[data-theme="datasheet"] {
+  --font-ui: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-title: var(--font-ui);
+  --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  --chrome: #111214; --chrome-2: #0C0D0F; --chrome-ctl: #1A1B1F; --chrome-text: rgba(255,255,255,.92); --chrome-text-2: rgba(255,255,255,.58); --chrome-rule: #2C2E33;
+  --sidebar: #0C0D0F; --sidebar-bg: #0C0D0F;
+  --card: #111214; --card-active: #111214; --card-border: #2C2E33; --card-border-active: #FFFFFF; --card-rule: #1F2024;
+  --card-text: rgba(255,255,255,.92); --card-text-2: rgba(255,255,255,.58); --card-text-dim: rgba(255,255,255,.46);
+  --card-radius: 0; --card-pad: 12px;
+  --accent: #FFFFFF; --live: #FF4F1F; --attn: rgba(255,255,255,.58); --flag: #FFFFFF; --cold: rgba(255,255,255,.46);
+  --tab-active: #FFFFFF; --tab-text: rgba(255,255,255,.92); --tab-text-2: rgba(255,255,255,.58);
+  --area-border: #2C2E33; --area-border-focus: #FFFFFF; --area-border-wait: #FF4F1F; --radius: 0;
+  --term-bg: #111214; --term-fg: rgba(255,255,255,.92); --term-dim: rgba(255,255,255,.46);
+}
+[data-theme="datasheet"] .lights i { border-radius: 50%; }
+[data-theme="datasheet"] .ctl-group { background: none; padding: 0; gap: 0; border: 1px solid var(--chrome-rule); }
+[data-theme="datasheet"] .ctl { background: none; border-right: 1px solid var(--chrome-rule); border-radius: 0; }
+[data-theme="datasheet"] .ctl:last-child { border-right: 0; }
+[data-theme="datasheet"] .ctl .badge { background: #FF4F1F; color: #111214; border-radius: 0; top: -1px; right: -1px; height: 12px; line-height: 12px; min-width: 12px; font-size: 9px; }
+[data-theme="datasheet"] .win-title { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
+[data-theme="datasheet"] .win-title .folder { background: var(--chrome-text); } [data-theme="datasheet"] .win-title .folder::before { background: var(--chrome-text); }
+[data-theme="datasheet"] .win-path { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+[data-theme="datasheet"] .newgroup { border-radius: 0; font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; height: 32px; }
+[data-theme="datasheet"] .card { border-width: 1px; gap: 5px; }
+[data-theme="datasheet"] .card.active { border-width: 1px; }
+[data-theme="datasheet"] .card.waiting { border-color: #2C2E33; }
+[data-theme="datasheet"] .card .name { font-size: 15px; font-weight: 600; }
+[data-theme="datasheet"] .card .sub, [data-theme="datasheet"] .card .meta, [data-theme="datasheet"] .card .branch, [data-theme="datasheet"] .card .ports, [data-theme="datasheet"] .card .usage { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+[data-theme="datasheet"] .card .sub { text-transform: none; letter-spacing: 0; font-family: var(--font-ui); font-size: 12px; }
+[data-theme="datasheet"] .card .agent { font-size: 13px; }
+[data-theme="datasheet"] .card .state { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-style: normal; color: var(--card-text); }
+[data-theme="datasheet"] .card .state svg { display: none; }
+[data-theme="datasheet"] .card .state::before { content: ""; width: 8px; height: 8px; background: currentColor; flex: none; }
+[data-theme="datasheet"] .card .state.waiting::before { background: #FF4F1F; }
+[data-theme="datasheet"] .card .bar { border-radius: 0; height: 4px; background: #1F2024; }
+[data-theme="datasheet"] .card .bar .g { background: #FFFFFF; }
+[data-theme="datasheet"] .mk { border-radius: 0; }
+[data-theme="datasheet"] .mk.wait { border-color: #FF4F1F; } [data-theme="datasheet"] .mk.wait::after { background: #FF4F1F; }
+[data-theme="datasheet"] .mk.work { background: var(--card-text); }
+[data-theme="datasheet"] .waiting-pill { border-radius: 0; background: #FF4F1F; color: #111214; height: 36px; font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; }
+[data-theme="datasheet"] .waiting-pill .n { border-radius: 0; background: #111214; color: #FF4F1F; }
+[data-theme="datasheet"] .help { border-radius: 0; }
+[data-theme="datasheet"] .areas { gap: 1px; padding: 0; }
+[data-theme="datasheet"] .area { border-width: 1px; }
+[data-theme="datasheet"] .area.wait { border-color: #FF4F1F; }
+[data-theme="datasheet"] .tab { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+[data-theme="datasheet"] .tab.active { color: #111214; }
+[data-theme="datasheet"] .tab.active .num { color: #111214; }
+[data-theme="datasheet"] .tab.active .mk.work.dots { background-image: radial-gradient(circle, #111214 1px, transparent 1.2px); }
+[data-theme="datasheet"] .tab.active .mk.idle { border-color: #111214; }
+[data-theme="datasheet"] .count .dot { border-radius: 0; background: #FFFFFF; }
+[data-theme="datasheet"] .descbar .chip { border-radius: 0; font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; background: none; }
+[data-theme="datasheet"] .prompt .caret { background: #FFFFFF; }
+/* brackets: four L marks outside the corners of a clickable thing, only under the pointer */
+[data-theme="datasheet"] .br { position: relative; }
+[data-theme="datasheet"] .br::before, [data-theme="datasheet"] .br::after,
+[data-theme="datasheet"] .br > .brk::before, [data-theme="datasheet"] .br > .brk::after {
+  content: ""; position: absolute; width: 7px; height: 7px; border: 1.5px solid rgba(255,255,255,.78); opacity: 0; transition: opacity 60ms linear; pointer-events: none; z-index: 3;
+  box-shadow: 0 0 0 1px #111214;
+}
+[data-theme="datasheet"] .br::before { top: -5px; left: -5px; border-right: 0; border-bottom: 0; }
+[data-theme="datasheet"] .br::after { top: -5px; right: -5px; border-left: 0; border-bottom: 0; }
+[data-theme="datasheet"] .br > .brk::before { bottom: -5px; left: -5px; border-right: 0; border-top: 0; }
+[data-theme="datasheet"] .br > .brk::after { bottom: -5px; right: -5px; border-left: 0; border-top: 0; }
+[data-theme="datasheet"] .br:hover::before, [data-theme="datasheet"] .br:hover::after,
+[data-theme="datasheet"] .br:hover > .brk::before, [data-theme="datasheet"] .br:hover > .brk::after { opacity: 1; }
+[data-theme="datasheet"] .cards { padding: 0 6px; }
+[data-theme="datasheet"] .tab.br::before, [data-theme="datasheet"] .tab.br::after { top: 3px; }
+[data-theme="datasheet"] .tab.br > .brk::before, [data-theme="datasheet"] .tab.br > .brk::after { bottom: 3px; }
+[data-theme="datasheet"] .tab.br::before, [data-theme="datasheet"] .tab.br > .brk::before { left: 2px; }
+[data-theme="datasheet"] .tab.br::after, [data-theme="datasheet"] .tab.br > .brk::after { right: 2px; }
+
+/* 3. grid: Terminal Grid. The chrome drawn in one character grid: box-drawing
+      frames, a `$ command` header on every area, glyph marks, grey on
+      near-black, orange for the one live thing. */
+[data-theme="grid"] {
+  --font-ui: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+  --font-title: var(--font-ui);
+  --font-mono: var(--font-ui);
+  --font-term: var(--font-ui);
+  --chrome: #0b0b0c; --chrome-2: #0b0b0c; --chrome-ctl: #16171a; --chrome-text: #c8c8c4; --chrome-text-2: #77787a; --chrome-rule: #2a2b2e;
+  --sidebar: #0b0b0c; --sidebar-bg: #0b0b0c;
+  --card: #0b0b0c; --card-active: #0f0f11; --card-border: #2a2b2e; --card-border-active: #c8c8c4; --card-rule: #2a2b2e;
+  --card-text: #d6d6d2; --card-text-2: #8a8b8d; --card-text-dim: #5e5f62;
+  --card-radius: 0; --card-pad: 10px 12px;
+  --accent: #ff6a1f; --live: #ff6a1f; --attn: #8a8b8d; --flag: #c8c8c4; --cold: #5e5f62;
+  --tab-active: #1a1b1e; --tab-text: #d6d6d2; --tab-text-2: #8a8b8d;
+  --area-border: #2a2b2e; --area-border-focus: #c8c8c4; --area-border-wait: #ff6a1f; --radius: 0;
+  --term-bg: #0b0b0c; --term-fg: #c8c8c4; --term-dim: #6a6b6e; --term-green: #9aa8a0; --term-blue: #9fb3c8; --term-pink: #c9a2b4; --term-yellow: #c8b58a; --term-violet: #b1a6c8;
+}
+[data-theme="grid"] body, [data-theme="grid"] .win { font-size: 12px; }
+[data-theme="grid"] .lights i { border-radius: 0; width: 10px; height: 10px; background: #2a2b2e; }
+[data-theme="grid"] .ctl-group { background: none; gap: 0; padding: 0; border: 1px solid var(--chrome-rule); }
+[data-theme="grid"] .ctl { background: none; border-radius: 0; border-right: 1px solid var(--chrome-rule); }
+[data-theme="grid"] .ctl:last-child { border-right: 0; }
+[data-theme="grid"] .ctl .badge { border-radius: 0; background: var(--accent); color: #0b0b0c; }
+[data-theme="grid"] .win-title { font-weight: 500; }
+[data-theme="grid"] .win-title .folder { display: none; }
+[data-theme="grid"] .win-title::before { content: "$ c11h ·"; color: var(--chrome-text-2); }
+[data-theme="grid"] .newgroup { border-radius: 0; height: 28px; font-size: 12px; border-style: dashed; }
+[data-theme="grid"] .newgroup::before { content: "+ "; color: var(--card-text-2); } [data-theme="grid"] .newgroup svg { display: none; }
+[data-theme="grid"] .card { border-width: 1px; gap: 3px; }
+[data-theme="grid"] .card .row1 { margin: 0 -12px 2px; padding: 0 12px 4px; border-bottom: 1px dotted var(--card-rule); }
+[data-theme="grid"] .card .name { font-size: 12px; font-weight: 600; }
+[data-theme="grid"] .card .name::before { content: "┌ "; color: var(--card-text-dim); font-weight: 400; }
+[data-theme="grid"] .card.active .name { color: var(--accent); }
+[data-theme="grid"] .card .sub { font-size: 11px; }
+[data-theme="grid"] .card .agent { font-size: 12px; font-weight: 500; }
+[data-theme="grid"] .card .agent::before { content: "├─ "; color: var(--card-text-dim); }
+[data-theme="grid"] .card .agent:last-of-type::before { content: "└─ "; }
+[data-theme="grid"] .card .agent .mk { display: none; }
+[data-theme="grid"] .card hr { border-top: 1px dotted var(--card-rule); }
+[data-theme="grid"] .card .state { font-size: 11.5px; font-style: normal; }
+[data-theme="grid"] .card .state svg { display: none; }
+[data-theme="grid"] .card .state.waiting::before { content: "◆ "; color: var(--accent); }
+[data-theme="grid"] .card .state.running::before { content: "▶ "; color: var(--card-text-2); }
+[data-theme="grid"] .card .state.running { color: var(--card-text); }
+[data-theme="grid"] .card .bar { border-radius: 0; height: 6px; background: repeating-linear-gradient(90deg, var(--card-text-dim) 0 3px, transparent 3px 6px); }
+[data-theme="grid"] .card .bar .g { background: var(--card-text); } [data-theme="grid"] .card .bar .w { background: var(--card-text-2); } [data-theme="grid"] .card .bar .d { background: transparent; }
+[data-theme="grid"] .mk { border-radius: 0; }
+[data-theme="grid"] .mk.work { background: var(--card-text-2); } [data-theme="grid"] .mk.work.dots { background-image: radial-gradient(circle, var(--card-text-2) 1px, transparent 1.2px); }
+[data-theme="grid"] .waiting-pill { border-radius: 0; height: 32px; background: var(--card); color: var(--accent); border: 1px solid var(--accent); font-size: 12px; font-weight: 500; }
+[data-theme="grid"] .waiting-pill .n { border-radius: 0; background: var(--accent); color: #0b0b0c; }
+[data-theme="grid"] .help { border-radius: 0; }
+[data-theme="grid"] .areas { gap: 0; padding: 0; }
+[data-theme="grid"] .area { border-width: 1px; }
+[data-theme="grid"] .strip { font-size: 11.5px; }
+[data-theme="grid"] .tab { border-right: 1px dotted var(--chrome-rule); }
+[data-theme="grid"] .tab.active { background: none; box-shadow: inset 0 -2px 0 var(--accent); }
+[data-theme="grid"] .tab.active .num { color: var(--accent); }
+[data-theme="grid"] .count .dot { border-radius: 0; background: var(--card-text-2); }
+[data-theme="grid"] .descbar { border-bottom: 1px dotted var(--chrome-rule); }
+[data-theme="grid"] .descbar .chip { border-radius: 0; background: none; border-style: dotted; font-weight: 500; font-size: 11px; }
+[data-theme="grid"] .descbar .chip::before { content: "@"; color: var(--chrome-text-2); margin-right: 4px; }
+[data-theme="grid"] .prompt .caret { background: var(--accent); }
+[data-theme="grid"] .prompt, [data-theme="grid"] .status { border-top: 1px dotted var(--chrome-rule); }
+[data-theme="grid"] .sidebar::after { content: "─ legend ─  ◆ needs you  ▶ running  □ idle  ▪ cold"; position: absolute; left: 12px; bottom: 76px; right: 12px; font-size: 10px; color: var(--card-text-dim); letter-spacing: .02em; z-index: 0; }
+
+/* 5. outrun: Vaporwave, Outrun Horizon. Darker night, a neon horizon,
+      cyan perspective grid on the sidebar floor, scanlines over the chrome. */
+[data-theme="outrun"] {
+  --font-ui: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-title: -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+  --chrome: #0b0716; --chrome-2: #0e0a1c; --chrome-ctl: #221640; --chrome-text: #eee8ff; --chrome-text-2: #9d8fc4; --chrome-rule: #261a44;
+  --sidebar-bg: linear-gradient(180deg, #26104F 0%, #4A1A82 50%, #E2367F 64%, #FF9F45 69%, #3A1066 71%, #2A0B4C 100%);
+  --card: rgba(10, 6, 24, .80); --card-active: rgba(6, 3, 16, .92); --card-border: rgba(45, 226, 230, .22); --card-border-active: #2DE2E6; --card-rule: rgba(255,255,255,.14);
+  --card-text: #f3eeff; --card-text-2: #c3b5e6; --card-text-dim: #8d7fb3;
+  --card-radius: 6px; --card-pad: 13px;
+  --accent: #2DE2E6; --live: #ff3f8e; --attn: #FF9F45; --flag: #c77dff; --cold: #2f2a5e;
+  --tab-active: #1a1130; --tab-text: #f3eeff; --tab-text-2: #9d8fc4;
+  --area-border: #261a44; --area-border-focus: #2DE2E6; --area-border-wait: #ff3f8e; --radius: 4px;
+  --term-bg: #0b0716; --term-fg: #e6def7; --term-dim: #7f72a6; --term-green: #7ff0c4; --term-blue: #7fd4ff; --term-pink: #ff3f8e; --term-yellow: #ffcf6a; --term-violet: #c99bff;
+}
+[data-theme="outrun"] .win::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,.14) 0 1px, transparent 1px 3px); mix-blend-mode: multiply; z-index: 5; }
+[data-theme="outrun"] .win-title { font-family: var(--font-title); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; font-size: 12px; background: linear-gradient(180deg, #fff 0%, #ffd7f3 45%, #2DE2E6 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+[data-theme="outrun"] .win-title .folder, [data-theme="outrun"] .win-title .folder::before { background: var(--attn); }
+[data-theme="outrun"] .sidebar::before { content: ""; position: absolute; left: 0; right: 0; top: 70%; bottom: 0; z-index: 0; pointer-events: none;
+  background:
+    repeating-linear-gradient(180deg, rgba(45,226,230,.45) 0 1px, transparent 1px 100%) 0 0 / 100% 100%,
+    linear-gradient(90deg, transparent 49.6%, rgba(45,226,230,.45) 49.6% 50.4%, transparent 50.4%);
+  background-size: 100% 22px, 100% 100%; mask-image: linear-gradient(180deg, transparent, #000 25%); -webkit-mask-image: linear-gradient(180deg, transparent, #000 25%); }
+[data-theme="outrun"] .sidebar::after { content: ""; position: absolute; left: 0; right: 0; top: 70%; bottom: 0; z-index: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg, rgba(45,226,230,.35) 0 1px, transparent 1px 28px); transform: perspective(220px) rotateX(58deg); transform-origin: 50% 0; }
+[data-theme="outrun"] .card.active { box-shadow: 0 0 0 1px rgba(45,226,230,.35), 0 0 22px rgba(45,226,230,.18); }
+[data-theme="outrun"] .card .name { font-family: var(--font-title); font-weight: 700; letter-spacing: .02em; text-transform: uppercase; font-size: 13.5px; }
+[data-theme="outrun"] .card .ws { color: var(--accent); }
+[data-theme="outrun"] .card .state.running { color: var(--live); }
+[data-theme="outrun"] .card .state.waiting { color: var(--attn); }
+[data-theme="outrun"] .card .bar { background: rgba(255,255,255,.14); }
+[data-theme="outrun"] .card .bar .g { background: linear-gradient(90deg, #ff3f8e, #FF9F45); }
+[data-theme="outrun"] .mk.wait { border-color: var(--attn); } [data-theme="outrun"] .mk.wait::after { background: var(--attn); }
+[data-theme="outrun"] .waiting-pill { background: linear-gradient(90deg, #ff3f8e, #FF9F45); color: #170a1f; }
+[data-theme="outrun"] .tab { text-transform: uppercase; font-size: 11px; letter-spacing: .04em; }
+[data-theme="outrun"] .tab.active { box-shadow: inset 0 -2px 0 var(--accent); color: #fff; }
+[data-theme="outrun"] .tab.active .num { color: var(--accent); text-shadow: 0 0 6px rgba(45,226,230,.8); }
+[data-theme="outrun"] .count .dot { background: var(--live); box-shadow: 0 0 8px var(--live); }
+[data-theme="outrun"] .descbar .chip { border-color: rgba(45,226,230,.4); color: var(--accent); background: rgba(45,226,230,.06); border-radius: 2px; text-transform: uppercase; font-size: 10.5px; letter-spacing: .08em; }
+[data-theme="outrun"] .descbar .mail { color: var(--attn); }
+[data-theme="outrun"] .prompt .caret { background: var(--live); box-shadow: 0 0 8px var(--live); }
+/* the bust: marble in the waiting pill, rising out of its bottom edge */
+.waiting-pill { position: relative; }
+.waiting-pill .bust { display: none; }
+[data-theme="outrun"] .waiting-pill { overflow: hidden; }
+[data-theme="outrun"] .waiting-pill > * { position: relative; z-index: 1; }
+[data-theme="outrun"] .waiting-pill .bust { display: block; position: absolute; z-index: 0; right: 46px; bottom: -9px; height: 62px; width: auto; opacity: .96; filter: drop-shadow(0 0 5px rgba(255,255,255,.45)); }
+
+/* 6. nocturne: the serious one. Matte near-black, hairline rules, a
+      display grotesk for names, tracked mono caps for every label, one
+      cold accent that marks only what needs you. No glow, no material. */
+[data-theme="nocturne"] {
+  --font-ui: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-title: -apple-system, "SF Pro Display", "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+  --chrome: #07080a; --chrome-2: #0a0b0e; --chrome-ctl: #15171b; --chrome-text: #e4e6ea; --chrome-text-2: #6f747d; --chrome-rule: #1a1d22;
+  --sidebar: #050607; --sidebar-bg: #050607;
+  --card: #0b0c0f; --card-active: #0f1115; --card-border: #1a1d22; --card-border-active: #c9d6ea; --card-rule: #1a1d22;
+  --card-text: #e8eaee; --card-text-2: #8a909a; --card-text-dim: #5b606a;
+  --card-radius: 4px; --card-pad: 14px 14px 12px;
+  --accent: #c9d6ea; --live: #7fb0ff; --attn: #e0b35a; --flag: #b08cff; --cold: #2b3a56;
+  --tab-active: #111318; --tab-text: #e4e6ea; --tab-text-2: #6f747d;
+  --area-border: #1a1d22; --area-border-focus: #c9d6ea; --area-border-wait: #e0b35a; --radius: 3px;
+  --term-bg: #07080a; --term-fg: #d6d9de; --term-dim: #5b606a; --term-green: #8fd1a8; --term-blue: #7fb0ff; --term-pink: #e38aa6; --term-yellow: #e0c27a; --term-violet: #b4a0e8;
+}
+[data-theme="nocturne"] .lights i { width: 10px; height: 10px; opacity: .85; }
+[data-theme="nocturne"] .ctl-group { background: none; padding: 0; gap: 1px; }
+[data-theme="nocturne"] .ctl { background: var(--chrome-ctl); border-radius: 3px; }
+[data-theme="nocturne"] .ctl .badge { background: var(--attn); }
+[data-theme="nocturne"] .win-title { font-family: var(--font-title); font-weight: 600; letter-spacing: -.01em; font-size: 13.5px; }
+[data-theme="nocturne"] .win-title .folder, [data-theme="nocturne"] .win-title .folder::before { background: var(--chrome-text-2); }
+[data-theme="nocturne"] .win-path { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em; }
+[data-theme="nocturne"] .newgroup { height: 34px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--card-text-2); background: none; }
+[data-theme="nocturne"] .card { border-width: 1px; gap: 7px; }
+[data-theme="nocturne"] .card.active { border-width: 1px; }
+[data-theme="nocturne"] .card .name { font-family: var(--font-title); font-size: 16px; font-weight: 600; letter-spacing: -.015em; }
+[data-theme="nocturne"] .card .ws { font-size: 10px; letter-spacing: .1em; }
+[data-theme="nocturne"] .card .sub { font-size: 11.5px; }
+[data-theme="nocturne"] .card .agent { font-size: 12.5px; font-weight: 500; }
+[data-theme="nocturne"] .card .meta, [data-theme="nocturne"] .card .usage, [data-theme="nocturne"] .card .branch, [data-theme="nocturne"] .card .ports { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+[data-theme="nocturne"] .card .state { font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-style: normal; }
+[data-theme="nocturne"] .card .state.waiting { color: var(--attn); }
+[data-theme="nocturne"] .card .state svg { width: 10px; height: 10px; }
+[data-theme="nocturne"] .card .bar { height: 2px; border-radius: 0; background: #1a1d22; margin-top: 6px; }
+[data-theme="nocturne"] .card .bar .g { background: var(--attn); } [data-theme="nocturne"] .card .bar .w { background: var(--card-text-2); } [data-theme="nocturne"] .card .bar .d { background: #262a31; }
+[data-theme="nocturne"] .mk { border-radius: 1px; width: 9px; height: 9px; }
+[data-theme="nocturne"] .mk.wait { border-color: var(--attn); } [data-theme="nocturne"] .mk.wait::after { background: var(--attn); }
+[data-theme="nocturne"] .waiting-pill { height: 40px; border-radius: 4px; background: none; border: 1px solid var(--attn); color: var(--attn); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; }
+[data-theme="nocturne"] .waiting-pill .n { background: var(--attn); color: #07080a; border-radius: 2px; }
+[data-theme="nocturne"] .help { border-width: 1px; }
+[data-theme="nocturne"] .areas { gap: 1px; padding: 0 1px 1px 0; }
+[data-theme="nocturne"] .area { border-width: 1px; }
+[data-theme="nocturne"] .strip { font-size: 12px; }
+[data-theme="nocturne"] .tab .num { letter-spacing: .08em; }
+[data-theme="nocturne"] .tab.active { box-shadow: inset 0 1px 0 var(--accent); }
+[data-theme="nocturne"] .tab.active .num { color: var(--accent); }
+[data-theme="nocturne"] .count .dot { background: var(--attn); border-radius: 1px; }
+[data-theme="nocturne"] .descbar .chip { border-radius: 2px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; background: none; }
+[data-theme="nocturne"] .descbar .mail { color: var(--attn); }
+[data-theme="nocturne"] .prompt .caret { background: var(--accent); }
+
+/* 7. bigboard: mission control's wall. Wide-tracked mono caps, console
+      cards with a header row, green LIVE tags, amber for waiting, a
+      segmented clock in the titlebar. Datasheet's operational cousin. */
+[data-theme="bigboard"] {
+  --font-ui: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+  --font-title: var(--font-ui);
+  --font-mono: var(--font-ui);
+  --chrome: #05070a; --chrome-2: #080b10; --chrome-ctl: #121820; --chrome-text: #d9e3ea; --chrome-text-2: #65788a; --chrome-rule: #15202b;
+  --sidebar: #05070a; --sidebar-bg: #05070a;
+  --card: #080b10; --card-active: #0b1118; --card-border: #15202b; --card-border-active: #3ddc84; --card-rule: #15202b;
+  --card-text: #dfe8ee; --card-text-2: #8aa0b2; --card-text-dim: #52677a;
+  --card-radius: 2px; --card-pad: 0 0 10px;
+  --accent: #3ddc84; --live: #3ddc84; --attn: #ffb224; --flag: #b08cff; --cold: #1f3a52;
+  --tab-active: #0f1721; --tab-text: #dfe8ee; --tab-text-2: #65788a;
+  --area-border: #15202b; --area-border-focus: #3ddc84; --area-border-wait: #ffb224; --radius: 2px;
+  --term-bg: #05070a; --term-fg: #cfdbe3; --term-dim: #52677a; --term-green: #3ddc84; --term-blue: #6fb6ff; --term-pink: #ff7a9e; --term-yellow: #ffb224; --term-violet: #b4a0e8;
+}
+[data-theme="bigboard"] .win { background-image: radial-gradient(ellipse at 50% 120%, rgba(61,220,132,.06), transparent 60%); }
+[data-theme="bigboard"] .lights i { border-radius: 0; width: 10px; height: 10px; }
+[data-theme="bigboard"] .ctl-group { background: none; padding: 0; gap: 0; border: 1px solid var(--chrome-rule); }
+[data-theme="bigboard"] .ctl { background: none; border-radius: 0; border-right: 1px solid var(--chrome-rule); }
+[data-theme="bigboard"] .ctl:last-child { border-right: 0; }
+[data-theme="bigboard"] .ctl .badge { border-radius: 0; background: var(--attn); }
+[data-theme="bigboard"] .win-title { text-transform: uppercase; letter-spacing: .16em; font-size: 11px; font-weight: 600; }
+[data-theme="bigboard"] .win-title .folder { display: none; }
+[data-theme="bigboard"] .win-title::before { content: "WS 06"; color: var(--chrome-text-2); margin-right: 6px; }
+[data-theme="bigboard"] .win-path { display: none; }
+[data-theme="bigboard"] .clock { display: flex; margin-left: auto; align-items: center; gap: 10px; font-size: 11px; letter-spacing: .12em; color: var(--chrome-text-2); text-transform: uppercase; }
+[data-theme="bigboard"] .clock b { font-size: 15px; letter-spacing: .1em; color: var(--chrome-text); font-weight: 600; }
+[data-theme="bigboard"] .clock .tag { padding: 1px 6px; border: 1px solid var(--accent); color: var(--accent); font-size: 9.5px; }
+.clock { display: none; }
+[data-theme="bigboard"] .newgroup { height: 28px; border-radius: 0; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; background: none; }
+[data-theme="bigboard"] .card { gap: 5px; border-width: 1px; }
+[data-theme="bigboard"] .card > * { margin-left: 12px; margin-right: 12px; }
+[data-theme="bigboard"] .card .row1 { margin: 0; padding: 7px 12px; border-bottom: 1px solid var(--card-rule); background: rgba(255,255,255,.025); }
+[data-theme="bigboard"] .card.active .row1 { background: rgba(61,220,132,.08); }
+[data-theme="bigboard"] .card .name { font-size: 11.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+[data-theme="bigboard"] .card .ws { letter-spacing: .12em; }
+[data-theme="bigboard"] .card .ws::before { content: "NODE "; color: var(--card-text-dim); }
+[data-theme="bigboard"] .card .sub { font-size: 10.5px; margin-top: 2px; }
+[data-theme="bigboard"] .card .agent { font-size: 11.5px; font-weight: 500; }
+[data-theme="bigboard"] .card hr { margin-left: 0; margin-right: 0; }
+[data-theme="bigboard"] .card .meta, [data-theme="bigboard"] .card .usage, [data-theme="bigboard"] .card .branch, [data-theme="bigboard"] .card .ports { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+[data-theme="bigboard"] .card .state { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; font-style: normal; }
+[data-theme="bigboard"] .card .state svg { display: none; }
+[data-theme="bigboard"] .card .state::before { content: "LIVE"; padding: 1px 5px; border: 1px solid currentColor; font-size: 9px; letter-spacing: .14em; }
+[data-theme="bigboard"] .card .state.waiting { color: var(--attn); } [data-theme="bigboard"] .card .state.waiting::before { content: "HOLD"; }
+[data-theme="bigboard"] .card .state.running { color: var(--accent); }
+[data-theme="bigboard"] .card .bar { height: 3px; border-radius: 0; background: #15202b; }
+[data-theme="bigboard"] .card .bar .g { background: var(--attn); } [data-theme="bigboard"] .card .bar .w { background: var(--accent); } [data-theme="bigboard"] .card .bar .d { background: #1f2d3a; }
+[data-theme="bigboard"] .mk { border-radius: 0; }
+[data-theme="bigboard"] .mk.wait { border-color: var(--attn); } [data-theme="bigboard"] .mk.wait::after { background: var(--attn); }
+[data-theme="bigboard"] .mk.work { background: var(--accent); } [data-theme="bigboard"] .mk.work.dots { background-image: radial-gradient(circle, var(--accent) 1px, transparent 1.2px); }
+[data-theme="bigboard"] .waiting-pill { height: 36px; border-radius: 0; background: none; border: 1px solid var(--attn); color: var(--attn); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; }
+[data-theme="bigboard"] .waiting-pill .n { border-radius: 0; background: var(--attn); color: #05070a; }
+[data-theme="bigboard"] .help { border-radius: 0; }
+[data-theme="bigboard"] .areas { gap: 1px; padding: 0; }
+[data-theme="bigboard"] .area { border-width: 1px; }
+[data-theme="bigboard"] .strip { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; }
+[data-theme="bigboard"] .tab .num { letter-spacing: .08em; }
+[data-theme="bigboard"] .tab.active { box-shadow: inset 0 2px 0 var(--accent); }
+[data-theme="bigboard"] .tab.active .num { color: var(--accent); }
+[data-theme="bigboard"] .count .dot { border-radius: 0; background: var(--attn); }
+[data-theme="bigboard"] .descbar { text-transform: none; }
+[data-theme="bigboard"] .descbar .chip { border-radius: 0; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; background: none; color: var(--accent); border-color: rgba(61,220,132,.4); }
+[data-theme="bigboard"] .descbar .chip::before { content: "▮ "; }
+[data-theme="bigboard"] .descbar .mail { color: var(--attn); }
+[data-theme="bigboard"] .prompt .caret { background: var(--accent); }
+[data-theme="bigboard"] .term, [data-theme="bigboard"] .status, [data-theme="bigboard"] .prompt { font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<div class="proto-bar" id="bar">
+  <span class="lbl">theme</span>
+  <button class="chip" data-t="c11"><b>1</b>c11</button>
+  <button class="chip" data-t="datasheet"><b>2</b>Datasheet Mono</button>
+  <button class="chip" data-t="grid"><b>3</b>Terminal Grid</button>
+  <button class="chip" data-t="today"><b>4</b>c11h today</button>
+  <button class="chip" data-t="outrun"><b>5</b>Outrun Horizon</button>
+  <button class="chip" data-t="nocturne"><b>6</b>Nocturne</button>
+  <button class="chip" data-t="bigboard"><b>7</b>Big Board</button>
+  <span class="note" id="note"></span>
+</div>
+
+<div class="win">
+  <div class="titlebar">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="ctl-group">
+      <div class="ctl"><svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11"/></svg></div>
+      <div class="ctl"><svg viewBox="0 0 16 16"><path d="M4 11V7a4 4 0 0 1 8 0v4l1 1.5H3z"/><path d="M6.5 14a1.5 1.5 0 0 0 3 0"/></svg><span class="badge">3</span></div>
+      <div class="ctl"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></div>
+      <div class="ctl"><svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg></div>
+      <div class="ctl dim"><svg viewBox="0 0 16 16"><path d="m6 3 5 5-5 5"/></svg></div>
+    </div>
+    <div class="win-title"><span class="folder"></span>C11H updates</div>
+    <div class="clock"><span class="tag">LIVE</span><span>LAPTOP</span><b>18:58:30</b><span>PST</span></div>
+    <div class="win-path mono">~/src</div>
+  </div>
+
+  <div class="body">
+    <aside class="sidebar">
+      <button class="newgroup br"><span class="brk"></span><svg viewBox="0 0 20 14"><path d="M1.5 3.5h5l1.5 2h10v7h-16.5z"/><path d="M14 6.5v4M12 8.5h4"/></svg>New Group</button>
+
+      <div class="cards">
+        <div class="card waiting br"><span class="brk"></span>
+          <div class="row1"><span class="name">Glass V2</span><span class="close">×</span></div>
+          <div class="sub">The Glass: Atin's phone as a native second seat</div>
+          <div class="agent"><span class="mk wait"></span>Glass Build Lead · Live-arrivals pass</div>
+          <hr>
+          <div class="meta">1 agent, 1 terminal</div>
+          <div class="marks right"><span class="mk wait"></span></div>
+          <div class="usage">0% 103MB</div>
+          <div class="state waiting"><svg viewBox="0 0 16 16"><path d="M8 1a4 4 0 0 0-4 4v4L2.5 11h11L12 9V5a4 4 0 0 0-4-4zM6.5 13a1.5 1.5 0 0 0 3 0z"/></svg>Needs input <span class="ago">12m</span></div>
+          <div class="ports">:52530, :63861</div>
+          <div class="bar"><i class="g" style="width:100%"></i></div>
+        </div>
+
+        <div class="card waiting br"><span class="brk"></span>
+          <div class="row1"><span class="name">Gregorovich</span><span class="ws">WS<b>3</b></span></div>
+          <div class="agent"><span class="mk wait"></span>Perf Monitor WS3 · Laptop recorder</div>
+          <hr>
+          <div class="meta">1 agent, 1 terminal, 1 browser</div>
+          <div class="marks right"><span class="mk wait"></span></div>
+          <div class="usage">–% –MB</div>
+          <div class="branch">master*</div>
+          <div class="state waiting"><svg viewBox="0 0 16 16"><path d="M8 1a4 4 0 0 0-4 4v4L2.5 11h11L12 9V5a4 4 0 0 0-4-4zM6.5 13a1.5 1.5 0 0 0 3 0z"/></svg>Needs input</div>
+          <div class="ports">:56602</div>
+          <div class="bar"><i class="g" style="width:100%"></i></div>
+        </div>
+
+        <div class="card active br"><span class="brk"></span>
+          <div class="row1"><span class="name">C11H updates</span><span class="ws">WS<b>6</b></span></div>
+          <div class="agent"><span class="mk wait"></span>Machine Chip Q · Supervising five builders</div>
+          <div class="agent dim"><span class="mk work dots"></span>Upstream Sync Plan · reading the diff</div>
+          <hr>
+          <div class="meta">8 agents</div>
+          <div class="marks"><span class="mk work dots"></span><span class="mk busy"></span><span class="mk idle"></span><span class="mk work dots"></span><span class="mk wait"></span><span class="mk work dots"></span><span class="mk work dots"></span><span class="mk work dots"></span></div>
+          <div class="usage">0% 107MB</div>
+          <div class="branch">main</div>
+          <div class="state running"><svg viewBox="0 0 16 16"><path d="M9 1 3 9h4l-1 6 7-8H9z"/></svg>Running</div>
+          <div class="ports">:49773, :49881, :51182, :52001, :53010</div>
+          <div class="bar"><i class="g" style="width:12%"></i><i class="w" style="width:74%"></i><i class="d" style="width:14%"></i></div>
+        </div>
+
+        <div class="card br"><span class="brk"></span>
+          <div class="row1"><span class="name">Stage11</span><span class="ws">WS<b>7</b></span></div>
+          <div class="agent dim"><span class="mk idle"></span>Awaiting first task</div>
+          <hr>
+          <div class="meta">1 agent, 1 terminal</div>
+          <div class="marks right"><span class="mk idle"></span></div>
+          <div class="usage">0% 67MB</div>
+          <div class="ports">:53163</div>
+          <div class="bar"><i class="d" style="width:100%"></i></div>
+        </div>
+      </div>
+
+      <div class="sb-foot">
+        <div class="waiting-pill br"><span class="brk"></span><svg class="bust" viewBox="0 0 100 120" aria-hidden="true"><defs><linearGradient id="marble" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#ffdcf4"/></linearGradient></defs><g fill="url(#marble)"><path d="M50 4C34 4 24 14 23 28L20 34C18 40 13 44 12 50L17 54C15 58 16 60 19 62C16 64 16 68 20 70C24 74 30 76 36 76L40 88C38 95 28 100 18 104L18 116L82 116L82 104C72 100 66 94 64 86L66 70C76 64 80 50 78 34C78 20 70 6 50 4Z"/><circle cx="36" cy="11" r="7"/><circle cx="47" cy="7" r="7"/><circle cx="59" cy="8" r="7"/><circle cx="69" cy="14" r="7"/><circle cx="76" cy="24" r="7"/><circle cx="79" cy="36" r="6"/><circle cx="30" cy="18" r="6"/><rect x="24" y="112" width="52" height="8"/></g></svg>Waiting Agent <span class="n">3</span><span class="kb"><span class="arrow">→</span><span class="keys">⌥V</span></span></div>
+        <div class="help">?</div>
+      </div>
+    </aside>
+
+    <main class="areas">
+      <!-- left area: a waiting agent (gold frame) -->
+      <section class="area wait">
+        <div class="strip">
+          <div class="tabs">
+          <div class="tab active br"><span class="brk"></span><span class="mk work dots"></span><span class="num">203</span><span class="ttl">c11h Fixes Lead</span><span class="x">×</span></div>
+          <div class="tab br"><span class="brk"></span><span class="mk work dots"></span><span class="num">195</span><span class="ttl">Upstream Sync Plan</span><span class="x">×</span></div>
+          <div class="tab br"><span class="brk"></span><span class="mk busy"></span><span class="num">204</span><span class="ttl">Theme Prototypes</span><span class="x">×</span></div>
+          <div class="tab br"><span class="brk"></span><span class="mk idle"></span><span class="num">202</span><span class="ttl">c11h Remote Help</span><span class="x">×</span></div>
+          </div>
+          <div class="count"><span class="dot"></span><span>⌄</span><span>4</span></div>
+          <div class="tools">
+            <span class="t A">A<small style="font-size:8px;margin-left:2px">▾</small></span>
+            <span class="t"><svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="m4 6 2.5 2L4 10M8 10h4"/></svg></span>
+            <span class="t"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M1.5 8h13M8 1.5c2.5 2.5 2.5 10.5 0 13M8 1.5c-2.5 2.5-2.5 10.5 0 13"/></svg></span>
+            <span class="t"><svg viewBox="0 0 16 16"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13M6 8h4M6 11h4"/></svg></span>
+            <span class="sep"></span>
+            <span class="t"><svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M8 2.5v11"/></svg></span>
+            <span class="t"><svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M1.5 8h13"/></svg></span>
+            <span class="t"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></span>
+            <span class="t"><svg viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg></span>
+          </div>
+        </div>
+        <div class="descbar"><span class="chip">Laptop</span><span class="d">Orienting on the six open c11h bugs from the Glass V2 run; next, coordinate with Upstream Sync and Machine Chip leads.</span><span class="mail">2 ✉ 2</span></div>
+        <div class="term"><span class="g">●</span> <b>Write</b>(~/c11h-fixes-run/briefs/C11H-124.md)
+  <span class="dim">⎿</span>  Wrote <b>26</b> lines to <b>~/c11h-fixes-run/briefs/C11H-124.md</b>
+     <span class="dim">1</span>  # Brief: C11H-124 owner (seat `fix-124`)
+     <span class="dim">2</span>
+     <span class="dim">3</span>  Read `briefs/common.md` first and follow it. Panel title: **C11H-124 input fault**.
+     <span class="dim">4</span>  Seat / mailbox: `fix-124`. Studio tag: `c11h-2c` (warm).
+     <span class="dim">5</span>
+     <span class="dim">6</span>  ## The ticket
+     <span class="dim">7</span>
+     <span class="dim">8</span>  C11H-124 (`lattice show C11H-124 --full`, critical). A send or doorbell to a remote
+     <span class="dim">9</span>  panel whose delayed Return lands 0.2 to 0.5 s after any panel create or close goes
+     <span class="dim">… +16 lines (~4 KB)</span>
+
+<span class="g">●</span> <b>Reading relay allowlist policy</b>
+  <span class="dim">⎿</span>  <span class="dim">$ cd ~/src/c11h-wt-fixlead; f=$(git ls-files | grep -i relaypolicy); sed -n 20,60p $f</span>
+
+<span class="g">●</span> <b>Write</b>(~/c11h-fixes-run/briefs/C11H-134.md)
+  <span class="dim">⎿</span>  Wrote <b>23</b> lines to <b>~/c11h-fixes-run/briefs/C11H-134.md</b>
+     <span class="dim">1</span>  # Brief: C11H-134 owner (seat `fix-134`)
+     <span class="dim">2</span>
+     <span class="dim">3</span>  Read `briefs/common.md` first and follow it. Panel title: **C11H-134 remote Claude**.
+     <span class="dim">… +17 lines (~3 KB)</span>
+
+<span class="g">●</span> <b>Write</b>(~/c11h-fixes-run/briefs/C11H-135.md)
+  <span class="dim">⎿</span>  Wrote <b>23</b> lines to <b>~/c11h-fixes-run/briefs/C11H-135.md</b>
+     <span class="dim">1</span>  # Brief: C11H-135 owner (seat `fix-135`)
+     <span class="dim">2</span>
+     <span class="dim">3</span>  C11H-135: `c11 hc ls` fails after a hard 2 s deadline during a link drop or a slow
+     <span class="dim">4</span>  DERP relay to Studio. Callers read it as "no terminals": a monitor raised 15 false
+     <span class="dim">5</span>  "ended" alerts. Relay calls from Studio fail fast during a 7 s reconnect.
+     <span class="dim">… +16 lines</span>
+
+<span class="p">✻ Frolicking…</span> <span class="dim">(6m 40s · ↓ 33.0k tokens)</span>
+
+<span class="v">✦</span> <span class="dim">Heads up · c11h's GitHub repo seems to run no automatic checks, so keeping main shareable depends on agents' own Studio builds.</span>
+  <span class="b">1</span>: Learn more   <span class="b">2</span>: Knew this already   <span class="b">0</span>: Dismiss</div>
+        <div class="prompt"><span class="dim">❯</span><span class="caret"></span></div>
+        <div class="status"><span class="g">20%</span>  <span class="y">[opus-5.5 <span class="o">xhigh</span>]</span>  205k<span class="dim">/$3.59/</span><span class="y">60m</span>  <b>ant-foxtrot</b> <span class="dim">5h(3.2h): 25%(◇36%) 7d(2.5d): 7%(◇64%)</span>   <span class="dim">c11h</span>  <span class="y">⌥ main ±2</span>   <span class="g">+142</span> <span class="r">-0</span>  5:45 <span class="dim">api_time</span>
+<span class="p">▶▶ bypass permissions on</span> <span class="dim">(shift+tab to cycle)</span></div>
+      </section>
+
+      <!-- right area: the focused one (blue frame) -->
+      <section class="area focus">
+        <div class="strip">
+          <div class="tabs">
+          <div class="tab active br"><span class="brk"></span><span class="mk work dots"></span><span class="num">196</span><span class="ttl">Machine Chip Q</span><span class="x">×</span></div>
+          <div class="tab br"><span class="brk"></span><span class="mk work dots"></span><span class="num">199</span><span class="ttl">C11H-130 shareable build</span><span class="x">×</span></div>
+          <div class="tab br"><span class="brk"></span><span class="mk work dots"></span><span class="num">198</span><span class="ttl">C11H-127 sheet</span><span class="x">×</span></div>
+          <div class="tab br"><span class="brk"></span><span class="mk work dots"></span><span class="num">197</span><span class="ttl">C11H-126 machine roster</span><span class="x">×</span></div>
+          </div>
+          <div class="count"><span class="dot"></span><span>⌄</span><span>4</span></div>
+          <div class="tools">
+            <span class="t A">A<small style="font-size:8px;margin-left:2px">▾</small></span>
+            <span class="t"><svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="m4 6 2.5 2L4 10M8 10h4"/></svg></span>
+            <span class="t"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M1.5 8h13M8 1.5c2.5 2.5 2.5 10.5 0 13M8 1.5c-2.5 2.5-2.5 10.5 0 13"/></svg></span>
+            <span class="t"><svg viewBox="0 0 16 16"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13M6 8h4M6 11h4"/></svg></span>
+            <span class="sep"></span>
+            <span class="t"><svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M8 2.5v11"/></svg></span>
+            <span class="t"><svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M1.5 8h13"/></svg></span>
+            <span class="t"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></span>
+            <span class="t"><svg viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg></span>
+          </div>
+        </div>
+        <div class="descbar"><span class="chip">Laptop</span><span class="d">Supervising c11h builders: C11H-126 roster then C11H-138 machine picker, C11H-127 teaching, C11H-130 shareable (PR #169). Five decisions with Atin.</span><span class="mail">✉ 6</span></div>
+        <div class="term"><span class="g">●</span> Another Claude session sent a message:
+  <span class="dim">c11 mail waiting: run c11 mailbox recv --ack</span>
+
+<span class="dim">  Ran 2 shell commands</span>
+
+<span class="g">●</span> Answered c11h Fixes Lead (panel 203), which is fixing the remaining Glass V2 bugs. Its
+  fixes merge first, and the C11H-126 and C11H-130 builders rebase onto them. All three
+  now coordinate directly. The C11H-130 owner's PR check starts advisory, not required.
+
+  The five decisions from my earlier message are still open.
+
+<span class="dim">✻ Worked for 33s · done 6:54 PM</span>
+
+<span class="g">●</span> The C11H-130 owner opened its first PR, <span class="b">#169</span>. The installer now stops with a plain
+  message when the Command Line Tools are missing, and the bundled c11h skill and the
+  relay's error messages no longer name Studio, Laptop or the Lead. It is building on
+  Studio, with a review by an agent that didn't write it running alongside. Three
+  follow-up tickets:
+  - <b>C11H-131</b>: hc on Intel Macs.
+  - <b>C11H-132</b>: the installer's Automation permission prompt.
+  - <b>C11H-133</b>: your username in build paths inside the binary.
+
+  Next it's writing the PR check that catches regressions.
+
+<span class="dim">✻ Crunched for 10s · done 6:55 PM</span>
+
+<span class="g">●</span> Another panel, c11h-remote-help, sent over your request for a machine picker. It's
+  filed as <b>C11H-138</b>, high priority.
+
+  <b>What it does:</b> when you press Cmd-T or +, use the File menu, or launch an agent, and
+  at least one remote machine is connected, a picker appears: 1 This Mac, 2 Studio,
+  3 Linuxbox. Pressing the number opens the panel there right away.
+
+  <b>Three choices I made:</b>
+  - Splits don't show the picker. They stay on their panel's machine.
+  - Commands from agents never prompt.
+  - A Settings switch can turn the picker off. It's on by default.
+
+  <b>One pace limit:</b> five builders now share one build lane on Studio, so builds wait in line.
+
+<span class="dim">✻ Cooked for 41s · done 6:56 PM</span></div>
+        <div class="prompt"><span class="dim">❯</span><span class="caret"></span></div>
+        <div class="status"><span class="g">18%</span>  <span class="y">[opus-5.5 <span class="o">xhigh</span>]</span>  177k<span class="dim">/$4.27/</span><span class="y">59m</span>  <b>ant-foxtrot</b> <span class="dim">5h(3.2h): 24%(◇36%) 7d(2.5d): 6%(◇64%)</span>   <span class="dim">Gregorovich</span>  <span class="y">⌥ master ±234</span>   <span class="g">+44</span> <span class="r">-1</span>  9:39 <span class="dim">api_time</span>
+<span class="p">▶▶ bypass permissions on</span> <span class="dim">(shift+tab to cycle)</span></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+(function () {
+  var notes = {
+    c11: "plain c11: the grey chrome as it ships",
+    datasheet: "Datasheet Mono by the spec: square, 1 px rules, mono caps, orange only where something needs you, brackets on hover",
+    grid: "Terminal Grid: the chrome drawn in one character grid, orange for the live thing",
+    today: "the c11h you have now: c11's chrome with the Sunset Mall gradient behind the sidebar",
+    outrun: "Outrun Horizon: neon horizon, cyan floor grid, scanlines, hot pink live, a bust in the waiting pill",
+    nocturne: "Nocturne: matte near-black, hairlines, display grotesk, one cold accent, amber for needs-you",
+    bigboard: "Big Board: mission control, tracked mono caps, console cards, green LIVE, amber HOLD"
+  };
+  var order = ["c11", "datasheet", "grid", "today", "outrun", "nocturne", "bigboard"];
+  var chips = document.querySelectorAll("#bar .chip");
+  function set(t) {
+    if (notes[t] === undefined) t = "c11";
+    document.documentElement.setAttribute("data-theme", t);
+    chips.forEach(function (c) { c.setAttribute("aria-pressed", c.dataset.t === t ? "true" : "false"); });
+    document.getElementById("note").textContent = notes[t];
+    if (location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
+  }
+  chips.forEach(function (c) { c.addEventListener("click", function () { set(c.dataset.t); }); });
+  document.addEventListener("keydown", function (e) {
+    var n = parseInt(e.key, 10);
+    if (n >= 1 && n <= order.length) set(order[n - 1]);
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      var i = order.indexOf(document.documentElement.getAttribute("data-theme"));
+      set(order[(i + (e.key === "ArrowRight" ? 1 : order.length - 1)) % order.length]);
+    }
+  });
+  window.addEventListener("hashchange", function () { set(location.hash.slice(1)); });
+  set(location.hash.slice(1) || "c11");
+})();
+</script>
+</body>
+</html>

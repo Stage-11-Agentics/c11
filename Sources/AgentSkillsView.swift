@@ -74,12 +74,16 @@ final class AgentSkillsModel: ObservableObject {
 
     private let home: URL
     private let fileManager: FileManager
+    /// A fixed bundled-skills folder instead of the app's own (tests only).
+    private let sourceOverride: URL?
 
     init(
         home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
+        sourceOverride: URL? = nil,
         fileManager: FileManager = .default
     ) {
         self.home = home
+        self.sourceOverride = sourceOverride
         self.fileManager = fileManager
     }
 
@@ -96,11 +100,13 @@ final class AgentSkillsModel: ObservableObject {
         let home = self.home
         let fileManager = self.fileManager
         let executableURL = Bundle.main.executableURL
+        let sourceOverride = self.sourceOverride
         Task.detached(priority: .userInitiated) {
             let snapshot = AgentSkillsModel.computeSnapshot(
                 executableURL: executableURL,
                 home: home,
-                fileManager: fileManager
+                fileManager: fileManager,
+                sourceOverride: sourceOverride
             )
             await MainActor.run { [weak self] in
                 guard let self else { return }
@@ -118,9 +124,10 @@ final class AgentSkillsModel: ObservableObject {
     nonisolated static func computeSnapshot(
         executableURL: URL?,
         home: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        sourceOverride: URL? = nil
     ) -> RefreshSnapshot {
-        guard let source = SkillInstaller.defaultSourceURL(executableURL: executableURL) else {
+        guard let source = sourceOverride ?? SkillInstaller.defaultSourceURL(executableURL: executableURL) else {
             return RefreshSnapshot(
                 sourceDir: nil,
                 sourceError: String(localized: "agentSkills.error.sourceNotFound", defaultValue: "Couldn't find the bundled skills directory."),
@@ -150,7 +157,7 @@ final class AgentSkillsModel: ObservableObject {
             var statusError: String? = nil
             if detected {
                 do {
-                    packages = try SkillInstaller.status(
+                    packages = try SkillInstaller.c11Status(
                         for: target,
                         home: home,
                         sourceDir: source,
@@ -176,9 +183,9 @@ final class AgentSkillsModel: ObservableObject {
     }
 
     func install(target: SkillInstallerTarget, force: Bool, packages: Set<String>? = nil) {
-        guard let source = sourceDir else { return }
+        guard let source = sourceDir ?? sourceOverride else { return }
         do {
-            let result = try SkillInstaller.install(
+            let result = try SkillInstaller.c11Install(
                 target: target,
                 home: home,
                 sourceDir: source,
@@ -215,9 +222,9 @@ final class AgentSkillsModel: ObservableObject {
     }
 
     func remove(target: SkillInstallerTarget) {
-        guard let source = sourceDir else { return }
+        guard let source = sourceDir ?? sourceOverride else { return }
         do {
-            let result = try SkillInstaller.remove(
+            let result = try SkillInstaller.c11Remove(
                 target: target,
                 home: home,
                 sourceDir: source,
@@ -1649,8 +1656,15 @@ enum AgentSkillsOnboarding {
         defaults: UserDefaults = .standard,
         fileManager: FileManager = .default,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        isLocalDevBuild: Bool? = nil
+        isLocalDevBuild: Bool? = nil,
+        bundleIdentifier: String? = nil
     ) -> Bool {
+        // c11 1.x's rule (C11H-269): a release or staging c11 offers the sheet, which installs
+        // only with the operator's consent. A Debug build (`com.stage11.c11.debug[.<tag>]`)
+        // never does: its bundled skills drift with every compile.
+        let bundle = bundleIdentifier ?? Bundle.main.bundleIdentifier ?? ""
+        let debugBundle = C11Identity.untaggedDebugBundleIdentifier
+        if bundle == debugBundle || bundle.hasPrefix(debugBundle + ".") { return false }
         // QA launch (`C11_QA_LAUNCH`) suppresses the onboarding sheet so
         // automated runs reach a usable window with no modal in the way.
         if QALaunchPolicy.current(environment: environment).isActive { return false }

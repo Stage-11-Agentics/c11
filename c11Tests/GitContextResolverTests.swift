@@ -64,14 +64,14 @@ final class GitContextResolverTests: XCTestCase {
     // MARK: - AC1: Linked worktree returns basename
 
     func testLinkedWorktreeReturnsBasename() {
-        let cwd = "/Users/atin/code/c11-worktrees/c11-104-sidebar-chips"
+        let cwd = "/Users/demo/code/c11-worktrees/c11-104-sidebar-chips"
         let runner = FakeGitRunner()
         // Submodule probe — empty (not in a submodule).
         runner.stub(cwd: cwd, args: ["rev-parse", "--show-superproject-working-tree"], result: nil)
         // Outer resolution against the cwd (not in a submodule).
         runner.stub(cwd: cwd, args: ["rev-parse", "--show-toplevel"], result: cwd)
-        runner.stub(cwd: cwd, args: ["rev-parse", "--git-common-dir"], result: "/Users/atin/code/c11/.git")
-        runner.stub(cwd: cwd, args: ["rev-parse", "--git-dir"], result: "/Users/atin/code/c11/.git/worktrees/c11-104-sidebar-chips")
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-common-dir"], result: "/Users/demo/code/c11/.git")
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-dir"], result: "/Users/demo/code/c11/.git/worktrees/c11-104-sidebar-chips")
         runner.stub(cwd: cwd, args: ["symbolic-ref", "--short", "HEAD"], result: "feat/c11-104-sidebar-chips")
 
         let fs = FakeFileSystem(existing: [cwd])
@@ -91,12 +91,12 @@ final class GitContextResolverTests: XCTestCase {
     // MARK: - AC2: Main checkout returns nil worktree
 
     func testMainCheckoutReturnsMainCheckoutKind() {
-        let cwd = "/Users/atin/code/c11"
+        let cwd = "/Users/demo/code/c11"
         let runner = FakeGitRunner()
         runner.stub(cwd: cwd, args: ["rev-parse", "--show-superproject-working-tree"], result: nil)
         runner.stub(cwd: cwd, args: ["rev-parse", "--show-toplevel"], result: cwd)
-        runner.stub(cwd: cwd, args: ["rev-parse", "--git-common-dir"], result: "/Users/atin/code/c11/.git")
-        runner.stub(cwd: cwd, args: ["rev-parse", "--git-dir"], result: "/Users/atin/code/c11/.git")
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-common-dir"], result: "/Users/demo/code/c11/.git")
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-dir"], result: "/Users/demo/code/c11/.git")
         runner.stub(cwd: cwd, args: ["symbolic-ref", "--short", "HEAD"], result: "main")
 
         let fs = FakeFileSystem(existing: [cwd])
@@ -215,12 +215,12 @@ final class GitContextResolverTests: XCTestCase {
     // MARK: - AC9: Worktree-with-deleted-branch degrades
 
     func testWorktreeWithDeletedBranchDegrades() {
-        let cwd = "/Users/atin/code/c11-worktrees/old-branch"
+        let cwd = "/Users/demo/code/c11-worktrees/old-branch"
         let runner = FakeGitRunner()
         runner.stub(cwd: cwd, args: ["rev-parse", "--show-superproject-working-tree"], result: nil)
         runner.stub(cwd: cwd, args: ["rev-parse", "--show-toplevel"], result: cwd)
-        runner.stub(cwd: cwd, args: ["rev-parse", "--git-common-dir"], result: "/Users/atin/code/c11/.git")
-        runner.stub(cwd: cwd, args: ["rev-parse", "--git-dir"], result: "/Users/atin/code/c11/.git/worktrees/old-branch")
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-common-dir"], result: "/Users/demo/code/c11/.git")
+        runner.stub(cwd: cwd, args: ["rev-parse", "--git-dir"], result: "/Users/demo/code/c11/.git/worktrees/old-branch")
         // Both symbolic-ref and rev-parse fail when the underlying
         // branch has been deleted out from under the worktree.
         runner.stub(cwd: cwd, args: ["symbolic-ref", "--short", "HEAD"], result: nil)
@@ -250,8 +250,8 @@ final class GitContextResolverTests: XCTestCase {
     // worktree is picked up on the next resolution.
 
     func testStaleWorktreeReturnsStaleWhenHeadPathFileMissing() {
-        let cwd = "/Users/atin/code/c11-worktrees/pruned-worktree"
-        let staleHeadPath = "/Users/atin/code/c11/.git/worktrees/pruned-worktree/HEAD"
+        let cwd = "/Users/demo/code/c11-worktrees/pruned-worktree"
+        let staleHeadPath = "/Users/demo/code/c11/.git/worktrees/pruned-worktree/HEAD"
         let runner = FakeGitRunner()
         // `git rev-parse --git-path HEAD` still resolves the absolute
         // path git would point at — git itself doesn't notice the
@@ -274,8 +274,8 @@ final class GitContextResolverTests: XCTestCase {
     }
 
     func testHeadPathExistingOnDiskFallsThroughToRegularResolution() {
-        let cwd = "/Users/atin/code/c11"
-        let liveHeadPath = "/Users/atin/code/c11/.git/HEAD"
+        let cwd = "/Users/demo/code/c11"
+        let liveHeadPath = "/Users/demo/code/c11/.git/HEAD"
         let runner = FakeGitRunner()
         runner.stub(cwd: cwd, args: ["rev-parse", "--git-path", "HEAD"], result: liveHeadPath)
         // Regular resolution after the stale check falls through.

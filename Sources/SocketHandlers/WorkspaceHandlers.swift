@@ -11,6 +11,11 @@ extension TerminalController {
     /// v2 dispatch slice for the `workspace.*` domain(s).
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchWorkspace(_ method: String, id: Any?, params: [String: Any]) -> String {
+        switch method {
+        case "workspace.group.set_metadata", "workspace.group.get_metadata", "workspace.group.clear_metadata":
+            return v2Result(id: id, v2WorkspaceGroupMetadata(method, params: params))
+        default: break
+        }
         if method.hasPrefix("workspace.group.") || method == "workspace.reorder_batch" {
             return v2Result(id: id, v2WorkspaceGroupCommand(method, params: params))
         }
@@ -53,12 +58,8 @@ extension TerminalController {
             return v2Result(id: id, self.v2WorkspaceRemoteStatus(params: params))
         case "workspace.remote.terminal_session_end":
             return v2Result(id: id, self.v2WorkspaceRemoteTerminalSessionEnd(params: params))
-        case "workspace.set_metadata":
-            return v2Result(id: id, self.v2WorkspaceSetMetadata(params: params))
-        case "workspace.get_metadata":
-            return v2Result(id: id, self.v2WorkspaceGetMetadata(params: params))
-        case "workspace.clear_metadata":
-            return v2Result(id: id, self.v2WorkspaceClearMetadata(params: params))
+        case "workspace.set_metadata", "workspace.get_metadata", "workspace.clear_metadata":
+            return v2Result(id: id, self.v2WorkspaceMetadata(method, params: params))
         case "workspace.set_custom_color":
             return v2Result(id: id, self.v2WorkspaceSetCustomColor(params: params))
         case "workspace.apply":
@@ -83,8 +84,11 @@ extension TerminalController {
         }
 
         var workspaces: [[String: Any]] = []
+        // C11H-371: a relayed caller lists only its own workspace.
+        let relayScope = SocketCommandContext.current?.relayReadScope
         v2MainSync {
-            workspaces = workspaceManager.workspaces.enumerated().map { index, ws in
+            workspaces = workspaceManager.workspaces.enumerated().compactMap { index, ws in
+                if let relayScope, ws.id != relayScope.workspace { return nil }
                 return [
                     "id": ws.id.uuidString,
                     "ref": v2Ref(kind: .workspace, uuid: ws.id),
@@ -314,14 +318,19 @@ extension TerminalController {
         }
         var wsId: UUID?
         var wsPayload: [String: Any]?
+        // C11H-371: through the relay the current workspace is the caller's,
+        // never the operator's selection.
+        let relayScope = SocketCommandContext.current?.relayReadScope
         v2MainSync {
-            wsId = workspaceManager.selectedWorkspaceId
+            wsId = relayScope.map { scope in
+                workspaceManager.workspaces.contains { $0.id == scope.workspace } ? scope.workspace : nil
+            } ?? workspaceManager.selectedWorkspaceId
             if let wsId, let workspace = workspaceManager.workspaces.first(where: { $0.id == wsId }) {
                 wsPayload = [
                     "id": workspace.id.uuidString,
                     "ref": v2Ref(kind: .workspace, uuid: workspace.id),
                     "title": workspace.title,
-                    "selected": true,
+                    "selected": workspace.id == workspaceManager.selectedWorkspaceId,
                     "pinned": workspace.isPinned,
                     "listening_ports": workspace.listeningPorts,
                     "remote": workspace.remoteStatusPayload(),
@@ -337,7 +346,7 @@ extension TerminalController {
             "window_id": v2OrNull(windowId?.uuidString),
             "window_ref": v2Ref(kind: .window, uuid: windowId),
             "workspace_id": wsId.uuidString,
-            "previous_workspace_id": v2OrNull(workspaceManager.previousWorkspaceId?.uuidString),
+            "previous_workspace_id": v2OrNull(relayScope == nil ? workspaceManager.previousWorkspaceId?.uuidString : nil),
             "workspace_ref": v2Ref(kind: .workspace, uuid: wsId),
             "workspace": wsPayload ?? NSNull()
         ])
@@ -352,9 +361,16 @@ extension TerminalController {
         }
 
         var found = false
+        var endingPanelIds: [UUID] = []
         v2MainSync {
             if let ws = workspaceManager.workspaces.first(where: { $0.id == wsId }) {
+                // C11H-24: the hc panels whose sessions this close ends.
+                if HCSessionEnd.coordinator != nil {
+                    endingPanelIds = ws.panels.keys.filter { ws.closeHoldsHCSession(panelIds: [$0]) }
+                }
                 workspaceManager.closeWorkspace(ws)
+                // closeWorkspace keeps a window's last workspace; nothing ended.
+                if workspaceManager.workspaces.contains(where: { $0.id == wsId }) { endingPanelIds = [] }
                 found = true
             }
         }
@@ -365,7 +381,8 @@ extension TerminalController {
                 "window_id": v2OrNull(windowId?.uuidString),
                 "window_ref": v2Ref(kind: .window, uuid: windowId),
                 "workspace_id": wsId.uuidString,
-                "workspace_ref": v2Ref(kind: .workspace, uuid: wsId)
+                "workspace_ref": v2Ref(kind: .workspace, uuid: wsId),
+                "session_end_panel_ids": endingPanelIds.map(\.uuidString).sorted()
             ])
             : .err(code: "not_found", message: "Workspace not found", data: [
                 "workspace_id": wsId.uuidString,
@@ -1163,8 +1180,9 @@ extension TerminalController {
         let filename = sanitized.isEmpty ? "blueprint" : sanitized
 
         let fm = FileManager.default
-        let dir = fm.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/c11/blueprints")
+        let dir = WorkspaceBlueprintStore.userBlueprintDirectory(
+            home: fm.homeDirectoryForCurrentUser
+        )
         let url = dir.appendingPathComponent("\(filename).\(formatExt)")
 
         if !force && fm.fileExists(atPath: url.path) {
@@ -1256,208 +1274,223 @@ extension TerminalController {
         }
     }
 
-    private func v2WorkspaceSetMetadata(params: [String: Any]) -> V2CallResult {
-        if let r = SocketPanelRefValidator.rejection(
-            params: params, targetKeys: ["workspace_id"], requiredAnyOf: ["workspace_id"]
-        ) {
-            return .err(code: r.code, message: r.message, data: nil)
-        }
-        // Parse + validate off-main per the socket command threading policy
-        // (CLAUDE.md "Socket command threading policy").
-        let rawMetadata = v2StringMap(params, "metadata")
-        let singleKey = v2String(params, "key")
-        let singleValueRaw = params["value"]
-
-        var writes: [String: String?] = [:]
-        if let rawMetadata {
-            for (k, v) in rawMetadata { writes[k] = v }
-        }
-        if let singleKey {
-            if singleValueRaw is NSNull {
-                writes[singleKey] = nil
-            } else if let s = singleValueRaw as? String {
-                writes[singleKey] = s
-            } else if singleValueRaw == nil {
-                return .err(code: "invalid_params", message: "Missing 'value' for key '\(singleKey)'", data: nil)
-            } else {
-                return .err(code: "invalid_params", message: "metadata value must be a string or null", data: nil)
-            }
-        }
-
-        if writes.isEmpty {
-            return .err(
-                code: "invalid_params",
-                message: "Provide 'metadata' object or 'key'/'value' pair",
-                data: nil
-            )
-        }
-
-        // Validate all keys and non-nil values off-main before taking the
-        // main-actor critical section.
-        for (k, maybeValue) in writes {
-            do {
-                if let value = maybeValue {
-                    try WorkspaceMetadataValidator.validate(key: k, value: value)
-                } else {
-                    try WorkspaceMetadataValidator.validateKey(k)
-                }
-            } catch let err as WorkspaceMetadataValidator.ValidationError {
-                return .err(code: err.code, message: err.message, data: err.detail)
-            } catch {
-                return .err(code: "internal_error", message: "\(error)", data: nil)
-            }
-        }
-
-        guard let resolved = v2ResolveWorkspaceForMetadata(params: params) else {
-            return .err(code: "not_found", message: "Workspace not found", data: nil)
-        }
-
-        var capacityError: WorkspaceMetadataValidator.CapacityError?
-        var resultMetadata: [String: String] = [:]
-        // Workspace is @MainActor; the mutation must run on the main actor.
-        // Precedent: workspace.rename handler (v2WorkspaceRename).
-        v2MainSync {
-            guard let ws = resolved.workspaceManager.workspaces.first(where: { $0.id == resolved.workspaceId }) else {
-                return
-            }
-            var next = ws.metadata
-            for (k, maybeValue) in writes {
-                if let value = maybeValue {
-                    next[k] = value
-                } else {
-                    next.removeValue(forKey: k)
-                }
-            }
-            do {
-                try WorkspaceMetadataValidator.validateCapacity(after: next)
-            } catch let err as WorkspaceMetadataValidator.CapacityError {
-                capacityError = err
-                return
-            } catch {
-                // Unreachable: validateCapacity only throws CapacityError.
-                return
-            }
-            ws.metadata = next
-            resultMetadata = next
-        }
-
-        if let err = capacityError {
-            return .err(code: err.code, message: err.message, data: err.detail)
-        }
-
-        let windowId = v2ResolveWindowId(workspaceManager: resolved.workspaceManager)
-        return .ok([
-            "workspace_id": resolved.workspaceId.uuidString,
-            "workspace_ref": v2Ref(kind: .workspace, uuid: resolved.workspaceId),
-            "window_id": v2OrNull(windowId?.uuidString),
-            "window_ref": v2Ref(kind: .window, uuid: windowId),
-            "metadata": resultMetadata
-        ])
+    /// JSON validation, precedence and persistence run on the socket worker.
+    /// Only live topology/ref capture touches main, with a cancellable deadline.
+    nonisolated func v2WorkspaceMetadata(_ method: String, params: [String: Any], timeout: TimeInterval = 5) -> V2CallResult {
+        v2ScopedMetadata(method, params: params, scope: .workspace, timeout: timeout)
     }
 
-    private func v2WorkspaceGetMetadata(params: [String: Any]) -> V2CallResult {
-        if let r = SocketPanelRefValidator.rejection(
-            params: params, targetKeys: ["workspace_id"], requiredAnyOf: ["workspace_id"]
-        ) {
-            return .err(code: r.code, message: r.message, data: nil)
-        }
-        let requestedKey = v2String(params, "key")
-        let requestedKeys = v2StringArray(params, "keys")
-
-        guard let resolved = v2ResolveWorkspaceForMetadata(params: params) else {
-            return .err(code: "not_found", message: "Workspace not found", data: nil)
-        }
-
-        var full: [String: String] = [:]
-        v2MainSync {
-            guard let ws = resolved.workspaceManager.workspaces.first(where: { $0.id == resolved.workspaceId }) else {
-                return
-            }
-            full = ws.metadata
-        }
-
-        var metadataOut: [String: String] = full
-        if let filterKeys = requestedKeys {
-            metadataOut = [:]
-            for k in filterKeys {
-                if let v = full[k] { metadataOut[k] = v }
-            }
-        } else if let single = requestedKey {
-            metadataOut = [:]
-            if let v = full[single] { metadataOut[single] = v }
-        }
-
-        let windowId = v2ResolveWindowId(workspaceManager: resolved.workspaceManager)
-        var payload: [String: Any] = [
-            "workspace_id": resolved.workspaceId.uuidString,
-            "workspace_ref": v2Ref(kind: .workspace, uuid: resolved.workspaceId),
-            "window_id": v2OrNull(windowId?.uuidString),
-            "window_ref": v2Ref(kind: .window, uuid: windowId),
-            "metadata": metadataOut
-        ]
-        if let single = requestedKey {
-            payload["key"] = single
-            payload["value"] = v2OrNull(metadataOut[single])
-        }
-        return .ok(payload)
+    /// C11H-299: the same object, commands and rules for a workspace group
+    /// (`workspace.group.set_metadata` / `.get_metadata` / `.clear_metadata`).
+    /// The group is found in whichever window holds it; groups are window-local.
+    nonisolated func v2WorkspaceGroupMetadata(_ method: String, params: [String: Any], timeout: TimeInterval = 5) -> V2CallResult {
+        v2ScopedMetadata(method, params: params, scope: .workspaceGroup, timeout: timeout)
     }
 
-    private func v2WorkspaceClearMetadata(params: [String: Any]) -> V2CallResult {
-        if let r = SocketPanelRefValidator.rejection(
-            params: params, targetKeys: ["workspace_id"], requiredAnyOf: ["workspace_id"]
-        ) {
-            return .err(code: r.code, message: r.message, data: nil)
-        }
-        let keys: [String]?
-        if params["keys"] == nil || params["keys"] is NSNull {
-            keys = nil
-        } else if let arr = v2StringArray(params, "keys") {
-            keys = arr
+    nonisolated private func v2ScopedMetadata(_ method: String, params: [String: Any],
+                                               scope: WorkspaceMetadataStore.Scope, timeout: TimeInterval) -> V2CallResult {
+        let grouped = scope == .workspaceGroup
+        let notFound: V2CallResult = grouped
+            ? .err(code: "group_not_found", message: WorkspaceGroupOperationError.groupNotFound.message, data: nil)
+            : .err(code: "not_found", message: "Workspace not found", data: nil)
+        if grouped {
+            guard let raw = params["group_id"] as? String,
+                  !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .err(code: SocketPanelRefValidator.missingRefCode, message: "group_id is required", data: nil)
+            }
         } else {
-            return .err(code: "invalid_keys_param", message: "keys must be an array of strings", data: nil)
+            if let rejection = SocketPanelRefValidator.rejection(
+                params: params, targetKeys: ["workspace_id"], requiredAnyOf: ["workspace_id"]
+            ) {
+                return .err(code: rejection.code, message: rejection.message, data: nil)
+            }
+            guard params["workspace_id"] is String else { return notFound }
+        }
+        let reading = method.hasSuffix(".get_metadata")
+        // C11H-360: a write relayed from a linked machine never sets or clears
+        // c11's own keys (the Captain route, the Recovered mark), and never
+        // replaces or clears the whole object. Only the relay executor sets
+        // `relayMachine`; the check runs before any lookup or store write.
+        if !reading, SocketCommandContext.current?.relayMachine != nil,
+           let refusal = C11RelayPolicy.workspaceWriteRefusal(params, method: method) {
+            return .err(code: refusal.code, message: refusal.message, data: nil)
+        }
+        var mode = PanelMetadataStore.WriteMode.merge
+        var source = MetadataSource.explicit
+        var partial: [String: Any] = [:]
+        var keys: [String]?
+        var legacyClear = false
+        do {
+            if let rawKeys = params["keys"], !(rawKeys is NSNull) {
+                guard let parsed = rawKeys as? [String] else { throw PanelMetadataStore.WriteError.invalidKeysParam }
+                keys = parsed
+            } else if let rawKey = params["key"] {
+                guard let key = rawKey as? String else { throw PanelMetadataStore.WriteError.invalidKeysParam }
+                keys = [key]
+            }
+            for key in keys ?? [] { try WorkspaceMetadataValidator.validateKey(key) }
+            if !reading {
+                if let raw = params["source"] {
+                    guard let text = raw as? String, let parsed = MetadataSource(rawValue: text.lowercased()) else {
+                        throw PanelMetadataStore.WriteError.invalidSource(String(localized: "workspace.metadata.invalidSource", defaultValue: "expected explicit, declare, osc or heuristic"))
+                    }
+                    source = parsed
+                }
+                if let rejection = SocketMetadataSourceValidator.externalRejectionMessage(for: source) {
+                    return .err(code: rejection.code, message: rejection.message, data: nil)
+                }
+            }
+            if method.hasSuffix(".set_metadata") {
+                if let raw = params["mode"] {
+                    guard let text = raw as? String, let parsed = PanelMetadataStore.WriteMode(rawValue: text.lowercased()) else {
+                        throw PanelMetadataStore.WriteError.invalidMode(String(localized: "workspace.metadata.invalidMode", defaultValue: "expected merge or replace"))
+                    }
+                    mode = parsed
+                }
+                if let raw = params["metadata"] {
+                    guard let object = raw as? [String: Any] else {
+                        throw PanelMetadataStore.WriteError.invalidJSON(String(localized: "workspace.metadata.invalidObject", defaultValue: "metadata must be a JSON object"))
+                    }
+                    partial = object
+                } else if let key = params["key"] as? String, let value = params["value"] {
+                    // Legacy key/value null deletes. Object null remains JSON.
+                    legacyClear = value is NSNull
+                    if !legacyClear { partial[key] = value }
+                } else {
+                    return .err(code: "invalid_params", message: "Provide 'metadata' object or 'key'/'value' pair", data: nil)
+                }
+                if mode == .replace && source != .explicit { throw PanelMetadataStore.WriteError.replaceRequiresExplicit }
+                for (key, value) in partial {
+                    partial[key] = try WorkspaceMetadataValidator.normalizedValue(key: key, value: value)
+                }
+                guard JSONSerialization.isValidJSONObject(partial) else {
+                    throw PanelMetadataStore.WriteError.invalidJSON(String(localized: "workspace.metadata.invalidJSON", defaultValue: "metadata must contain JSON values"))
+                }
+                let data = try JSONSerialization.data(withJSONObject: partial)
+                guard data.count <= WorkspaceMetadataStore.payloadCapBytes else {
+                    throw PanelMetadataStore.WriteError.payloadTooLarge
+                }
+            }
+        } catch let error as WorkspaceMetadataValidator.ValidationError {
+            return .err(code: error.code, message: error.message, data: error.detail)
+        } catch let error as PanelMetadataStore.WriteError {
+            return .err(code: error.code, message: error.message, data: error.detailData)
+        } catch {
+            return .err(code: "invalid_json", message: "\(error)", data: nil)
         }
 
-        // Validate key grammar off-main when a filter is provided; malformed
-        // keys could never have been written but reject them explicitly so
-        // callers see a consistent error shape.
-        if let keys {
-            for k in keys {
-                do {
-                    try WorkspaceMetadataValidator.validateKey(k)
-                } catch let err as WorkspaceMetadataValidator.ValidationError {
-                    return .err(code: err.code, message: err.message, data: err.detail)
-                } catch {
-                    return .err(code: "internal_error", message: "\(error)", data: nil)
+        let operation = SelectionReadOperation<V2CallResult>(timeout: timeout)
+        let context = SocketCommandContext.current
+        let store = grouped ? WorkspaceMetadataStore.groups : WorkspaceMetadataStore.shared
+        let capture = {
+            MainActor.assumeIsolated {
+                guard operation.beginCapture() else { return }
+                SocketCommandContext.withContext(context) {
+                    if grouped {
+                        operation.complete(self.v2WorkspaceGroupMetadataTarget(params: params, notFound: notFound))
+                        return
+                    }
+                    // No selected-workspace fallback, even when the target closed.
+                    guard let workspaceId = self.v2UUID(params, "workspace_id"),
+                          let app = AppDelegate.shared,
+                          let manager = app.workspaceManagerFor(workspaceId: workspaceId),
+                          manager.workspaces.contains(where: { $0.id == workspaceId }),
+                          let generation = WorkspaceMetadataStore.shared.registrationGeneration(workspaceId: workspaceId) else {
+                        operation.complete(.err(code: "not_found", message: "Workspace not found", data: nil))
+                        return
+                    }
+                    if params["window_id"] != nil,
+                       self.v2UUID(params, "window_id") != app.windowId(for: manager) {
+                        operation.complete(.err(code: "not_found", message: String(localized: "workspace.metadata.notInWindow", defaultValue: "Workspace not found in window"), data: nil))
+                        return
+                    }
+                    let windowId = app.windowId(for: manager)
+                    operation.complete(.ok([
+                        "workspace_id": workspaceId.uuidString,
+                        "_metadata_generation": generation,
+                        "workspace_ref": self.v2Ref(kind: .workspace, uuid: workspaceId),
+                        "window_id": windowId?.uuidString as Any? ?? NSNull(),
+                        "window_ref": self.v2Ref(kind: .window, uuid: windowId)
+                    ]))
                 }
             }
         }
-
-        guard let resolved = v2ResolveWorkspaceForMetadata(params: params) else {
-            return .err(code: "not_found", message: "Workspace not found", data: nil)
+        if Thread.isMainThread { capture() } else { DispatchQueue.main.async(execute: capture) }
+        guard let target = operation.wait(), operation.canPublish else {
+            return .err(code: "main_thread_timeout", message: String(localized: "workspace.metadata.targetTimeout", defaultValue: "Workspace metadata target lookup timed out; no change was made"), data: nil)
         }
-
-        var resultMetadata: [String: String] = [:]
-        v2MainSync {
-            guard let ws = resolved.workspaceManager.workspaces.first(where: { $0.id == resolved.workspaceId }) else {
-                return
-            }
-            if let keys {
-                var next = ws.metadata
-                for k in keys { next.removeValue(forKey: k) }
-                ws.metadata = next
+        guard case .ok(let rawPayload) = target else { return target }
+        guard var payload = rawPayload as? [String: Any],
+              let rawID = payload[grouped ? "group_id" : "workspace_id"] as? String, let workspaceId = UUID(uuidString: rawID),
+              let generation = payload.removeValue(forKey: "_metadata_generation") as? UInt64 else {
+            return notFound
+        }
+        do {
+            if reading {
+                guard store.registrationGeneration(workspaceId: workspaceId) == generation else { throw WorkspaceMetadataStore.TargetError.notFound }
+                let snapshot = store.getMetadata(workspaceId: workspaceId)
+                let metadata = keys.map { filter in snapshot.metadata.filter { filter.contains($0.key) } } ?? snapshot.metadata
+                payload["metadata"] = metadata
+                if params["include_sources"] as? Bool == true || params["sources"] as? Bool == true {
+                    payload["metadata_sources"] = snapshot.sources.filter { metadata[$0.key] != nil }
+                }
+                if let key = params["key"] as? String {
+                    payload["key"] = key
+                    payload["value"] = metadata[key] ?? NSNull()
+                }
             } else {
-                ws.metadata = [:]
+                let result: PanelMetadataStore.WriteResult
+                if method.hasSuffix(".clear_metadata") || legacyClear {
+                    result = try store.clearMetadata(workspaceId: workspaceId, keys: keys, source: source, requireRegistered: true, expectedGeneration: generation)
+                } else {
+                    result = try store.setMetadata(workspaceId: workspaceId, partial: partial, mode: mode, source: source, requireRegistered: true, expectedGeneration: generation)
+                }
+                payload["metadata"] = result.metadata
+                payload["metadata_sources"] = result.sources
+                payload["applied"] = result.applied
+                payload["reasons"] = result.reasons
+                payload["removed_keys"] = result.removedKeys.sorted()
             }
-            resultMetadata = ws.metadata
+            return .ok(payload)
+        } catch is WorkspaceMetadataStore.TargetError where grouped {
+            return notFound
+        } catch let error as WorkspaceMetadataStore.TargetError {
+            return .err(code: error.code, message: error.message, data: nil)
+        } catch let error as WorkspaceMetadataValidator.ValidationError {
+            return .err(code: error.code, message: error.message, data: error.detail)
+        } catch let error as PanelMetadataStore.WriteError {
+            return .err(code: error.code, message: error.message, data: error.detailData)
+        } catch {
+            return .err(code: "internal_error", message: "\(error)", data: nil)
         }
+    }
 
-        let windowId = v2ResolveWindowId(workspaceManager: resolved.workspaceManager)
+    /// Main-thread lookup of a live group in any window. Accepts a UUID or a
+    /// `workspace_group:N` ref; never falls back to a selected or current group.
+    private func v2WorkspaceGroupMetadataTarget(params: [String: Any], notFound: V2CallResult) -> V2CallResult {
+        guard let app = AppDelegate.shared else { return notFound }
+        let managers = app.fleetWorkspaceManagers()
+        for (windowId, manager) in managers {
+            _ = v2EnsureHandleRef(kind: .window, uuid: windowId)
+            for group in manager.workspaceGroups { _ = v2EnsureHandleRef(kind: .workspaceGroup, uuid: group.id) }
+        }
+        guard let raw = (params["group_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) else { return notFound }
+        let groupId: UUID? = UUID(uuidString: raw)
+            ?? (raw.hasPrefix(V2HandleKind.workspaceGroup.rawValue + ":") ? v2UUIDByRef[.workspaceGroup]?[raw] : nil)
+        guard let groupId,
+              let windowId = managers.first(where: { $0.manager.workspaceGroups.contains { $0.id == groupId } })?.windowId,
+              let generation = WorkspaceMetadataStore.groups.registrationGeneration(workspaceId: groupId) else {
+            return notFound
+        }
+        if params["window_id"] != nil, v2UUID(params, "window_id") != windowId {
+            return .err(code: "wrong_window", message: String(localized: "workspaceGroup.error.wrongWindow", defaultValue: "The target does not belong to this window."), data: nil)
+        }
         return .ok([
-            "workspace_id": resolved.workspaceId.uuidString,
-            "workspace_ref": v2Ref(kind: .workspace, uuid: resolved.workspaceId),
-            "window_id": v2OrNull(windowId?.uuidString),
-            "window_ref": v2Ref(kind: .window, uuid: windowId),
-            "metadata": resultMetadata
+            "group_id": groupId.uuidString,
+            "_metadata_generation": generation,
+            "group_ref": v2Ref(kind: .workspaceGroup, uuid: groupId),
+            "window_id": windowId.uuidString,
+            "window_ref": v2Ref(kind: .window, uuid: windowId)
         ])
     }
 
@@ -1543,20 +1576,14 @@ extension TerminalController {
                 workspaceManager.clearCustomTitle(workspaceId: workspace.id)
                 finish(["title": workspace.title])
 
-            case "move_up":
-                guard let currentIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
+            case "move_up", "move_down":
+                guard workspaceManager.workspaces.contains(where: { $0.id == workspace.id }) else {
                     result = .err(code: "not_found", message: "Workspace not found", data: nil)
                     return
                 }
-                _ = workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: max(currentIndex - 1, 0))
-                finish(["index": v2OrNull(workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }))])
-
-            case "move_down":
-                guard let currentIndex = workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }) else {
-                    result = .err(code: "not_found", message: "Workspace not found", data: nil)
-                    return
-                }
-                _ = workspaceManager.reorderWorkspace(workspaceId: workspace.id, toIndex: min(currentIndex + 1, workspaceManager.workspaces.count - 1))
+                // C11H-342: one sidebar step, as the menu and the row take: an
+                // ungrouped workspace passes a group, a member stays in its group.
+                _ = workspaceManager.stepWorkspaceInSidebar(workspace.id, by: action == "move_up" ? -1 : 1)
                 finish(["index": v2OrNull(workspaceManager.workspaces.firstIndex(where: { $0.id == workspace.id }))])
 
             case "move_top":

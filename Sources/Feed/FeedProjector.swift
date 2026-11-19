@@ -15,7 +15,31 @@ enum FeedKind: String, Equatable {
     case permission
     case error
     case turnEnd = "turn_end"
+    /// C11H-228: an agent showed something while the operator was away.
+    case show
 }
+
+/// A pending show in Feed (C11H-228): one per showing panel. Opening the
+/// row opens its viewers beside that panel.
+struct FeedShowFact: Equatable, Sendable {
+    var workspaceID: UUID
+    var panelID: UUID
+    var names: [String]
+    var atMs: Int64
+    var count: Int
+    /// Why the last attempt to open it failed; the row stays to retry.
+    var failure: String? = nil
+
+    var prompt: String {
+        let list = names.prefix(3).joined(separator: ", ")
+        let more = count > 3 ? " +\(count - 3)" : ""
+        let line = String(format: String(localized: "show.feed.prompt", defaultValue: "Showed %@ while you were away"), list + more)
+        guard let failure else { return line }
+        return String(format: String(localized: "show.feed.promptFailed", defaultValue: "%@ (could not open: %@; open again to retry)"),
+                      line, failure)
+    }
+}
+
 
 enum FeedNoteError: String, Error, Equatable {
     case oversize = "note_oversize"
@@ -26,11 +50,17 @@ enum FeedNoteError: String, Error, Equatable {
 /// A named flag carries a stable identifier and an immutable display snapshot.
 /// The generic flag has no kind and remains violet. Only these named tokens
 /// may tint a flag; gray, blue, gold and violet retain their existing meanings.
+/// Orange, lime, cyan and magenta (C11H-223) are the candidates farthest from
+/// those reserved colors and from each other, in both themes (CIEDE2000 at least 13.5).
 enum PanelFlagColorToken: String, CaseIterable, Codable, Hashable, Sendable {
     case green
     case red
     case pink
     case teal
+    case orange
+    case lime
+    case cyan
+    case magenta
 
     func hex(lightBackground: Bool) -> String {
         switch (self, lightBackground) {
@@ -42,6 +72,14 @@ enum PanelFlagColorToken: String, CaseIterable, Codable, Hashable, Sendable {
         case (.pink, false): return "#ED72B6"
         case (.teal, true): return "#00786F"
         case (.teal, false): return "#58C8BE"
+        case (.orange, true): return "#B4500A"
+        case (.orange, false): return "#FF9440"
+        case (.lime, true): return "#55760E"
+        case (.lime, false): return "#B8E05A"
+        case (.cyan, true): return "#00708F"
+        case (.cyan, false): return "#3FD0F5"
+        case (.magenta, true): return "#9A26B8"
+        case (.magenta, false): return "#D96CF5"
         }
     }
 
@@ -51,8 +89,15 @@ enum PanelFlagColorToken: String, CaseIterable, Codable, Hashable, Sendable {
         case .red: return String(localized: "flag.kind.color.red", defaultValue: "Red")
         case .pink: return String(localized: "flag.kind.color.pink", defaultValue: "Pink")
         case .teal: return String(localized: "flag.kind.color.teal", defaultValue: "Teal")
+        case .orange: return String(localized: "flag.kind.color.orange", defaultValue: "Orange")
+        case .lime: return String(localized: "flag.kind.color.lime", defaultValue: "Lime")
+        case .cyan: return String(localized: "flag.kind.color.cyan", defaultValue: "Cyan")
+        case .magenta: return String(localized: "flag.kind.color.magenta", defaultValue: "Magenta")
         }
     }
+
+    /// Every token name, for help and error text.
+    static var namesList: String { allCases.map(\.rawValue).joined(separator: ", ") }
 }
 
 /// Registry value and the display data copied onto an active flag. Keeping the
@@ -63,6 +108,36 @@ struct PanelFlagKind: Codable, Equatable, Hashable, Sendable, Identifiable {
     let name: String
     let color: PanelFlagColorToken
     let emoji: String?
+    /// C11H-330: lower the flag after the operator has looked at its panel
+    /// for this many continuous seconds. Absent never evaporates. Behavior,
+    /// not display: it lives only in the registry and is read live, so the
+    /// copy on a raised flag (`displaySnapshot`) never carries it.
+    let evaporateSeconds: Int?
+
+    static let evaporateSecondsRange = 1...600
+
+    /// Every key this build reads, from `CodingKeys`, so a new field is known
+    /// the moment it is declared. The registry carries any other key of a
+    /// stored entry through its own writes.
+    static let knownJSONKeys = Set(CodingKeys.allCases.map(\.rawValue))
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case id, name, color, emoji
+        case evaporateSeconds = "evaporate_seconds"
+    }
+
+    init(id: String, name: String, color: PanelFlagColorToken, emoji: String?, evaporateSeconds: Int? = nil) {
+        self.id = id
+        self.name = name
+        self.color = color
+        self.emoji = emoji
+        self.evaporateSeconds = evaporateSeconds
+    }
+
+    /// The immutable display copy a raised flag carries in metadata and events.
+    var displaySnapshot: PanelFlagKind {
+        PanelFlagKind(id: id, name: name, color: color, emoji: emoji)
+    }
 
     var displayLabel: String {
         [emoji, name].compactMap { value in
@@ -90,9 +165,11 @@ struct PanelFlagKind: Codable, Equatable, Hashable, Sendable, Identifiable {
                   !emoji.unicodeScalars.contains(where: { forbiddenCharacters.contains($0) })
             else { return false }
         }
+        if let evaporateSeconds, !Self.evaporateSecondsRange.contains(evaporateSeconds) { return false }
         return true
     }
 
+    /// Display fields only: the shape stored on a raised flag and in events.
     var jsonObject: [String: Any] {
         var object: [String: Any] = [
             "id": id,
@@ -100,6 +177,14 @@ struct PanelFlagKind: Codable, Equatable, Hashable, Sendable, Identifiable {
             "color": color.rawValue,
         ]
         if let emoji { object["emoji"] = emoji }
+        return object
+    }
+
+    /// The registry entry as `flag.kind.*` returns it: display fields plus
+    /// `evaporate_seconds` (null when the kind never evaporates).
+    var registryJSONObject: [String: Any] {
+        var object = jsonObject
+        object["evaporate_seconds"] = evaporateSeconds.map { $0 as Any } ?? NSNull()
         return object
     }
 
@@ -116,8 +201,39 @@ struct PanelFlagKind: Codable, Equatable, Hashable, Sendable, Identifiable {
         } else {
             emoji = nil
         }
-        let kind = PanelFlagKind(id: id, name: name, color: color, emoji: emoji)
+        // A value this build can't read makes the entry unreadable, as a bad
+        // emoji does, so the registry keeps it verbatim instead of rewriting it.
+        let evaporateSeconds: Int?
+        if let raw = object["evaporate_seconds"], !(raw is NSNull) {
+            guard let parsed = Self.wholeSeconds(raw) else { return nil }
+            evaporateSeconds = parsed
+        } else {
+            evaporateSeconds = nil
+        }
+        let kind = PanelFlagKind(id: id, name: name, color: color, emoji: emoji, evaporateSeconds: evaporateSeconds)
         return kind.isValid ? kind : nil
+    }
+
+    /// `--evaporate-seconds` as typed: a whole number in 1...600, else nil.
+    static func parseEvaporateSecondsArgument(_ raw: String) -> Int? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let value = Int(trimmed), evaporateSecondsRange.contains(value) else { return nil }
+        return value
+    }
+
+    /// A JSON whole number, never a Bool (NSNumber bridges both) or a fraction.
+    static func wholeSeconds(_ value: Any) -> Int? {
+        guard let number = value as? NSNumber else { return nil }
+        #if os(macOS)
+        guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        #else
+        // C11H-392: no CoreFoundation on Linux; a JSON Bool's NSNumber is a char.
+        guard String(cString: number.objCType) != "c" else { return nil }
+        #endif
+        let double = number.doubleValue
+        guard double.rounded() == double, abs(double) <= 1_000_000 else { return nil }
+        return number.intValue
     }
 
     static func isValidSlug(_ value: String) -> Bool {
@@ -156,6 +272,73 @@ struct FeedAttentionFact: Equatable {
     var suppressed: Bool
 
     var isFlagged: Bool { flagReason != nil }
+}
+
+/// C11H-330: the last flag lowered and who lowered it, so the Feed can tell
+/// an evaporation (by c11, cause evaporated) from an operator's or agent's
+/// lower. Process memory only; a relaunch starts with none.
+struct FeedFlagLowered: Equatable {
+    static let evaporatedCause = "evaporated"
+
+    var workspaceID: UUID
+    var panelID: UUID
+    var reason: String?
+    var kind: PanelFlagKind?
+    var by: String
+    var cause: String?
+    var atMs: Int64
+
+    var evaporated: Bool { cause == Self.evaporatedCause }
+
+    func jsonObject() -> [String: Any] {
+        [
+            "workspace_id": workspaceID.uuidString,
+            "panel_id": panelID.uuidString,
+            "reason": reason ?? NSNull(),
+            "kind": kind?.jsonObject ?? NSNull(),
+            "by": by,
+            "cause": cause ?? NSNull(),
+            "lowered_at_ms": atMs,
+        ]
+    }
+
+    /// `feed list` and `feed watch`: `last flag lowered: <panel> by c11
+    /// (evaporated) at 16:03:12: <reason>`. Nil when nothing was lowered.
+    static func cliLine(_ value: Any?, timeZone: TimeZone = .current) -> String? {
+        guard let object = value as? [String: Any],
+              let panel = object["panel_id"] as? String,
+              let by = object["by"] as? String else { return nil }
+        let cause = (object["cause"] as? String).map { " (\($0))" } ?? ""
+        var when = ""
+        if let ms = (object["lowered_at_ms"] as? NSNumber)?.doubleValue {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm:ss"
+            formatter.timeZone = timeZone
+            when = " at " + formatter.string(from: Date(timeIntervalSince1970: ms / 1000))
+        }
+        let reason = (object["reason"] as? String).map { ": \($0)" } ?? ""
+        // C11H-359: who, why and the reason can come from another machine; the
+        // line stays one line and any control prints as `\xHH`.
+        return HCCoreUtility.printable("last flag lowered: \(panel) by \(by)\(cause)\(when)\(reason)")
+    }
+
+    /// `feed watch` prints when the rows or the last lower changed, so an
+    /// evaporation always prints its outcome.
+    static func feedListChanged(_ next: [String: Any], _ listed: [String: Any]) -> Bool {
+        func canonical(_ value: Any?) -> String {
+            guard let value, JSONSerialization.isValidJSONObject(value),
+                  let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else { return "null" }
+            return String(decoding: data, as: UTF8.self)
+        }
+        return canonical(next["rows"]) != canonical(listed["rows"])
+            || canonical(next["flag_lowered"]) != canonical(listed["flag_lowered"])
+    }
+
+    /// The flag as its banner showed it: kind label and reason.
+    var flagText: String {
+        guard let reason else { return kind?.displayLabel ?? "" }
+        return kind?.displayText(reason: reason) ?? reason
+    }
 }
 
 struct FeedFlagFact: Equatable {
@@ -249,15 +432,19 @@ enum FeedProjector {
         journalRows: [JournalSnapshot],
         attention: [FeedAttentionFact],
         notes: [UUID: [String: FeedDisplayNote]],
-        scope: FeedScope
+        scope: FeedScope,
+        shows: [FeedShowFact] = []
     ) -> [FeedRow] {
         var journals: [UUID: JournalSnapshot] = [:]
         for row in journalRows { journals[row.owner.panelID] = row }
         var flags: [UUID: FeedAttentionFact] = [:]
         for fact in attention { flags[fact.panelID] = fact }
+        var shown: [UUID: FeedShowFact] = [:]
+        for fact in shows { shown[fact.panelID] = fact }
         var rows: [FeedRow] = []
-        for panelID in Set(journals.keys).union(flags.keys) {
-            if let row = row(panelID: panelID, journal: journals[panelID], attention: flags[panelID], notes: notes[panelID] ?? [:], scope: scope) {
+        for panelID in Set(journals.keys).union(flags.keys).union(shown.keys) {
+            if let row = row(panelID: panelID, journal: journals[panelID], attention: flags[panelID], notes: notes[panelID] ?? [:],
+                             scope: scope, show: shown[panelID]) {
                 rows.append(row)
             }
         }
@@ -269,19 +456,20 @@ enum FeedProjector {
         journal: JournalSnapshot?,
         attention: FeedAttentionFact?,
         notes: [String: FeedDisplayNote],
-        scope: FeedScope
+        scope: FeedScope,
+        show: FeedShowFact? = nil
     ) -> FeedRow? {
         let blocking = journal.flatMap(blockingKind)
         let turn = journal.map(isTurnEnd) ?? false
         let flagged = attention?.isFlagged == true
         let suppressed = attention?.suppressed == true
-        let workspaceID = journal?.workspaceID ?? attention?.workspaceID
+        let workspaceID = journal?.workspaceID ?? attention?.workspaceID ?? show?.workspaceID
         guard let workspaceID else { return nil }
 
         let showBlocking = blocking != nil && (!suppressed || flagged)
         let showTurn = turn && !suppressed && scope == .all
         let limit = journal?.usageLimit
-        if !showBlocking && !showTurn && !flagged && limit == nil { return nil }
+        if !showBlocking && !showTurn && !flagged && limit == nil && show == nil { return nil }
 
         let flag = flagged ? FeedFlagFact(
             reason: attention?.flagReason ?? "",
@@ -318,6 +506,22 @@ enum FeedProjector {
                 openedAtMs: limit.sinceMs, state: "open", requestID: nil,
                 confirmation: journal.confirmation.rawValue, blocking: false, flag: flag,
                 usageLimit: limit.kind)
+        }
+        // A turn that ended after the show wins the panel's one row, so an
+        // overnight show never buries "the agent finished"; the row still
+        // names the show, and opening it opens the viewers.
+        if let show, showTurn, let journal, journal.sinceMs > show.atMs {
+            return FeedRow(workspaceID: workspaceID, panelID: panelID, kind: .turnEnd,
+                prompt: show.prompt, options: nil, promptAvailable: true,
+                source: journal.source.rawValue, sourceRank: journal.rank,
+                openedAtMs: journal.sinceMs, state: nil, requestID: nil,
+                confirmation: journal.confirmation.rawValue, blocking: false, flag: flag)
+        }
+        if let show {
+            return FeedRow(workspaceID: workspaceID, panelID: panelID, kind: .show,
+                prompt: show.prompt, options: nil, promptAvailable: true,
+                source: nil, sourceRank: nil, openedAtMs: show.atMs, state: "open", requestID: nil,
+                confirmation: nil, blocking: false, flag: flag)
         }
         if showTurn, let journal {
             return FeedRow(

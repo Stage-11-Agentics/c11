@@ -88,6 +88,7 @@ func applyC11EnvAliasOverrides() {
 // Why: binary rename from `cmux` to `c11` keeps both namespaces live during transition.
 func mirrorC11CmuxEnv() {
     applyC11EnvAliasOverrides()
+    fillC11EnvFromLegacyNames()
     let env = ProcessInfo.processInfo.environment
     for (key, value) in env {
         if key.hasPrefix("CMUX_") {
@@ -126,6 +127,7 @@ struct CMUXTermMain {
     static func main() {
         // CLI tools should ignore SIGPIPE so closed stdout pipes do not terminate the process.
         _ = signal(SIGPIPE, SIG_IGN)
+        #if canImport(ObjectiveC)
         NSSetUncaughtExceptionHandler { exception in
             // Belt-and-braces only: an ObjC exception raised through Swift frames aborts
             // before reaching here (see `c11SafeWrite`), so the real guarantee is that
@@ -138,6 +140,14 @@ struct CMUXTermMain {
             )
             exit(1)
         }
+        #endif
+        CLIInvokedName.consumeEnvironment()
+        if CLIInvokedName.isCoreUtility {
+            // c11-core (C11H-37): c11's own hc core, never the app socket.
+            exit(C11CoreCLI.run(Array(CommandLine.arguments.dropFirst())))
+        }
+        // The socket refusal names the variable the caller set, not its mirrored twin.
+        CLISocketEnvironmentOverride.launchEnvironment = ProcessInfo.processInfo.environment
         mirrorC11CmuxEnv()
         let cli = CMUXCLI(args: CommandLine.arguments)
         do {

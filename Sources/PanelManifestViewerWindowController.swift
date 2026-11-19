@@ -62,19 +62,31 @@ final class CopyConfirmationHUD {
     private static var panel: NSPanel?
     private static var dismissWork: DispatchWorkItem?
 
-    static func show(message: String) {
+    enum Style {
+        /// A copy confirmation: small, under a second.
+        case confirmation
+        /// C11H-349: an operator jump that could not land or opened elsewhere:
+        /// larger, with a warning mark, for a few seconds.
+        case notice
+
+        var duration: TimeInterval { self == .confirmation ? 0.9 : 3.5 }
+    }
+
+    /// - Parameter anchor: where to show it, in AppKit global points; nil is
+    ///   just above the pointer.
+    static func show(message: String, style: Style = .confirmation, anchor: NSPoint? = nil) {
         let hud = panel ?? makePanel()
         panel = hud
 
-        let host = NSHostingView(rootView: CopyConfirmationHUDView(message: message))
+        let host = NSHostingView(rootView: CopyConfirmationHUDView(message: message, style: style))
         hud.contentView = host
         hud.layoutIfNeeded()
         var size = host.fittingSize
         size.width = max(size.width, 96)
         size.height = max(size.height, 36)
 
-        // Position just above the pointer, clamped to the active screen.
-        let mouse = NSEvent.mouseLocation
+        // Position just above the anchor (the pointer), clamped to its screen.
+        let mouse = anchor ?? NSEvent.mouseLocation
         var origin = NSPoint(x: mouse.x - size.width / 2, y: mouse.y + 18)
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main {
             let frame = screen.visibleFrame
@@ -88,7 +100,7 @@ final class CopyConfirmationHUD {
         dismissWork?.cancel()
         let work = DispatchWorkItem { Self.dismiss() }
         dismissWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + style.duration, execute: work)
     }
 
     private static func dismiss() {
@@ -123,14 +135,16 @@ final class CopyConfirmationHUD {
 
 private struct CopyConfirmationHUDView: View {
     let message: String
+    var style: CopyConfirmationHUD.Style = .confirmation
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: style == .notice ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                 .foregroundStyle(Color(red: 0.96, green: 0.77, blue: 0.09))
             Text(message)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(.system(size: style == .notice ? 15 : 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white)
+                .accessibilityIdentifier("c11.hud.message")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)

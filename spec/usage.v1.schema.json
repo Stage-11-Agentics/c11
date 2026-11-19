@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://c11.stage11.ai/spec/usage.v1.schema.json",
+  "$id": "https://example.com/spec/usage.v1.schema.json",
   "title": "c11 offline usage output v1",
   "type": "object",
   "required": [

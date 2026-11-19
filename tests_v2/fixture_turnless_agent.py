@@ -10,6 +10,9 @@ attach with no turn edge.
 `--mode turnless` never reports anything after that, like a harness that emits
 no turn edges. `--mode control` reports `claude-hook prompt-submit` on every
 Return, so c11's journal shows a turn in progress from then on.
+`--mode stopfailure` (C11H-237) does what control does and also runs the hook
+named on each new line of `--control` (`prompt-submit <id>`, `stop-failure
+<id>`, `stop <id>`), so a proof drives a turn that ends in an API error.
 
 Every submitted line is appended to `--log` as one JSON object.
 """
@@ -30,7 +33,8 @@ RULE = "─" * 40
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["turnless", "control"], required=True)
+    parser.add_argument("--mode", choices=["turnless", "control", "stopfailure"], required=True)
+    parser.add_argument("--control", default=None)
     parser.add_argument("--log", required=True)
     parser.add_argument("--cli", required=True)
     parser.add_argument("--max-seconds", type=float, default=720)
@@ -75,8 +79,21 @@ def main() -> int:
         })
         log({"event": "ready", "mode": args.mode, "pid": os.getpid(), "session": session, "hook": status})
         deadline = time.time() + args.max_seconds
+        commands_done = 0
         while time.time() < deadline:
-            ready, _, _ = select.select([fd], [], [], 0.5)
+            if args.control and os.path.exists(args.control):
+                with open(args.control, encoding="utf-8") as handle:
+                    commands = [line.split() for line in handle.read().splitlines() if line.strip()]
+                for name, *rest in commands[commands_done:]:
+                    event = {"prompt-submit": "UserPromptSubmit", "stop-failure": "StopFailure", "stop": "Stop"}[name]
+                    payload = {"session_id": session, "cwd": os.getcwd(), "hook_event_name": event}
+                    if rest:
+                        payload["prompt_id"] = rest[0]
+                    if name == "stop-failure":
+                        payload["error"] = "api_error"
+                    log({"event": "hook", "hook": name, "status": hook(name, payload)})
+                commands_done = len(commands)
+            ready, _, _ = select.select([fd], [], [], 0.25)
             if not ready:
                 continue
             data = os.read(fd, 4096)
@@ -98,7 +115,7 @@ def main() -> int:
                     buffer = ""
                     draw()
                     record = {"event": "submit", "line": line}
-                    if args.mode == "control":
+                    if args.mode in ("control", "stopfailure"):
                         record["prompt_submit_hook"] = hook("prompt-submit", {
                             "session_id": session,
                             "cwd": os.getcwd(),

@@ -47,7 +47,7 @@ final class CreateWorkspacePickerLogicTests: XCTestCase {
     }
 
     func testWordBoundaryHitsBeatScatteredOnes() {
-        let boundary = RecentsFuzzy.match(query: "gt", displayPath: "~/x/greenwood-tech")
+        let boundary = RecentsFuzzy.match(query: "gt", displayPath: "~/x/glasswing-tech")
         let scattered = RecentsFuzzy.match(query: "gt", displayPath: "~/x/gigantic")
         XCTAssertNotNil(boundary)
         XCTAssertNotNil(scattered)
@@ -97,7 +97,7 @@ final class CreateWorkspacePickerLogicTests: XCTestCase {
     // MARK: Seams
 
     func testSeamSegments() {
-        XCTAssertEqual(PinTileNameLayout.segments(of: "founders-and-fractionals"), ["founders-", "and-", "fractionals"])
+        XCTAssertEqual(PinTileNameLayout.segments(of: "chandler-and-silversmith"), ["chandler-", "and-", "silversmith"])
         XCTAssertEqual(PinTileNameLayout.segments(of: "ReplaceSessionBoard"), ["Replace", "Session", "Board"])
         XCTAssertEqual(PinTileNameLayout.segments(of: "100percentHuman"), ["100percent", "Human"])
         XCTAssertEqual(PinTileNameLayout.segments(of: "Sekhem_Prime"), ["Sekhem_", "Prime"])
@@ -121,11 +121,11 @@ final class CreateWorkspacePickerLogicTests: XCTestCase {
     }
 
     func testLongNameWrapsOnlyAtSeamsInTwoLines() {
-        let l = PinTileNameLayout.layout(name: "founders-and-fractionals", width: width, measure: measure)
+        let l = PinTileNameLayout.layout(name: "chandler-and-silversmith", width: width, measure: measure)
         XCTAssertEqual(l.lines.count, 2)
-        XCTAssertEqual(l.lines.joined(), "founders-and-fractionals")
+        XCTAssertEqual(l.lines.joined(), "chandler-and-silversmith")
         XCTAssertFalse(l.ellipsized)
-        XCTAssertEqual(l.lines, ["founders-and-", "fractionals"])
+        XCTAssertEqual(l.lines, ["chandler-and-", "silversmith"])
         for line in l.lines { XCTAssertLessThanOrEqual(measure(line, l.fontSize), width) }
     }
 
@@ -171,15 +171,15 @@ final class CreateWorkspacePickerLogicTests: XCTestCase {
     // MARK: Parent line
 
     func testParentLineKeepsTwoFoldersWhenTheyFit() {
-        let text = PinTileParentLine.fit(parentPath: "~/Projects/Stage11", width: 200, measure: { t, _ in CGFloat(t.count) * 6 })
-        XCTAssertEqual(text, "…/Projects/Stage11")
+        let text = PinTileParentLine.fit(parentPath: "~/src/c11", width: 200, measure: { t, _ in CGFloat(t.count) * 6 })
+        XCTAssertEqual(text, "…/src/c11")
     }
 
     func testParentLineDropsToOneFolderBeforeTruncating() {
         let measure: PinTileParentLine.Measure = { t, _ in CGFloat(t.count) * 6 }
-        // "…/deployments/greenwood-tech" is 28 chars = 168 > 104; "…/greenwood-tech" is 16 = 96.
-        let text = PinTileParentLine.fit(parentPath: "~/Projects/Stage11/deployments/greenwood-tech", width: 104, measure: measure)
-        XCTAssertEqual(text, "…/greenwood-tech")
+        // "…/deployments/glasswing-tech" is 28 chars = 168 > 104; "…/glasswing-tech" is 16 = 96.
+        let text = PinTileParentLine.fit(parentPath: "~/src/deployments/glasswing-tech", width: 104, measure: measure)
+        XCTAssertEqual(text, "…/glasswing-tech")
     }
 
     func testParentLineOfAShortParentHasNoEllipsis() {
@@ -469,17 +469,17 @@ final class CreateWorkspacePickerLogicTests: XCTestCase {
 
     func testAQueryWithASlashPrefersASuffixAtAFolderBoundary() {
         let entries = [
-            entry("/Users/tester/deployments/greenwood-tech/site-old", age: 1),
-            entry("/Users/tester/deployments/greenwood-tech/site", age: 50),
-            entry("/Users/tester/other/greenwood-tech/sitemap/x", age: 2),
+            entry("/Users/tester/deployments/glasswing-tech/site-old", age: 1),
+            entry("/Users/tester/deployments/glasswing-tech/site", age: 50),
+            entry("/Users/tester/other/glasswing-tech/sitemap/x", age: 2),
         ]
-        let outcome = RecentsQueryResolver.resolve(query: "greenwood-tech/site", entries: entries, home: "/Users/tester", cwd: "/")
-        XCTAssertEqual(outcome, .match("/Users/tester/deployments/greenwood-tech/site"))
+        let outcome = RecentsQueryResolver.resolve(query: "glasswing-tech/site", entries: entries, home: "/Users/tester", cwd: "/")
+        XCTAssertEqual(outcome, .match("/Users/tester/deployments/glasswing-tech/site"))
     }
 
     func testSlashQueryScoresStayBelowNameMatches() {
         let viaName = RecentsFuzzy.match(query: "site", displayPath: "~/x/site")
-        let viaPath = RecentsFuzzy.match(query: "tech/site", displayPath: "~/greenwood-tech/site")
+        let viaPath = RecentsFuzzy.match(query: "tech/site", displayPath: "~/glasswing-tech/site")
         XCTAssertNotNil(viaName)
         XCTAssertNotNil(viaPath)
         XCTAssertGreaterThan(viaName!.score, viaPath!.score)

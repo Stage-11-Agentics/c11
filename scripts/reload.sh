@@ -16,106 +16,23 @@ CLI_PATH=""
 LAST_SOCKET_PATH_DIR="$HOME/Library/Application Support/c11"
 LAST_SOCKET_PATH_FILE="${LAST_SOCKET_PATH_DIR}/last-socket-path"
 
-write_dev_cli_shim() {
-  local target="$1"
-  local fallback_bin="$2"
-  mkdir -p "$(dirname "$target")"
-  cat > "$target" <<EOF
-#!/usr/bin/env bash
-# c11 dev shim (managed by scripts/reload.sh)
-set -euo pipefail
+# shellcheck source=lib/c11-user-paths.sh
+source "$(dirname "$0")/lib/c11-user-paths.sh"
+# shellcheck source=lib/c11-dev-shims.sh
+source "$(dirname "$0")/lib/c11-dev-shims.sh"
 
-CLI_PATH_FILE="/tmp/c11-last-cli-path"
-CLI_PATH_OWNER="\$(stat -f '%u' "\$CLI_PATH_FILE" 2>/dev/null || stat -c '%u' "\$CLI_PATH_FILE" 2>/dev/null || echo -1)"
-if [[ -r "\$CLI_PATH_FILE" ]] && [[ ! -L "\$CLI_PATH_FILE" ]] && [[ "\$CLI_PATH_OWNER" == "\$(id -u)" ]]; then
-  CLI_PATH="\$(cat "\$CLI_PATH_FILE")"
-  if [[ -x "\$CLI_PATH" ]]; then
-    exec "\$CLI_PATH" "\$@"
-  fi
-fi
-
-if [[ -x "$fallback_bin" ]]; then
-  exec "$fallback_bin" "\$@"
-fi
-
-echo "error: no reload-selected dev c11 CLI found. Run ./scripts/reload.sh --tag <name> first." >&2
-exit 1
-EOF
-  chmod +x "$target"
-}
-
-select_cli_shim_target() {
-  local bin_name="$1"
-  local app_cli_dir="/Applications/c11.app/Contents/Resources/bin"
-  # Fixed-string substring shared by both the current ("c11 dev shim …")
-  # and legacy pre-rebrand ("c11mux dev shim …") markers. Recognising the
-  # legacy marker lets the next reload overwrite stale shims that still
-  # read the no-longer-written /tmp/c11mux-last-cli-path and error out in
-  # tagged-build contexts.
-  local marker_substr="dev shim (managed by scripts/reload.sh)"
-  local target=""
-  local path_entry=""
-  local candidate=""
-
-  # Only treat the app's own bin dir as a PATH precedence boundary if it
-  # actually has a binary installed (i.e. the user has /Applications/c11.app).
-  # Dev-build setups often keep this path entry for forward-compat without
-  # an installed app — without the existence guard, the loop breaks at
-  # iteration 1 and never reaches user-writable shim dirs earlier in PATH
-  # precedence than the (nonexistent) app dir, leaving stale shims unrefreshed.
-  local app_cli_dir_active=0
-  if [[ -x "$app_cli_dir/$bin_name" ]]; then
-    app_cli_dir_active=1
-  fi
-
-  IFS=':' read -r -a path_entries <<< "${PATH:-}"
-  for path_entry in "${path_entries[@]}"; do
-    [[ -z "$path_entry" ]] && continue
-    if [[ "$path_entry" == "~/"* ]]; then
-      path_entry="$HOME/${path_entry#~/}"
-    fi
-    if [[ "$app_cli_dir_active" == "1" && "$path_entry" == "$app_cli_dir" ]]; then
-      break
-    fi
-    [[ -d "$path_entry" && -w "$path_entry" ]] || continue
-    candidate="$path_entry/$bin_name"
-    if [[ ! -e "$candidate" ]]; then
-      target="$candidate"
-      break
-    fi
-    if [[ -f "$candidate" ]] && grep -qF "$marker_substr" "$candidate" 2>/dev/null; then
-      target="$candidate"
-      break
-    fi
-  done
-
-  if [[ -n "$target" ]]; then
-    echo "$target"
-    return 0
-  fi
-
-  # Fallback for PATH layouts where app CLI isn't listed or no earlier entries were writable.
-  for path_entry in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
-    [[ -d "$path_entry" && -w "$path_entry" ]] || continue
-    candidate="$path_entry/$bin_name"
-    if [[ ! -e "$candidate" ]]; then
-      echo "$candidate"
-      return 0
-    fi
-    if [[ -f "$candidate" ]] && grep -qF "$marker_substr" "$candidate" 2>/dev/null; then
-      echo "$candidate"
-      return 0
-    fi
-  done
-
-  return 1
-}
+# Dev sockets, logs and breadcrumbs live in c11's per-user folder
+# ($(getconf DARWIN_USER_TEMP_DIR)c11, 0700), never at fixed /tmp names
+# another account could create first (C11H-364).
+C11_RUNTIME_DIR="$(c11_ensure_user_runtime_dir)"
 
 write_last_socket_path() {
   local socket_path="$1"
   mkdir -p "$LAST_SOCKET_PATH_DIR"
-  echo "$socket_path" > "$LAST_SOCKET_PATH_FILE" || true
-  echo "$socket_path" > /tmp/c11-last-socket-path || true
+  c11_private_write "$LAST_SOCKET_PATH_FILE" "$socket_path" || true
+  c11_private_write "$C11_RUNTIME_DIR/c11-last-socket-path" "$socket_path" || true
+  # Older readers still look here; written only when the name is ours.
+  c11_private_write /tmp/c11-last-socket-path "$socket_path" || true
 }
 
 usage() {
@@ -166,7 +83,9 @@ print_tag_cleanup_reminder() {
   local -a stale_tags=()
 
   while IFS= read -r -d '' path; do
-    if [[ "$path" == /tmp/c11-* ]]; then
+    if [[ "$path" == "$C11_RUNTIME_DIR"/c11-* ]]; then
+      tag="${path#"$C11_RUNTIME_DIR"/c11-}"
+    elif [[ "$path" == /tmp/c11-* ]]; then
       tag="${path#/tmp/c11-}"
     elif [[ "$path" == "$HOME/Library/Developer/Xcode/DerivedData/c11-"* ]]; then
       tag="${path#$HOME/Library/Developer/Xcode/DerivedData/c11-}"
@@ -186,7 +105,8 @@ print_tag_cleanup_reminder() {
     seen="${seen}${tag} "
     stale_tags+=("$tag")
   done < <(
-    find /tmp -maxdepth 1 -name 'c11-*' -print0 2>/dev/null
+    find "$C11_RUNTIME_DIR" -maxdepth 1 -name 'c11-*' -print0 2>/dev/null
+    find /tmp -maxdepth 1 -name 'c11-*' -user "$(id -u)" -print0 2>/dev/null
     find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 1 -type d -name 'c11-*' -print0 2>/dev/null
   )
 
@@ -207,8 +127,8 @@ print_tag_cleanup_reminder() {
   fi
   echo "After you verify current tag, cleanup command:"
   echo "  pkill -f \"c11 DEV ${current_slug}.app/Contents/MacOS/c11\""
-  echo "  rm -rf \"$(tagged_derived_data_path "$current_slug")\" \"/tmp/c11-${current_slug}\" \"/tmp/c11-debug-${current_slug}.sock\""
-  echo "  rm -f \"/tmp/c11-debug-${current_slug}.log\""
+  echo "  rm -rf \"$(tagged_derived_data_path "$current_slug")\" \"${C11_RUNTIME_DIR}/c11-${current_slug}\" \"$(c11_socket_path_for_stem "c11-debug-${current_slug}" "$C11_RUNTIME_DIR")\""
+  echo "  rm -f \"${C11_RUNTIME_DIR}/c11-debug-${current_slug}.log\""
   echo "  rm -f \"$HOME/Library/Application Support/c11/c11d-dev-${current_slug}.sock\""
 }
 
@@ -304,7 +224,7 @@ fi
 XCODEBUILD_ARGS+=(build)
 
 "$(cd "$(dirname "$0")" && pwd)/assert-ghosttykit.sh"
-XCODE_LOG="/tmp/c11-xcodebuild-${TAG_SLUG}.log"
+XCODE_LOG="$C11_RUNTIME_DIR/c11-xcodebuild-${TAG_SLUG}.log"
 set +e
 "$(cd "$(dirname "$0")" && pwd)/with-build-lock.sh" xcodebuild "${XCODEBUILD_ARGS[@]}" 2>&1 | tee "$XCODE_LOG" | grep -E '(warning:|error:|fatal:|BUILD FAILED|BUILD SUCCEEDED|\*\* BUILD)'
 XCODE_EXIT="${PIPESTATUS[0]}"
@@ -356,7 +276,7 @@ if [[ -z "${APP_PATH}" || ! -d "${APP_PATH}" ]]; then
 fi
 
 if [[ "$NO_LAUNCH" -eq 0 && -n "${TAG_SLUG:-}" ]]; then
-  TMP_COMPAT_DERIVED_LINK="/tmp/c11-${TAG_SLUG}"
+  TMP_COMPAT_DERIVED_LINK="$C11_RUNTIME_DIR/c11-${TAG_SLUG}"
   if [[ "$DERIVED_DATA" != "$TMP_COMPAT_DERIVED_LINK" ]]; then
     ABS_DERIVED_DATA="$(cd "$DERIVED_DATA" && pwd)"
     rm -rf "$TMP_COMPAT_DERIVED_LINK"
@@ -389,11 +309,12 @@ if [[ -n "$TAG" && "$APP_NAME" != "$SEARCH_APP_NAME" ]]; then
     if [[ -n "${TAG_SLUG:-}" ]]; then
       APP_SUPPORT_DIR="$HOME/Library/Application Support/c11"
       CMUXD_SOCKET="${APP_SUPPORT_DIR}/c11d-dev-${TAG_SLUG}.sock"
-      CMUX_SOCKET="/tmp/c11-debug-${TAG_SLUG}.sock"
-      CMUX_DEBUG_LOG="/tmp/c11-debug-${TAG_SLUG}.log"
+      CMUX_SOCKET="$(c11_socket_path_for_stem "c11-debug-${TAG_SLUG}" "$C11_RUNTIME_DIR")"
+      CMUX_DEBUG_LOG="$C11_RUNTIME_DIR/c11-debug-${TAG_SLUG}.log"
       if [[ "$NO_LAUNCH" -eq 0 ]]; then
         write_last_socket_path "$CMUX_SOCKET"
-        echo "$CMUX_DEBUG_LOG" > /tmp/c11-last-debug-log-path || true
+        c11_private_write "$C11_RUNTIME_DIR/c11-last-debug-log-path" "$CMUX_DEBUG_LOG" || true
+        c11_private_write /tmp/c11-last-debug-log-path "$CMUX_DEBUG_LOG" || true
       fi
       /usr/libexec/PlistBuddy -c "Add :LSEnvironment dict" "$INFO_PLIST" 2>/dev/null || true
       /usr/libexec/PlistBuddy -c "Set :LSEnvironment:CMUXD_UNIX_PATH \"${CMUXD_SOCKET}\"" "$INFO_PLIST" 2>/dev/null \
@@ -454,23 +375,8 @@ if [[ "$NO_LAUNCH" -eq 1 ]]; then
 fi
 CLI_PATH="$(dirname "$APP_PATH")/c11"
 if [[ -x "$CLI_PATH" ]]; then
-  (umask 077; printf '%s\n' "$CLI_PATH" > /tmp/c11-last-cli-path) || true
-  ln -sfn "$CLI_PATH" /tmp/c11-cli || true
-
-  # Stable shims that always follow the last reload-selected dev CLI.
-  # Write both c11-dev (primary) and cmux-dev (alias, kept for muscle memory).
-  for dev_shim in "$HOME/.local/bin/c11-dev" "$HOME/.local/bin/cmux-dev"; do
-    write_dev_cli_shim "$dev_shim" "/Applications/c11.app/Contents/Resources/bin/c11"
-  done
-
-  C11_SHIM_TARGET="$(select_cli_shim_target c11 || true)"
-  if [[ -n "${C11_SHIM_TARGET:-}" ]]; then
-    write_dev_cli_shim "$C11_SHIM_TARGET" "/Applications/c11.app/Contents/Resources/bin/c11"
-  fi
-  CMUX_SHIM_TARGET="$(select_cli_shim_target cmux || true)"
-  if [[ -n "${CMUX_SHIM_TARGET:-}" ]]; then
-    write_dev_cli_shim "$CMUX_SHIM_TARGET" "/Applications/c11.app/Contents/Resources/bin/c11"
-  fi
+  # c11-only names. Does not replace a c11-cli, c11-dev, or cmux-dev another user owns.
+  install_c11_dev_cli_links "$CLI_PATH"
 fi
 
 # Ensure any running instance is fully terminated, regardless of DerivedData path.
@@ -486,7 +392,8 @@ fi
 sleep 0.3
 CLI_PATH="$APP_PATH/Contents/Resources/bin/c11"
 if [[ -x "$CLI_PATH" ]]; then
-  echo "$CLI_PATH" > /tmp/c11-last-cli-path || true
+  c11_private_write "$C11_RUNTIME_DIR/c11-last-cli-path" "$CLI_PATH" || true
+  c11_private_write /tmp/c11-last-cli-path "$CLI_PATH" || true
 fi
 # Avoid inheriting c11/ghostty environment variables from the terminal that
 # runs this script (often inside another c11 instance), which can cause
@@ -532,8 +439,8 @@ if [[ -n "${TAG_SLUG:-}" && -n "${CMUX_SOCKET:-}" ]]; then
 elif [[ -n "${TAG_SLUG:-}" ]]; then
   "${OPEN_CLEAN_ENV[@]}" C11_TAG="$TAG_SLUG" C11_SOCKET_ENABLE=1 C11_SOCKET_MODE=automation C11_DEBUG_LOG="$CMUX_DEBUG_LOG" C11_REMOTE_DAEMON_ALLOW_LOCAL_BUILD=1 C11_REPO_ROOT="$PWD" open -g "$APP_PATH"
 else
-  echo "/tmp/c11-debug.sock" > /tmp/c11-last-socket-path || true
-  echo "/tmp/c11-debug.log" > /tmp/c11-last-debug-log-path || true
+  write_last_socket_path "$(c11_socket_path_for_stem c11-debug "$C11_RUNTIME_DIR")"
+  c11_private_write "$C11_RUNTIME_DIR/c11-last-debug-log-path" "$C11_RUNTIME_DIR/c11-debug.log" || true
   "${OPEN_CLEAN_ENV[@]}" open -g "$APP_PATH"
 fi
 
@@ -566,14 +473,7 @@ if [[ -x "${CLI_PATH:-}" ]]; then
   echo "CLI path:"
   echo "  $CLI_PATH"
   echo "CLI helpers:"
-  echo "  /tmp/c11-cli ..."
+  echo "  $C11_RUNTIME_DIR/c11-cli ..."
   echo "  $HOME/.local/bin/c11-dev ..."
-  echo "  $HOME/.local/bin/cmux-dev ..."
-  if [[ -n "${C11_SHIM_TARGET:-}" ]]; then
-    echo "  $C11_SHIM_TARGET ..."
-  fi
-  if [[ -n "${CMUX_SHIM_TARGET:-}" ]]; then
-    echo "  $CMUX_SHIM_TARGET ..."
-  fi
-  echo "If your shell still resolves a stale c11/cmux, run: rehash"
+  echo "If your shell still resolves a stale c11-dev, run: rehash"
 fi

@@ -366,7 +366,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
     @MainActor
     func testUpdatePanelPullRequestPreservesExistingChecksWhenUpdateOmitsThem() {
-        let workspace = Workspace(title: "Tests", workingDirectory: FileManager.default.currentDirectoryPath, portOrdinal: 0)
+        let workspace = Workspace(title: "Tests", workingDirectory: FileManager.default.currentDirectoryPath)
         guard let panelId = workspace.focusedPanelId else {
             XCTFail("Expected focused panel for new workspace")
             return
@@ -410,7 +410,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
     @MainActor
     func testUpdatePanelGitBranchClearsFocusedPullRequestWhenBranchChanges() {
-        let workspace = Workspace(title: "Tests", workingDirectory: FileManager.default.currentDirectoryPath, portOrdinal: 0)
+        let workspace = Workspace(title: "Tests", workingDirectory: FileManager.default.currentDirectoryPath)
         guard let panelId = workspace.focusedPanelId else {
             XCTFail("Expected focused panel for new workspace")
             return
@@ -434,7 +434,7 @@ final class SidebarBranchOrderingTests: XCTestCase {
 
     @MainActor
     func testSidebarPullRequestsHideBranchMismatches() {
-        let workspace = Workspace(title: "Tests", workingDirectory: FileManager.default.currentDirectoryPath, portOrdinal: 0)
+        let workspace = Workspace(title: "Tests", workingDirectory: FileManager.default.currentDirectoryPath)
         guard let panelId = workspace.focusedPanelId else {
             XCTFail("Expected focused panel for new workspace")
             return

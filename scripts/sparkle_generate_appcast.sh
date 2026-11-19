@@ -20,6 +20,7 @@ if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
   exit 1
 fi
 
+# c11 does not bake the Sparkle feed URL into Info.plist.
 SPARKLE_VERSION="${SPARKLE_VERSION:-2.9.3}"
 # Defaults reflect the c11 fork's release path. release.yml + nightly.yml
 # both override these explicitly with the same URLs; the defaults guard

@@ -138,7 +138,7 @@ The full investigation log lives in our fork at `notes/launch-white-line-artifac
 
 ### Branch and worktree
 
-- Worktree path: `/Users/atin/Projects/Stage11/code/cmux-upstream-orphan-portal`
+- Worktree path: `~/src/cmux-upstream-orphan-portal`
 - Branch (local only): `upstream-cmux-orphan-portal-entry`
 - Base: `upstream/main` at `3b5ce50f Harden cloud VM production controls`
 - Commit: `523597d7 Hide orphan portal entries that paint stale frames`
@@ -147,7 +147,7 @@ The full investigation log lives in our fork at `notes/launch-white-line-artifac
 
 ```bash
 # Add the fork remote once if you haven't already.
-cd /Users/atin/Projects/Stage11/code/cmux-upstream-orphan-portal
+cd ~/src/cmux-upstream-orphan-portal
 git remote add atin git@github.com:<your-username>/cmux.git
 
 git push atin upstream-cmux-orphan-portal-entry
@@ -166,7 +166,7 @@ If you want to bundle additional bug fixes into the same outreach, consider whet
 ### After the PR lands or is closed
 
 ```bash
-git worktree remove /Users/atin/Projects/Stage11/code/cmux-upstream-orphan-portal
+git worktree remove ~/src/cmux-upstream-orphan-portal
 git branch -D upstream-cmux-orphan-portal-entry
 ```
 

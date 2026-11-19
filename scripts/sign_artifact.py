@@ -71,9 +71,10 @@ def configure(root):
     version = plist["CFBundleShortVersionString"]
     require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version), "built version must be X.Y.Z")
     require(os.environ.get("SPARKLE_PUBLIC_KEY"), "derived Sparkle public key is required")
+    original_bundle = plist["CFBundleIdentifier"]
     if identity["purpose"] == "candidate":
         require(identity["targetTag"] == "v" + version, "candidate version must match target_tag")
-        require(plist["CFBundleIdentifier"] == "com.stage11.c11", "candidate must use production bundle")
+        require(original_bundle == "com.stage11.c11", "candidate must use production bundle")
         feed = PRODUCTION_FEED
         download = f'https://github.com/Stage-11-Agentics/c11/releases/download/{identity["targetTag"]}'
         notes = f'https://github.com/Stage-11-Agentics/c11/releases/tag/{identity["targetTag"]}'
@@ -98,6 +99,7 @@ def configure(root):
         download = identity["proofFeedBase"]
         notes = download + "/notes.html"
         identity["targetTag"] = "proof-" + identity["proofBuild"]
+    # c11 2.0 updates from the feed this identity names, as c11 1.x did (C11H-265).
     plist["SUFeedURL"] = feed
     plist["SUPublicEDKey"] = os.environ["SPARKLE_PUBLIC_KEY"]
     daemon = json.loads((root / "build/remote-daemon-assets/c11d-remote-manifest.json").read_text())

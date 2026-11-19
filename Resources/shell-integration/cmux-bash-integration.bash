@@ -1,7 +1,16 @@
 # cmux shell integration for bash
 
+# Report only to a socket this user owns. Every path c11 stamps is inside
+# its 0700 per-user folder, where no other account can create an entry; the
+# owner check also covers an explicit /tmp override and a legacy alias
+# (C11H-364). ncat, socat and nc expose no peer credentials.
+_cmux_socket_ok() {
+    [[ -S "$CMUX_SOCKET_PATH" && -O "$CMUX_SOCKET_PATH" ]]
+}
+
 _cmux_send() {
     local payload="$1"
+    _cmux_socket_ok || return 0
     if command -v ncat >/dev/null 2>&1; then
         printf '%s\n' "$payload" | ncat -w 1 -U "$CMUX_SOCKET_PATH" --send-only
     elif command -v socat >/dev/null 2>&1; then
@@ -49,6 +58,11 @@ _CMUX_PR_POLL_PWD="${_CMUX_PR_POLL_PWD:-}"
 _CMUX_PR_POLL_INTERVAL="${_CMUX_PR_POLL_INTERVAL:-45}"
 _CMUX_PR_FORCE="${_CMUX_PR_FORCE:-0}"
 _CMUX_ASYNC_JOB_TIMEOUT="${_CMUX_ASYNC_JOB_TIMEOUT:-20}"
+# The PR poll loop ticks once a second while the shell is idle. Its parent
+# check is kill -0 every tick and the ps start-time identity every Nth tick.
+_CMUX_PARENT_IDENTITY_TICKS="${_CMUX_PARENT_IDENTITY_TICKS:-30}"
+_CMUX_WATCH_TICKS=0
+_CMUX_WATCH_TICK_FD=""
 
 _CMUX_PORTS_LAST_RUN="${_CMUX_PORTS_LAST_RUN:-0}"
 _CMUX_SHELL_ACTIVITY_LAST="${_CMUX_SHELL_ACTIVITY_LAST:-}"
@@ -94,7 +108,7 @@ _cmux_report_tty_once() {
     # Send the TTY name to the app once per session so the batched port scanner
     # knows which TTY belongs to this panel.
     (( _CMUX_TTY_REPORTED )) && return 0
-    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    _cmux_socket_ok || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0
     [[ -n "$CMUX_PANEL_ID" ]] || return 0
     [[ -n "$_CMUX_TTY_NAME" ]] || return 0
@@ -104,23 +118,31 @@ _cmux_report_tty_once() {
     } >/dev/null 2>&1 & disown
 }
 
+# C11H-272: every prompt reports, so the app sees each empty prompt (an empty
+# Return or Ctrl-C at the prompt), and that one write also carries the agent
+# kick, so a prompt still costs one write. A repeated `running` says nothing new.
 _cmux_report_shell_activity_state() {
     local state="$1"
     [[ -n "$state" ]] || return 0
-    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    _cmux_socket_ok || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0
     [[ -n "$CMUX_PANEL_ID" ]] || return 0
-    [[ "$_CMUX_SHELL_ACTIVITY_LAST" == "$state" ]] && return 0
+    local extra=""
+    if [[ "$state" == prompt ]]; then
+        extra=" --agent-kick=1"
+    else
+        [[ "$_CMUX_SHELL_ACTIVITY_LAST" == "$state" ]] && return 0
+    fi
     _CMUX_SHELL_ACTIVITY_LAST="$state"
     {
-        _cmux_send "report_shell_state $state --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID"
+        _cmux_send "report_shell_state $state --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID$extra"
     } >/dev/null 2>&1 & disown
 }
 
 _cmux_ports_kick() {
     # Lightweight: just tell the app to run a batched scan for this panel.
     # The app coalesces kicks across all panels and runs a single ps+lsof.
-    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    _cmux_socket_ok || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0
     [[ -n "$CMUX_PANEL_ID" ]] || return 0
     _CMUX_PORTS_LAST_RUN=$SECONDS
@@ -132,7 +154,7 @@ _cmux_ports_kick() {
 _cmux_agent_kick() {
     # c11 Module 1: nudge the app to re-run the TUI heuristic for this panel.
     # The app coalesces kicks and runs a single `ps -t` across all registered TTYs.
-    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    _cmux_socket_ok || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0
     [[ -n "$CMUX_PANEL_ID" ]] || return 0
     {
@@ -141,7 +163,7 @@ _cmux_agent_kick() {
 }
 
 _cmux_clear_pr_for_panel() {
-    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    _cmux_socket_ok || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0
     [[ -n "$CMUX_PANEL_ID" ]] || return 0
     _cmux_send "clear_pr --tab=$CMUX_TAB_ID --panel=$CMUX_PANEL_ID"
@@ -200,7 +222,7 @@ _cmux_report_pr_for_path() {
         _cmux_clear_pr_for_panel
         return 0
     }
-    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    _cmux_socket_ok || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0
     [[ -n "$CMUX_PANEL_ID" ]] || return 0
 
@@ -299,6 +321,60 @@ _cmux_parent_shell_alive() {
     [[ -n "${2:-}" && "$(_cmux_parent_shell_lstart "$1")" == "$2" ]]
 }
 
+# A watcher's one-second wait without a fork per tick: a private FIFO opened
+# read-write on fd 9 and unlinked at once, so nobody else can write and
+# `read -t 1` always waits out its timeout. Bash 3.2 has no {fd} syntax; the
+# descriptor exists only inside the watcher. Without it, `sleep 1`. The name is
+# one per shell, so a watcher killed between mkfifo and rm (preexec stops the
+# loop with SIGKILL) leaves one FIFO that this shell's next watcher removes.
+_cmux_watch_tick_open() {
+    local fifo="${TMPDIR:-/tmp}"
+    fifo="${fifo%/}/c11-watch.$$"
+    if [[ ! -p "$fifo" ]]; then
+        /usr/bin/mkfifo -m 600 "$fifo" >/dev/null 2>&1 || return 0
+    fi
+    [[ -p "$fifo" && -O "$fifo" ]] || return 0
+    if { exec 9<>"$fifo"; } 2>/dev/null; then
+        _CMUX_WATCH_TICK_FD=9
+    fi
+    /bin/rm -f "$fifo" >/dev/null 2>&1 || :
+    return 0
+}
+
+# A timed-out read is a nonzero status, so every status is absorbed: a user's
+# `set -e` must not end the watcher. A wait that returns early (EOF, a signal,
+# no clock) must never spin: one more try, then the FIFO is dropped for `sleep 1`.
+# A clock that stepped back counts as a full wait.
+_cmux_watch_tick() {
+    if [[ "$_CMUX_WATCH_TICK_FD" == 9 ]]; then
+        local tick_start="${SECONDS:-0}" tick_elapsed=0 discard=""
+        read -t 1 -u 9 discard 2>/dev/null || :
+        tick_elapsed=$(( ${SECONDS:-0} - tick_start ))
+        (( tick_elapsed >= 1 || tick_elapsed < 0 )) && return 0
+        read -t 1 -u 9 discard 2>/dev/null || :
+        tick_elapsed=$(( ${SECONDS:-0} - tick_start ))
+        (( tick_elapsed >= 1 || tick_elapsed < 0 )) && return 0
+        exec 9<&-
+        _CMUX_WATCH_TICK_FD=""
+    fi
+    sleep 1 || :
+}
+
+# True while the watched shell lives: kill -0 every tick (no fork) and the ps
+# start-time identity every Nth tick, so a reused pid delays a watcher's exit
+# by at most N seconds and never keeps it. Bash cannot read its own parent pid
+# without forking, so this is the cheapest check that pid reuse cannot fool.
+_cmux_watch_parent_alive() {
+    local pid="$1" lstart="${2:-}"
+    [[ -n "$lstart" ]] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    _CMUX_WATCH_TICKS=$(( _CMUX_WATCH_TICKS + 1 ))
+    if (( _CMUX_PARENT_IDENTITY_TICKS > 1 && _CMUX_WATCH_TICKS % _CMUX_PARENT_IDENTITY_TICKS != 0 )); then
+        return 0
+    fi
+    _cmux_parent_shell_alive "$pid" "$lstart"
+}
+
 _cmux_run_pr_probe_with_timeout() {
     local repo_path="$1"
     local parent_pid="$2"
@@ -309,14 +385,15 @@ _cmux_run_pr_probe_with_timeout() {
     local now=$started_at
 
     (
+        [[ "$_CMUX_WATCH_TICK_FD" == 9 ]] && exec 9<&-
         _cmux_report_pr_for_path "$repo_path"
     ) &
     probe_pid=$!
 
     while kill -0 "$probe_pid" >/dev/null 2>&1; do
-        sleep 1
+        _cmux_watch_tick
         now=$SECONDS
-        if ! _cmux_parent_shell_alive "$parent_pid" "$parent_lstart"; then
+        if ! _cmux_watch_parent_alive "$parent_pid" "$parent_lstart"; then
             probe_result=2
         elif (( _CMUX_ASYNC_JOB_TIMEOUT > 0 )) && (( now - started_at >= _CMUX_ASYNC_JOB_TIMEOUT )); then
             probe_result=1
@@ -355,7 +432,7 @@ _cmux_stop_pr_poll_loop() {
 }
 
 _cmux_start_pr_poll_loop() {
-    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    _cmux_socket_ok || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0
     [[ -n "$CMUX_PANEL_ID" ]] || return 0
 
@@ -376,14 +453,15 @@ _cmux_start_pr_poll_loop() {
 
     {
         local probe_result slept
-        while _cmux_parent_shell_alive "$watch_shell_pid" "$watch_shell_lstart"; do
+        _cmux_watch_tick_open
+        while _cmux_watch_parent_alive "$watch_shell_pid" "$watch_shell_lstart"; do
             probe_result=0
             _cmux_run_pr_probe_with_timeout "$watch_pwd" "$watch_shell_pid" "$watch_shell_lstart" || probe_result=$?
             (( probe_result == 2 )) && break
             slept=0
             while (( slept < interval )); do
-                sleep 1
-                _cmux_parent_shell_alive "$watch_shell_pid" "$watch_shell_lstart" || break 2
+                _cmux_watch_tick
+                _cmux_watch_parent_alive "$watch_shell_pid" "$watch_shell_lstart" || break 2
                 (( slept += 1 ))
             done
         done
@@ -397,7 +475,7 @@ _cmux_bash_cleanup() {
 }
 
 _cmux_preexec_command() {
-    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    _cmux_socket_ok || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0
     [[ -n "$CMUX_PANEL_ID" ]] || return 0
 
@@ -419,8 +497,16 @@ _cmux_bash_preexec_hook() {
     _cmux_preexec_command
 }
 
+# C11H-272: see the zsh integration. A shell prompt never wants a dead
+# agent's kitty keyboard or modifyOtherKeys encoding.
+_cmux_reset_keyboard_modes() {
+    [[ -t 1 ]] || return 0
+    builtin printf '\033[<99u\033[>4m'
+}
+
 _cmux_prompt_command() {
-    [[ -S "$CMUX_SOCKET_PATH" ]] || return 0
+    _cmux_reset_keyboard_modes
+    _cmux_socket_ok || return 0
     [[ -n "$CMUX_TAB_ID" ]] || return 0
     [[ -n "$CMUX_PANEL_ID" ]] || return 0
     _cmux_report_shell_activity_state prompt
@@ -543,7 +629,7 @@ _cmux_prompt_command() {
     if (( now - _CMUX_PORTS_LAST_RUN >= 10 )); then
         _cmux_ports_kick
     fi
-    _cmux_agent_kick
+    # The agent kick rides this prompt's shell-state report (C11H-272).
 }
 
 _cmux_install_prompt_command() {

@@ -61,10 +61,10 @@ final class OpencodeSessionIdGrammarTests: XCTestCase {
     }
 
     func testProjectDirGrammarDelegatesToClaude() {
-        XCTAssertTrue(isValidOpencodeSessionProjectDir("/Users/atin/proj"))
+        XCTAssertTrue(isValidOpencodeSessionProjectDir("/Users/demo/proj"))
         XCTAssertFalse(isValidOpencodeSessionProjectDir("relative/path"))
-        XCTAssertFalse(isValidOpencodeSessionProjectDir("/Users/atin/p'roj"))  // single quote
-        XCTAssertFalse(isValidOpencodeSessionProjectDir("/Users/atin/p\nroj")) // newline
+        XCTAssertFalse(isValidOpencodeSessionProjectDir("/Users/demo/p'roj"))  // single quote
+        XCTAssertFalse(isValidOpencodeSessionProjectDir("/Users/demo/p\nroj")) // newline
     }
 }
 
@@ -91,7 +91,7 @@ final class OpencodeReservedKeyValidationTests: XCTestCase {
         defer { store.removeSurface(workspaceId: workspace, surfaceId: surface) }
         let result = try store.setMetadata(
             workspaceId: workspace, surfaceId: surface,
-            partial: ["opencode.session_project_dir": "/Users/atin/Projects/x"],
+            partial: ["opencode.session_project_dir": "/Users/demo/Projects/x"],
             mode: .merge, source: .explicit
         )
         XCTAssertEqual(result.applied["opencode.session_project_dir"], true)
@@ -165,7 +165,7 @@ private struct StubLookup: OpencodeSessionLookup {
 final class OpencodeStrategyResumeTests: XCTestCase {
 
     private let id = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
-    private let cwd = "/Users/atin/Projects/proj"
+    private let cwd = "/Users/demo/Projects/proj"
 
     private func ref(state: ConversationState, placeholder: Bool = false, cwd: String? = nil) -> ConversationRef {
         ConversationRef(kind: "opencode", id: id, placeholder: placeholder, cwd: cwd,
@@ -191,7 +191,7 @@ final class OpencodeStrategyResumeTests: XCTestCase {
             return XCTFail("alive+cwd must typeCommand")
         }
         XCTAssertTrue(submit)
-        XCTAssertEqual(text, "cd '/Users/atin/Projects/proj' && opencode --auto -s 'ses_0fda89a49ffeLHwJXtrxnn4X6g'")
+        XCTAssertEqual(text, "cd '/Users/demo/Projects/proj' && opencode --auto -s 'ses_0fda89a49ffeLHwJXtrxnn4X6g'")
     }
 
     func testResumeWithoutCwdHasNoCdPrefix() {
@@ -397,7 +397,7 @@ final class OpencodeScraperTests: XCTestCase {
     func testSessionExistsTrueFalseNil() throws {
         let present = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
         let absent  = "ses_0f5b10b09ffeb2G3Y53oze86wV"
-        try seedDatabase([(present, "/Users/atin/proj", 1_700_000_000_000)])
+        try seedDatabase([(present, "/Users/demo/proj", 1_700_000_000_000)])
         let scraper = OpencodeScraper(homeDirectory: tmpHome, environment: [:])
 
         XCTAssertEqual(scraper.sessionExists(id: present), true)
@@ -411,11 +411,11 @@ final class OpencodeScraperTests: XCTestCase {
     }
 
     func testScrapeFiltersByCwdNewestFirst() throws {
-        let dir = "/Users/atin/proj"
+        let dir = "/Users/demo/proj"
         try seedDatabase([
             ("ses_0fda89a49ffeLHwJXtrxnn4X6g", dir, 100),
             ("ses_0fd8a6fffffe6JzzcloHmtDV0R", dir, 300),   // newest in dir
-            ("ses_0fd8cb310ffe2of6OsP2qYz4Q5", "/Users/atin/other", 999)  // different cwd
+            ("ses_0fd8cb310ffe2of6OsP2qYz4Q5", "/Users/demo/other", 999)  // different cwd
         ])
         let scraper = OpencodeScraper(homeDirectory: tmpHome, environment: [:])
         let refs = scraper.scrape(cwd: dir)
@@ -546,6 +546,121 @@ final class OpencodeScraperTests: XCTestCase {
             sqlite3_exec(lockDB, "ROLLBACK;", nil, nil, nil)
             sqlite3_close(lockDB)
         }
-        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: [:]).sessionExists(id: "ses_0fda89a49ffeLHwJXtrxnn4X6g"))
+        // A short busy wait proves the same rule as the production 2 s one (C11H-30).
+        XCTAssertNil(OpencodeScraper(homeDirectory: tmpHome, environment: [:], busyTimeoutMilliseconds: 50)
+            .sessionExists(id: "ses_0fda89a49ffeLHwJXtrxnn4X6g"))
+    }
+}
+
+// MARK: - C11H-365 (N12): a resume never types a control byte
+
+/// A resume types its recorded folder into the operator's shell inside a
+/// single-quoted `cd`. A line editor reads a control byte there as an editing
+/// key (a line-kill byte erases the `cd '` prefix), so a cwd holding any C0
+/// byte or DEL is refused where it is stored and skipped where it is typed.
+final class ConversationResumeCwdControlByteTests: XCTestCase {
+    private let uuid = "aaaa1111-2222-3333-4444-555566667777"
+    private let opencodeID = "ses_0fda89a49ffeLHwJXtrxnn4X6g"
+    private let hostile = ["/tmp/a\u{15}b", "/tmp/a\u{7F}b", "/tmp/a\tb", "/tmp/a\u{1B}[2Kb", "/tmp/a\u{03}b"]
+
+    private func refs(cwd: String) -> [(any ConversationStrategy, ConversationRef)] {
+        [
+            (ClaudeCodeStrategy(), ConversationRef(kind: "claude-code", id: uuid, placeholder: false, cwd: cwd,
+                                                   capturedVia: .hook, state: .alive)),
+            (CodexStrategy(), ConversationRef(kind: "codex", id: uuid, placeholder: false, cwd: cwd,
+                                              capturedVia: .hook, state: .alive)),
+            (OpencodeStrategy(), ConversationRef(kind: "opencode", id: opencodeID, placeholder: false, cwd: cwd,
+                                                 capturedVia: .hook, state: .alive)),
+        ]
+    }
+
+    func testResumeSkipsACwdHoldingAControlByte() {
+        for cwd in hostile {
+            for (strategy, ref) in refs(cwd: cwd) {
+                guard case .skip(let reason) = strategy.resume(ref: ref) else {
+                    return XCTFail("\(ref.kind) must not type a cwd holding a control byte (\(cwd.debugDescription))")
+                }
+                XCTAssertEqual(reason, "cwd holds a control byte")
+            }
+        }
+    }
+
+    func testResumeStillTypesAPlainCwd() {
+        for (strategy, ref) in refs(cwd: "/Users/demo/Projects/proj") {
+            guard case .typeCommand(let text, _) = strategy.resume(ref: ref) else {
+                return XCTFail("\(ref.kind) must still resume in a plain folder")
+            }
+            XCTAssertTrue(text.hasPrefix("cd '/Users/demo/Projects/proj' && "), text)
+        }
+    }
+
+    func testPushClaimAndRuntimeCaptureRefuseAControlByteCwd() {
+        for cwd in hostile {
+            guard case .err(let code, _, _)? = TerminalController.v2ConversationCwdRefusal(cwd) else {
+                return XCTFail("a cwd holding a control byte must be refused before it is stored (\(cwd.debugDescription))")
+            }
+            XCTAssertEqual(code, "invalid_cwd")
+        }
+        XCTAssertNil(TerminalController.v2ConversationCwdRefusal("/Users/demo/Projects/proj"))
+        XCTAssertNil(TerminalController.v2ConversationCwdRefusal(nil))
+    }
+
+    /// One socket call through the real handler, as `c11 conversation …` sends it.
+    @MainActor
+    private func call(_ method: String, _ params: [String: Any]) throws -> String? {
+        let response = TerminalController.shared.v2DispatchConversation(method, id: 365, params: params)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any], response)
+        return (object["error"] as? [String: Any])?["code"] as? String
+    }
+
+    /// Each method with every other parameter it checks first valid, so the
+    /// cwd is what decides. A control cwd's request carries one later invalid
+    /// parameter instead, so it is refused after the cwd check and stores nothing.
+    private func requests(surface: UUID, cwd: String, control: Bool) -> [(method: String, params: [String: Any])] {
+        var claim: [String: Any] = ["surface_id": surface.uuidString, "kind": "codex", "cwd": cwd]
+        var push: [String: Any] = ["surface_id": surface.uuidString, "kind": "codex", "id": uuid, "source": "hook", "cwd": cwd]
+        if control {
+            claim["expected_resume_id"] = "not-a-session"
+            push["displayed_route_state"] = "not-a-state"
+        }
+        return [
+            ("conversation.claim", claim),
+            ("conversation.push", push),
+            // A logic test has no live terminal, so a plain cwd ends at the panel lookup.
+            ("conversation.capture_runtime", ["surface_id": surface.uuidString, "id": uuid, "cwd": cwd]),
+        ]
+    }
+
+    /// C11H-365 (N12): `conversation.claim`, `conversation.push` and
+    /// `conversation.capture_runtime` each refuse a control-byte cwd before it
+    /// is stored. Fails with any one handler's check removed.
+    @MainActor
+    func testEachStoringMethodRefusesAControlByteCwdAndStoresNothing() async throws {
+        for cwd in ["/tmp/a\u{15}b", "/tmp/a\u{7F}b"] {
+            let surface = UUID()
+            for (method, params) in requests(surface: surface, cwd: cwd, control: false) {
+                let code = try call(method, params)
+                XCTAssertEqual(code, "invalid_cwd", "\(method) must refuse \(cwd.debugDescription)")
+                let stored = await ConversationStore.shared.active(for: surface.uuidString)
+                XCTAssertNil(stored, "\(method) stored a ref for \(cwd.debugDescription)")
+                await ConversationStore.shared.clear(surfaceId: surface.uuidString)
+            }
+        }
+        let surface = UUID()
+        for (method, params) in requests(surface: surface, cwd: "/Users/demo/Projects/proj", control: true) {
+            let code = try call(method, params)
+            XCTAssertNotNil(code, "\(method)'s control is refused after the cwd check")
+            XCTAssertNotEqual(code, "invalid_cwd", "\(method) must accept a plain cwd")
+        }
+        await ConversationStore.shared.clear(surfaceId: surface.uuidString)
+    }
+
+    func testReservedProjectDirRefusesEveryControlByte() {
+        for cwd in hostile {
+            XCTAssertFalse(isValidClaudeSessionProjectDir(cwd), cwd.debugDescription)
+            XCTAssertFalse(isValidOpencodeSessionProjectDir(cwd), cwd.debugDescription)
+        }
+        XCTAssertTrue(isValidClaudeSessionProjectDir("/Users/demo/Projects/proj"))
+        XCTAssertFalse(isValidClaudeSessionProjectDir("/Users/demo/it's"))
     }
 }

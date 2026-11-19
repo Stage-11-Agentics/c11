@@ -8,6 +8,14 @@ import WebKit
 // C11-159: per-domain socket handler unit extracted verbatim from
 // TerminalController.swift. Mechanical relocation, zero behavior change.
 extension TerminalController {
+    /// C11H-365 (N12): a resume types its recorded folder into a shell, where
+    /// a control byte is an editing key even inside quotes. A cwd holding any
+    /// C0 byte or DEL is refused before anything is stored.
+    nonisolated static func v2ConversationCwdRefusal(_ cwd: String?) -> V2CallResult? {
+        guard let cwd, containsTerminalControlByte(cwd) else { return nil }
+        return .err(code: "invalid_cwd", message: "cwd holds a control byte; c11 never types one into a resume", data: nil)
+    }
+
     /// v2 dispatch slice for the `conversation.*` domain(s).
     /// Byte-identical routing and wire responses to the original processV2Command cases.
     func v2DispatchConversation(_ method: String, id: Any?, params: [String: Any]) -> String {
@@ -88,12 +96,15 @@ extension TerminalController {
                 data: ["kind": "codex"]
             )
         }
+        // C11H-365 (N12): checked before the panel lookup, which needs a live
+        // terminal: the check reads only the request.
+        let cwd = v2String(params, "cwd")
+        if let refusal = Self.v2ConversationCwdRefusal(cwd) { return refusal }
         let surfaceResult = v2ResolveLiveTerminalSurfaceForRuntimeCapture(params: params)
         guard case .success(let surfaceId) = surfaceResult else {
             if case .failure(let err) = surfaceResult { return err }
             return .err(code: "internal_error", message: "panel resolution", data: nil)
         }
-        let cwd = v2String(params, "cwd")
         let result = conversationStoreSync { store in
             await store.captureRuntimeEnv(
                 surfaceId: surfaceId.uuidString,
@@ -129,6 +140,7 @@ extension TerminalController {
             return .err(code: "internal_error", message: "panel resolution", data: nil)
         }
         let cwd = v2String(params, "cwd")
+        if let refusal = Self.v2ConversationCwdRefusal(cwd) { return refusal }
         let placeholder = v2String(params, "placeholder_id")
             ?? "wrapper-claim:\(surfaceId.uuidString):\(Int(Date().timeIntervalSince1970))"
         let expectedResumeId = v2String(params, "expected_resume_id")
@@ -359,6 +371,7 @@ extension TerminalController {
             return .err(code: "internal_error", message: "panel resolution", data: nil)
         }
         let cwd = v2String(params, "cwd")
+        if let refusal = Self.v2ConversationCwdRefusal(cwd) { return refusal }
         let reason = v2String(params, "diagnostic_reason")
         let displayedRoot = params["displayed_root"] as? Bool ?? false
         let displayedRouteState = v2String(params, "displayed_route_state")
@@ -606,7 +619,8 @@ extension TerminalController {
                 cwd: cwd,
                 state: state,
                 diagnosticReason: reason,
-                payload: payload
+                payload: payload,
+                sessionEnded: stateRaw == "ended"
             )
         }
         guard case .some(let maybeRef) = storeResult else {
@@ -828,6 +842,140 @@ extension TerminalController {
         return result
     }
 
+    /// C11H-196: `c11 restore status`. One main hop reads every panel's
+    /// restore record; nothing is focused, shown or changed.
+    nonisolated func v2RestoreStatus() -> V2CallResult {
+        return Self.restoreMainHop(label: "restore status") { Self.restoreStatusOnMain() }
+    }
+
+    /// One main hop with a 5 s claim: whichever side claims first wins. A hop
+    /// that never started by the deadline never runs (no late scheduling after
+    /// the CLI was told it timed out); one that started is waited for.
+    nonisolated static func restoreMainHop(label: String, _ work: @escaping @MainActor () -> V2CallResult) -> V2CallResult {
+        let main = DispatchSemaphore(value: 0)
+        let claim = BoundedLifecycleDeadline()
+        nonisolated(unsafe) var result: V2CallResult = .err(code: "internal_error", message: label, data: nil)
+        Task { @MainActor in
+            defer { main.signal() }
+            guard claim.expire() else { return }
+            result = work()
+        }
+        guard main.wait(timeout: .now() + 5) == .success else {
+            if claim.expire() { return .err(code: "timeout", message: "\(label) timed out; nothing was changed", data: nil) }
+            main.wait()
+            return result
+        }
+        return result
+    }
+
+    @MainActor
+    static func restoreStatusOnMain() -> V2CallResult {
+        guard let app = AppDelegate.shared else { return .err(code: "unavailable", message: "app not ready", data: nil) }
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = .current
+        var rows: [[String: Any]] = []
+        var statuses: [HCHostEndStatus] = []
+        for workspace in app.allMainWindowWorkspaces() {
+            for (panelId, panel) in workspace.panels.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+                guard let terminal = panel as? TerminalPanel, let status = terminal.hcHostEnd else { continue }
+                statuses.append(status)
+                rows.append([
+                    "panel_id": panelId.uuidString,
+                    "workspace_id": workspace.id.uuidString,
+                    "workspace_title": workspace.title,
+                    "panel_title": terminal.displayTitle,
+                    "state": status.recordState,
+                    "phase": status.stateToken,
+                    "reason": status.reasonToken as Any? ?? NSNull(),
+                    "cause": status.causeToken,
+                    "signal": status.signal.map { Int($0) } as Any? ?? NSNull(),
+                    "ended_at": formatter.string(from: status.endedAt),
+                    "conversation_id": status.conversation?.id as Any? ?? NSNull(),
+                    "conversation_kind": status.conversation?.kind as Any? ?? NSNull(),
+                    "offers_resume": status.offersResume,
+                    "shown": terminal.surface.isShownInRealWindow,
+                ])
+            }
+        }
+        let summary = HCRestoreProgress.summary(statuses)
+        return .ok([
+            "summary": [
+                "total": summary.total, "pending": summary.pending, "resuming": summary.resuming,
+                "resumed": summary.resumed, "failed": summary.failed, "skipped": summary.skipped,
+                "need_you": summary.needYou, "finished": summary.isFinished,
+            ],
+            "panels": rows,
+        ])
+    }
+
+    /// C11H-196: `c11 restore run`. For a panel whose record offers a resume
+    /// (failed or skipped with a saved conversation): its fresh terminal starts
+    /// in the background through the staggered queue and the resume is typed
+    /// once, under the same guards as the automatic path. A panel resumed,
+    /// resuming or still pending is refused, so a second run changes nothing.
+    nonisolated func v2RestoreRun(params: [String: Any]) -> V2CallResult {
+        let all = v2Bool(params, "all") ?? false
+        let dryRun = v2Bool(params, "dry_run") ?? false
+        guard all != (params["surface_id"] != nil) else {
+            return .err(code: "invalid_params", message: "pass exactly one of --panel <ref> or --all", data: nil)
+        }
+        return Self.restoreMainHop(label: "restore run") { self.restoreRunOnMain(params: params, all: all, dryRun: dryRun) }
+    }
+
+    @MainActor
+    private func restoreRunOnMain(params: [String: Any], all: Bool, dryRun: Bool) -> V2CallResult {
+        guard let app = AppDelegate.shared else { return .err(code: "unavailable", message: "app not ready", data: nil) }
+        var targets: [(Workspace, UUID)] = []
+        if all {
+            for workspace in app.allMainWindowWorkspaces() {
+                for (panelId, panel) in workspace.panels.sorted(by: { $0.key.uuidString < $1.key.uuidString }) {
+                    if let terminal = panel as? TerminalPanel, terminal.hcHostEnd?.offersResume == true {
+                        targets.append((workspace, panelId))
+                    }
+                }
+            }
+        } else {
+            if let rejected = v2RejectUnresolvedTargetRefs(params) { return rejected }
+            guard let panelId = v2UUID(params, "surface_id"),
+                  let workspace = app.allMainWindowWorkspaces().first(where: { $0.panels[panelId] != nil }) else {
+                return .err(code: "not_found", message: "panel is not present in this c11 instance", data: nil)
+            }
+            targets.append((workspace, panelId))
+        }
+        var rows: [[String: Any]] = []
+        for (workspace, panelId) in targets {
+            let terminal = workspace.panels[panelId] as? TerminalPanel
+            var row: [String: Any] = [
+                "panel_id": panelId.uuidString,
+                "workspace_id": workspace.id.uuidString,
+                "panel_title": terminal?.displayTitle as Any? ?? NSNull(),
+                "conversation_id": terminal?.hcHostEnd?.conversation?.id as Any? ?? NSNull(),
+            ]
+            guard let terminal, let status = terminal.hcHostEnd else {
+                row["outcome"] = "refused"
+                row["reason"] = String(localized: "hc.hostEnd.notEnded", defaultValue: "This panel has no ended session to resume.")
+                rows.append(row)
+                continue
+            }
+            row["state"] = status.recordState
+            guard status.offersResume else {
+                row["outcome"] = status.recordState == "resumed" ? "already_resumed" : "not_needed"
+                rows.append(row)
+                continue
+            }
+            if dryRun {
+                row["outcome"] = "would_resume"
+            } else if let refusal = workspace.resumeHostEndedConversation(panelId: panelId) {
+                row["outcome"] = "refused"
+                row["reason"] = refusal
+            } else {
+                row["outcome"] = "scheduled"
+            }
+            rows.append(row)
+        }
+        return .ok(["dry_run": dryRun, "panels": rows])
+    }
+
     private func conversationResumeOnMain(
         params: [String: Any],
         allSkipped: Bool,
@@ -862,84 +1010,31 @@ extension TerminalController {
         var rows: [[String: Any]] = []
         var scheduled = 0
         for (workspace, panelId) in targets {
-            let key = panelId.uuidString
-            let ref = conversations[key]?.active
-            var row: [String: Any] = [
-                "panel_id": key,
-                "workspace_id": workspace.id.uuidString,
-                "kind": ref?.kind ?? NSNull(),
-                "conversation_id": ref?.id ?? NSNull(),
-            ]
-            let decision: ResumeDecision = ref.map {
-                Workspace.resumeDecision(
-                    for: $0,
-                    registry: registry,
-                    mode: mode,
-                    transcriptEvidence: evidence[key]
-                )
-            } ?? .skip(code: .conversationUnavailable, reason: "no active conversation in the store")
-            switch decision {
-            case .skip(let code, let reason):
-                row["outcome"] = "skipped"
-                row["skip_code"] = code.rawValue
-                row["reason"] = reason
-            case .command(let command):
-                row["command"] = command.text
-                let liveWriters = ref.map {
-                    app.liveAttributedAgentSurfaceIds(
-                        matching: $0,
-                        excluding: panelId,
-                        conversationsBySurface: conversations
-                    )
-                } ?? []
-                let refusal: String?
-                if workspace.launchResumeOutcomes[panelId] == .resumed {
-                    refusal = "already resumed this launch"
-                } else if !workspace.isUntouchedShell(panelId) {
-                    refusal = "panel was used since launch; type the command yourself if it is still wanted"
-                } else if let ref, case .skip(let reason) = Workspace.resumeActionBeforeSubmission(
-                    .typeCommand(text: command.text, submitWithReturn: command.submitWithReturn),
-                    conversation: ref,
-                    targetSurfaceId: panelId,
-                    conversationsBySurface: conversations,
-                    liveAttributedAgentSurfaceIds: liveWriters
-                ) {
-                    refusal = reason
-                } else {
-                    refusal = nil
-                }
-                if let refusal {
-                    row["outcome"] = "refused"
-                    row["skip_code"] = ResumeSkipCode.panelInUse.rawValue
-                    row["reason"] = refusal
-                } else if dryRun {
-                    row["outcome"] = "would_resume"
-                } else if let ref {
-                    // Typed after the stagger, through the guarded submission,
-                    // which can still refuse; the launch outcome records it.
-                    row["outcome"] = "scheduled"
-                    workspace.recordLaunchResumeDecision(
-                        panelId: panelId,
-                        kind: ref.kind,
-                        conversationId: ref.id,
-                        mode: mode,
-                        decision: decision
-                    )
+            // C11H-98: one target's whole decision lives in Workspace, so the
+            // live-agent keep before any decision is testable without an app.
+            rows.append(workspace.conversationResumeTarget(
+                panelId: panelId,
+                conversation: conversations[panelId.uuidString]?.active,
+                registry: registry,
+                mode: mode,
+                transcriptEvidence: evidence[panelId.uuidString],
+                dryRun: dryRun,
+                conversationsBySurface: conversations,
+                liveWriters: { ref in
+                    app.liveAttributedAgentSurfaceIds(matching: ref, excluding: panelId, conversationsBySurface: conversations)
+                },
+                schedule: { plan in
                     // Staggered like restore, through the same guarded
                     // submission, which rechecks everything at typing time.
                     workspace.dispatchRestartCommands(
-                        [(
-                            panelId: panelId,
-                            action: .typeCommand(text: command.text, submitWithReturn: command.submitWithReturn),
-                            conversation: ref
-                        )],
+                        [plan],
                         firstAt: .now() + Double(scheduled) * SessionPersistencePolicy.agentRestartStagger,
-                        idleShellRequired: true
+                        idleShellRequired: true,
+                        launchScoped: false
                     )
                     scheduled += 1
                 }
-            }
-            rows.append(row)
+            ))
         }
         return .ok([
             "mode": mode.rawValue,

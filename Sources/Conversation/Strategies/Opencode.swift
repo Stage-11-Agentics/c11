@@ -72,6 +72,7 @@ struct OpencodeStrategy: ConversationStrategy {
         guard isValidOpencodeSessionId(ref.id) else {
             return .skip(reason: "invalid id grammar")
         }
+        if let refusal = conversationResumeCwdRefusal(ref.cwd) { return refusal }
         let quotedId = conversationShellQuote(ref.id)
         var command = "\(withAutoApprove("opencode")) -s \(quotedId)"
         // cd into the recorded project dir first when present and valid —

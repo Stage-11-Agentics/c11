@@ -1,6 +1,6 @@
 # Adversarial Review Synthesis — Conversation Store Architecture
 
-**Plan:** `/Users/atin/Projects/Stage11/code/c11/docs/conversation-store-architecture.md`
+**Plan:** `~/src/c11/docs/conversation-store-architecture.md`
 **Reviewers:** Claude (Opus 4.7), Codex, Gemini
 **Mode:** Adversarial (designated opposition)
 **Synthesis Date:** 2026-04-27

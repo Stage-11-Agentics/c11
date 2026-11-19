@@ -133,7 +133,7 @@ struct AgentPickerModel {
         let sorted = library.configs.sorted { $0.order < $1.order }
         self.configs = sorted
         self.effectiveDefault = effectiveDefault
-        self.effectiveDefaultIsInstalled = env.isInstalled(effectiveDefault.config.harness)
+        self.effectiveDefaultIsInstalled = Self.isLaunchable(effectiveDefault, env: env)
 
         let pinnedId = library.default.configId
 
@@ -143,13 +143,13 @@ struct AgentPickerModel {
                 AgentPickerRow(
                     config: cfg,
                     name: cfg.name,
-                    subLine: Self.subLine(for: cfg.config, env: env),
+                    subLine: Self.subLine(for: cfg, env: env),
                     effortChip: AgentPickerModel.nonEmpty(cfg.config.effort),
                     sysChip: Self.sysChip(for: cfg.config.systemPrompt),
                     cost: Self.costString(cfg.config.model, env: env),
                     keyBadge: i + 1,
                     isPinnedDefault: pinnedId == cfg.id,
-                    isInstalled: env.isInstalled(cfg.config.harness)
+                    isInstalled: Self.isLaunchable(cfg, env: env)
                 )
             )
         }
@@ -225,6 +225,27 @@ struct AgentPickerModel {
     }
 
     // MARK: Derivation helpers (pure)
+
+    /// C11H-138: a config saved with another machine runs that machine's
+    /// harness, so this Mac's PATH does not decide whether it can launch.
+    static func launchesElsewhere(_ cfg: SavedAgentConfig) -> Bool {
+        guard let machine = cfg.machine else { return false }
+        return machine != SavedAgentConfig.localMachine
+    }
+
+    static func isLaunchable(_ cfg: SavedAgentConfig, env: AgentPickerEnvironment) -> Bool {
+        launchesElsewhere(cfg) || env.isInstalled(cfg.config.harness)
+    }
+
+    /// The row's sub line, with "on <machine>" for a config saved with one.
+    static func subLine(for cfg: SavedAgentConfig, env: AgentPickerEnvironment) -> String {
+        let base = subLine(for: cfg.config, env: env)
+        guard let machine = cfg.machine else { return base }
+        let name = machine == SavedAgentConfig.localMachine
+            ? String(localized: "agentPicker.machine.thisMac", defaultValue: "This Mac")
+            : MachineRoster.shared.entry(id: machine)?.name ?? HCMachineTarget.displayName(machine)
+        return base + " · " + String(format: String(localized: "agentPicker.machine.on", defaultValue: "on %@"), name)
+    }
 
     static func nonEmpty(_ s: String?) -> String? {
         guard let s = s?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }

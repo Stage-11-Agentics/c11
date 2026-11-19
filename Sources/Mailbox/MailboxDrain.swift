@@ -152,6 +152,12 @@ enum MailboxDrain {
     /// file's new URL, or nil when another consumer already took it (or it
     /// could not be moved). `rename(2)` is atomic within the inbox's volume,
     /// so at most one caller ever gets a non-nil result for a given entry.
+    ///
+    /// C11H-360: a claim never replaces a copy `_read/` already holds. An
+    /// entry whose id is already read is either the same message again (its
+    /// bytes match: the copy is dropped and nothing is claimed) or a different
+    /// message under a reused id (claimed under a freshly minted id, so both
+    /// stay and the read copy keeps its text).
     static func claim(
         _ entry: URL,
         fileManager: FileManager = .default
@@ -163,8 +169,34 @@ enum MailboxDrain {
             attributes: [.posixPermissions: 0o700]
         )
         let target = readDir.appendingPathComponent(claimedName(for: entry))
-        guard rename(entry.path, target.path) == 0 else { return nil }
-        return target
+        switch renameExclusive(entry, to: target) {
+        case 0: return target
+        case EEXIST: break
+        default: return nil
+        }
+        if let held = try? Data(contentsOf: target), let pending = try? Data(contentsOf: entry), held == pending {
+            unlink(entry.path)
+            return nil
+        }
+        let fresh = readDir.appendingPathComponent(MailboxLayout.envelopeFilename(id: MailboxULID.make()))
+        return renameExclusive(entry, to: fresh) == 0 ? fresh : nil
+    }
+
+    /// `rename(2)` that never replaces an existing target: 0, or the errno
+    /// (`EEXIST` when the target is there). A volume without `RENAME_EXCL`
+    /// checks first, then renames.
+    static func renameExclusive(_ source: URL, to target: URL) -> Int32 {
+        #if !os(macOS)
+        // C11H-392: Linux: link(2) refuses an existing target, then the old name goes.
+        guard link(source.path, target.path) == 0 else { return errno }
+        return unlink(source.path) == 0 ? 0 : errno
+        #else
+        if renamex_np(source.path, target.path, UInt32(RENAME_EXCL)) == 0 { return 0 }
+        let failure = errno
+        guard failure == ENOTSUP || failure == EINVAL else { return failure }
+        if access(target.path, F_OK) == 0 { return EEXIST }
+        return rename(source.path, target.path) == 0 ? 0 : errno
+        #endif
     }
 
     /// The name an entry gets under `_read/`. Envelopes the dispatcher wrote
@@ -209,7 +241,9 @@ enum MailboxDrain {
     struct ClaimedMessage {
         let id: String
         let text: String
-        let framed: String
+        /// The message as a delivery frames it (`agentMessage`); the drain
+        /// that claimed it composes the delivery and mints its boundary.
+        let framing: MailboxDelivery.Message
         let readURL: URL
         /// The inbox the envelope was claimed from.
         var inbox: URL { readURL.deletingLastPathComponent().deletingLastPathComponent() }
@@ -258,7 +292,7 @@ enum MailboxDrain {
             // rather than being claimed and then handed back. Unreadable means
             // another consumer renamed it away.
             guard let peeked = try? Data(contentsOf: entry) else { continue }
-            let preview = agentBlock(data: peeked, fallbackId: idFromFilename(entry))
+            let preview = MailboxDelivery.cost(agentMessage(data: peeked, fallbackId: idFromFilename(entry)))
             if !claimed.isEmpty, used + preview.count > budget {
                 return (claimed, entries.count - index)
             }
@@ -268,7 +302,7 @@ enum MailboxDrain {
             let message = ClaimedMessage(
                 id: id,
                 text: String(data: data, encoding: .utf8) ?? "",
-                framed: agentBlock(data: data, fallbackId: id),
+                framing: agentMessage(data: data, fallbackId: id),
                 readURL: readURL,
                 recipient: (try? MailboxEnvelope.validate(data: data))?.to
             )
@@ -277,7 +311,7 @@ enum MailboxDrain {
                 return (claimed, entries.count - index)
             }
             claimed.append(message)
-            used += message.framed.count
+            used += MailboxDelivery.cost(message.framing).count
         }
         return (claimed, 0)
     }
@@ -286,28 +320,28 @@ enum MailboxDrain {
         url.deletingPathExtension().lastPathComponent
     }
 
-    /// An inbox file as the short block a pushed agent reads
-    /// (`MailboxFraming.agentBlock`). A malformed file is still delivered.
-    static func agentBlock(data: Data, fallbackId: String) -> String {
+    /// An inbox file as the message a pushed agent reads
+    /// (`MailboxFraming.agentMessage`). A malformed file is still delivered.
+    static func agentMessage(data: Data, fallbackId: String) -> MailboxDelivery.Message {
         if let envelope = try? MailboxEnvelope.validate(data: data) {
-            return MailboxFraming.agentBlock(envelope: envelope)
+            return MailboxFraming.agentMessage(envelope: envelope)
         }
         let raw = String(data: data, encoding: .utf8) ?? ""
-        return "<c11-msg id=\"\(MailboxFraming.shortId(fallbackId))\" malformed=\"true\">\n"
-            + MailboxFraming.escapeBlockTags(raw) + "\n</c11-msg>\n"
+        return .init(attributes: [.init("id", MailboxFraming.shortId(fallbackId)), .init("malformed", "true")],
+                     body: MailboxFraming.escapeBlockTags(raw))
     }
 
-    /// Frames an inbox file as a `<c11-msg>` block. A file that fails envelope
-    /// validation is still delivered: its raw text becomes the escaped body so
-    /// the agent sees it instead of it vanishing.
-    static func framedBlock(data: Data, fallbackId: String) -> String {
+    /// Frames an inbox file as its own delivery, as `recv` shows it. A file
+    /// that fails envelope validation is still delivered: its raw text
+    /// becomes the escaped body so the agent sees it instead of it vanishing.
+    static func framedBlock(data: Data, fallbackId: String, boundary: String? = nil) -> String {
         if let envelope = try? MailboxEnvelope.validate(data: data) {
-            return MailboxFraming.framedBlock(envelope: envelope)
+            return MailboxFraming.framedBlock(envelope: envelope, boundary: boundary)
         }
         let raw = String(data: data, encoding: .utf8) ?? ""
-        return "\n<c11-msg id=\"\(MailboxFraming.xmlEscapeAttribute(fallbackId))\" malformed=\"true\">\n"
-            + MailboxFraming.xmlEscapeBody(raw)
-            + "\n</c11-msg>\n"
+        let message = MailboxDelivery.Message(attributes: [.init("id", fallbackId), .init("malformed", "true")],
+                                              body: MailboxFraming.xmlEscapeBody(raw))
+        return "\n" + MailboxDelivery.text([message], boundary: boundary)
     }
 }
 
@@ -327,6 +361,7 @@ enum MailboxSendArguments {
         case duplicateFlag(String)
         case bodyConflict
         case toParentConflict
+        case toCaptainConflict
         case extraArgument
         case emptyBody
 
@@ -362,6 +397,11 @@ enum MailboxSendArguments {
                     localized: "mailbox.cli.error.to-parent-conflict",
                     defaultValue: "Pass --to-parent by itself; it cannot be combined with --to or --to-workspace."
                 )
+            case .toCaptainConflict:
+                return String(
+                    localized: "mailbox.cli.error.to-captain-conflict",
+                    defaultValue: "Pass --to-captain by itself; it cannot be combined with --to, --to-parent or --to-workspace."
+                )
             case .extraArgument:
                 return String(
                     localized: "mailbox.cli.error.extra-argument",
@@ -380,6 +420,7 @@ enum MailboxSendArguments {
         var to: String?
         var toWorkspace: String?
         var toParent: Bool
+        var toCaptain: Bool
         var topic: String?
         var body: String
         var bodyRef: String?
@@ -399,7 +440,7 @@ enum MailboxSendArguments {
         "--reply-to", "--in-reply-to", "--ttl-seconds", "--from",
         "--id", "--ts", "--content-type",
     ]
-    private static let boolFlags: Set<String> = ["--urgent", "--json", "--to-parent"]
+    private static let boolFlags: Set<String> = ["--urgent", "--json", "--to-parent", "--to-captain"]
 
     static func parse(_ args: [String]) throws -> Parsed {
         var values: [String: String] = [:]
@@ -472,6 +513,10 @@ enum MailboxSendArguments {
             throw Failure.emptyBody
         }
         let toParent = flags.contains("--to-parent")
+        let toCaptain = flags.contains("--to-captain")
+        if toCaptain && (toParent || values["--to"] != nil || values["--to-workspace"] != nil) {
+            throw Failure.toCaptainConflict
+        }
         if toParent && (values["--to"] != nil || values["--to-workspace"] != nil) {
             throw Failure.toParentConflict
         }
@@ -479,6 +524,7 @@ enum MailboxSendArguments {
             to: values["--to"],
             toWorkspace: values["--to-workspace"],
             toParent: toParent,
+            toCaptain: toCaptain,
             topic: values["--topic"],
             body: body,
             bodyRef: bodyRef,
@@ -786,13 +832,10 @@ enum MailboxHookOutput {
         }
     }
 
-    /// The text the agent reads: the messages, and a line for any still waiting.
-    static func context(framedBlocks: [String], remaining: Int) -> String {
-        var text = framedBlocks.joined(separator: "\n")
-        if remaining > 0 {
-            text += "\n\(remaining) more waiting; c11 delivers them next."
-        }
-        return text
+    /// The text the agent reads: one delivery of the messages, and a line
+    /// for any still waiting.
+    static func context(messages: [MailboxDelivery.Message], remaining: Int) -> String {
+        MailboxDelivery.text(messages, remaining: remaining)
     }
 
     /// Hook stdout JSON for a Stop that delivered mail. Claude's documented
@@ -1018,5 +1061,151 @@ struct MailboxDeliveryReceipt: Equatable {
             return nil
         }
         return target
+    }
+}
+
+// MARK: - Admission refusal (C11H-40)
+
+/// c11's socket refused the caller before dispatch (C11H-33): it is not
+/// descended from a live terminal of c11's session, or the inventory is not
+/// ready to say. A refusal is an answer, never "c11 unreachable": nothing may
+/// be written on disk for the app to act on later (an outbox envelope, a
+/// journal spool entry), or the gate is bypassed.
+enum SocketAdmissionRefusal {
+    static let codes = ["hc_caller_not_owned", "hc_inventory_pending"]
+
+    /// The refusal code a socket error starts with, in its v2 form
+    /// (`code: message`) or its line form (`ERROR: code: message`).
+    static func code(in message: String) -> String? {
+        let body = message.hasPrefix("ERROR: ") ? message.dropFirst("ERROR: ".count) : Substring(message)
+        return codes.first { body == $0 || body.hasPrefix($0 + ":") }
+    }
+
+    static func code(of error: Error) -> String? {
+        code(in: String(describing: error))
+    }
+}
+
+/// Where `c11 mailbox send` may write its envelope, decided from the outcome
+/// of `mailbox.resolve`. The CLI decides first and writes only after.
+enum MailboxSendTarget: Equatable {
+    /// The app resolved the recipient's workspace.
+    case verified(UUID)
+    /// The socket could not be reached: the sender's own workspace, flagged so
+    /// the CLI warns and exits non-zero.
+    case unverified(UUID)
+
+    enum Refusal: Error, Equatable {
+        /// The app answered and refused this caller. No envelope is written.
+        case admission(code: String, message: String)
+        /// `--to-parent` needs the exact parent; an unverified fallback is not it.
+        case parentUnverified
+
+        var message: String {
+            switch self {
+            case .admission(_, let message):
+                return message + "\n" + String(
+                    localized: "mailbox.cli.error.admission-refused",
+                    defaultValue: "c11 refused this caller; no envelope was written."
+                )
+            case .parentUnverified:
+                return String(
+                    localized: "mailbox.cli.error.to-parent-unverified",
+                    defaultValue: "mailbox send --to-parent could not verify the exact parent panel; no envelope was written."
+                )
+            }
+        }
+    }
+
+    var workspaceId: UUID {
+        switch self { case .verified(let id), .unverified(let id): return id }
+    }
+
+    var isVerified: Bool {
+        if case .verified = self { return true }
+        return false
+    }
+
+    /// `resolve` is the `mailbox.resolve` round trip; `interpret` turns its
+    /// payload into the target workspace (and throws for an unknown or
+    /// ambiguous recipient). Only an unreachable socket falls back.
+    static func decide(
+        senderWorkspaceId: UUID,
+        requireVerified: Bool,
+        resolve: () throws -> [String: Any],
+        interpret: ([String: Any]) throws -> UUID
+    ) throws -> MailboxSendTarget {
+        let payload: [String: Any]
+        do {
+            payload = try resolve()
+        } catch {
+            if let code = SocketAdmissionRefusal.code(of: error) {
+                throw Refusal.admission(code: code, message: String(describing: error))
+            }
+            // C11H-89: a relayed call's own error (relay_unreachable with the
+            // link state, a relay refusal) is the answer; never replace it.
+            if String(describing: error).hasPrefix("relay_") { throw error }
+            if requireVerified { throw Refusal.parentUnverified }
+            return .unverified(senderWorkspaceId)
+        }
+        return .verified(try interpret(payload))
+    }
+
+    /// The one outbox write of `c11 mailbox send`, into this target's outbox.
+    func writeEnvelope(_ envelope: MailboxEnvelope, stateURL: URL) throws -> URL {
+        let outboxURL = MailboxLayout.outboxURL(state: stateURL, workspaceId: workspaceId)
+        try FileManager.default.createDirectory(
+            at: outboxURL,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let targetURL = outboxURL.appendingPathComponent(MailboxLayout.envelopeFilename(id: envelope.id))
+        try MailboxIO.atomicWrite(data: try envelope.encode(), to: targetURL)
+        return targetURL
+    }
+}
+
+/// Strict captain resolution is a separate send seam: an unavailable or old
+/// server, malformed reply, absent holder or duplicate never reaches an outbox.
+enum MailboxCaptainSendTarget {
+    struct Resolved {
+        let address: String
+        let workspaceId: UUID
+        let senderWorkspaceId: UUID
+        let senderTitle: String
+        let senderAddress: String?
+        let recipients: [[String: Any]]
+        var recipient: String { "panel:" + address }
+    }
+
+    struct Refusal: Error, CustomStringConvertible {
+        let reason: String
+        var description: String {
+            reason + "\n" + String(localized: "mailbox.cli.error.to-captain-not-written",
+                defaultValue: "mailbox send --to-captain: no envelope was written.")
+        }
+    }
+
+    static func resolve(callerPanelId: UUID, request: () throws -> [String: Any]) throws -> Resolved {
+        do {
+            let payload = try request()
+            guard payload["resolution"] as? String == "unique",
+                  let address = payload["captain"] as? String, !address.isEmpty,
+                  payload["requested_recipient"] as? String == "panel:" + address,
+                  let caller = payload["caller_panel_id"] as? String, UUID(uuidString: caller) == callerPanelId,
+                  let senderRaw = payload["sender_workspace_id"] as? String, let sender = UUID(uuidString: senderRaw),
+                  let targetRaw = payload["target_workspace_id"] as? String, let target = UUID(uuidString: targetRaw),
+                  let ids = (payload["panel_ids"] ?? payload["surface_ids"]) as? [String], ids.count == 1, UUID(uuidString: ids[0]) != nil,
+                  let recipients = payload["recipients"] as? [[String: Any]], recipients.count == 1,
+                  let requested = recipients[0]["requested_panel_id"] as? String,
+                  UUID(uuidString: requested) == UUID(uuidString: ids[0]) else {
+                throw Refusal(reason: String(localized: "mailbox.cli.error.to-captain-unverified",
+                    defaultValue: "captain_unverified: c11 did not return one verified captain holder."))
+            }
+            return Resolved(address: address, workspaceId: target, senderWorkspaceId: sender,
+                            senderTitle: payload["sender_title"] as? String ?? "",
+                            senderAddress: payload["sender_mailbox_address"] as? String, recipients: recipients)
+        } catch let refusal as Refusal { throw refusal }
+        catch { throw Refusal(reason: String(describing: error)) }
     }
 }

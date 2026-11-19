@@ -1012,10 +1012,13 @@ enum SessionFinder {
         return String(flat.prefix(titleDisplayCap))
     }
 
+    /// C11H-365 (N12): a transcript's folder holding a control byte is
+    /// dropped, never typed into the resume's `cd` (a line editor reads the
+    /// byte as an editing key).
     private static func usableCwd(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= cwdCap else { return nil }
+        guard !trimmed.isEmpty, trimmed.count <= cwdCap, !containsTerminalControlByte(trimmed) else { return nil }
         return trimmed
     }
 

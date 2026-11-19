@@ -10,7 +10,7 @@ struct GhosttyConfig {
         case dark
     }
 
-    private static let cmuxReleaseBundleIdentifier = "com.stage11.c11"
+    private static let cmuxReleaseBundleIdentifier = C11Identity.releaseBundleIdentifier
     private static let loadCacheLock = NSLock()
     private static var cachedConfigsByColorScheme: [ColorSchemePreference: GhosttyConfig] = [:]
 

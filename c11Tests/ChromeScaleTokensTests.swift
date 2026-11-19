@@ -22,13 +22,13 @@ final class ChromeScaleTokensTests: XCTestCase {
         XCTAssertEqual(tokens.sidebarWorkspaceLogIcon,        8.0,  accuracy: 0.001)
         XCTAssertEqual(tokens.sidebarWorkspaceBranchDot,      3.0,  accuracy: 0.001)
 
-        XCTAssertEqual(tokens.surfaceTabTitle,                  11.0,  accuracy: 0.001)
+        XCTAssertEqual(tokens.surfaceTabTitle,                  11.0 * 1.30,  accuracy: 0.001)
         XCTAssertEqual(tokens.surfaceTabIcon,                   15.0,  accuracy: 0.001)
         XCTAssertEqual(tokens.surfaceTabBarHeight,              30.0,  accuracy: 0.001)
         XCTAssertEqual(tokens.surfaceTabItemHeight,             30.0,  accuracy: 0.001)
         XCTAssertEqual(tokens.surfaceTabHorizontalPadding,       6.0,  accuracy: 0.001)
-        XCTAssertEqual(tokens.surfaceTabMinWidth,              112.0,  accuracy: 0.001)
-        XCTAssertEqual(tokens.surfaceTabMaxWidth,              220.0,  accuracy: 0.001)
+        XCTAssertEqual(tokens.surfaceTabMinWidth,              112.0 * 1.30,  accuracy: 0.001)
+        XCTAssertEqual(tokens.surfaceTabMaxWidth,              220.0 * 1.30,  accuracy: 0.001)
         XCTAssertEqual(tokens.surfaceTabCloseIconSize,           9.0,  accuracy: 0.001)
         XCTAssertEqual(tokens.surfaceTabContentSpacing,          6.0,  accuracy: 0.001)
         XCTAssertEqual(tokens.surfaceTabDirtyIndicatorSize,      8.0,  accuracy: 0.001)
@@ -39,21 +39,21 @@ final class ChromeScaleTokensTests: XCTestCase {
         XCTAssertEqual(tokens.splitToolbarButtonFrame,          22.0,  accuracy: 0.001)
         XCTAssertEqual(tokens.splitToolbarSeparatorHeight,      18.0,  accuracy: 0.001)
 
-        XCTAssertEqual(tokens.surfaceTitleBarTitle,             12.0,  accuracy: 0.001)
-        XCTAssertEqual(tokens.surfaceTitleBarAccessory,         10.0,  accuracy: 0.001)
+        XCTAssertEqual(tokens.surfaceTitleBarTitle,             12.0 * 1.30,  accuracy: 0.001)
+        XCTAssertEqual(tokens.surfaceTitleBarAccessory,         10.0 * 1.30,  accuracy: 0.001)
     }
 
     // MARK: - Multiplier scaling
 
-    func testLargeMultipliesEveryToken() {
+    func testLargeScalesChromeAndRaisesTopBarText() {
         let tokens = ChromeScaleTokens(multiplier: 1.25)
         XCTAssertEqual(tokens.sidebarWorkspaceTitle,    12.5 * 1.25, accuracy: 0.001)
         XCTAssertEqual(tokens.sidebarWorkspaceDetail,   10.0 * 1.25, accuracy: 0.001)
-        XCTAssertEqual(tokens.surfaceTabTitle,          11.0 * 1.25, accuracy: 0.001)
+        XCTAssertEqual(tokens.surfaceTabTitle,          11.0 * 1.30, accuracy: 0.001)
         XCTAssertEqual(tokens.surfaceTabIcon,           15.0 * 1.25, accuracy: 0.001)
         XCTAssertEqual(tokens.surfaceTabBarHeight,      30.0 * 1.25, accuracy: 0.001)
-        XCTAssertEqual(tokens.surfaceTabMinWidth,      112.0 * 1.25, accuracy: 0.001)
-        XCTAssertEqual(tokens.surfaceTabMaxWidth,      220.0 * 1.25, accuracy: 0.001)
+        XCTAssertEqual(tokens.surfaceTabMinWidth,      112.0 * 1.30, accuracy: 0.001)
+        XCTAssertEqual(tokens.surfaceTabMaxWidth,      220.0 * 1.30, accuracy: 0.001)
         XCTAssertEqual(tokens.surfaceTabCloseIconSize,   9.0 * 1.25, accuracy: 0.001)
     }
 
@@ -78,6 +78,28 @@ final class ChromeScaleTokensTests: XCTestCase {
         XCTAssertEqual(ChromeScaleTokens(multiplier: 0.85).surfaceTabActiveIndicatorHeight, 3.0 * 0.85, accuracy: 0.001)
         XCTAssertEqual(ChromeScaleTokens(multiplier: 0.50).surfaceTabActiveIndicatorHeight, 2.0,        accuracy: 0.001)
         XCTAssertEqual(ChromeScaleTokens(multiplier: 0.66).surfaceTabActiveIndicatorHeight, 2.0,        accuracy: 0.001)
+    }
+
+    // MARK: - Top bar scale
+
+    func testTopBarScaleRaisesEveryPresetExceptSmallerRequests() {
+        func topBar(_ multiplier: CGFloat) -> CGFloat {
+            ChromeScaleTokens(multiplier: multiplier).topBarMultiplier
+        }
+        XCTAssertEqual(topBar(ChromeScaleSettings.multiplier(for: .compact)), 0.85, accuracy: 0.001)
+        XCTAssertEqual(topBar(ChromeScaleSettings.multiplier(for: .standard)), 1.30, accuracy: 0.001)
+        XCTAssertEqual(topBar(ChromeScaleSettings.multiplier(for: .large)), 1.30, accuracy: 0.001)
+        XCTAssertEqual(topBar(ChromeScaleSettings.multiplier(for: .extraLarge)), 1.55, accuracy: 0.001)
+        XCTAssertEqual(topBar(0.95), 0.95, accuracy: 0.001)
+        XCTAssertEqual(topBar(1.80), 1.80, accuracy: 0.001)
+    }
+
+    func testTopBarScaleReachesWindowTitleAndLeavesTheSidebarAlone() {
+        let tokens = ChromeScaleTokens.standard
+        XCTAssertEqual(tokens.windowTitlebarTitle, 13.0 * 1.30, accuracy: 0.001)
+        XCTAssertEqual(tokens.windowTitlebarAccessory, 11.0 * 1.30, accuracy: 0.001)
+        XCTAssertEqual(tokens.sidebarWorkspaceTitle, 12.5, accuracy: 0.001)
+        XCTAssertEqual(tokens.sidebarWorkspaceDetail, 10.0, accuracy: 0.001)
     }
 
     // MARK: - Equatable

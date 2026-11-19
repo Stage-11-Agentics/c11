@@ -446,7 +446,7 @@ final class MainThreadHangCaptureTests: XCTestCase {
     // on the three-worker CI runner it can expire before the thread runs.
     // Production still uses pthread_set_qos_class_self_np as the default.
     private final class QoSRecorder {
-        var current = QOS_CLASS_BACKGROUND
+        var current = MainThreadHangMonitor.watchdogQoS
         var calls: [String] = []
 
         func set(_ qos: qos_class_t, _ relativePriority: Int32) -> Int32 {
@@ -457,7 +457,7 @@ final class MainThreadHangCaptureTests: XCTestCase {
         }
     }
 
-    func testPromotionCoversSuspendReadAndResumeThenRestoresBackground() {
+    func testPromotionCoversSuspendReadAndResumeThenRestoresTheWatchdogClass() {
         let qos = QoSRecorder()
         var buffer = [UInt](repeating: 0, count: 4)
         let result = buffer.withUnsafeMutableBufferPointer { buffer in
@@ -478,7 +478,7 @@ final class MainThreadHangCaptureTests: XCTestCase {
         }
         XCTAssertEqual(result, 2)
         XCTAssertEqual(qos.calls, ["promote", "suspend", "read", "resume", "restore"])
-        XCTAssertEqual(qos.current, QOS_CLASS_BACKGROUND)
+        XCTAssertEqual(qos.current, MainThreadHangMonitor.watchdogQoS)
     }
 
     func testFailedThreadGetStateStillResumesBeforeRestoringQoS() {
@@ -500,7 +500,7 @@ final class MainThreadHangCaptureTests: XCTestCase {
         }
         XCTAssertEqual(result, 0)
         XCTAssertEqual(qos.calls, ["promote", "suspend", "resume", "restore"])
-        XCTAssertEqual(qos.current, QOS_CLASS_BACKGROUND)
+        XCTAssertEqual(qos.current, MainThreadHangMonitor.watchdogQoS)
     }
 
     func testFailedSuspendRestoresQoSWithoutReadingOrResuming() {
@@ -519,7 +519,7 @@ final class MainThreadHangCaptureTests: XCTestCase {
         }
         XCTAssertEqual(result, -1)
         XCTAssertEqual(qos.calls, ["promote", "suspend", "restore"])
-        XCTAssertEqual(qos.current, QOS_CLASS_BACKGROUND)
+        XCTAssertEqual(qos.current, MainThreadHangMonitor.watchdogQoS)
     }
 
     func testFailedPromotionDoesNotSuspendReadOrResume() {
@@ -665,5 +665,53 @@ final class SentryEventBudgetTests: XCTestCase {
         for i in 0..<10 { XCTAssertFalse(budget.allow(.hang, now: 200 + Double(i))) }
         for i in 0..<9 { XCTAssertTrue(budget.allow(.other, now: 300 + Double(i))) }
         XCTAssertFalse(budget.allow(.other, now: 400))
+    }
+}
+
+/// C11H-238 (F5): the watchdog runs at a class that still gets CPU while main
+/// and every core are busy, says when it was itself late, and reports every
+/// ended stall as `main.stall`, built without asking main.
+final class MainThreadStallReportTests: XCTestCase {
+    func testTheWatchdogRunsAtUserInitiatedNotBackground() {
+        XCTAssertEqual(MainThreadHangMonitor.watchdogQoS, QOS_CLASS_USER_INITIATED)
+        XCTAssertEqual(MainThreadHangMonitor.watchdogThreadQoS, .userInitiated)
+    }
+
+    func testTheMonitorNeverRunsUnderTheTestHost() {
+        XCTAssertFalse(MainThreadHangMonitor.isEnabled)
+    }
+
+    func testAStallPayloadCarriesItsLoadAndSeparatesALateWatchdog() {
+        let onTime = MainThreadStall(durationMs: 3012, cause: "lock-wait", appActive: true, visible: false,
+                                     panelCount: 48, hcSnapshots10s: 260, watchdogLateMs: 40)
+        XCTAssertEqual(onTime.payload["duration_ms"] as? Int, 3012)
+        XCTAssertEqual(onTime.payload["cause"] as? String, "lock-wait")
+        XCTAssertEqual(onTime.payload["active"] as? Bool, true)
+        XCTAssertEqual(onTime.payload["visible"] as? Bool, false)
+        XCTAssertEqual(onTime.payload["panel_count"] as? Int, 48)
+        XCTAssertEqual(onTime.payload["hc_events_10s"] as? Int, 260)
+        XCTAssertEqual(onTime.payload["watchdog_late"] as? Bool, false)
+        let starved = MainThreadStall(durationMs: 3012, cause: "lock-wait", appActive: true, visible: true,
+                                      panelCount: 48, hcSnapshots10s: 0, watchdogLateMs: 2400)
+        XCTAssertEqual(starved.payload["watchdog_late"] as? Bool, true)
+    }
+
+    func testTheLoadMeterCountsTheLastTenSeconds() {
+        let meter = HCLoadMeter()
+        for second in 0..<15 { for _ in 0..<3 { meter.recordSnapshot(nowUptime: 1000 + Double(second) + 0.5) } }
+        XCTAssertEqual(meter.snapshotsLast10s(nowUptime: 1014.9), 30)
+        XCTAssertEqual(meter.snapshotsLast10s(nowUptime: 1030), 0, "old buckets age out")
+        meter.setPanelCount(68)
+        XCTAssertEqual(meter.panelCount, 68)
+    }
+
+    func testTheForcedStallSeamTakesOnlyABoundedPair() {
+        XCTAssertNil(MainThreadHangMonitor.forcedStall([:]))
+        XCTAssertNil(MainThreadHangMonitor.forcedStall(["C11_FORCE_MAIN_STALL": "3"]))
+        XCTAssertNil(MainThreadHangMonitor.forcedStall(["C11_FORCE_MAIN_STALL": "0:3"]))
+        XCTAssertNil(MainThreadHangMonitor.forcedStall(["C11_FORCE_MAIN_STALL": "5:120"]))
+        let plan = MainThreadHangMonitor.forcedStall(["C11_FORCE_MAIN_STALL": "20:3"])
+        XCTAssertEqual(plan?.delay, 20)
+        XCTAssertEqual(plan?.stall, 3)
     }
 }

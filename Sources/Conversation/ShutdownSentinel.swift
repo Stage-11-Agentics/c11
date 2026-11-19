@@ -35,12 +35,8 @@ enum ShutdownSentinel {
 
     /// Default sentinel directory: `~/.c11/runtime/`. Created on first
     /// write; missing dir on recovery read = treat as crash.
-    static func defaultDirectory() -> URL? {
-        guard let home = FileManager.default
-            .homeDirectoryForCurrentUser as URL? else {
-            return nil
-        }
-        return home
+    static func defaultDirectory(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
+        home
             .appendingPathComponent(".c11", isDirectory: true)
             .appendingPathComponent("runtime", isDirectory: true)
     }
@@ -204,5 +200,39 @@ enum ShutdownSentinel {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let interval = TimeInterval(trimmed), interval.isFinite else { return .invalid }
         return .valid(Date(timeIntervalSince1970: interval))
+    }
+}
+
+/// C11H-100: TERM is a clean quit. The installer's update (`scripts/c11-install.sh`), `kill <pid>`
+/// and launchd at shutdown end c11 with TERM, whose default action ends the process before the
+/// final snapshot and the clean marker above, so every update read as a crash. Once the startup
+/// restore is ready, the app installs this source, and the first TERM runs the quit File > Quit
+/// runs, minus its confirmation sheet: conversations suspend, the final snapshot is written and
+/// the marker is promoted to clean. Before then TERM keeps its default action, so a final snapshot
+/// can never replace the saved session with a half-restored one. A wedged main thread never runs
+/// the handler; the sender's bounded wait and KILL end it, and that launch reads dirty, as it should.
+final class TerminationSignalQuit {
+    private var quitting = false
+    private var source: DispatchSourceSignal?
+
+    /// One TERM: the first runs `cleanQuit`; later ones, while that quit runs, do nothing.
+    @discardableResult
+    func received(cleanQuit: () -> Void) -> Bool {
+        guard !quitting else { return false }
+        quitting = true
+        cleanQuit()
+        return true
+    }
+
+    /// Route TERM to `handler` on `queue` instead of its default action. Idempotent.
+    func install(queue: DispatchQueue = .main, handler: @escaping () -> Void) {
+        guard source == nil else { return }
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: queue)
+        source.setEventHandler(handler: handler)
+        source.resume()
+        // The source sees TERM through kqueue; ignoring the default action keeps the process
+        // alive for it. Set after resume, so no TERM lands between the two unseen.
+        signal(SIGTERM, SIG_IGN)
+        self.source = source
     }
 }

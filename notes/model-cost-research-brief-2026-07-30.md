@@ -35,7 +35,7 @@ Rules:
    `claude-opus-5`, router forms like `deepseek/deepseek-chat-v3.1`) — include both the
    short and full form as separate keys when both are in circulation.
 
-Work from `/Users/atin/Projects/Stage11/code/c11`. When finished, report completion in
+Work from `~/src/c11`. When finished, report completion in
 one message to the caller:
 `c11 send --workspace 7B4D2337-7CE2-4C91-A460-9633F016C8BC --surface 3D9A25AE-66DE-4F74-A061-6F6457657C70 "MODEL-COSTS <done|blocked>: <one-line summary + file paths>"`
 Report recoverable problems the same way; raise a c11 flag only if operator action is

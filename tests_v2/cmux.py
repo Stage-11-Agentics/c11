@@ -33,12 +33,28 @@ class cmuxError(Exception):
     """Exception raised for cmux errors."""
 
 
-_APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/c11mux")
-_STABLE_SOCKET_PATH = os.path.join(_APP_SUPPORT_DIR, "cmux.sock")
-_LEGACY_STABLE_SOCKET_PATH = "/tmp/cmux.sock"
+_APP_SUPPORT_DIR = os.path.expanduser("~/Library/Application Support/c11")
+_STABLE_SOCKET_PATH = os.path.join(_APP_SUPPORT_DIR, "c11.sock")
+_LEGACY_STABLE_SOCKET_PATH = "/tmp/c11.sock"
+
+
+def _user_runtime_dir() -> str:
+    """c11's per-user folder for dev sockets and breadcrumbs (C11H-364)."""
+    try:
+        # _CS_DARWIN_USER_TEMP_DIR, what `getconf DARWIN_USER_TEMP_DIR` prints.
+        temp = os.confstr(65537) or ""
+    except (ValueError, OSError):
+        temp = ""
+    if not temp.startswith("/"):
+        temp = os.path.expanduser("~/Library/Caches/")
+    return temp.rstrip("/") + "/c11"
+
+
+_USER_RUNTIME_DIR = _user_runtime_dir()
 _LAST_SOCKET_PATH_FILES = [
     os.path.join(_APP_SUPPORT_DIR, "last-socket-path"),
-    "/tmp/cmux-last-socket-path",
+    os.path.join(_USER_RUNTIME_DIR, "c11-last-socket-path"),
+    "/tmp/c11-last-socket-path",
 ]
 
 
@@ -68,13 +84,16 @@ def _default_socket_path() -> str:
     if last_socket and os.path.exists(last_socket):
         return last_socket
 
-    candidates = ["/tmp/cmux-debug.sock", _STABLE_SOCKET_PATH, _LEGACY_STABLE_SOCKET_PATH]
+    candidates = [os.path.join(_USER_RUNTIME_DIR, "c11-debug.sock"), "/tmp/c11-debug.sock",
+                  _STABLE_SOCKET_PATH, _LEGACY_STABLE_SOCKET_PATH]
     for path in candidates:
         if os.path.exists(path):
             return path
 
-    discovered = glob.glob("/tmp/cmux-debug-*.sock")
-    discovered.extend(glob.glob(os.path.join(_APP_SUPPORT_DIR, "cmux*.sock")))
+    discovered = glob.glob(os.path.join(_USER_RUNTIME_DIR, "c11-*.sock"))
+    discovered.extend(glob.glob("/tmp/c11-debug-*.sock"))
+    discovered.extend(glob.glob("/tmp/c11-*.sock"))
+    discovered.extend(glob.glob(os.path.join(_APP_SUPPORT_DIR, "c11*.sock")))
     discovered = [path for path in discovered if os.path.exists(path)]
     if discovered:
         discovered.sort(key=os.path.getmtime, reverse=True)
@@ -102,7 +121,7 @@ def find_cli_binary() -> str:
 
     # Fast path: the CLI path written by `scripts/reload.sh --tag` (avoids the
     # slow recursive DerivedData glob below when a tagged build exists).
-    for marker in ("/tmp/c11-last-cli-path", "/tmp/cmux-last-cli-path"):
+    for marker in (os.path.join(_USER_RUNTIME_DIR, "c11-last-cli-path"), "/tmp/c11-last-cli-path"):
         if os.path.isfile(marker) and not os.path.islink(marker):
             try:
                 candidate = open(marker, encoding="utf-8").read().strip()

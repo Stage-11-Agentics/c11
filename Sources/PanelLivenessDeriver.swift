@@ -115,6 +115,21 @@ enum PanelLivenessDeriver {
     /// no agent edge since. Touched only on `queue`.
     private nonisolated(unsafe) static var shellWorkingSurfaceIds = Set<UUID>()
 
+    /// hc's last word for a local agent terminal, raw and with hc's own time:
+    /// the agent's own OSC 7501 report, which hc keeps across a c11 relaunch
+    /// (C11H-323). Every use judges it again (`admitHCWord`). Touched only on
+    /// `queue`.
+    private nonisolated(unsafe) static var hcStatusWords: [UUID: HCStatusWord] = [:]
+
+    /// Surfaces whose current derived activity hc's word wrote, with no shell,
+    /// agent or journal edge since. Touched only on `queue`.
+    private nonisolated(unsafe) static var hcWrittenSurfaceIds = Set<UUID>()
+
+    /// Surfaces whose current derived activity a journal projection wrote,
+    /// with no edge since: the claim the journal withdraws once its row is
+    /// historical. Touched only on `queue`.
+    private nonisolated(unsafe) static var journalWrittenSurfaceIds = Set<UUID>()
+
     // MARK: - Mapping (TEL-3/4)
 
     /// Ground shell-activity state → sidebar activity truth.
@@ -178,6 +193,8 @@ enum PanelLivenessDeriver {
             } else {
                 shellWorkingSurfaceIds.remove(surfaceId)
             }
+            hcWrittenSurfaceIds.remove(surfaceId)
+            journalWrittenSurfaceIds.remove(surfaceId)
             if prior != after {
                 emitLivenessTransition(from: prior, to: after, surfaceId: surfaceId, workspaceId: workspaceId)
             }
@@ -187,6 +204,55 @@ enum PanelLivenessDeriver {
             let mirrored = after.flatMap { SidebarActivityState(rawValue: $0) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
+                    mirror(mirrored)
+                }
+            }
+        }
+    }
+
+    /// The panel's terminal ended: nothing runs there, so it has no lifecycle.
+    /// A `working` restored from the last session, or the last one seen before
+    /// the end, must not outlive its process (C11H-321). An agent that died
+    /// with its terminal (a reboot, a crash, a kill) sends no SessionEnd, so
+    /// its journal can still read live: that connection ends first, through
+    /// the reducer's `connection_lost`, as a lost remote link does, and no
+    /// later projection of it can paint working. The clear is then the
+    /// terminal's own word and passes the live-journal veto; store precedence
+    /// still keeps an explicit or OSC activity. A live survivor or a
+    /// reconnecting terminal never comes here.
+    static func onTerminalEnded(
+        surfaceId: UUID,
+        workspaceId: UUID,
+        mirror: @escaping @MainActor (SidebarActivityState?) -> Void
+    ) {
+        queue.async {
+            let journal = JournalCoordinator.shared
+            if journal.snapshot(panelID: surfaceId)?.connection == .live,
+               let owner = journal.exactOwner(panelID: surfaceId) {
+                let lost = JournalDraft(kind: .stateChanged,
+                    emittedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
+                    panelID: surfaceId, workspaceID: workspaceId, sessionID: owner.sessionID,
+                    agentKind: owner.agentKind, source: .c11, adapter: .c11,
+                    nativeEvent: "connection_lost", signal: .connectionLost)
+                _ = try? journal.append(lost)
+            }
+            shellWorkingSurfaceIds.remove(surfaceId)
+            journalCacheExpiredSurfaceIds.remove(surfaceId)
+            hcStatusWords.removeValue(forKey: surfaceId)
+            hcWrittenSurfaceIds.remove(surfaceId)
+            journalWrittenSurfaceIds.remove(surfaceId)
+            let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
+            applyToStore(derived: nil, workspaceId: workspaceId, surfaceId: surfaceId, journal: true)
+            let after = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
+            if prior != after {
+                emitLivenessTransition(from: prior, to: after, surfaceId: surfaceId, workspaceId: workspaceId)
+            }
+            let mirrored = after.flatMap(SidebarActivityState.init(rawValue:))
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    // Like every mirror here: a journal still live (its disconnect
+                    // was not written) owns the projection.
                     guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
                     mirror(mirrored)
                 }
@@ -233,6 +299,8 @@ enum PanelLivenessDeriver {
                 return
             }
             shellWorkingSurfaceIds.remove(surfaceId)
+            hcWrittenSurfaceIds.remove(surfaceId)
+            journalWrittenSurfaceIds.remove(surfaceId)
             let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
             applyToStore(
                 derived: activity,
@@ -295,16 +363,47 @@ enum PanelLivenessDeriver {
                 }
                 return
             }
-            let derived: SidebarActivityState? = snapshot.flatMap {
-                $0.phase == .unknown || ($0.isHistorical && !$0.paintsAttention) ? nil : ($0.phase == .working ? .working : .idle)
-            }
             if let snapshot, !snapshot.isHistorical {
                 PanelActivityTracker.shared.recordActivity(surfaceId: panelID.uuidString,
                     at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))
             }
-            shellWorkingSurfaceIds.remove(panelID)
             let prior = currentActivityRaw(workspaceId: workspaceID, surfaceId: panelID)
-            applyToStore(derived: derived, workspaceId: workspaceID, surfaceId: panelID, journal: true)
+            // A row from an earlier process, or one whose connection ended,
+            // says nothing about the process running now. It withdraws only
+            // the journal's own claim; hc's word for the terminal is then
+            // admitted by the same rule as on its own path, so the result does
+            // not depend on which of the two arrived first (C11H-323).
+            if let snapshot, snapshot.isHistorical, !snapshot.paintsAttention {
+                let withdrawsJournal = journalWrittenSurfaceIds.remove(panelID) != nil
+                let admission = admitHCWord(hcStatusWords[panelID], turnEndMs: CodexTurnAuthority.turnEndMs(snapshot),
+                                            prior: withdrawsJournal ? nil : prior,
+                                            claim: withdrawsJournal ? nil : claim(of: panelID))
+                switch admission {
+                case .write(let activity):
+                    applyToStore(derived: activity, workspaceId: workspaceID, surfaceId: panelID, journal: true)
+                    noteHCWrite(activity, surfaceId: panelID, workspaceId: workspaceID)
+                case .withdraw:
+                    applyToStore(derived: nil, workspaceId: workspaceID, surfaceId: panelID, journal: true)
+                    noteHCWrite(nil, surfaceId: panelID, workspaceId: workspaceID)
+                case .keep:
+                    if withdrawsJournal {
+                        applyToStore(derived: nil, workspaceId: workspaceID, surfaceId: panelID, journal: true)
+                    }
+                }
+            } else {
+                let derived: SidebarActivityState? = snapshot.flatMap {
+                    $0.phase == .unknown ? nil : ($0.phase == .working ? .working : .idle)
+                }
+                applyToStore(derived: derived, workspaceId: workspaceID, surfaceId: panelID, journal: true)
+                shellWorkingSurfaceIds.remove(panelID)
+                hcWrittenSurfaceIds.remove(panelID)
+                if snapshot != nil,
+                   currentActivityRaw(workspaceId: workspaceID, surfaceId: panelID) == derived?.rawValue {
+                    journalWrittenSurfaceIds.insert(panelID)
+                } else {
+                    journalWrittenSurfaceIds.remove(panelID)
+                }
+            }
             let after = currentActivityRaw(workspaceId: workspaceID, surfaceId: panelID)
             if prior != after { emitLivenessTransition(from: prior, to: after, surfaceId: panelID, workspaceId: workspaceID) }
             let mirrored = after.flatMap(SidebarActivityState.init(rawValue:))
@@ -324,14 +423,105 @@ enum PanelLivenessDeriver {
                     }
                     workspace.setDerivedActivity(mirrored, forSurface: panelID)
                     workspace.setJournalSnapshot(snapshot, forPanel: panelID)
-                    // A coalesced start may already have been superseded by its ask.
-                    // Closing a prior prompt gate is safe; only the live boundary below opens it.
-                    if let boundary {
-                        workspace.noteMailboxBoundary(boundary, panelID: panelID)
-                    } else if let snapshot, [.working, .blocked, .error].contains(snapshot.phase) {
-                        workspace.noteMailboxAgentLifecycle(surfaceId: panelID, source: .reported,
-                            activity: .working, at: Date(timeIntervalSince1970: Double(snapshot.observedAtMs) / 1000))
-                    }
+                    workspace.noteJournalProjectionForMailbox(snapshot, boundary: boundary, panelID: panelID)
+                }
+            }
+        }
+    }
+
+    // MARK: - hc status (C11H-323)
+
+    /// hc's OSC 7501 word as a lifecycle: working is mid-turn; idle, done,
+    /// blocked and error are not working (a journal shows blocked and error
+    /// the same way, beside its own attention); anything else claims nothing.
+    static func hcActivity(status: String?) -> SidebarActivityState? {
+        switch status {
+        case "working": return .working
+        case "idle", "done", "blocked", "error": return .idle
+        default: return nil
+        }
+    }
+
+    /// hc's word for a terminal: its status and hc's own time for it.
+    struct HCStatusWord: Equatable {
+        let status: String
+        let stampMs: Int64?
+    }
+
+    /// Who wrote a panel's current derived activity, as far as hc's word is
+    /// concerned. nil: nothing, or a writer hc never moves (an agent edge, the
+    /// shell's idle, an explicit or OSC value).
+    enum ActivityClaim: Equatable { case hc, shellWorking, journal }
+
+    enum HCAdmission: Equatable { case write(SidebarActivityState), withdraw, keep }
+
+    /// The one rule for hc's word, on both of its paths (`onHCStatus`, and
+    /// `onJournalProjection` for a historical row), judged against the state
+    /// at the time of use. A stale word (Codex's own signal ended a turn after
+    /// hc's `working` was stamped; C11H-123), an unknown word or no word is no
+    /// word: it withdraws only an activity hc wrote. A word fills an empty
+    /// activity and replaces hc's own or only the shell's `working` (an agent
+    /// TUI's lifetime, not a turn; C11-398); any other writer keeps its value.
+    static func admitHCWord(_ word: HCStatusWord?, turnEndMs: Int64?, prior: String?, claim: ActivityClaim?) -> HCAdmission {
+        let activity = word.flatMap {
+            CodexTurnAuthority.hcWordIsStale($0.status, hcStampMs: $0.stampMs, turnEndMs: turnEndMs)
+                ? nil : hcActivity(status: $0.status)
+        }
+        guard let activity else { return claim == .hc ? .withdraw : .keep }
+        return prior == nil || claim == .hc || claim == .shellWorking ? .write(activity) : .keep
+    }
+
+    private static func claim(of surfaceId: UUID) -> ActivityClaim? {
+        if hcWrittenSurfaceIds.contains(surfaceId) { return .hc }
+        if journalWrittenSurfaceIds.contains(surfaceId) { return .journal }
+        return shellWorkingSurfaceIds.contains(surfaceId) ? .shellWorking : nil
+    }
+
+    /// hc's word was written (nil: withdrawn): hc owns what the store took.
+    private static func noteHCWrite(_ activity: SidebarActivityState?, surfaceId: UUID, workspaceId: UUID) {
+        shellWorkingSurfaceIds.remove(surfaceId)
+        journalWrittenSurfaceIds.remove(surfaceId)
+        if let activity, currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId) == activity.rawValue {
+            hcWrittenSurfaceIds.insert(surfaceId)
+        } else {
+            hcWrittenSurfaceIds.remove(surfaceId)
+        }
+    }
+
+    /// hc reported a local terminal's agent status (nil: no agent in front,
+    /// or no word). hc keeps that status across a c11 relaunch, so it is a
+    /// survivor's real read where nothing newer speaks for the panel: no live
+    /// journal, and `admitHCWord` against the journal as it is now. An agent,
+    /// shell or journal edge owns the activity from then on.
+    static func onHCStatus(
+        surfaceId: UUID,
+        workspaceId: UUID,
+        word: HCStatusWord?,
+        mirror: @escaping @MainActor (SidebarActivityState?) -> Void
+    ) {
+        queue.async {
+            if let word { hcStatusWords[surfaceId] = word } else { hcStatusWords.removeValue(forKey: surfaceId) }
+            let journal = JournalCoordinator.shared.snapshot(panelID: surfaceId)
+            guard journal?.connection != .live else { return }
+            let prior = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
+            let activity: SidebarActivityState?
+            switch admitHCWord(word, turnEndMs: CodexTurnAuthority.turnEndMs(journal), prior: prior,
+                               claim: claim(of: surfaceId)) {
+            case .keep: return
+            case .withdraw: activity = nil
+            case .write(let written): activity = written
+            }
+            applyToStore(derived: activity, workspaceId: workspaceId, surfaceId: surfaceId)
+            noteHCWrite(activity, surfaceId: surfaceId, workspaceId: workspaceId)
+            let after = currentActivityRaw(workspaceId: workspaceId, surfaceId: surfaceId)
+            // An unchanged word is no edge: it leaves a cold mark alone.
+            guard prior != after else { return }
+            emitLivenessTransition(from: prior, to: after, surfaceId: surfaceId, workspaceId: workspaceId)
+            let mirrored = after.flatMap(SidebarActivityState.init(rawValue:))
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard JournalCoordinator.shared.snapshot(panelID: surfaceId)?.connection != .live else { return }
+                    mirror(mirrored)
                 }
             }
         }
@@ -393,6 +583,17 @@ enum PanelLivenessDeriver {
             workspaceId: workspaceId,
             surfaceId: surfaceId
         )
+        let last = PanelActivityTracker.shared.lastActivity(for: surfaceId.uuidString)
+        guard snap.metadata[MetadataKey.activity] != nil else {
+            // No lifecycle truth, which the resolver draws as idle: a resumed
+            // agent whose journal has not reconnected, or whose shell-only
+            // working decayed. Cold still follows its prompt cache (C11H-321);
+            // with no cache evidence it stays warm.
+            let cacheCold = isPromptCacheCold(promptCache, restingSince: last, now: now) == true
+            publishCold(cacheCold, promptCacheExpired: cacheCold, workspaceId: workspaceId,
+                        surfaceId: surfaceId, observedLastTouchedAt: last ?? .distantPast)
+            return
+        }
         // Only act on our own derived truth; leave externally-set values alone.
         guard let record = snap.sources[MetadataKey.activity],
               (record["source"] as? String) == MetadataSource.derived.rawValue,
@@ -401,7 +602,6 @@ enum PanelLivenessDeriver {
             return
         }
 
-        let last = PanelActivityTracker.shared.lastActivity(for: surfaceId.uuidString)
         let metadataTouch = (record["ts"] as? Double).map(Date.init(timeIntervalSince1970:))
         let lastTouched = [last, metadataTouch].compactMap { $0 }.max()
 
@@ -441,12 +641,21 @@ enum PanelLivenessDeriver {
         //
         // That holds only for a `working` some agent edge wrote. One only the
         // shell wrote is the TUI's lifetime, not a turn: with nothing newer
-        // for `agentShellWorkingDecay` it decays to unknown (C11-398).
+        // for `agentShellWorkingDecay` it decays to unknown (C11-398). A
+        // prompt cache read cold after its last touch ends it at once: no
+        // request since, so no turn (C11H-321: a resume c11 typed after a
+        // reboot drew working for the whole window).
         guard !AreaSizePolicy.isAgentKind(detectedTerminalType) else {
+            let cacheCold = isPromptCacheCold(promptCache, restingSince: lastTouched, now: now) == true
             guard shellWorkingSurfaceIds.contains(surfaceId),
-                  lastTouched.map({ now.timeIntervalSince($0) >= agentShellWorkingDecay }) ?? true else { return }
+                  cacheCold || lastTouched.map({ now.timeIntervalSince($0) >= agentShellWorkingDecay }) ?? true
+            else { return }
             shellWorkingSurfaceIds.remove(surfaceId)
             applyToStore(derived: nil, workspaceId: workspaceId, surfaceId: surfaceId)
+            if cacheCold {
+                publishCold(true, promptCacheExpired: true, workspaceId: workspaceId, surfaceId: surfaceId,
+                            observedLastTouchedAt: lastTouched ?? .distantPast)
+            }
             #if DEBUG
             dlog("surface.liveness.agentShellWorkingDecayed surface=\(surfaceId.uuidString.prefix(5))")
             #endif
@@ -554,6 +763,13 @@ enum PanelLivenessDeriver {
         queue.sync {
             journalCacheExpiredSurfaceIds.formIntersection(live)
             shellWorkingSurfaceIds.formIntersection(live)
+            // hc's word belongs to every open panel, not only those the sweep
+            // sees with a tty: a hidden survivor may have none yet. A closed
+            // panel leaves the journal's registry.
+            let open = JournalCoordinator.shared.registeredTargets()
+            hcWrittenSurfaceIds = hcWrittenSurfaceIds.filter { open[$0] != nil }
+            journalWrittenSurfaceIds = journalWrittenSurfaceIds.filter { open[$0] != nil }
+            hcStatusWords = hcStatusWords.filter { open[$0.key] != nil }
         }
     }
 
@@ -577,6 +793,15 @@ enum PanelLivenessDeriver {
         }
     }
 
+    #if DEBUG
+    /// Test seam: each cold verdict the sweep reaches for a panel without a
+    /// live journal, seen on the deriver's queue before the main hop applies it.
+    nonisolated(unsafe) static var coldVerdictObserver: ((_ surfaceId: UUID, _ cold: Bool, _ promptCacheExpired: Bool) -> Void)?
+
+    /// Test seam: returns once every write queued on the deriver so far has run.
+    static func drainForTesting() { queue.sync {} }
+    #endif
+
     private static func publishCold(
         _ isCold: Bool,
         promptCacheExpired: Bool = false,
@@ -584,6 +809,9 @@ enum PanelLivenessDeriver {
         surfaceId: UUID,
         observedLastTouchedAt: Date? = nil
     ) {
+        #if DEBUG
+        coldVerdictObserver?(surfaceId, isCold, promptCacheExpired)
+        #endif
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 guard let workspaceManager = AppDelegate.shared?.workspaceManagerFor(workspaceId: workspaceId),

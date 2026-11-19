@@ -92,6 +92,32 @@ enum WorkspaceLayoutExecutor {
         }
         timings.append(StepTiming(step: "validate", durationMs: validateClock.elapsedMs))
 
+        // C11H-396: a terminal leaf on a machine whose routed link c11 won't
+        // use is refused up front, as `--on` is. It leaves the layout before
+        // the walk, so it never starts an area or seeds a split and every
+        // other leaf is made: an area it leaves empty goes, and that area's
+        // split collapses to its other side. A plan with nothing left fails
+        // before any workspace exists.
+        let refusedLeaves = refusedRemoteLeaves(plan, unusable: MachinePicker.liveUnusable())
+        for refused in refusedLeaves {
+            failures.append(refused.failure)
+            warnings.append(refused.failure.message)
+        }
+        let refusedIds = Set(refusedLeaves.map(\.surfaceId))
+        guard let layout = refusedIds.isEmpty
+            ? Optional(plan.layout)
+            : pruned(plan.layout, removing: refusedIds) else {
+            timings.append(StepTiming(step: "total", durationMs: total.elapsedMs))
+            return ApplyResult(
+                workspaceRef: "",
+                surfaceRefs: [:],
+                paneRefs: [:],
+                timings: timings,
+                warnings: warnings,
+                failures: failures
+            )
+        }
+
         // Step 2 — create the workspace. The executor always opts out of
         // welcome/default-grid auto-spawns so the layout walker owns the
         // tree shape entirely; the `autoWelcomeIfNeeded` field on options
@@ -130,7 +156,9 @@ enum WorkspaceLayoutExecutor {
         // Step 3 — apply workspace-level metadata (operator-authored).
         if let entries = plan.workspace.metadata, !entries.isEmpty {
             let metaClock = StepClock()
-            workspace.setOperatorMetadata(entries)
+            warnings.append(contentsOf: applyWorkspaceMetadata(entries) { key, value in
+                try workspace.setMetadataValues([key: value])
+            })
             timings.append(StepTiming(
                 step: "metadata.workspace.write",
                 durationMs: metaClock.elapsedMs
@@ -182,7 +210,7 @@ enum WorkspaceLayoutExecutor {
         }
 
         walkState.materialize(
-            plan.layout,
+            layout,
             intoPane: rootPaneId,
             anchor: .seedTerminal(seedPanel)
         )
@@ -195,7 +223,7 @@ enum WorkspaceLayoutExecutor {
         // would indicate a walker fault or an unsupported plan) now emits
         // a typed ApplyFailure instead of being dropped silently (I4c).
         let dividerFailures = applyDividerPositions(
-            planNode: plan.layout,
+            planNode: layout,
             liveNode: workspace.bonsplitController.treeSnapshot(),
             workspace: workspace
         )
@@ -323,6 +351,13 @@ enum WorkspaceLayoutExecutor {
                 // consulted when the plan declared a command at all.
                 effectiveCommand = rawCommand
                 usedRegistry = false
+            } else if surfaceSpec.machine != nil, options.restartRegistry != nil {
+                // C11H-365 (L4): a linked machine's terminal is restored on that
+                // machine and never gets a synthesized restart: its agent
+                // metadata came from that machine.
+                walkState.warnings.append("restart not synthesized for surface[\(surfaceSpec.id)]: a linked machine's terminal")
+                effectiveCommand = nil
+                usedRegistry = false
             } else if let registry = options.restartRegistry {
                 let surfaceMeta = stringMetadata(surfaceSpec.metadata)
                 let terminalType = surfaceMeta[PanelMetadataKeyName.terminalType]
@@ -418,8 +453,8 @@ enum WorkspaceLayoutExecutor {
         // exceeded options.perStepTimeoutMs emits a typed warning; the
         // executor never aborts — partial-failure semantics per the plan's
         // "truncate-on-failure" principle. A value of 0 disables the
-        // check. The synthetic "total" step is exempt; its budget is the
-        // acceptance fixture's concern, not per-step.
+        // check. The synthetic "total" step is exempt; its speed will be measured by
+        // the layout-apply perf-lane benchmark (ticket to follow).
         if options.perStepTimeoutMs > 0 {
             let threshold = Double(options.perStepTimeoutMs)
             for timing in timings where timing.step != "total" && timing.durationMs > threshold {
@@ -554,6 +589,27 @@ enum WorkspaceLayoutExecutor {
     /// at the same time updates callers that emit plans (Blueprint parser,
     /// Snapshot reader). Phase 0 ships only version 1.
     nonisolated static let supportedPlanVersions: Set<Int> = [1]
+
+    /// Hand-written blueprints historically skipped invalid workspace keys.
+    /// Apply independently so one rejected value (including a size overflow)
+    /// does not roll back the workspace or prevent later valid keys landing.
+    nonisolated static func applyWorkspaceMetadata(
+        _ entries: [String: PersistedJSONValue],
+        write: (String, PersistedJSONValue) throws -> Void
+    ) -> [String] {
+        var warnings: [String] = []
+        for key in entries.keys.sorted() {
+            guard let value = entries[key] else { continue }
+            do {
+                try write(key, value)
+            } catch {
+                warnings.append(String(format: String(localized: "workspace.apply.metadataSkipped",
+                    defaultValue: "Skipped workspace metadata key '%@': %@"),
+                    key, WorkspaceMetadataStore.rejectionCategory(error)))
+            }
+        }
+        return warnings
+    }
 
     /// Returns the first validation failure encountered, or `nil` if the plan
     /// is structurally sound. Pure — safe to call off the main actor before
@@ -751,6 +807,16 @@ enum WorkspaceLayoutExecutor {
             }
         }
 
+        /// C11H-365 (L4): an anchor is reused only for a leaf of its kind on
+        /// its machine. The seed terminal is on this Mac, so a linked
+        /// machine's terminal replaces it rather than restoring as local.
+        private func anchorFits(_ anchor: AnchorPanel, _ spec: PanelSpec) -> Bool {
+            guard anchor.kind == spec.kind else { return false }
+            guard spec.kind == .terminal else { return true }
+            let anchorMachine = (workspace.panels[anchor.panelId] as? TerminalPanel)?.hcRemoteTarget?.machine
+            return anchorMachine == spec.machine
+        }
+
         private mutating func materializePane(
             _ areaSpec: LayoutTreeSpec.AreaSpec,
             intoPane paneId: PaneID,
@@ -768,7 +834,7 @@ enum WorkspaceLayoutExecutor {
 
             let leafClock = StepClock()
             let firstPanelId: UUID
-            if anchor.kind == firstSurface.kind {
+            if anchorFits(anchor, firstSurface) {
                 firstPanelId = anchor.panelId
                 // Anchor reuse cannot honor an explicit workingDirectory —
                 // either the seed already launched with the workspace cwd
@@ -796,11 +862,11 @@ enum WorkspaceLayoutExecutor {
                     inPane: paneId,
                     focus: false
                 ) else {
-                    failures.append(ApplyFailure(
+                    failures.append(creationFailure(firstSurface, ApplyFailure(
                         code: "surface_create_failed",
                         step: "surface[\(firstSurface.id)].create",
                         message: "failed to replace anchor with \(firstSurface.kind.rawValue) surface"
-                    ))
+                    )))
                     return
                 }
                 firstPanelId = replacement
@@ -826,11 +892,11 @@ enum WorkspaceLayoutExecutor {
                 guard let spec = surfacesById[additionalSurfaceId] else { continue }
                 let addClock = StepClock()
                 guard let newPanelId = createSurface(spec, inPane: paneId, focus: false) else {
-                    failures.append(ApplyFailure(
+                    failures.append(creationFailure(spec, ApplyFailure(
                         code: "surface_create_failed",
                         step: "surface[\(spec.id)].create",
                         message: "failed to add \(spec.kind.rawValue) surface to pane"
-                    ))
+                    )))
                     continue
                 }
                 timings.append(StepTiming(
@@ -899,11 +965,11 @@ enum WorkspaceLayoutExecutor {
 
             guard let newPanelId,
                   let newPaneId = workspace.paneIdForPanel(newPanelId) else {
-                failures.append(ApplyFailure(
+                failures.append(creationFailure(secondFirstSurface, ApplyFailure(
                     code: "split_failed",
                     step: "layout.split[\(label)].create",
                     message: "newXSplit rejected split from panel for \(secondFirstSurface.kind.rawValue)"
-                ))
+                )))
                 // Best-effort: populate first in the current pane, drop second.
                 materialize(splitSpec.first, intoPane: paneId, anchor: anchor)
                 return
@@ -918,6 +984,14 @@ enum WorkspaceLayoutExecutor {
                 intoPane: newPaneId,
                 anchor: .anyExisting(panelId: newPanelId, kind: secondFirstSurface.kind)
             )
+        }
+
+        /// C11H-396: a terminal leaf refused up front (its machine's routed
+        /// link is unusable) reports that refusal's code and message, the
+        /// ones `--on` gives; any other failure keeps `fallback`.
+        private func creationFailure(_ spec: PanelSpec, _ fallback: ApplyFailure) -> ApplyFailure {
+            guard spec.kind == .terminal, let refusal = workspace.lastHCRemoteRefusal else { return fallback }
+            return ApplyFailure(code: refusal.code, step: fallback.step, message: refusal.message)
         }
 
         /// Dispatch to the right `Workspace.newXSplit` primitive. Always
@@ -937,7 +1011,8 @@ enum WorkspaceLayoutExecutor {
                     orientation: orientation,
                     insertFirst: false,
                     focus: false,
-                    workingDirectory: spec.workingDirectory
+                    workingDirectory: spec.workingDirectory,
+                    machine: WorkspaceLayoutExecutor.machineRequest(for: spec)
                 )?.id
             case .browser:
                 if spec.workingDirectory != nil {
@@ -1162,7 +1237,8 @@ enum WorkspaceLayoutExecutor {
                 return workspace.newTerminalSurface(
                     inPane: paneId,
                     focus: focus,
-                    workingDirectory: spec.workingDirectory
+                    workingDirectory: spec.workingDirectory,
+                    machine: WorkspaceLayoutExecutor.machineRequest(for: spec)
                 )?.id
             case .browser:
                 if spec.workingDirectory != nil {
@@ -1195,6 +1271,55 @@ enum WorkspaceLayoutExecutor {
         switch node {
         case .pane(let pane): return pane.surfaceIds.first
         case .split(let split): return firstLeafSurfaceId(split.first)
+        }
+    }
+
+    /// Every leaf's surface ids, in layout order.
+    fileprivate nonisolated static func leafSurfaceIds(_ node: LayoutTreeSpec) -> [String] {
+        switch node {
+        case .pane(let pane): return pane.surfaceIds
+        case .split(let split): return leafSurfaceIds(split.first) + leafSurfaceIds(split.second)
+        }
+    }
+
+    /// C11H-396: the plan's terminal leaves refused up front, in layout
+    /// order. Each one's machine has a routed link c11 won't use, so it is
+    /// reported as `--on` reports it (`machine_link_unusable`) and never made.
+    static func refusedRemoteLeaves(_ plan: WorkspaceApplyPlan,
+                                    unusable: Set<String>) -> [(surfaceId: String, failure: ApplyFailure)] {
+        let specs = Dictionary(plan.surfaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return leafSurfaceIds(plan.layout).compactMap { id -> (surfaceId: String, failure: ApplyFailure)? in
+            guard let spec = specs[id] else { return nil }
+            let request = machineRequest(for: spec)
+            let target = HCMachineTarget.placement(request: request, explicitCwd: spec.workingDirectory, source: nil)
+            guard let refusal = Workspace.hcRemoteRefusal(request, target: target, unusable: unusable) else { return nil }
+            return (id, ApplyFailure(code: refusal.code, step: "surface[\(id)].create", message: refusal.message))
+        }
+    }
+
+    /// C11H-396: `node` without the surfaces in `ids`. An area left with
+    /// none goes, and a split left with one side becomes that side; nil when
+    /// nothing is left. An area's selected tab keeps its selection.
+    nonisolated static func pruned(_ node: LayoutTreeSpec, removing ids: Set<String>) -> LayoutTreeSpec? {
+        switch node {
+        case .pane(let area):
+            let kept = area.surfaceIds.filter { !ids.contains($0) }
+            guard !kept.isEmpty else { return nil }
+            let selected = area.selectedIndex.flatMap { index in
+                area.surfaceIds.indices.contains(index) ? kept.firstIndex(of: area.surfaceIds[index]) : nil
+            }
+            return .pane(LayoutTreeSpec.AreaSpec(surfaceIds: kept, selectedIndex: selected))
+        case .split(let split):
+            switch (pruned(split.first, removing: ids), pruned(split.second, removing: ids)) {
+            case let (first?, second?):
+                return .split(LayoutTreeSpec.SplitSpec(orientation: split.orientation,
+                                                       dividerPosition: split.dividerPosition,
+                                                       first: first, second: second))
+            case let (only?, nil), let (nil, only?):
+                return only
+            case (nil, nil):
+                return nil
+            }
         }
     }
 
@@ -1294,6 +1419,14 @@ enum WorkspaceLayoutExecutor {
             }
         }
         return out
+    }
+
+    /// C11H-365 (L4): where a terminal leaf is created: on its recorded
+    /// machine, else this Mac. C11H-396: a new terminal, so a machine whose
+    /// routed link is unusable refuses it up front (`.planned`).
+    nonisolated static func machineRequest(for spec: PanelSpec) -> HCMachineRequest {
+        guard spec.kind == .terminal, let machine = spec.machine, !machine.isEmpty else { return .local }
+        return .planned(HCRemoteTarget(machine: machine, cwd: spec.workingDirectory))
     }
 
     /// C11-25 fix S4+E1: returns `true` when the plan declares

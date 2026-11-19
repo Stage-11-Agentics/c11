@@ -2027,39 +2027,60 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         XCTAssertNil(workspace.bonsplitController.tab(bonsplitTabId)?.activityState)
     }
 
-    func testSessionRestoreRehydratesPersistedDerivedActivityBeforePanelSync() throws {
-        let source = Workspace()
-        let panelId = try XCTUnwrap(source.focusedPanelId)
-        defer {
-            PanelMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
+    /// A live workspace's own snapshot, restored. A saved derived `activity` is
+    /// not evidence from this app instance, so it never comes back, whoever
+    /// owns the panel (C11H-323); an explicit one is the agent's own report and
+    /// does. What comes back is in the activity map before restore syncs the
+    /// area tabs, so the restored tab draws it at once. The activity sits on a
+    /// background tab: restoring focus repaints only the selected tab, so only
+    /// that sync paints this one.
+    func testSessionRestoreDropsDerivedActivityAndPaintsAnExplicitOneBeforePanelSync() throws {
+        for (activitySource, kept) in [(MetadataSource.derived, false), (MetadataSource.explicit, true)] {
+            let label = activitySource.rawValue
+            let source = Workspace()
+            let focusedPanelId = try XCTUnwrap(source.focusedPanelId)
+            let paneId = try XCTUnwrap(source.bonsplitController.focusedPaneId)
+            let panelId = try XCTUnwrap(source.newTerminalSurface(inPane: paneId, focus: false)?.id, label)
+            XCTAssertEqual(source.focusedPanelId, focusedPanelId, label)
+            defer {
+                PanelMetadataStore.shared.removeSurface(workspaceId: source.id, surfaceId: panelId)
+            }
+
+            _ = try PanelMetadataStore.shared.setMetadata(
+                workspaceId: source.id,
+                surfaceId: panelId,
+                partial: [MetadataKey.terminalType: "codex"],
+                mode: .merge,
+                source: .explicit
+            )
+            XCTAssertTrue(PanelMetadataStore.shared.setInternal(
+                workspaceId: source.id,
+                surfaceId: panelId,
+                key: MetadataKey.activity,
+                value: SidebarActivityState.working.rawValue,
+                source: activitySource
+            ), label)
+            source.setDerivedActivity(.working, forSurface: panelId)
+
+            let snapshot = source.sessionSnapshot(includeScrollback: false)
+            let restored = Workspace()
+            defer {
+                PanelMetadataStore.shared.removeSurface(workspaceId: restored.id, surfaceId: panelId)
+            }
+            restored.restoreSessionSnapshot(snapshot)
+
+            XCTAssertEqual(restored.focusedPanelId, focusedPanelId, label)
+            let restoredBonsplitTabId = try XCTUnwrap(restored.bonsplitTabIdFromTabId(panelId), label)
+            let stored = PanelMetadataStore.shared.getMetadata(workspaceId: restored.id, surfaceId: panelId)
+            XCTAssertEqual(stored.metadata[MetadataKey.terminalType] as? String, "codex", label)
+            XCTAssertEqual(stored.metadata[MetadataKey.activity] as? String, kept ? "working" : nil, label)
+            XCTAssertEqual(restored.derivedActivityByPanel[panelId], kept ? .working : nil, label)
+            XCTAssertEqual(
+                restored.bonsplitController.tab(restoredBonsplitTabId)?.activityState,
+                kept ? .running : .idle,
+                label
+            )
         }
-
-        _ = try PanelMetadataStore.shared.setMetadata(
-            workspaceId: source.id,
-            surfaceId: panelId,
-            partial: [MetadataKey.terminalType: "codex"],
-            mode: .merge,
-            source: .explicit
-        )
-        _ = PanelMetadataStore.shared.setInternal(
-            workspaceId: source.id,
-            surfaceId: panelId,
-            key: MetadataKey.activity,
-            value: SidebarActivityState.working.rawValue,
-            source: .derived
-        )
-        source.setDerivedActivity(.working, forSurface: panelId)
-
-        let snapshot = source.sessionSnapshot(includeScrollback: false)
-        let restored = Workspace()
-        defer {
-            PanelMetadataStore.shared.removeSurface(workspaceId: restored.id, surfaceId: panelId)
-        }
-        restored.restoreSessionSnapshot(snapshot)
-
-        let restoredBonsplitTabId = try XCTUnwrap(restored.bonsplitTabIdFromTabId(panelId))
-        XCTAssertEqual(restored.derivedActivityByPanel[panelId], .working)
-        XCTAssertEqual(restored.bonsplitController.tab(restoredBonsplitTabId)?.activityState, .running)
     }
 
     func testActivityMetadataMutationsRehydrateLivePanelProjection() throws {
@@ -2524,7 +2545,7 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         )
     }
 
-    func testClosingPaneDropsBranchesFromClosedSide() {
+    func testClosingPaneDropsBranchesFromClosedSide() async {
         let workspace = Workspace()
         guard let leftPanelId = workspace.focusedPanelId,
               let leftPaneId = workspace.paneId(forPanelId: leftPanelId),
@@ -2537,7 +2558,14 @@ final class WorkspacePanelGitBranchTests: XCTestCase {
         workspace.updatePanelGitBranch(panelId: rightPanel.id, branch: "branch2", isDirty: false)
 
         XCTAssertEqual(workspace.sidebarGitBranchesInDisplayOrder().map(\.branch), ["branch1", "branch2"])
-        XCTAssertTrue(workspace.bonsplitController.closePane(leftPaneId))
+        // The operator's area close: an hc terminal's close always asks
+        // (C11H-24), so confirm the area card, which then closes the area.
+        workspace.splitTabBar(workspace.bonsplitController, didRequestClosePane: leftPaneId)
+        let carded = await waitForC11HostCondition(timeout: 2) { workspace.areaCloseInteractionRuntime.active[leftPaneId.id] != nil }
+        XCTAssertTrue(carded, "The area close should present its confirm card")
+        workspace.areaCloseInteractionRuntime.resolveConfirm(panelId: leftPaneId.id, result: .confirmed)
+        let closed = await waitForC11HostCondition(timeout: 2) { !workspace.bonsplitController.allPaneIds.contains(leftPaneId) }
+        XCTAssertTrue(closed, "The confirmed area close should remove the left area")
         XCTAssertEqual(workspace.sidebarGitBranchesInDisplayOrder().map(\.branch), ["branch2"])
     }
 }
@@ -3115,6 +3143,16 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
             workspace.newTerminalSurface(inPane: paneId, focus: false)
         })
         let survivor = try XCTUnwrap(workspace.newTerminalSurface(inPane: paneId, focus: false))
+        // Close Others batches what it closes in one pass. This workspace has
+        // no manager to ask on its behalf, so a persistent hc terminal would
+        // defer its close to its own confirm card (C11H-24); with a manager the
+        // batch asks once (C11H-309, HCBatchCloseTests). Run these as idle exec
+        // shells, which close in that same pass.
+        for terminal in [owner, delegate, survivor] {
+            terminal.surface.useExecShellForTesting()
+            terminal.surface.setNeedsConfirmCloseOverrideForTesting(false)
+            XCTAssertFalse(workspace.panelNeedsConfirmClose(panelId: terminal.id, fallbackNeedsConfirmClose: false))
+        }
         let survivorTabId = try XCTUnwrap(workspace.bonsplitTabIdFromTabId(survivor.id))
         let survivorTab = try XCTUnwrap(
             workspace.bonsplitController.tabs(inPane: paneId).first { $0.id == survivorTabId }
@@ -3201,7 +3239,7 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
         XCTAssertNil(workspace.attentionSnapshot(panelId: target).delegatedBy)
     }
 
-    func testAreaClosePreservesFinalLineageIdentity() throws {
+    func testAreaClosePreservesFinalLineageIdentity() async throws {
         let workspace = Workspace()
         defer { workspace.teardownAllPanels() }
         let parent = try XCTUnwrap(workspace.focusedTerminalPanel)
@@ -3228,7 +3266,14 @@ final class WorkspaceLogicalCreationPersistenceTests: XCTestCase {
             source: .explicit
         )
 
-        XCTAssertTrue(workspace.bonsplitController.closePane(parentArea))
+        // The operator's area close: its card asks once for the whole area
+        // (an hc terminal's close always asks, C11H-24), then closes it.
+        workspace.splitTabBar(workspace.bonsplitController, didRequestClosePane: parentArea)
+        let carded = await waitForC11HostCondition(timeout: 2) { workspace.areaCloseInteractionRuntime.active[parentArea.id] != nil }
+        XCTAssertTrue(carded, "The area close should present its confirm card")
+        workspace.areaCloseInteractionRuntime.resolveConfirm(panelId: parentArea.id, result: .confirmed)
+        let closed = await waitForC11HostCondition(timeout: 2) { workspace.panels[parent.id] == nil }
+        XCTAssertTrue(closed, "The confirmed area close should close the parent's area")
 
         let closedParent = try XCTUnwrap(PanelLineage.shared.node(panelId: parent.id))
         XCTAssertTrue(closedParent.isClosed)

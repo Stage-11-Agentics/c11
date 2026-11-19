@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Built-CLI journal transport: auth, lost ack/spool, permanent errors and privacy.
 
-Hermetic Unix peer on Atlas; no live app and no provider config writes.
+Hermetic Unix peer on the build host; no live app and no provider config writes.
 """
 import os
 import sys

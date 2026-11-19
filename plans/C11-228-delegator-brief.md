@@ -1,7 +1,7 @@
 # C11-228 delegator brief
 
 You are the delegator for Lattice ticket **C11-228** in the c11 repo
-(`/Users/atin/Projects/Stage11/code/c11`). Load the `lattice` skill, run
+(`~/src/c11`). Load the `lattice` skill, run
 `lattice show C11-228` and read the whole description first; it carries the
 evidence and the probable mechanism. Work only in your own worktree, open a PR,
 drive it to green CI, and report back. Do not touch the main checkout.
@@ -68,7 +68,7 @@ for 20 minutes today. CI's `build` job compiles and runs the logic gate;
 ## Worktree
 
 ```bash
-cd /Users/atin/Projects/Stage11/code/c11
+cd ~/src/c11
 git worktree add ../c11-worktrees/c11-228-throttle-on-deselect -b fix/C11-228-throttle-on-deselect origin/main
 cd ../c11-worktrees/c11-228-throttle-on-deselect
 git submodule update --init --recursive ghostty vendor/bonsplit

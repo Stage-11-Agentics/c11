@@ -7,7 +7,7 @@ description: "Hot-reload workflow for c11 development: initial setup, tagged Deb
 
 How to build, reload, and tail a c11 dev instance.
 
-## Default: build on Atlas
+## Default: build on the build host
 
 From a provisioned delegator worktree on the laptop:
 
@@ -17,11 +17,11 @@ From a provisioned delegator worktree on the laptop:
 
 This runs no local xcodebuild. It bundles the exact parent/submodule commits, overlays tracked modifications and untracked non-ignored files with content hashes, and retrieves the tagged Debug app plus logs and `result.json` under `build-remote/<invocation>/`. Tracked deletions, executable modes and symlinks are preserved. Dirty submodules are refused: commit and pin their changes first. Initialize the required submodules with `git submodule update --init --recursive ghostty vendor/bonsplit`; do not run `setup.sh` on the laptop to build GhosttyKit.
 
-Staging uploads only the commits Atlas lacks: Atlas keeps one mirror per repository (`~/c11-builds/mirrors/`), and each bundle excludes everything reachable from a head the mirror holds, so a head whose parent was built before sends a few KB; with no shared base it falls back to a full bundle. The client prints `staged <MB> in <s>; bundles: …` per run, and Atlas checks out the requested SHAs from the mirror and verifies them before building.
+Staging uploads only the commits the build host lacks: it keeps one mirror per repository (`mirrors/` in the remote build folder), and each bundle excludes everything reachable from a head the mirror holds, so a head whose parent was built before sends a few KB; with no shared base it falls back to a full bundle. The client prints `staged <MB> in <s>; bundles: …` per run, and the build host checks out the requested SHAs from the mirror and verifies them before building.
 
-Atlas uses process-scoped Xcode 26.3 (`/Applications/Xcode-26.3.app/Contents/Developer`) and Zig 0.15.2 (`~/zig-0.15.2`). `C11_REMOTE_HOST` defaults to `atlas`; `--host` overrides it. `C11_REMOTE_DEVELOPER_DIR` and `C11_REMOTE_ZIG_DIR` override paths but the versions are checked. No global Xcode selection or credential provisioning happens.
+The build host is `--host`, else `C11_REMOTE_HOST`, else that key in `~/.config/c11/dev-hosts` (private, `KEY=value` lines; it also holds `C11_SANDBOX_HOST` and `C11_SIGNING_HOST`); a script with none set names the variable and exits 2. The build host uses process-scoped Xcode 26.3 (`/Applications/Xcode-26.3.app/Contents/Developer`) and Zig 0.15.2 (`~/zig-0.15.2`). `C11_REMOTE_DEVELOPER_DIR` and `C11_REMOTE_ZIG_DIR` override paths but the versions are checked. No global Xcode selection or credential provisioning happens.
 
-The Atlas route has two slots with separate per-tag caches: slot 1 is reserved for the PR Swift poller; owner gates and all other Atlas builds share slot 2, one at a time. At normal load, one poller build and one fleet build may overlap. After one-minute load stays above 40 for 60 seconds, starts serialize: a fleet build takes slot 2 only while slot 1 is idle, then holds slot 1 as a guard; a poller build takes slot 1 only while slot 2 is idle, then holds slot 2 as a guard. Both slots stay held through the build, so new builds wait; builds admitted before load rises may finish. Same-tag requests serialize. The ordinary laptop `with-build-lock.sh` remains single-slot. Atlas builds outside this route must be coordinated with its capacity.
+The remote route has two slots with separate per-tag caches: slot 1 is reserved for the PR Swift poller; owner gates and all other build-host builds share slot 2, one at a time. At normal load, one poller build and one fleet build may overlap. After one-minute load stays above 40 for 60 seconds, starts serialize: a fleet build takes slot 2 only while slot 1 is idle, then holds slot 1 as a guard; a poller build takes slot 1 only while slot 2 is idle, then holds slot 2 as a guard. Both slots stay held through the build, so new builds wait; builds admitted before load rises may finish. Same-tag requests serialize. The ordinary laptop `with-build-lock.sh` remains single-slot. Build-host builds outside this route must be coordinated with its capacity.
 
 GitHub's native CI for main runs on the free GitHub-hosted `macos-15` runner.
 PRs keep the cheap Ubuntu lane. `ci-hourly.yml` ("CI main (macOS)") runs on
@@ -30,7 +30,7 @@ with one pending run that each newer request replaces. An admitted run tests the
 ref's tip at that moment, not its trigger. A pass posts a `CI main (macOS)` commit status
 on the tested commit; a run whose tip already has one skips. A failed tip
 lookup fails the run; a failed green-record lookup builds. The independent
-Atlas main backstop posts `c11/main-atlas`, shares slot 1 with the PR poller,
+build-host main backstop posts `c11/main-atlas`, shares slot 1 with the PR poller,
 and yields to PR work. See `docs/c11-main-backstop.md` for its gated install
 and lifecycle commands.
 `ci-macos-compat.yml` and `build-ghosttykit.yml` run hourly/manual against main.
@@ -41,7 +41,7 @@ registered or used in this PR. An access-restricted runner is a follow-up that
 requires Atin to decide the repository, trigger, and network boundary.
 
 For landing, the Merge Captain gates the exact PR head with fresh review, the
-cheap PR checks, and an Atlas exact-head remote build for every Swift or native
+cheap PR checks, and a build-host exact-head remote build for every Swift or native
 change after the branch includes current `origin/main`. Worktrees share refs,
 so a fetch from any worktree moves `origin/main` under a gate in progress:
 after the gate, run `git merge-base --is-ancestor origin/main HEAD` again before
@@ -53,10 +53,10 @@ The main backstop result is the post-merge authority; red main is fixed forward.
 For Ghostty pointer changes, manually dispatch `Build GhosttyKit` on the
 internal bump branch, wait for its prerelease non-`latest` artifact and bot
 checksum commit, refresh PR checks at that bot-created head, then run the
-exact-head Atlas gate before landing. The workflow keys on the ghostty SHA, so a
+exact-head build-host gate before landing. The workflow keys on the ghostty SHA, so a
 Bonsplit-only pointer bump needs no dispatch.
 
-Remote failure returns nonzero, retrieves available logs, and preserves the previous local app without launching it. The default stages only; it never launches or restarts c11. Successful Debug retrieval rewrites only the app's host-specific daemon/repository paths and ad-hoc signs it; result.json records both Atlas and client executable hashes. Launch with QA startup dialogs suppressed only when a launch is authorized:
+Remote failure returns nonzero, retrieves available logs, and preserves the previous local app without launching it. The default stages only; it never launches or restarts c11. Successful Debug retrieval rewrites only the app's host-specific daemon/repository paths and ad-hoc signs it; result.json records both build-host and client executable hashes. Launch with QA startup dialogs suppressed only when a launch is authorized:
 
 ```bash
 ./scripts/launch-tagged-automation.sh <tag> --qa fresh
@@ -64,17 +64,17 @@ Remote failure returns nonzero, retrieves available logs, and preserves the prev
 ./scripts/remote-build.sh --tag <tag> --launch
 ```
 
-Atlas appends one completed owner-gate measurement to `~/c11-builds/gates.jsonl`.
+The build host appends one completed owner-gate measurement to `gates.jsonl` in the remote build folder.
 Its `started` timestamp includes the local timezone offset and precedes slot
 admission; `test_args` records the effective selectors and automatic skips.
 
-In the c11 1.0 run, packaged-app validation and computer use run on Atlas only. The laptop receives the app but does not launch it. On Atlas, launch the retained tagged app using its source checkout's `launch-tagged-automation.sh`. Never launch an untagged c11 DEV app.
+In the c11 1.0 run, packaged-app validation and computer use run on the build host only. The laptop receives the app but does not launch it. On the build host, launch the retained tagged app using its source checkout's `launch-tagged-automation.sh`. Never launch an untagged c11 DEV app.
 
 Tagged builds can run behind production during socket work: c11 holds a user-initiated activity while a socket client is connected and for 60 seconds after the last disconnect. Shell telemetry sends a socket report every 45 seconds, so an open shell keeps the activity held and the idle release rarely fires; the activity still allows system idle sleep.
 
-A command for Atlas that is more than one step goes in a file, run as `ssh atlas bash -s < file`. A quoted multi-command string (`ssh atlas "cd … && rm … && python3 …"`) cannot be checked by the permission prompt, so the seat stalls on a prompt nobody answers. *(1.7.8 run: a seat sat blocked on a quoted remote `sh -c`.)* Guest commands follow the same rule through the shared folder; see Guest hygiene in the `c11-computer-use` skill.
+A command for the build host that is more than one step goes in a file, run as `ssh <build host> bash -s < file`. A quoted multi-command string (`ssh <build host> "cd … && rm … && python3 …"`) cannot be checked by the permission prompt, so the seat stalls on a prompt nobody answers. *(1.7.8 run: a seat sat blocked on a quoted remote `sh -c`.)* Guest commands follow the same rule through the shared folder; see Guest hygiene in the `c11-computer-use` skill.
 
-Live proofs that need real agent panels (Claude Code, Codex, Grok receiving mail or running hooks) run in an Atlas sandbox guest: `scripts/sandbox-up.sh <run-id> <tagged.app> --agents claude,codex,grok`, then `scripts/sandbox-agent.sh <run-id> launch|c11|screen …`, then `sandbox-down` and `sandbox-agent.sh <run-id> verify-clean`. The retained Atlas copy of a remote build is under `~/c11-builds/<tag>/artifacts/<invocation>/`; running the sandbox scripts on Atlas with `C11_SANDBOX_HOST=local` against it skips the upload from the laptop. Details: the `c11-computer-use` skill.
+Live proofs that need real agent panels (Claude Code, Codex, Grok receiving mail or running hooks) run in a build-host sandbox guest: `scripts/sandbox-up.sh <run-id> <tagged.app> --agents claude,codex,grok`, then `scripts/sandbox-agent.sh <run-id> launch|c11|screen …`, then `sandbox-down` and `sandbox-agent.sh <run-id> verify-clean`. The retained build-host copy of a remote build is under `<tag>/artifacts/<invocation>/` in the remote build folder; running the sandbox scripts on the build host with `C11_SANDBOX_HOST=local` against it skips the upload from the laptop. Details: the `c11-computer-use` skill.
 
 ## Fresh-process initialization check
 
@@ -101,23 +101,25 @@ requirements: `docs/validation/c11-349/README.md`.
 | Command | Result |
 |---|---|
 | `./scripts/remote-build.sh --tag <tag>` | Tagged Debug app, logs, source identity; no launch |
-| `./scripts/remote-build.sh --tag <tag> --mode test -- -only-testing:c11LogicTests/<Class>` | Actual test action on Atlas; assertion results separate from compilation |
+| `./scripts/remote-build.sh --tag <tag> --mode test -- -only-testing:c11LogicTests/<Class>` | Actual test action on the build host; assertion results separate from compilation |
 | `./scripts/remote-build.sh --tag <tag> --mode release` | Ad-hoc staging Release app; no publish or launch |
 | `./scripts/remote-build.sh --tag <tag> --mode release --wmo --universal` | Release staging with production compilation settings |
 
-Test selection uses the safe per-PID socket wrapper. Pass `-resultBundlePath <relative-path>.xcresult` to retrieve an xcresult. Signing/notarization for publication remains in GitHub Actions, with named approval of exact signed bytes; this route does not copy credentials. For `c11Tests` and `c11LogicTests` test runs, `remote-build.sh` reads `scripts/host-test-quarantine.tsv` and automatically skips both `all` and `atlas` rows, logging each scope. An exact quarantined method named in `-only-testing:<target>/<Class>/testMethod` runs without the automatic skip. Use `--no-host-quarantine` to disable automatic skips.
+`--mode test` runs `c11LogicTests` only (the default when no `-only-testing` is passed) and refuses a `c11Tests` or `c11UITests` selector before anything ships; guests have no Xcode, so those classes are compile-only on a host and host behavior is proven in a `sandbox-up.sh` guest. Test selection uses the safe per-PID socket wrapper. Pass `-resultBundlePath <relative-path>.xcresult` to retrieve an xcresult. Signing/notarization for publication remains in GitHub Actions, with named approval of exact signed bytes; this route does not copy credentials. For a `c11LogicTests` run, `remote-build.sh` reads `scripts/host-test-quarantine.tsv` and automatically skips both `all` and `remote` rows, logging each scope. An exact quarantined method named in `-only-testing:<target>/<Class>/testMethod` runs without the automatic skip. Use `--no-host-quarantine` to disable automatic skips.
 
-The `c11-logic` scheme uses eight parallel workers through `remote-build.sh`. `scripts/test-unit-local.sh` enables parallel testing when `C11_TEST_PARALLEL_WORKERS` is set; the Atlas route sets it to eight. `ci-hourly.yml` uses three workers on `macos-15`.
+The `c11-logic` scheme uses eight parallel workers through `remote-build.sh`. `scripts/test-unit-local.sh` enables parallel testing when `C11_TEST_PARALLEL_WORKERS` is set; the remote route sets it to eight. `ci-hourly.yml` uses three workers on `macos-15`.
 
-## Existing on-Atlas entry points
+## Existing on-build-host entry points
 
-A person working on Atlas may use `./scripts/reload.sh --tag <tag>` to build and launch Debug, or `./scripts/reloads.sh --tag <tag>` for staging. For coordinated builds prefer the remote route, including from an SSH client. Both scripts support `--no-launch` to stage and sign without CLI-shim/socket writes, quits or launches. Their default remains launch. Never run `reloadp.sh` over another agent's session: it terminates the running production app.
+A person working on the build host may use `./scripts/reload.sh --tag <tag>` to build and launch Debug, or `./scripts/reloads.sh --tag <tag>` for staging. For coordinated builds prefer the remote route, including from an SSH client. Both scripts support `--no-launch` to stage and sign without CLI-shim/socket writes, quits or launches. Their default remains launch. Never run `reloadp.sh` over another agent's session: it terminates the running production app.
 
 A clean quit preserves agent resume; do not pre-kill the app before a reload. Use QA fresh/resume deliberately for validation.
 
 ## Driving a Release/staging build over the socket
 
-A Release/staging build launched by `reloads.sh` binds its **own** socket in automation mode, so a CLI in another local shell can write to it when pointed at `C11_SOCKET_PATH=/tmp/c11-<slug>.sock`, where the slug is the tag lowercased with every non-alphanumeric run collapsed to a hyphen (`--tag rel-v0.65.2` binds `/tmp/c11-rel-v0-65-2.sock`; the script prints the exact path at launch). The script also clears the launching panel's inherited c11 identity before opening the app. For socket-level validation during development, a tagged **Debug** build uses the same externally reachable automation mode via `C11_SOCKET=/tmp/c11-debug-<tag>.sock`.
+A Release/staging build launched by `reloads.sh` binds its **own** socket in automation mode, so a CLI in another local shell can write to it when pointed at `C11_SOCKET_PATH="$(getconf DARWIN_USER_TEMP_DIR)c11/c11-<slug>.sock"`, where the slug is the tag lowercased with every non-alphanumeric run collapsed to a hyphen (`--tag rel-v0.65.2` binds `…c11/c11-rel-v0-65-2.sock`; the script prints the exact path at launch). The script also clears the launching panel's inherited c11 identity before opening the app. For socket-level validation during development, a tagged **Debug** build uses the same externally reachable automation mode via `C11_SOCKET="$(getconf DARWIN_USER_TEMP_DIR)c11/c11-debug-<tag>.sock"` (`launch-tagged-automation.sh` prints it as `socket:`).
+
+Dev sockets, debug and build logs, and the `c11-last-*` breadcrumbs live in c11's per-user folder, `$(getconf DARWIN_USER_TEMP_DIR)c11` (0700), never at fixed `/tmp` names another local account could create first. A tag longer than about 29 characters gets a shortened socket name ending in a hash, so the path fits a Unix socket; take it from the script's output. A tagged build also keeps the `/tmp/c11-debug-<tag>.sock` name as a link to its socket, for terminals that still carry that name.
 
 ## QA / automation launch (suppress the startup dialogs)
 
@@ -159,7 +161,7 @@ The launcher unsets any inherited `C11_QA_LAUNCH` and only sets it when `--qa` i
 When rebuilding `GhosttyKit.xcframework`, always use Release optimizations:
 
 ```bash
-# On Atlas only, coordinated with its build slots:
+# On the build host only, coordinated with its build slots:
 cd ghostty && ../scripts/with-build-lock.sh zig build -Demit-xcframework=true -Dxcframework-target=universal -Doptimize=ReleaseFast
 ```
 
@@ -181,15 +183,17 @@ When reporting a tagged reload result to the user, use the format for your agent
 =======================================================
 ```
 
-Never use `/tmp/c11-<tag>/...` app links in chat output. If the expected DerivedData path is missing, resolve the real `.app` path and report that `file://` URL.
+Never use `…c11/c11-<tag>/...` or `/tmp/c11-<tag>/...` app links in chat output. If the expected DerivedData path is missing, resolve the real `.app` path and report that `file://` URL.
 
 ## Tag hygiene
 
-Before launching a new tagged run, clean up any older tags you started in this session (quit the old tagged app, remove its `/tmp` socket / derived data).
+Before launching a new tagged run, clean up any older tags you started in this session (quit the old tagged app, remove its socket in the per-user folder / derived data).
 
-**In a fleet, one tag per seat, reused on every `remote-build.sh` call**, named for the seat (`md-358`), never a tag per attempt. The per-tag cache on Atlas is what makes the second build take seconds: measured 2026-10-08, a debug build is 15 s unchanged to about 5 min on a fresh tag, a narrowed test slice 15 s to 3 min, the landing gate (compile plus `c11LogicTests`) 5 to 10 min. Each tag costs about 4.7 GB on Atlas; seven seats with per-attempt tags filled the volume. Prune a seat's tag when its ticket completes by removing both caches on Atlas: `~/c11-builds/<tag>` (test DerivedData and artifacts) and `~/Library/Developer/Xcode/DerivedData/c11-<tag>` (the app build, about 3.7 GB). `scripts/prune-tags.sh --yes` clears only the second. A build loop slower than these numbers is a problem to raise, not a cost to absorb.
+**In a fleet, one tag per seat, reused on every `remote-build.sh` call**, named for the seat (`md-358`), never a tag per attempt. The per-tag cache on the build host is what makes the second build take seconds: measured 2026-10-08, a debug build is 15 s unchanged to about 5 min on a fresh tag, a narrowed test slice 15 s to 3 min, the landing gate (compile plus `c11LogicTests`) 5 to 10 min. Each tag costs about 4.7 GB on the build host; seven seats with per-attempt tags filled the volume. Prune a seat's tag when its ticket completes by removing both caches on the build host: `<tag>` in the remote build folder (test DerivedData and artifacts) and `~/Library/Developer/Xcode/DerivedData/c11-<tag>` (the app build, about 3.7 GB). `scripts/prune-tags.sh --yes` clears only the second. A build loop slower than these numbers is a problem to raise, not a cost to absorb.
 
-**Prune stale tags periodically.** Each `reload.sh --tag` leaves ~3.5G behind in DerivedData and `/tmp` that nothing auto-cleans — across many iterations this consumes hundreds of GB:
+**`refused new tag <tag>` (exit 73)** means the build host is under its free-space floor (30 GiB, plus 10 GiB for your tag and for each other new tag whose first build is running) and your tag has no cache there yet; nothing was copied. Reuse your seat's existing tag, or prune a finished tag from the list the refusal prints (both caches, as above). Recently admitted tags belong to working seats, so leave them alone.
+
+**Prune stale tags periodically.** Each `reload.sh --tag` leaves ~3.5G behind in DerivedData and c11's per-user folder that nothing auto-cleans — across many iterations this consumes hundreds of GB:
 
 ```bash
 ./scripts/prune-tags.sh           # dry run
@@ -204,14 +208,14 @@ Running tags are auto-protected. A weekly launchd job (`scripts/launchd/com.stag
 All debug events (keys, mouse, focus, splits, panels) go to a unified log in DEBUG builds:
 
 ```bash
-tail -f "$(cat /tmp/c11-last-debug-log-path 2>/dev/null || echo /tmp/c11-debug.log)"
+d="$(getconf DARWIN_USER_TEMP_DIR)c11"; tail -f "$(cat "$d/c11-last-debug-log-path" 2>/dev/null || echo "$d/c11-debug.log")"
 ```
 
-- Untagged Debug app: `/tmp/c11-debug.log`
-- Tagged Debug app (`reload.sh --tag <tag>`): `/tmp/c11-debug-<tag>.log`
-- `reload.sh` writes the current path to `/tmp/c11-last-debug-log-path`
-- `reload.sh` writes the selected dev CLI path to `/tmp/c11-last-cli-path`
-- `reload.sh` updates `/tmp/c11-cli`, `$HOME/.local/bin/c11-dev`, and `$HOME/.local/bin/cmux-dev` (compat alias) to that CLI
+- Untagged Debug app: `$(getconf DARWIN_USER_TEMP_DIR)c11/c11-debug.log`
+- Tagged Debug app (`reload.sh --tag <tag>`): `$(getconf DARWIN_USER_TEMP_DIR)c11/c11-debug-<tag>.log`
+- `reload.sh` writes the current path to `c11-last-debug-log-path` in that folder
+- `reload.sh` writes the selected dev CLI path to `c11-last-cli-path` in that folder
+- `reload.sh` updates `c11-cli` in that folder and `$HOME/.local/bin/c11-dev` to that CLI (and `/tmp/c11-cli` while that name is this user's own link)
 
 ### Adding a log call
 

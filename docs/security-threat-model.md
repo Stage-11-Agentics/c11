@@ -277,13 +277,20 @@ selected workspace, so it is gated on native operator input:
   with a notice; `browser open|goto` and the CLI return
   `operator_activation_required`.
 - Terminals act only on a native Cmd-click on a bare `c11://` URL (Ghostty's
-  `link-url` matcher, pinned in the Ghostty fork) or an OSC 8 link, in a key,
-  visible window. The OSC 8 label is untrusted: the Cmd-hover preview shows
+  `link-url` matcher, pinned in the Ghostty fork) or an OSC 8 link, or the
+  captured-mouse click below, in a key, visible window. The OSC 8 label is untrusted: the Cmd-hover preview shows
   the destination's live panel title and workspace, never the label. A
   malformed `c11:` string is consumed so it never reaches Ghostty's external
   opener. Since 1.7.9 (C11-533), a Cmd-click refused only because its window
   is not key or its view is hidden shows no notice, because that refusal says
   nothing about the target; it is still refused and logged.
+- While the program in a terminal holds the mouse (Claude Code fullscreen),
+  Ghostty resolves no links, so c11 reads the cell's OSC 8 target itself: a
+  native plain or Cmd click on an OSC 8 `c11:` link navigates through the same
+  policy and log (`captured_click`) and never reaches the program (C11H-325).
+  Before a plain click the operator sees only the untrusted OSC 8 label; the
+  Cmd-hover preview still shows the true destination. A drag, or a release
+  off the link, hands the press to the program; other schemes are untouched.
 - The parser accepts only the exact canonical spelling (at most 128 bytes,
   a UUID path, no user, port, query or fragment). Unknown, stale or malformed
   targets resolve nothing and show a non-modal notice. Each activation logs
@@ -414,7 +421,29 @@ button (v0.51.0) passes the panel's current URL to
 `NSWorkspace.shared.open(_:)`. It is operator-gesture-gated (explicit
 click, never script-triggered) and refuses empty/`about:` schemes; a
 page can influence *which* URL is handed off only by navigating itself,
-which the operator sees in the address bar before clicking.
+which the operator sees in the address bar before clicking. A `c11 show`
+viewer of this Mac never hands out its internal `c11-show:` address. Its
+button is enabled when the page maps to a path the show serves whose name
+passes the hand-off type rule (HTML, plain text, an image or PDF, and not
+a script), with no disk read. A click hands out that file only if it
+passes the handler's place checks (symlinks resolved, held inside `--dir`)
+and the same type rule applied to the content type macOS reads for the
+file: a regular file's comes from its extension (with none, from its
+execute bit), a Finder alias's from its
+alias flag, and a folder's, FIFO's or app bundle's from its kind, so it is
+what macOS will treat the file as, not what its bytes are (a `.webloc`
+renamed `.html` is HTML, and opens as a document). A name the type rule
+refuses (a script, a `.webloc`, an app, an executable with no extension)
+disables the button. A file only the disk can refuse (missing, a folder or
+FIFO with a page's name, a Finder alias with a page's name, or a page name
+linked to a script) leaves the button enabled; the click opens nothing and
+beeps. A show viewer's `file:` page passes the same type rules and
+symlink resolution, with no `--dir` hold. The show's 8 MB cap is not
+applied: it guards the viewer's memory. The file is checked and then
+opened by path, not atomically. Open Link in Default Browser applies the
+same checks to a show link. A linked machine's viewer hands out nothing:
+no page, and no link from its menu. The session refuses its paths itself,
+and a show viewer's web view whose session is gone refuses every link.
 
 Evidence:
 
@@ -1014,6 +1043,78 @@ Resources/bin/grok                                     (Grok leader socket, reap
 CLI/ClaudeMailboxCommand.swift                         (c11 grok-mailbox sidecar)
 c11Tests/TerminalControllerSocketSecurityTests.swift   (focus-policy negative tests)
 c11Tests/SocketControlSafetyTests.swift                (SocketPasswordModeTests, C11-347)
+```
+
+---
+
+## Terminal clipboard (OSC 52) (2.0: C11H-372)
+
+A program in any terminal (local, on a linked machine, or behind `ssh`) can
+ask for the clipboard with OSC 52. c11 has no clipboard prompt, so it reads
+Ghostty's settings this way:
+
+- `clipboard-read = allow` answers a read from the pasteboard's text. Each
+  answered read reads the pasteboard, so a program can raise macOS's paste
+  alert whenever the operator has set it to ask. An image-only clipboard
+  answers empty, never with a temp file's path.
+  Ghostty's default `ask`, or a value c11 cannot read, refuses it: the
+  program gets an empty reply, and the pasteboard is never read. `deny`
+  sends no reply at all, as in Ghostty.
+- `clipboard-write = ask` refuses an OSC 52 write, since there is nobody to
+  ask. The default `allow` writes as before.
+- A paste is the operator's own act and keeps its behaviour. Ghostty's
+  unsafe-paste confirmation (`clipboard-paste-protection`) is confirmed, and
+  hc terminals paste through their own encoder. A prompt would hold a
+  socket-sent paste until the operator clicked.
+
+Each refusal logs one line (`com.stage11.c11`, category `clipboard`: the
+event, the panel and the setting, never the contents).
+
+```
+Sources/GhosttyClipboardGate.swift                     (the decisions)
+Sources/GhosttyTerminalView.swift                      (read, confirm and write callbacks)
+c11Tests/GhosttyClipboardGateTests.swift               (fake pasteboard, canary)
+```
+
+---
+
+## Terminal file drops and Kitty graphics media (2.0: C11H-363)
+
+A terminal on a linked machine reports things c11 shows locally: its working
+directory (OSC 7) and its Kitty graphics commands. Neither may make c11 hand
+over, or report on, a file on this Mac.
+
+- **Drops.** Every drop reaches `GhosttyNSView.performDragOperation`. Onto a
+  terminal on another machine:
+  - A file drag that started inside c11 (`draggingSource != nil`: the titlebar
+    folder icon, a web view, the sidebar) is refused. The drag cursor shows no
+    operation and the panel shows a notice; if a drop is delivered anyway, the
+    drop path refuses it before any file is read.
+  - A drop from outside c11 asks in a window sheet (`beginSheetModal`, no nested
+    run loop). Only on Send are the files read and sent (`terminal.put`), and
+    their remote paths are pasted only if the panel still holds the terminal the
+    drop was aimed at.
+  - Each such drop writes one `file_transfer` audit record: outcome, machine,
+    panel, workspace, the first local path and the file names, never contents.
+  - Drops onto local terminals are unchanged.
+- **Directories.** The titlebar's draggable folder icon and Open in Finder come
+  from `Workspace.localFolderDirectory()`. It returns nothing for a remote
+  terminal, or for a workspace directory last copied from one, since such a path
+  was chosen on the other machine.
+- **Kitty graphics.** Every hc surface sets Ghostty's
+  `kitty_graphics_direct_only`. A query or first transmit chunk naming a file,
+  a temporary file or shared memory is answered `EINVAL: unsupported medium`
+  before any file-system call, so the reply is the same for every path, and
+  nothing is opened, read or unlinked. Direct (inline) images load as before.
+  Exec surfaces keep Ghostty's behaviour.
+
+```
+Sources/HC/HCMachineTarget.swift                       (TerminalFileDropPolicy, HCRemoteFileDropFlow, the prompt)
+Sources/GhosttyTerminalView.swift                      (drop path, drag cursor, sheet)
+Sources/Workspace.swift                                (localFolderDirectory, provenance)
+Sources/HC/HCNativeBridge.swift                        (HCSurfaceNativeIO)
+ghostty/src/terminal/kitty/graphics_exec.zig           (the direct-only guard and its tests)
+c11Tests/HCRemotePanelTests.swift                      (HCRemoteFileDropTests)
 ```
 
 ---

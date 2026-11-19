@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""C11-298 duplicate-launch oracle. Run ONLY inside a disposable Atlas guest.
+"""C11-298 duplicate-launch oracle. Run ONLY inside a disposable build-host guest.
 
 The outer runner owns the incumbent's launch, copied app preparation, synthetic
 terminal fixture, display confinement, <=10 minute hard UI timer, screenshots,

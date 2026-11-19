@@ -1,0 +1,19 @@
+{
+  "seq": 41,
+  "ts": "2026-11-07T07:17:03.120Z",
+  "type": "terminal.ended_by_signal",
+  "instance": "com.stage11.c11.debug.wr235",
+  "v": 2,
+  "workspace": "6F0B1C2D-3E4F-4A5B-8C6D-7E8F90A1B2C3",
+  "panel": "1A2B3C4D-5E6F-4789-8ABC-DEF012345678",
+  "payload": {
+    "terminal": "t1c",
+    "core_id": "core_7f3a",
+    "signal": 15,
+    "signal_name": "SIGTERM",
+    "outcome": "kept",
+    "agent_kind": "claude-code",
+    "found": "live",
+    "ended_at": "2026-11-06T23:17:03-08:00"
+  }
+}

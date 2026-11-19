@@ -95,8 +95,8 @@ ul.tight li{margin:4px 0}
     <h2>Needs you</h2>
     <ol>
       <li><b>Nothing to rule on.</b> All 27 decisions and the bug tiers are ruled.</li>
-      <li><b>Atlas needs Xcode</b> before the clock starts. Another agent is installing it. I check it builds before the orchestrator launches.</li>
-      <li><b>Your go</b> to move the orchestrator from planning into build mode, once Atlas is ready.</li>
+      <li><b>The build host needs Xcode</b> before the clock starts. Another agent is installing it. I check it builds before the orchestrator launches.</li>
+      <li><b>Your go</b> to move the orchestrator from planning into build mode, once the build host is ready.</li>
     </ol>
   </div>
 </header>
@@ -115,7 +115,7 @@ ul.tight li{margin:4px 0}
       <tr><td>Bug audits (Fable, Astra)</td><td class="ok">done</td><td>Reconciled into three tiers; approved.</td></tr>
       <tr><td>Bug tickets</td><td class="ok">done</td><td>18 cluster tickets (C11-294 to C11-311), linked. 54 tickets tagged <code>c11-1.0</code> in all.</td></tr>
       <tr><td>Orchestrator</td><td class="ok">planning mode</td><td>Opus 5.5 in workspace "c11 1.0". Holds before build mode until Atin says go.</td></tr>
-      <tr><td>Atlas</td><td>being prepared</td><td>Xcode 26.6 downloading; then build check, Codex 0.159, Grok, c11 update. Builds only; the run stays on Hyperion.</td></tr>
+      <tr><td>The build host</td><td>being prepared</td><td>Xcode 26.6 downloading; then build check, Codex 0.159, Grok, c11 update. Builds only; the run stays on the laptop.</td></tr>
       <tr><td>Relay security fix (#490)</td><td class="ok">merged</td><td>Ships with 1.0.</td></tr>
     </tbody>
   </table></div>
@@ -134,7 +134,7 @@ ul.tight li{margin:4px 0}
     <div class="card"><h4>Remote hosts move to 1.1</h4>
       <ul>
         <li>Prime sandboxes as real c11 tabs, per-tab hosts, the Go terminal holder: all 1.1, spike and build (D9).</li>
-        <li>No lid-close work (D10). Long-lived agents run in Atlas's own c11; Caffeine keeps Macs awake.</li>
+        <li>No lid-close work (D10). Long-lived agents run in the build host's own c11; Caffeine keeps Macs awake.</li>
         <li>1.0 keeps one remote item: a smoke test of <code>c11 ssh</code> after #490, and a truthful skill.</li>
       </ul></div>
   </div>
@@ -195,7 +195,7 @@ ul.tight li{margin:4px 0}
     <tr><td class="id">D25</td><td>Small bug batch as separate point releases</td><td>Yes</td><td>Yes</td><td>Yes</td><td class="rule chg">No. Everything ships in 1.0.</td></tr>
     <tr class="grp"><td colspan="6">Phone and build</td></tr>
     <tr><td class="id">D24</td><td>Phone strategy</td><td>No app</td><td>No app</td><td>No app; ntfy later</td><td class="rule">Skip.</td></tr>
-    <tr><td class="id">D26</td><td>Atlas builds first (C11-216)</td><td>Yes</td><td>Yes</td><td>Yes</td><td class="rule">Yes.</td></tr>
+    <tr><td class="id">D26</td><td>the build host builds first (C11-216)</td><td>Yes</td><td>Yes</td><td>Yes</td><td class="rule">Yes.</td></tr>
     <tr><td class="id">D27</td><td>Who builds</td><td>Codex, Grok</td><td>Codex, Grok</td><td>Codex, Grok; cap 3</td><td class="rule">Codex and Grok.</td></tr>
     </tbody>
   </table></div>
@@ -210,7 +210,7 @@ ul.tight li{margin:4px 0}
     <thead><tr><th>Item</th><th>What it gives you</th><th>Size</th><th>Tier</th><th>Ticket</th></tr></thead>
     <tbody>
     <tr class="grp"><td colspan="5">Foundation</td></tr>
-    <tr><td>F1 c11 builds on Atlas</td><td>Build mode starts when this lands</td><td>M</td><td><span class="t p0">p0</span></td><td class="tk">C11-216</td></tr>
+    <tr><td>F1 c11 builds on the build host</td><td>Build mode starts when this lands</td><td>M</td><td><span class="t p0">p0</span></td><td class="tk">C11-216</td></tr>
     <tr><td>F2 Fleet soak as the release gate: 40 agents overnight, a 16 GB run</td><td>Green tests are not a working product; also measures sidebar and GPU memory</td><td>M</td><td><span class="t p0">p0</span></td><td class="tk">C11-270</td></tr>
     <tr><td>F3 Hook fixture corpus from real sessions</td><td>The test oracle for the journal and Feed</td><td>S</td><td><span class="t p0">p0</span></td><td class="tk">C11-271</td></tr>
 
@@ -305,12 +305,12 @@ ul.tight li{margin:4px 0}
 <section id="plan">
   <h2><span class="n">07</span>Waves</h2>
   <p class="lede">No calendar. The run goes in waves, aiming to finish <span class="gold">close to overnight</span>.</p>
-  <p>Opus 5.5 orchestrates on Bravo, from Atlas's c11. Every ticket owner is Codex or Grok and plans its own ticket just in time. Only the journal spec gets an independent plan review. Codex is the tight resource, so Grok takes the scoped work and Codex reviews it.</p>
+  <p>Opus 5.5 orchestrates on Bravo, from the build host's c11. Every ticket owner is Codex or Grok and plans its own ticket just in time. Only the journal spec gets an independent plan review. Codex is the tight resource, so Grok takes the scoped work and Codex reviews it.</p>
   <div class="tablewrap"><table class="weeks">
     <thead><tr><th>Wave</th><th>Contents</th><th>Gate to the next wave</th></tr></thead>
     <tbody>
-      <tr><td>0 · now</td><td><b>Planning mode.</b> Owners plan every P0 and P1 ticket. Journal spec and its review. Soak harness design. Hook fixtures captured from production c11. No builds on Hyperion.</td><td>Xcode on Atlas; C11-216 builds a tagged artifact.</td></tr>
-      <tr><td>1</td><td>Atlas builds. Soak baseline. Attention bug batch. CLI batch. Ghostty patch set with the 08-25 freeze root. Hang and crash fixes.</td><td>Baseline published, fixtures replay, Ghostty CI green.</td></tr>
+      <tr><td>0 · now</td><td><b>Planning mode.</b> Owners plan every P0 and P1 ticket. Journal spec and its review. Soak harness design. Hook fixtures captured from production c11. No builds on the laptop.</td><td>Xcode on the build host; C11-216 builds a tagged artifact.</td></tr>
+      <tr><td>1</td><td>the build host builds. Soak baseline. Attention bug batch. CLI batch. Ghostty patch set with the 08-25 freeze root. Hang and crash fixes.</td><td>Baseline published, fixtures replay, Ghostty CI green.</td></tr>
       <tr><td>2</td><td>Journal store and fold, then producers, consumers and analytics. Feed. Workspace groups, sidebar and validation. Focus history. Remaining bug tracks.</td><td>One build shows bypass questions, completions and flags correctly. Groups solid at 50+ workspaces.</td></tr>
       <tr><td>3</td><td><b>Your sign-off pass</b> on one integrated build with a numbered script. Overnight 40-agent soak against budgets fixed in advance. Locale pass. Release engineering.</td><td>Your named approval of the exact signed artifact.</td></tr>
     </tbody>

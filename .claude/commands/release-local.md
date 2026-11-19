@@ -1,6 +1,6 @@
 # Release Local
 
-Ship a c11 production release through `scripts/release-local.sh`, the release path (C11-542). It runs on Atlas, so the operator's Mac can sleep: the build happens in place (`--host local`), and signing, notarization, DMG, Sparkle appcast, `gh release` and the Homebrew dispatch use Atlas's release keychain. `release.yml` is the manual GitHub fallback. The `gh release` calls use the REST API, so Actions billing does not apply to them.
+Ship a c11 production release through `scripts/release-local.sh`, the release path (C11-542). It runs on the signing host (`C11_SIGNING_HOST` in `~/.config/c11/dev-hosts`), so the operator's Mac can sleep: the build happens in place (`--host local`), and signing, notarization, DMG, Sparkle appcast, `gh release` and the Homebrew dispatch use the signing host's release keychain. `release.yml` is the manual GitHub fallback. The `gh release` calls use the REST API, so Actions billing does not apply to them.
 
 ## Steps
 
@@ -12,13 +12,13 @@ A tag push starts no workflow. If someone dispatched the `release.yml` fallback 
 
 ### 2. Check the signing path, from your own Mac
 
-Run these from your own Mac, not from the Atlas shell: both drive Atlas over ssh, and Atlas cannot ssh to itself.
+Run these from your own Mac, not from the signing host's shell: both drive the signing host (`C11_SIGNING_HOST`) over ssh, and it cannot ssh to itself.
 - `scripts/atlas-signing-check.sh` passes: the release keychain unlocks through its launchd lease, codesign and notarytool work from a non-GUI session, and it ends locked.
-- `scripts/move-sparkle-key-to-atlas.sh --check` prints `match`: the `c11mux` Sparkle key is on Atlas.
+- `scripts/move-sparkle-key-to-atlas.sh --check` prints `match`: the `c11mux` Sparkle key is on the signing host.
 
-### 3. Check out the tag cleanly on Atlas
+### 3. Check out the tag cleanly on the signing host
 
-Over ssh, in `~/c11-release` on Atlas, fetch the tag and check it is the tested commit before anything runs: `git fetch origin refs/tags/vX.Y.Z:refs/tags/vX.Y.Z && test "$(git rev-parse 'vX.Y.Z^{commit}')" = "<tested sha>" && git checkout --detach vX.Y.Z && git submodule update --init --recursive ghostty vendor/bonsplit`. A real run refuses on a dirty tree, a HEAD that is not the tag's commit locally and on origin, or a `MARKETING_VERSION` that does not match the tag. The two runs below go there; each command carries `C11_SIGNING_KEYCHAIN` itself, because a fresh ssh session does not keep an exported variable.
+Over ssh, in the release folder on the signing host, fetch the tag and check it is the tested commit before anything runs: `git fetch origin refs/tags/vX.Y.Z:refs/tags/vX.Y.Z && test "$(git rev-parse 'vX.Y.Z^{commit}')" = "<tested sha>" && git checkout --detach vX.Y.Z && git submodule update --init --recursive ghostty vendor/bonsplit`. A real run refuses on a dirty tree, a HEAD that is not the tag's commit locally and on origin, or a `MARKETING_VERSION` that does not match the tag. The two runs below go there; each command carries `C11_SIGNING_KEYCHAIN` itself, because a fresh ssh session does not keep an exported variable.
 
 ### 4. Dry run
 
@@ -49,4 +49,4 @@ gh release view vX.Y.Z --repo Stage-11-Agentics/c11
 gh api repos/Stage-11-Agentics/c11/releases/latest --jq .tag_name
 ```
 
-Credentials and their keychain locations: `~/Projects/Stage11/code/platform/apple.md`.
+Credentials and their keychain locations: `~/src/platform/apple.md`.

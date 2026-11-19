@@ -34,7 +34,7 @@ c11 launch-agent --type <kind>
     [--system-prompt-mode inherit|append|replace]
     [--system-prompt <text> | --system-prompt-file <path>]
     [--task <id>]
-    [--area <ref> | --workspace <ref> | --new-workspace] [--cwd <path>]
+    [--area <ref> | --workspace <ref> | --new-workspace] [--split <dir>] [--cwd <path>]
     [--prompt <text> | --prompt-file <path>]
     [--title <text>] [--flag <reason>] [--suppressed]
     [--env KEY=VALUE ...] [--json]
@@ -142,6 +142,14 @@ flag renders after `--model`/`--effort` and before the positional prompt.
   workspace — same target the A button would hit).
 - `--area <ref>`: a new panel in that area.
 - `--workspace <ref>`: a new panel in that workspace's focused area.
+- `--split <right|down|left|up>`: a new area beside the target area (the
+  `--area`, else the workspace's focused area) holding the agent, instead of a
+  new panel inside it, so laying out agents leaves no idle shell behind. Not
+  with `--new-workspace`. Four launches make a 2x2 grid: the first with
+  `--new-workspace`, then `--split right` and `--split down` on its area, then
+  `--split down` on the second agent's area. Pass `--workspace <workspace_ref>`
+  with each `--area <area_ref>` (both from the earlier launch's `--json`): from
+  an agent's terminal, `--area` alone is looked up in the caller's workspace.
 - `--new-workspace`: a fresh workspace whose first terminal is the agent. The
   identity env rides workspace creation (present at PTY birth); the launch
   line is *typed* into the interactive shell (queue-until-ready), not baked as
@@ -214,7 +222,11 @@ skill card's attention model; parent-side patterns in
 ### Prompt delivery (`--prompt` | `--prompt-file`)
 
 Both flags preserve the supplied UTF-8 text in a private c11 runtime file. The
-shell receives only `Read the file at <owned path> and follow it exactly.`:
+shell receives only `Read the file at <owned path> and follow it exactly.`.
+An `agent.launch` caller may pass `prompt_headline`, one line that leads that
+instruction so the panel shows what the task is (the Chaos Wizard names each
+piece this way). c11 folds it to one printable line of at most 360
+characters and shell-quotes it with the rest:
 
 - `positional` appends the quoted instruction to argv (Claude, Codex, Grok,
   pi, omp).
@@ -272,14 +284,63 @@ Human-readable by default; `--json` prints one object:
 
 Refs are immediately valid targets for `send`, `read-screen`, `set-*`.
 
+With `--on <machine>`, `cwd` is the `--cwd` path on that machine, with `cwd_source: "explicit"`. When `--cwd` is not given, both are null: the terminal starts in the workspace root's home-relative path there if it exists, else that machine's home. `config_source`, `warnings` and `warning_details` still describe this Mac's workspace root and binaries, not the other machine.
+
 `startup` is `started` only when c11 observes an identified provider process
 in the terminal's foreground process group. `startup_process` contains its PID
 and executable, without arguments. This does not prove TUI readiness or that the
 agent read the prompt. Unknown commands, missing executables, shell continuation,
 and unavailable process evidence remain `pending`, with null process evidence.
+For `claude-code`, after the process is seen c11 also reads the screen once, for at
+most 2.5 seconds inside the same deadline. If Claude is stopped on a chooser that a
+bare Return would answer (its folder-trust check highlights `No, exit`), `startup` is
+`waiting_dialog` and `startup_dialog` names it (`trust`, or `plan` for the plan
+chooser); the process evidence is still returned. A drawn composer, an undrawn or
+unreadable screen, and every other kind stay `started` or `pending` as above. Answer
+the chooser yourself (`c11 read-screen`, then `send-key`) before sending the seat any
+work; `send`, `feed answer` and the mailbox doorbell refuse while it is up, and a
+post-boot prompt (Codex, Grok and the other kinds that type their brief) waits behind
+it for up to ten minutes and is then dropped, never typed into it.
 Errors return the existing nonzero failure response. Observation lasts at most
 five seconds within the launch handler's shared eight-second main-admission
-and observation deadline. Human output includes `startup=<state>`.
+and observation deadline. Human output includes `startup=<state>` (and `dialog=<kind>` for `waiting_dialog`).
+
+### The launch watch and `--wait-ready`
+
+`startup` above is decided inside the call. After it returns, c11 keeps
+watching the new panel for up to 60 seconds for any launch (`launch-agent`, the
+A button, the agent picker, saved configs; local or `--on`). Each tick (1 s)
+looks at no more than three watched panels, longest-unlooked first: one
+non-blocking viewport read (a busy renderer skips the look) matched on its bottom
+40 lines, the journal's cached turn edges, and for an unprompted Claude Code its
+composer. It stops early once the agent is clearly up: a turn ended, a prompted
+agent has been in its first turn for 8 seconds with no failure, or an unprompted
+Claude Code shows its composer. Signatures match only the forms the shell and
+Claude Code draw, at a line's start (after Claude's `⏺`/`⎿` markers), with a
+wrapped line joined to the next; once a turn has started only Claude's own
+marked error lines count, so the agent's prose never does.
+
+| verdict | when |
+|---|---|
+| `ready` | the agent is up (`evidence`: `turn_ended`, `working`, `composer_ready`) |
+| `failed` | a failure line is on screen; `cause` is `not_installed` (`<bin>: command not found`, `Error: <bin> not found in PATH`, before the agent runs), `usage_limit` (`You've hit your … limit`), `not_logged_in` (`Login expired`, `Not logged in`, `Please run /login`) or `api_error` (`API Error`, not while Claude says it is retrying) |
+| `needs_operator` | `cause` `trust_folder`: Claude asks whether the folder is trusted. Only the operator answers it; c11 never writes `~/.claude*`. Watching continues for up to 180 seconds; when the agent comes up c11 clears its note and lowers its own flag |
+| `quiet` | 60 seconds with neither (c11's note, if any, is cleared) |
+
+On `failed` or `needs_operator` the panel's description becomes one sentence
+naming the agent, machine and cause ("Claude Code on the Linux host didn't start: claude is
+not installed there.", "Claude Code on the build host is waiting for you to trust
+~/Projects/x.") and c11 raises a flag on it (`by c11`).
+
+`--wait-ready <seconds>` (1-600) makes `launch-agent` wait for that verdict.
+`--json` then carries `launch_watch`: `verdict` (`timeout` when the wait ended
+first, `unavailable` when the app has no watch for the panel), `cause`,
+`message`, `line` (the matched screen line), `evidence`, `machine`, `seconds`,
+and `tick_ms_max` (the watch's costliest main-thread tick; budget 2 ms). Each
+poll is bounded by the time left, so the wait never overruns. Human output adds `startup: <verdict>[: <message>]`. Exit
+status: 0 ready, 1 failed, 4 needs_operator, 5 quiet, timeout or unavailable. The socket
+method is `agent.launch_status` (`panel_id`), a lock-guarded read kept ten
+minutes. `scripts/c11-pathfinder.sh` uses it.
 
 ### Errors and warnings
 

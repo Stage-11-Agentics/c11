@@ -678,7 +678,7 @@ enum JournalQuery {
         let turns = metric.turnsObject(coveredHours: coveredHours ?? filters.coveredHours)
         let errors = metric.errorsObject
         let stallText = metric.stalls.map { stall in
-            "duration_ms=\(stall.durationMs) threshold_ms=\(stall.thresholdMs) last_evidence_age_ms=\(stall.lastEvidenceAgeMs) source=\(stall.source) censored=\(stall.censored) ongoing=\(stall.ongoing)"
+            "duration_ms=\(stall.durationMs) threshold_ms=\(stall.thresholdMs) last_evidence_age_ms=\(stall.lastEvidenceAgeMs) source=\(HCCoreUtility.printable(stall.source)) censored=\(stall.censored) ongoing=\(stall.ongoing)"
         }.joined(separator: ";")
         return [
             "units duration=ms blocked_minutes=ms/60000 rate=per covered hour window=[from,to)",

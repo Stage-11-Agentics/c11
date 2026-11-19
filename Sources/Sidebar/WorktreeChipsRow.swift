@@ -10,6 +10,8 @@ struct WorktreeChipsRow: View {
     let rows: [WorktreeChipRow]
     let foreground: Color
     let secondary: Color
+    /// The theme's `cardLabel` style (C11H-144); unset draws today's mono.
+    var labelStyle: ThemeTextStyle = .unset
 
     @Environment(\.chromeScaleTokens) private var chromeTokens
 
@@ -57,8 +59,8 @@ struct WorktreeChipsRow: View {
                     .fill(Color(nsColor: NSColor(hex: chip.dotColorHex) ?? .gray))
                     .frame(width: 7, height: 7)
             }
-            Text(chip.label)
-                .font(.system(size: chromeTokens.sidebarWorkspaceDetail, design: .monospaced))
+            Text(verbatim: labelStyle.apply(chip.label))
+                .chromeStyle(labelStyle, size: chromeTokens.sidebarWorkspaceDetail, design: .monospaced)
                 .foregroundColor(foreground)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -67,8 +69,8 @@ struct WorktreeChipsRow: View {
 
     @ViewBuilder
     private func branchChipView(_ chip: BranchChip) -> some View {
-        Text(chip.label)
-            .font(.system(size: chromeTokens.sidebarWorkspaceDetail, design: .monospaced))
+        Text(verbatim: labelStyle.apply(chip.label))
+            .chromeStyle(labelStyle, size: chromeTokens.sidebarWorkspaceDetail, design: .monospaced)
             .foregroundColor(secondary)
             .opacity(chip.isDimmed ? 0.55 : 1.0)
             .lineLimit(1)

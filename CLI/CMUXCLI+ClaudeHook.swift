@@ -60,6 +60,14 @@ extension CMUXCLI {
         print(response)
     }
 
+    /// C11H-319: `notify_needs_you <workspace> <panel> [ask=<session>/<request>] <payload>`.
+    /// The ask token lets the app sound one ask once, however often it arrives.
+    static func needsYouCommand(_ target: String, ask: NeedsYouAsk?) -> String {
+        let parts = target.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+        guard let ask, parts.count == 3 else { return "notify_needs_you \(target)" }
+        return "notify_needs_you \(parts[0]) \(parts[1]) \(ask.token) \(parts[2])"
+    }
+
     func runClaudeHook(
         commandArgs: [String],
         client: SocketClient,
@@ -85,6 +93,11 @@ extension CMUXCLI {
             try? rawInput.write(toFile: debugPath, atomically: true, encoding: .utf8)
         }
         let parsedInput = parseClaudeHookInput(rawInput: rawInput)
+        if client.isRelayed {
+            runRelayedClaudeHook(subcommand: subcommand, parsedInput: parsedInput, journalDraft: journalDraft,
+                                 client: client)
+            return
+        }
         let sessionStore = ClaudeHookSessionStore()
         func nonBlockingSession(_ sessionID: String?) -> ClaudeHookSessionRecord? {
             guard let sessionID else { return nil }
@@ -152,7 +165,8 @@ extension CMUXCLI {
             journalDelivery = delivery
             return managedJournalDelivery(delivery)
         }
-        func appendResolvedJournal() {
+        @discardableResult
+        func appendResolvedJournal() -> String? {
             var workspaceId = fallbackWorkspaceId
             var preferredSurface = surfaceArg
             if let sessionId = parsedInput.sessionId {
@@ -163,7 +177,7 @@ extension CMUXCLI {
                         preferredSurface = mapped.surfaceId
                     } catch {
                         spoolJournalDraft()
-                        return
+                        return nil
                     }
                 case .missing:
                     break
@@ -172,7 +186,7 @@ extension CMUXCLI {
                     // The draft was constructed before connect and remains
                     // recoverable in the existing spool.
                     spoolJournalDraft()
-                    return
+                    return nil
                 }
             }
             do {
@@ -182,8 +196,10 @@ extension CMUXCLI {
                     client: client
                 )
                 _ = appendJournal(workspaceId: workspaceId, surfaceId: resolvedSurface)
+                return resolvedSurface
             } catch {
                 spoolJournalDraft()
+                return nil
             }
         }
         func reportAgentActivity(client: SocketClient, workspaceId: String, surfaceId: String,
@@ -263,6 +279,9 @@ extension CMUXCLI {
                 )
             }
             _ = appendJournal(workspaceId: workspaceId, surfaceId: surfaceId)
+            // C11H-320: name the login this session runs under for `c11 fleet`.
+            // A mid-turn `compact` start is the same process: nothing to say.
+            sendClaudeAgentReport(client: client, surfaceId: surfaceId, subcommand: subcommand, parsedInput: parsedInput)
             // Register PID for stale-session detection and OSC suppression,
             // but don't set a visible status. "Running" only appears when the
             // user submits a prompt (UserPromptSubmit) or Claude starts working
@@ -273,22 +292,31 @@ extension CMUXCLI {
                     client: client
                 )
             }
-            // Inject a one-time orientation nudge into the fresh Claude
-            // session. This SessionStart hook already fires for every claude
-            // launched inside c11 — the Resources/bin/claude wrapper injects a
-            // per-PID `--settings` tempfile that wires it — so emitting
-            // hookSpecificOutput.additionalContext here reaches every in-c11
-            // claude with no per-agent config write. Advisory only: the hook
-            // must never fail startup, and jsonString() degrades to "{}" on any
-            // malformed input, so the worst case is a session with no nudge.
-            let orientation = "You are running inside a c11 panel: c11 is the terminal multiplexer hosting this session. Before other work, load the c11 skill. It owns panel naming, splits, panel targeting, sub-agent orchestration, the embedded browser, and sidebar telemetry. As your first action, name this panel so the operator can see your role: c11 rename-panel --panel \"$C11_PANEL_ID\" \"<2-4 word role>\". A working agent must not sit under \"Awaiting first task\"."
-            let hookOutput: [String: Any] = [
-                "hookSpecificOutput": [
-                    "hookEventName": "SessionStart",
-                    "additionalContext": orientation
+            // The launch instruction is the per-launch note, and it reaches a
+            // session once: the wrapper normally passes it by flag (and says so
+            // in C11_AGENT_NOTE_SENT), so this hook adds nothing; otherwise the
+            // hook sends the same bundled note. Advisory only: the hook must
+            // never fail startup, so a missing note means no context.
+            let hookEnvironment = ProcessInfo.processInfo.environment
+            if C11LaunchNote.hookShouldSend(environment: hookEnvironment),
+               let orientation = C11LaunchNote.sessionStartContext(
+                   environment: hookEnvironment,
+                   noteBody: resolvedExecutableURL()
+                       .flatMap { BundledSkill.containingBundle(executableURL: $0) }
+                       .flatMap { try? String(contentsOf: $0.appendingPathComponent("Contents/Resources/bin/c11-agent-note.txt"), encoding: .utf8) },
+                   version: {
+                       let info = resolvedVersionInfo()
+                       return info["C11Version"].flatMap { $0.contains("$(") ? nil : $0 } ?? info["CFBundleShortVersionString"]
+                   }()
+               ) {
+                let hookOutput: [String: Any] = [
+                    "hookSpecificOutput": [
+                        "hookEventName": "SessionStart",
+                        "additionalContext": orientation
+                    ]
                 ]
-            ]
-            print(jsonString(hookOutput))
+                print(jsonString(hookOutput))
+            }
 
         case "stop", "idle":
             telemetry.breadcrumb("claude-hook.stop")
@@ -328,10 +356,22 @@ extension CMUXCLI {
                 )
             }
 
+            // C11H-320: the turn's final message for `c11 fleet` and for the
+            // completion notification, from Claude's own Stop payload. Only an
+            // older Claude without it costs a transcript read, and one serves both.
+            let stopText = ClaudeStopTranscript.StopText.read(
+                hookMessage: parsedInput.object?["last_assistant_message"] as? String,
+                transcriptPath: parsedInput.transcriptPath)
+            if let resolvedLifecycleSurface {
+                sendClaudeAgentReport(client: client, surfaceId: resolvedLifecycleSurface, subcommand: subcommand,
+                                      parsedInput: parsedInput, stopText: stopText.report)
+            }
+
             // Update session with transcript summary and send completion notification.
             let completion = summarizeClaudeHookStop(
                 parsedInput: parsedInput,
-                sessionRecord: nonBlockingSession(parsedInput.sessionId)
+                sessionRecord: nonBlockingSession(parsedInput.sessionId),
+                stopText: stopText
             )
             if let sessionId = parsedInput.sessionId, let completion {
                 try? sessionStore.upsert(
@@ -354,7 +394,15 @@ extension CMUXCLI {
                 let subtitle = sanitizeNotificationField(completion.subtitle)
                 let body = sanitizeNotificationField(completion.body)
                 let payload = "\(title)|\(subtitle)|\(body)"
-                _ = try? sendV1Command("notify_target \(workspaceId) \(resolvedSurface) \(payload)", client: client)
+                // C11H-261: tag the turn end for the waiting check. An app
+                // without `notify_turn_end` answers ERROR; it then gets the
+                // plain notification. A transport failure is not retried, so
+                // the turn end is never posted twice.
+                let target = "\(workspaceId) \(resolvedSurface) \(payload)"
+                if let response = try? client.send(command: "notify_turn_end \(target)"),
+                   response.hasPrefix("ERROR:") {
+                    _ = try? sendV1Command("notify_target \(target)", client: client)
+                }
             }
 
             try setClaudeStatus(
@@ -388,6 +436,9 @@ extension CMUXCLI {
                     surfaceId: resolvedSurface,
                     activity: "working"
                 )
+            // C11H-320 PR 3: a turn began, so work the last Stop announced
+            // was followed (fleet's `announced_work` stall ends).
+            sendClaudeAgentReport(client: client, surfaceId: resolvedSurface, subcommand: subcommand, parsedInput: parsedInput)
             _ = try sendV1Command("clear_notifications --tab=\(workspaceId) --panel=\(resolvedSurface)", client: client)
             try setClaudeStatus(
                 client: client,
@@ -449,16 +500,37 @@ extension CMUXCLI {
                 )
             }
 
-            let response = try client.send(command: "notify_target \(workspaceId) \(surfaceId) \(payload)")
-            _ = try? setClaudeStatus(
-                client: client,
-                workspaceId: workspaceId,
-                surfaceId: surfaceId,
-                value: "Needs input",
-                icon: "bell.fill",
-                color: "#4C8DFF"
-            )
-            print(response)
+            let target = "\(workspaceId) \(surfaceId) \(payload)"
+            if ClaudeIdlePromptNotification.matches(rawInput: rawInput) {
+                // C11H-261: the idle reminder is the last turn's end seen
+                // again; send it as a turn end so the waiting check judges it
+                // (an app without `notify_turn_end` gets the plain one). The
+                // status stays as Stop left it: the agent asked nothing new.
+                var response = try client.send(command: "notify_turn_end \(target)")
+                if response.hasPrefix("ERROR:") {
+                    response = try client.send(command: "notify_target \(target)")
+                }
+                print(response)
+            } else {
+                // C11H-319: a permission prompt or question stops on the
+                // operator and plays the needs-you sound (an app without
+                // `notify_needs_you` gets the plain one).
+                // The ask is the session's: Claude's Notification names no request.
+                let ask = NeedsYouAsk(session: parsedInput.sessionId, request: nil)
+                var response = try client.send(command: Self.needsYouCommand(target, ask: ask))
+                if response.hasPrefix("ERROR:") {
+                    response = try client.send(command: "notify_target \(target)")
+                }
+                _ = try? setClaudeStatus(
+                    client: client,
+                    workspaceId: workspaceId,
+                    surfaceId: surfaceId,
+                    value: "Needs input",
+                    icon: "bell.fill",
+                    color: "#4C8DFF"
+                )
+                print(response)
+            }
 
         case "session-end":
             telemetry.breadcrumb("claude-hook.session-end")
@@ -605,7 +677,15 @@ extension CMUXCLI {
                     )
                     if bypass || planApproval {
                         let payload = "Claude Code|\(sanitizeNotificationField(subtitle))|\(sanitizeNotificationField(body))"
-                        _ = try sendV1Command("notify_target \(workspaceId) \(resolvedSurface) \(payload)", client: client)
+                        // C11H-319: a question or plan approval is a needs-you.
+                        let target = "\(workspaceId) \(resolvedSurface) \(payload)"
+                        let ask = NeedsYouAsk(
+                            session: parsedInput.sessionId, request: parsedInput.object?["tool_use_id"] as? String
+                        )
+                        let needsYou = try client.send(command: Self.needsYouCommand(target, ask: ask))
+                        if needsYou.hasPrefix("ERROR:") {
+                            _ = try sendV1Command("notify_target \(target)", client: client)
+                        }
                         try setClaudeStatus(
                             client: client, workspaceId: workspaceId, surfaceId: resolvedSurface,
                             value: "Needs input", icon: "bell.fill", color: "#4C8DFF", pid: claudePid
@@ -632,6 +712,24 @@ extension CMUXCLI {
                         }
                     }
                     if bypass || planApproval {
+                        // C11H-319: an accepted question or plan ask stops on the
+                        // operator: one needs-you with a generic body (the
+                        // question text stays in the journal). Rejected, lost
+                        // and spooled deliveries post nothing, as before. The
+                        // app keeps one needs-you per ask if Claude's own
+                        // Notification follows.
+                        if case .committed = journalDelivery {
+                            let subtitle = String(localized: "claudeHook.waiting", defaultValue: "Waiting")
+                            let body = toolName == "ExitPlanMode"
+                                ? String(localized: "claudeHook.planApproval", defaultValue: "Plan approval needed")
+                                : String(localized: "claudeHook.waitingForInput", defaultValue: "Waiting for input")
+                            let payload = "Claude Code|\(sanitizeNotificationField(subtitle))|\(sanitizeNotificationField(body))"
+                            let ask = NeedsYouAsk(
+                                session: parsedInput.sessionId ?? journalDraft?.sessionID,
+                                request: journalDraft?.requestID ?? parsedInput.object?["tool_use_id"] as? String
+                            )
+                            _ = try? client.send(command: Self.needsYouCommand("\(workspaceId) \(resolvedSurface) \(payload)", ask: ask))
+                        }
                         try setClaudeStatus(
                             client: client,
                             workspaceId: workspaceId,
@@ -672,7 +770,15 @@ extension CMUXCLI {
             )
             print("OK")
 
-        case "stop-failure", "subagent-start", "subagent-stop", "pre-compact":
+        case "stop-failure":
+            telemetry.breadcrumb("claude-hook.stop-failure")
+            if let surface = appendResolvedJournal() {
+                // C11H-320: why the turn failed, for `c11 fleet`'s `blocked`.
+                sendClaudeAgentReport(client: client, surfaceId: surface, subcommand: subcommand, parsedInput: parsedInput)
+            }
+            print("OK")
+
+        case "subagent-start", "subagent-stop", "pre-compact":
             telemetry.breadcrumb("claude-hook.\(subcommand)")
             appendResolvedJournal()
             print("OK")
@@ -713,6 +819,61 @@ extension CMUXCLI {
         }
         _ = try client.send(command: cmd)
     }
+
+    /// C11H-134: a Claude hook in a c11 terminal on another machine, whose
+    /// `c11` reaches c11 through the relay. The relay already verified the
+    /// caller's own panel, so nothing is resolved and nothing is written on
+    /// this machine (no session store): each edge is one journal append with
+    /// no session id, which c11 attributes to the panel's hc owner
+    /// (C11H-123), then the fleet's `agent.report` where the local hook sends
+    /// one (C11H-328), and a Stop first drains the panel's mail. Every relay call
+    /// is bounded so the hook answers inside Claude's 10 s: its reply wait is
+    /// cut to what is left after the claim wait (`C11RelayHookDrain`). A
+    /// dropped link spools the edge and claims no mail.
+    func runRelayedClaudeHook(subcommand: String, parsedInput: ClaudeHookParsedInput,
+                              journalDraft: JournalDraft?, client: SocketClient) {
+        // Relay calls carry their own timeouts, not the local hook's socket window.
+        SocketClient.processDeadline = nil
+        let claimSeconds = Double(C11RelayCLI.current?.claimMilliseconds ?? C11Relay.defaultClaimMilliseconds) / 1000
+        func replyTimeout() -> TimeInterval? {
+            C11RelayHookDrain.replyTimeout(processElapsedSeconds: Self.processElapsedSeconds(), claimSeconds: claimSeconds)
+        }
+        // Relay mode registers no PermissionRequest hook; if one runs anyway, it
+        // stays observe-only, as locally: never an answer to Claude.
+        if subcommand == "permission-request" { print("{}") }
+        if subcommand == "stop", ProcessInfo.processInfo.environment["C11_MAILBOX_HOOK_DRAIN"] != "0" {
+            signal(SIGPIPE, SIG_IGN)
+            let outcome = C11RelayHookDrain.run(
+                format: .claude,
+                input: claudeMailboxHookInput(event: .stop, parsedInput: parsedInput),
+                processElapsedSeconds: Self.processElapsedSeconds(),
+                call: { method, params in
+                    guard let timeout = replyTimeout() else { throw CLIError(message: "relay_unavailable: hook budget spent") }
+                    return try client.sendV2(method: method, params: params, deadline: .custom(timeout))
+                },
+                write: { Self.writeStdout($0) })
+            // Claude goes on with the mail: this Stop is not an idle edge.
+            if outcome.wroteMail { return }
+        }
+        if let params = C11RelayHookDrain.journalEvent(journalDraft), let timeout = replyTimeout() {
+            _ = JournalCommand.deliverRelayed(params, timeout: timeout)
+        }
+        // C11H-328: the same `agent.report` a local hook sends (account, final
+        // message, why a turn failed), for this panel only. Best effort: an
+        // older Mac refuses it (`relay_not_allowed`) and nothing changes. One
+        // raw relay call, as the journal edge is: `sendV2` would first relay a
+        // capabilities probe.
+        guard let panel = Self.callerPanelEnv(),
+              let report = C11RelayHookDrain.agentReport(subcommand: subcommand, panel: panel,
+                  object: parsedInput.object ?? [:], transcriptPath: parsedInput.transcriptPath,
+                  environment: ProcessInfo.processInfo.environment),
+              let line = (try? JSONSerialization.data(withJSONObject: [
+                  "id": UUID().uuidString, "method": "agent.report", "params": report])).map({ String(decoding: $0, as: UTF8.self) }),
+              let relay = try? C11RelayCLI.makeClient(),
+              let timeout = replyTimeout() else { return }
+        _ = try? relay.call(line: line, framing: .json, timeout: timeout)
+    }
+
 
     /// The agent-identity part of a lifecycle report. An interactive agent
     /// launch exports `C11_AGENT_INTERACTIVE_PID` from its c11 wrapper (its
@@ -976,15 +1137,29 @@ extension CMUXCLI {
         }
     }
 
+    /// C11H-320: one best-effort `agent.report`. An older app answers
+    /// method_not_found; that, a timeout, or a dead socket changes nothing.
+    /// C11H-328: the params come from `ClaudeAgentReport.hookParams`, which
+    /// the relayed hook uses too (`C11RelayHookDrain.agentReport`).
+    func sendClaudeAgentReport(client: SocketClient, surfaceId: String, subcommand: String,
+                               parsedInput: ClaudeHookParsedInput, stopText: String? = nil) {
+        guard let params = ClaudeAgentReport.hookParams(
+            subcommand: subcommand, panelId: surfaceId, object: parsedInput.object ?? [:], stopText: stopText,
+            environment: ProcessInfo.processInfo.environment, now: Date()) else { return }
+        _ = try? client.sendV2(method: "agent.report", params: params)
+    }
+
     func summarizeClaudeHookStop(
         parsedInput: ClaudeHookParsedInput,
-        sessionRecord: ClaudeHookSessionRecord?
+        sessionRecord: ClaudeHookSessionRecord?,
+        stopText: ClaudeStopTranscript.StopText? = nil
     ) -> (subtitle: String, body: String)? {
         let cwd = parsedInput.cwd ?? sessionRecord?.cwd
-        let transcript = parsedInput.transcriptPath.flatMap { readTranscriptSummary(path: $0) }
+        let notification = stopText.map(\.notification)
+            ?? parsedInput.transcriptPath.flatMap { readTranscriptSummary(path: $0) }?.lastAssistantMessage
         return ClaudeStopTranscript.summary(
             cwd: cwd,
-            lastAssistantMessage: transcript?.lastAssistantMessage,
+            lastAssistantMessage: notification,
             fallbackBody: sessionRecord?.lastBody,
             fallbackSubtitle: sessionRecord?.lastSubtitle
         )

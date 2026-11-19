@@ -28,10 +28,10 @@ openclaw/tap/crabbox`.
 
 Four properties together that don't appear anywhere else in the field:
 
-1. **Brokered credentials.** The Cloudflare Worker holds AWS / Hetzner /
+1. **Brokered credentials.** The Cloudflare Worker holds AWS / VPS /
    Azure / GCP keys. The laptop has a bearer token. The leased box has
    nothing.
-2. **Provider pluralism.** ~22 backends spanning raw cloud (Hetzner / AWS
+2. **Provider pluralism.** ~22 backends spanning raw cloud (VPS / AWS
    / Azure / GCP / Proxmox / static SSH / local Docker) and delegated
    sandbox SDKs (E2B / Modal / Daytona / Cloudflare Containers /
    Tensorlake / Sprites / Blacksmith Testbox / Namespace Devbox / …).
@@ -89,7 +89,7 @@ Things Crabbox is **not**:
 - Not an agent runtime. Crabbox doesn't host or wrap your agent — it
   provisions a Linux box and lets you put whatever you want on it,
   including an agent.
-- Not free of cloud bill. Direct-provider mode pays your Hetzner / AWS /
+- Not free of cloud bill. Direct-provider mode pays your VPS / AWS /
   etc. bill directly; brokered mode adds spend-cap guardrails but the
   underlying compute is still real money.
 
@@ -155,7 +155,7 @@ Two reasons:
    host-required tests need macOS — Crabbox's managed providers default
    to Linux (EC2 Mac is supported but a much heavier setup path). The
    Linux-test-suite candidates that would fit (Lattice, the company
-   board's dashboards) aren't slow enough on Hyperion today to justify
+   board's dashboards) aren't slow enough on the laptop today to justify
    offloading.
 2. **Crabbox is too young to commit to without a real workload.** 26
    days old, ~750 of ~860 commits from two authors, hosted Worker is a
@@ -168,7 +168,7 @@ Two reasons:
 Concrete triggers to revisit:
 
 - We start running long-running autonomous agent sessions
-  (lattice-orchestrator delegators that work for hours) and Hyperion's
+  (lattice-orchestrator delegators that work for hours) and the laptop's
   compute becomes the bottleneck.
 - A Stage 11 Python project's test suite grows past ~5 minutes locally.
 - We start doing parallel scenario tests across dependency-version

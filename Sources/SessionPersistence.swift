@@ -20,12 +20,13 @@ enum SidebarLayoutPolicy {
     }
 
     /// Tile columns stop growing past this chrome scale, so two columns
-    /// (at most 518 pt) always fit inside the 600 pt sidebar maximum.
+    /// (at most 518 pt) always fit inside the 620 pt sidebar maximum, and three
+    /// fit at the Large chrome scale (1.25x, 608 pt).
     static let maximumTileScale: Double = 1.6
 
     static func columns(width: Double, scale: Double = 1) -> Int {
         let scale = scale.isFinite && scale > 0 ? min(scale, maximumTileScale) : 1
-        let width = width.isFinite ? max(0, min(width, 600)) : 200
+        let width = width.isFinite ? max(0, min(width, SessionPersistencePolicy.maximumSidebarWidth)) : 200
         return max(1, Int(floor(width / (tileColumnWidth * scale))))
     }
 
@@ -72,6 +73,118 @@ enum SidebarLayoutPolicy {
     }
 }
 
+/// What the sidebar draws for each workspace (C11H-221): today's full card,
+/// or the two-line compact card.
+enum SidebarDensity: String, Equatable {
+    case cards
+    case compact
+}
+
+/// The operator's choice: Automatic switches on overflow; the others pin one.
+enum SidebarDensitySetting: String, CaseIterable, Identifiable {
+    case automatic
+    case compact
+    case cards
+
+    static let key = "sidebarDensity"
+    static let defaultValue: SidebarDensitySetting = .automatic
+
+    var id: String { rawValue }
+
+    static func resolve(_ raw: String?) -> SidebarDensitySetting {
+        raw.flatMap(SidebarDensitySetting.init(rawValue:)) ?? defaultValue
+    }
+}
+
+/// One line of the workspace stack as the view lays it out: a folder header,
+/// or a line of cards (one per column) at their last measured full heights.
+enum SidebarDensityLine: Equatable {
+    case header
+    case cards([Double?])
+}
+
+/// Full cards while every workspace fits without scrolling; compact cards the
+/// moment they would scroll (Atin, 2026-11-05). Back to full cards when the
+/// cards, at the heights each one measured when last drawn, fit in the room the
+/// full chrome leaves with a margin, so one workspace opened and closed, or a
+/// flag raised at the edge, never flaps the mode.
+enum SidebarDensityPolicy {
+    /// Room the full cards must leave before the sidebar returns to them.
+    static let returnMargin: Double = 24
+    /// The New Group control: 30 pt beside full cards, 22 pt beside compact.
+    static let controlsSavings: Double = 8
+    /// One full-footer flag-kind button and its gap, when none was measured.
+    static let footerPerKind: Double = 50
+
+    /// - Parameters:
+    ///   - available: height the stack may take without scrolling, beside the
+    ///     chrome of the current density.
+    ///   - cardsAvailable: the same beside the full cards' chrome; while compact
+    ///     it is estimated (`cardsAvailable(compactAvailable:...)`).
+    ///   - shownHeight: the stack's height as drawn now.
+    ///   - estimatedCardsHeight: the full cards' stack height, estimated while compact.
+    static func density(setting: SidebarDensitySetting, current: SidebarDensity,
+                        available: Double, cardsAvailable: Double, shownHeight: Double,
+                        estimatedCardsHeight: Double?) -> SidebarDensity {
+        switch setting {
+        case .compact: return .compact
+        case .cards: return .cards
+        case .automatic: break
+        }
+        guard available.isFinite, available > 0 else { return .cards }
+        switch current {
+        case .cards:
+            return shownHeight > available + 0.5 ? .compact : .cards
+        case .compact:
+            // Never measured: draw the cards once; they measure themselves.
+            guard let estimate = estimatedCardsHeight, estimate > 0 else { return .cards }
+            return estimate + returnMargin <= cardsAvailable ? .cards : .compact
+        }
+    }
+
+    /// The one-column full footer's height for `kinds` flag-kind buttons, from
+    /// its last measure; with none, from the dense footer it would replace.
+    static func fullFooterHeight(measuredHeight: Double?, measuredKinds: Int, kinds: Int,
+                                 denseHeight: Double) -> Double {
+        // Unmeasured: the full Waiting row is about 24 pt taller than the dense
+        // one, and each full flag button about 16 pt taller than a dense one.
+        guard let measuredHeight else { return denseHeight + 24 + Double(kinds) * 16 }
+        return measuredHeight + Double(kinds - measuredKinds) * footerPerKind
+    }
+
+    /// Room the full cards' chrome would leave, from the room the compact chrome leaves.
+    static func cardsAvailable(compactAvailable: Double, denseFooterHeight: Double,
+                               fullFooterHeight: Double) -> Double {
+        compactAvailable - controlsSavings - max(0, fullFooterHeight - denseFooterHeight)
+    }
+
+    /// The full cards' stack height from each card's last measured height. A
+    /// card never drawn full takes the mean of the measured ones, else
+    /// `fallbackCardHeight`; with neither there is no estimate. A line of
+    /// cards takes its tallest card's height.
+    static func estimatedCardsHeight(lines: [SidebarDensityLine], headerHeight: Double,
+                                     spacing: Double, padding: Double,
+                                     fallbackCardHeight: Double? = nil) -> Double? {
+        guard !lines.isEmpty else { return nil }
+        var known: [Double] = []
+        var hasCards = false
+        for case .cards(let heights) in lines {
+            hasCards = true
+            known.append(contentsOf: heights.compactMap { $0 })
+        }
+        let mean = known.isEmpty ? fallbackCardHeight : known.reduce(0, +) / Double(known.count)
+        if hasCards, mean == nil { return nil }
+        var total = 0.0
+        for line in lines {
+            switch line {
+            case .header: total += headerHeight
+            case .cards(let heights): total += heights.map { $0 ?? mean ?? 0 }.max() ?? 0
+            }
+        }
+        return total + spacing * Double(lines.count - 1) + padding
+    }
+}
+
 enum WindowGeometryPersistenceStore {
     struct Geometry: Codable, Sendable {
         let frame: SessionRectSnapshot
@@ -115,7 +228,7 @@ enum WindowGeometryPersistenceStore {
 enum SessionPersistencePolicy {
     static let defaultSidebarWidth: Double = 200
     static let minimumSidebarWidth: Double = 180
-    static let maximumSidebarWidth: Double = 600
+    static let maximumSidebarWidth: Double = 620
     static let defaultWindowWidth: Double = 1120
     static let defaultWindowHeight: Double = 840
     static let minimumWindowWidth: Double = 900
@@ -400,6 +513,88 @@ struct SessionGitBranchSnapshot: Codable, Sendable {
 struct SessionTerminalPanelSnapshot: Codable, Sendable {
     var workingDirectory: String?
     var scrollback: String?
+    /// Optional for pre-hc snapshots. An unresolved terminal retains this
+    /// identity; neither a missing native surface nor a failed lookup clears it.
+    var hcIdentity: HCPanelIdentity? = nil
+    /// Ticket 12: the machine the terminal runs on when it is not this Mac.
+    /// Optional, so older snapshots and local panels decode as local.
+    var hcRemoteTarget: HCRemoteTarget? = nil
+    /// C11H-67 (Amendment 1): the hc session the terminal's key belongs to.
+    /// Optional: older snapshots decode nil and resolve in S0.
+    var hcSession: String? = nil
+    /// C11H-209: the panel's settled host-end decisions and record, so a
+    /// relaunch never decides the same end again. Optional: older snapshots
+    /// decode nil, and a malformed value decodes as nothing kept.
+    var hcHostEnd: HCSavedHostEnd? = nil
+    /// C11H-283: convergence proved the legacy world dead, but the new core
+    /// cannot prove that old core's end. This names the recovery only; it is
+    /// never an active HC identity or a permission to create in HC.
+    var hcMigrationEnd: HCEndEvidence? = nil
+
+    /// Stable across a rebuilt stage. A keyless legacy panel has no terminal
+    /// address to retain; its migration-only key names that panel's one end,
+    /// and is never sent to a core. The executor calls this only after proving
+    /// the entire adopted world absent.
+    static func migrationEnd(panelID: UUID, endedKey: HCTerminalKey?) -> HCEndEvidence {
+        HCEndEvidence(id: panelID,
+            key: endedKey ?? HCTerminalKey(owningCoreID: "c11-migration-convergence",
+                                          localAddress: panelID.uuidString.lowercased()),
+            revision: HCRevision(connectionGeneration: 0, sequence: 0),
+            kind: .postAdoptionAbsence, hcReason: "stopped_by_restart")
+    }
+
+    /// Seed the same restore seam used before Workspace constructs surfaces.
+    /// Remote and nonpersistent snapshots can never acquire migration proof.
+    @discardableResult
+    func seedHCRestore(panelID: UUID, backendActive: Bool,
+                       state: HCPanelRestoreState = .shared) throws -> HCPanelIdentity? {
+        guard let identity = try restoredHCIdentity(panelID: panelID, backendActive: backendActive) else { return nil }
+        if let proof = hcMigrationEnd {
+            guard hcRemoteTarget == nil, identity.persistence == .persistent,
+                  proof.id == panelID, proof.key != nil,
+                  proof.kind == .postAdoptionAbsence, proof.hcReason == "stopped_by_restart",
+                  proof.key != identity.key else { throw HCUnavailableReason.staleIdentity }
+        }
+        state.seed(identity, migrationEnd: hcMigrationEnd)
+        return identity
+    }
+
+    /// A saved fresh/keyless panel still has to reconcile durable creation
+    /// intents and labels. Restore never reuses its former launch permission.
+    func restoredHCIdentity(panelID: UUID, backendActive: Bool) throws -> HCPanelIdentity? {
+        guard hcIdentity != nil || hcMigrationEnd != nil || backendActive else { return nil }
+        guard let hcIdentity else { return HCPanelIdentity(panelID: panelID, origin: .restored) }
+        guard hcIdentity.panelID == panelID else { throw HCUnavailableReason.staleIdentity }
+        return HCPanelIdentity(panelID: panelID, key: hcIdentity.key,
+            persistence: hcIdentity.persistence, creationID: hcIdentity.creationID, origin: .restored)
+    }
+
+    /// hc owns its live screen and history. Calling the capture closure for a
+    /// persistent identity would duplicate that history on the next attach.
+    static func capture(
+        workingDirectory: String?,
+        hcIdentity: HCPanelIdentity?,
+        hcRemoteTarget: HCRemoteTarget? = nil,
+        hcSession: String? = nil,
+        hcHostEnd: HCSavedHostEnd? = nil,
+        hcMigrationEnd: HCEndEvidence? = nil,
+        scrollback: () -> String?
+    ) -> SessionTerminalPanelSnapshot {
+        // A remote terminal's screen and history live in hc on its machine.
+        let keepsHistory = hcIdentity?.persistence == .persistent || hcRemoteTarget != nil
+        return SessionTerminalPanelSnapshot(workingDirectory: hcRemoteTarget == nil ? workingDirectory : nil,
+            scrollback: keepsHistory ? nil : scrollback(),
+            hcIdentity: hcIdentity.map { HCPanelIdentity(panelID: $0.panelID, key: $0.key,
+                persistence: $0.persistence, creationID: $0.creationID, origin: .restored) },
+            hcRemoteTarget: hcRemoteTarget,
+            hcSession: hcIdentity?.persistence == .persistent ? hcSession : nil,
+            hcHostEnd: hcHostEnd,
+            hcMigrationEnd: hcRemoteTarget == nil && hcIdentity?.persistence == .persistent ? hcMigrationEnd : nil)
+    }
+
+    var replayableScrollback: String? {
+        hcIdentity?.persistence == .persistent ? nil : scrollback
+    }
 }
 
 struct SessionBrowserPanelSnapshot: Codable, Sendable {
@@ -542,6 +737,24 @@ struct SessionPanelSnapshot: Codable, Sendable {
     }
 }
 
+extension SessionPanelSnapshot {
+    /// Restore calls `syncPanelTitleFromMetadata` for this panel, the same
+    /// sync `set-title` uses. A real `customTitle` already owns the tab.
+    /// `explicit` is `set-title`. `declare` is `launch-agent --title`.
+    /// OSC, heuristic, derived, and a blank title stay on today's path:
+    /// `setPanelCustomTitle(nil)` leaves the display title.
+    var shouldSyncExplicitOrDeclareMetadataTitle: Bool {
+        let custom = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard custom.isEmpty else { return false }
+        guard let source = metadataSources?[MetadataKey.title]?.source,
+              source == MetadataSource.explicit.rawValue || source == MetadataSource.declare.rawValue,
+              case .string(let raw)? = metadata?[MetadataKey.title] else {
+            return false
+        }
+        return !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
 enum SessionSplitOrientation: String, Codable, Sendable {
     case horizontal
     case vertical
@@ -654,6 +867,10 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     /// cwd. False after an operator clear. Nil in older snapshots, which
     /// restore as armed when the root is nil.
     var rootAdoptionArmed: Bool? = nil
+    /// C11H-363: `currentDirectory` was last copied from a terminal on another
+    /// machine, so it is never offered as a folder on this Mac. Nil in older
+    /// snapshots, which restore as not remote.
+    var currentDirectoryIsRemoteReport: Bool? = nil
     var focusedPanelId: UUID?
     var layout: SessionWorkspaceLayoutSnapshot
     var panels: [SessionPanelSnapshot]
@@ -664,9 +881,16 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     /// Operator-authored workspace metadata (e.g. description, icon).
     /// Optional for backward compatibility with pre-metadata snapshots.
     var metadata: [String: String]?
+    /// Additive typed payload; presence (including an empty object) wins over
+    /// the legacy string projection. Old files omit both new fields.
+    var metadataValues: [String: PersistedJSONValue]? = nil
+    var metadataSources: [String: PersistedMetadataSource]? = nil
     /// Session-only active companion context. Blueprints and snapshots do not
     /// carry this transient focus-derived value.
     var activeAgentSurfaceId: UUID? = nil
+    /// C11H-67 (Amendment 1): the pool shard this workspace's new terminals
+    /// use. Optional: older snapshots decode nil and place on the first terminal.
+    var hcShard: HCShardID? = nil
 
     // Pinned on-disk keys: session decode is all-or-nothing, so these raw
     // strings never change even when the Swift names do.
@@ -681,6 +905,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
         case currentDirectory = "currentDirectory"
         case rootDirectory = "rootDirectory"
         case rootAdoptionArmed = "rootAdoptionArmed"
+        case currentDirectoryIsRemoteReport = "currentDirectoryIsRemoteReport"
         case focusedPanelId = "focusedPanelId"
         case layout = "layout"
         case panels = "panels"
@@ -689,7 +914,10 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
         case progress = "progress"
         case gitBranch = "gitBranch"
         case metadata = "metadata"
+        case metadataValues = "metadataValues"
+        case metadataSources = "metadataSources"
         case activeAgentSurfaceId = "activeAgentSurfaceId"
+        case hcShard = "hcShard"
     }
 }
 
@@ -714,6 +942,94 @@ enum SessionRestoreNormalization {
                 }
             }
         }
+        #if DEBUG
+        // Guest proof seam only: restore twins as saved so the end backstop
+        // can be shown refusing a close. Never set outside a test guest.
+        if ProcessInfo.processInfo.environment["C11_DEBUG_KEEP_SESSION_TWINS"] == "1" { return snapshot }
+        #endif
+        return dropHCTwins(snapshot, reportDrop: reportDrop)
+    }
+
+    /// C11H-46: hc terminal panels across workspaces and windows that share a
+    /// UUID or an hc terminal key are twins (an earlier Recovered adoption made them).
+    /// Before any panel, session or registry exists, each group keeps one
+    /// panel, outside Recovered first, then the first saved; the others are
+    /// removed from the snapshot, with their layout references. A workspace
+    /// left empty is removed, then a window left empty. Nothing is closed or
+    /// ended: the terminals are untouched, and a removed twin's own distinct
+    /// terminal, if it had one, is later adopted under a fresh UUID.
+    static func dropHCTwins(_ input: AppSessionSnapshot,
+                            reportDrop: (String) -> Void = { NSLog("%@", $0) }) -> AppSessionSnapshot {
+        struct Place { let window: Int; let workspace: Int; let panel: UUID }
+        var places: [Place] = []
+        var candidates: [HCDuplicateBindingCleanup.Panel] = []
+        for (w, window) in input.windows.enumerated() {
+            for (k, workspace) in window.workspaceManager.workspaces.enumerated() {
+                let recovered = workspace.metadata?["c11h.recovered"] == "true"
+                // Only hc terminals: other panels keep their pre-C11H-46 rules.
+                for panel in workspace.panels where panel.terminal?.hcIdentity != nil {
+                    let keys = Set([panel.terminal?.hcIdentity?.key].compactMap { $0 })
+                    candidates.append(HCDuplicateBindingCleanup.Panel(token: places.count, panelID: panel.id,
+                        keys: keys, inRecovered: recovered))
+                    places.append(Place(window: w, workspace: k, panel: panel.id))
+                }
+            }
+        }
+        let drops = HCDuplicateBindingCleanup.drops(candidates)
+        guard !drops.isEmpty else { return input }
+        var removed: [Int: [Int: Set<UUID>]] = [:]
+        for drop in drops {
+            let place = places[drop.token]
+            removed[place.window, default: [:]][place.workspace, default: []].insert(place.panel)
+            let terminals = drop.keys.map { "\($0.owningCoreID)/\($0.localAddress)" }.sorted().joined(separator: ",")
+            let workspaceID = input.windows[place.window].workspaceManager.workspaces[place.workspace].id
+            reportDrop("hc.duplicate_binding.dropped panel=\(place.panel) workspace=\(workspaceID) terminals=\(terminals)")
+        }
+
+        func prune(_ node: SessionWorkspaceLayoutSnapshot, _ gone: Set<UUID>) -> SessionWorkspaceLayoutSnapshot? {
+            switch node {
+            case .pane(var pane):
+                let before = pane.panelIds.count
+                pane.panelIds.removeAll { gone.contains($0) }
+                if pane.panelIds.isEmpty && before > 0 { return nil }
+                if let selected = pane.selectedPanelId, gone.contains(selected) { pane.selectedPanelId = pane.panelIds.first }
+                return .pane(pane)
+            case .split(var split):
+                let first = prune(split.first, gone), second = prune(split.second, gone)
+                guard let first else { return second }
+                guard let second else { return first }
+                split.first = first; split.second = second
+                return .split(split)
+            }
+        }
+
+        var snapshot = input
+        var windows: [SessionWindowSnapshot] = []
+        for (w, window) in input.windows.enumerated() {
+            var manager = window.workspaceManager
+            let selectedID = manager.selectedWorkspaceIndex.flatMap { index in
+                manager.workspaces.indices.contains(index) ? manager.workspaces[index].id : nil
+            }
+            var workspaces: [SessionWorkspaceSnapshot] = []
+            for (k, original) in manager.workspaces.enumerated() {
+                guard let gone = removed[w]?[k] else { workspaces.append(original); continue }
+                var workspace = original
+                workspace.panels.removeAll { gone.contains($0.id) }
+                guard !workspace.panels.isEmpty, let layout = prune(workspace.layout, gone) else { continue }
+                workspace.layout = layout
+                if let focused = workspace.focusedPanelId, gone.contains(focused) {
+                    workspace.focusedPanelId = workspace.panels.first?.id
+                }
+                workspaces.append(workspace)
+            }
+            guard !workspaces.isEmpty else { continue }
+            manager.workspaces = workspaces
+            manager.selectedWorkspaceIndex = selectedID.flatMap { id in workspaces.firstIndex { $0.id == id } } ?? 0
+            var kept = window
+            kept.workspaceManager = manager
+            windows.append(kept)
+        }
+        snapshot.windows = windows
         return snapshot
     }
 
@@ -777,6 +1093,12 @@ struct SessionWorkspaceManagerSnapshot: Codable, Sendable {
     var selectedWorkspaceIndex: Int?
     var workspaces: [SessionWorkspaceSnapshot]
     var workspaceGroups: [WorkspaceGroup]? = nil
+    /// C11H-299: each group's authored JSON object, keyed by group UUID.
+    /// Absent in older snapshots and whenever no group has an object.
+    var workspaceGroupMetadata: [String: SessionWorkspaceGroupMetadataSnapshot]? = nil
+    /// C11H-342: the sidebar root order (`WorkspaceRootOrder`). Absent in older
+    /// snapshots, which restore with groups first, as they drew.
+    var workspaceRootOrder: [UUID]? = nil
 }
 
 struct SessionWindowSnapshot: Codable, Sendable {
@@ -784,6 +1106,11 @@ struct SessionWindowSnapshot: Codable, Sendable {
     var display: SessionDisplaySnapshot?
     var workspaceManager: SessionWorkspaceManagerSnapshot
     var sidebar: SessionSidebarSnapshot
+    // c11 (C11H-197): the window's UUID, name and theme override, so all three
+    // survive a relaunch. Older snapshots have none of them.
+    var windowId: String? = nil
+    var name: String? = nil
+    var theme: String? = nil
 
     // Persisted session files key the workspace list as `tabManager`; keep that on-disk key.
     enum CodingKeys: String, CodingKey {
@@ -791,6 +1118,9 @@ struct SessionWindowSnapshot: Codable, Sendable {
         case display
         case workspaceManager = "tabManager"
         case sidebar
+        case windowId = "window_id"
+        case name
+        case theme
     }
 }
 
@@ -1047,7 +1377,7 @@ enum SessionPersistenceStore {
         }
         let bundleId = (bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
             ? bundleIdentifier!
-            : "com.stage11.c11"
+            : C11Identity.releaseBundleIdentifier
         let safeBundleId = bundleId.replacingOccurrences(
             of: "[^A-Za-z0-9._-]",
             with: "_",
@@ -1055,7 +1385,7 @@ enum SessionPersistenceStore {
         )
         StateDirectoryMigration.ensureMigrated()
         return resolvedAppSupport
-            .appendingPathComponent("c11", isDirectory: true)
+            .appendingPathComponent(C11Identity.stateDirectoryName, isDirectory: true)
             .appendingPathComponent("session-\(safeBundleId).json", isDirectory: false)
     }
 }

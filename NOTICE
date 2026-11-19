@@ -13,7 +13,10 @@ License:  GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
 Modifications
 -------------
 Modified by: Stage 11 Agentics
-Fork date:   2026-04-16
+Copyright:   Stage 11 Agentics
+Fork point:  cmux main as merged into this repo on 2026-03-18 (57a176bd),
+             while cmux was AGPL-3.0-or-later only
+Fork date:   2026-04-16 (Stage 11 fork scaffolding, b86b46a7)
 
 Summary of modifications:
 - Rebranded app identity (display name "c11", bundle ID "com.stage11.c11").
@@ -28,6 +31,33 @@ Summary of modifications:
   remain identical to upstream cmux for backward compatibility.
 - Diverged development after the fork point.
 
+c11 2.0 (developed by Stage 11 as "c11h", a separate app, from
+2026-10-31 until it took c11's name on 2026-11-13) adds:
+- A bundled, unmodified build of herdr-core (hc), an Apache-2.0
+  terminal runtime, as a helper inside the app
+  (Contents/Helpers/herdr-core). hc holds every terminal, so terminals
+  keep running when the app quits, crashes or updates. Its license and
+  pinned commit are in THIRD_PARTY_LICENSES.md and
+  Resources/hc/hc-source.json.
+- Terminal sessions spread across several hc sessions (shards).
+- Machine links: terminals on other machines reached over SSH, each
+  served by its own hc, shown in the same window.
+- A relay through hc that lets agents on a linked machine report
+  status, raise flags and exchange mail with the app, and a relay CLI
+  kit installed on the linked machine.
+- A display-only viewer (`c11 show`) and further CLI verbs (`hc`,
+  `machine`, `restore`, `window`, `display`, `chaos`).
+- The same release identity as c11 1.x (display name "c11", bundle ID
+  "com.stage11.c11", the same Sparkle feed); the earlier "c11h" names
+  remain only as compatibility aliases.
+
+Code taken from cmux after the fork point
+-----------------------------------------
+cmux relicensed to GPL-3.0-or-later on 2026-03-30. Code picked from
+cmux after that date (c11 commits 89ec44b8 and b218dcda, 2026-04-27)
+is GPL-3.0-or-later and is combined with c11 under section 13 of
+GPLv3 and of AGPLv3.
+
 A complete, ongoing record of modifications is available in the git
 history of the Stage 11 fork.
 
@@ -36,4 +66,4 @@ License
 c11 is distributed under the same license as the original work,
 AGPL-3.0-or-later. See LICENSE for the full text. Original copyright
 notices from manaflow-ai are preserved in their respective source
-files and in LICENSE.
+files.

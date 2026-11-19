@@ -49,9 +49,383 @@ fileprivate func dedupedCanonicalURLs(_ urls: [URL]) -> [URL] {
     return result
 }
 
+/// The credential a c11 ssh workspace's loopback proxy requires (SOCKS5 username/password and
+/// HTTP CONNECT Basic). The broker draws a fresh one on every start.
+struct BrowserProxyCredential: Equatable {
+    let username: String
+    let password: String
+
+    /// 32 bytes from the system CSPRNG, hex-encoded.
+    static func generate() -> BrowserProxyCredential {
+        var generator = SystemRandomNumberGenerator()
+        let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
+        return BrowserProxyCredential(
+            username: "c11",
+            password: bytes.map { String(format: "%02x", $0) }.joined()
+        )
+    }
+}
+
 struct BrowserProxyEndpoint: Equatable {
     let host: String
     let port: Int
+    var credential: BrowserProxyCredential? = nil
+
+    var isUsable: Bool {
+        !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && port > 0 && port <= 65535
+    }
+}
+
+/// Where a browser panel's own network traffic goes.
+enum BrowserRemoteProxyRouting: Equatable {
+    /// Not a c11 ssh workspace: WebKit connects directly.
+    case direct
+    /// Through the workspace's authenticated loopback broker.
+    case proxy(BrowserProxyEndpoint)
+    /// A c11 ssh workspace whose broker is down or not up yet. Every request fails closed;
+    /// none may leave this Mac directly.
+    case blocked
+
+    static func resolve(usesRemoteWorkspaceProxy: Bool, endpoint: BrowserProxyEndpoint?) -> Self {
+        if let endpoint, endpoint.isUsable {
+            return .proxy(endpoint)
+        }
+        return usesRemoteWorkspaceProxy ? .blocked : .direct
+    }
+
+    /// The WebKit proxy set for this routing. `.blocked` points both proxies at a refusing
+    /// listener c11 holds, with no failover, so loads fail instead of going direct. Returns nil
+    /// only when `.blocked` has no refusing listener to point at.
+    @available(macOS 14.0, *)
+    func proxyConfigurations(blackhole: BrowserProxyEndpoint?) -> [ProxyConfiguration]? {
+        switch self {
+        case .direct:
+            return []
+        case .proxy(let endpoint):
+            return Self.configurations(for: endpoint)
+        case .blocked:
+            guard let blackhole, blackhole.isUsable else { return nil }
+            return Self.configurations(for: blackhole)
+        }
+    }
+
+    @available(macOS 14.0, *)
+    private static func configurations(for endpoint: BrowserProxyEndpoint) -> [ProxyConfiguration]? {
+        guard endpoint.isUsable, let port = NWEndpoint.Port(rawValue: UInt16(endpoint.port)) else { return nil }
+        let host = endpoint.host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nwEndpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: port)
+        var socks = ProxyConfiguration(socksv5Proxy: nwEndpoint)
+        var connect = ProxyConfiguration(httpCONNECTProxy: nwEndpoint)
+        socks.allowFailover = false
+        connect.allowFailover = false
+        if let credential = endpoint.credential {
+            socks.applyCredential(username: credential.username, password: credential.password)
+            connect.applyCredential(username: credential.username, password: credential.password)
+        }
+        return [socks, connect]
+    }
+
+    /// Whether c11's own favicon fetch may send `url`. In a c11 ssh workspace it never targets
+    /// a literal loopback host: Network.framework sends those around any proxy, straight to this
+    /// Mac, and the content rule list covers only WebKit's loads. While blocked, nothing is sent.
+    func allowsFaviconRequest(to url: URL?) -> Bool {
+        switch self {
+        case .direct:
+            return true
+        case .blocked:
+            return false
+        case .proxy:
+            guard let url else { return false }
+            return !BrowserRemoteLoopbackBlocker.blocks(url)
+        }
+    }
+
+    /// Fetches one favicon candidate under this routing's guard. Redirects are guarded by the
+    /// proxy session `faviconSession` builds.
+    func fetchFavicon(_ request: URLRequest, session: URLSession, maximumBytes: Int) async throws -> Data {
+        guard allowsFaviconRequest(to: request.url) else { throw BrowserFavicon.FetchError.refused }
+        return try await BrowserFavicon.fetch(request, session: session, maximumBytes: maximumBytes)
+    }
+
+    /// The session a favicon fetch may use: the proxy's for `.proxy`, the direct one only for
+    /// `.direct`, and none while `.blocked`. The caller owns and invalidates a proxy session.
+    func faviconSession(direct: () -> URLSession) -> URLSession? {
+        switch self {
+        case .direct:
+            return direct()
+        case .blocked:
+            return nil
+        case .proxy(let endpoint):
+            guard #available(macOS 14.0, *),
+                  let configurations = Self.configurations(for: endpoint) else { return nil }
+            let configuration = BrowserFavicon.makeSessionConfiguration()
+            configuration.requestCachePolicy = .returnCacheDataElseLoad
+            configuration.proxyConfigurations = configurations
+            return URLSession(
+                configuration: configuration,
+                delegate: BrowserRemoteFaviconRedirectGuard(),
+                delegateQueue: nil
+            )
+        }
+    }
+}
+
+/// Refuses a favicon redirect to a literal loopback host in a c11 ssh workspace, which would
+/// otherwise go around the proxy to this Mac (the remote's 3xx answer is then a failed fetch).
+final class BrowserRemoteFaviconRedirectGuard: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let url = request.url, !BrowserRemoteLoopbackBlocker.blocks(url) else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+}
+
+/// The one gate every load a browser panel sends to WebKit passes: a new navigation, a restore, and
+/// a held navigation when it resumes. A load waits while a c11 ssh workspace's broker endpoint or
+/// its loopback list (#370) is not in, or while a guarded show viewer's own-address list (C11H-386)
+/// is not in its web view. One load waits at a time, the newest; when a prerequisite comes in it goes
+/// back through `admit`, so it loads only once nothing holds it, whichever came in first.
+struct BrowserLoadGate<Navigation> {
+    enum Hold: Equatable {
+        case remoteWorkspace
+        case showViewerBlock
+    }
+
+    struct State: Equatable {
+        var usesRemoteWorkspaceProxy = false
+        var remoteEndpointReady = false
+        var remoteLoopbackBlockReady = false
+        var guardedShowViewer = false
+        var showViewerBlockReady = false
+
+        /// What holds a load now, if anything.
+        var hold: Hold? {
+            if usesRemoteWorkspaceProxy, !remoteEndpointReady || !remoteLoopbackBlockReady { return .remoteWorkspace }
+            if guardedShowViewer, !showViewerBlockReady { return .showViewerBlock }
+            return nil
+        }
+    }
+
+    private(set) var held: Navigation?
+    private(set) var heldFor: Hold?
+
+    /// A load about to go to WebKit: returns it to load now, or holds it in place of any load already
+    /// waiting and returns nil.
+    mutating func admit(_ navigation: Navigation, in state: State) -> Navigation? {
+        guard let hold = state.hold else {
+            held = nil
+            heldFor = nil
+            return navigation
+        }
+        held = navigation
+        heldFor = hold
+        return nil
+    }
+
+    /// Holds the page a c11 ssh workspace takes down while its broker is gone, unless a load already
+    /// waits.
+    mutating func holdIfIdle(_ navigation: Navigation, for hold: Hold) {
+        guard held == nil else { return }
+        held = navigation
+        heldFor = hold
+    }
+
+    /// A prerequisite came in: returns the waiting load if nothing holds it any more. A load held for
+    /// a c11 ssh workspace resumes only once its broker endpoint is back, as #370 holds it.
+    mutating func resume(in state: State) -> Navigation? {
+        guard let navigation = held else { return nil }
+        if heldFor == .remoteWorkspace, !state.remoteEndpointReady { return nil }
+        return admit(navigation, in: state)
+    }
+}
+
+/// In a c11 ssh workspace no page load may reach this Mac's own loopback. WebKit sends literal
+/// `localhost`, 127.0.0.0/8 and `::1` around any proxy, so a content rule list blocks every load
+/// (documents, subresources, fetch/XHR, WebSockets) whose URL host is one of them. c11's own
+/// `c11-loopback.localtest.me` rewrite, which goes through the proxy to the remote's loopback,
+/// is untouched, and panels outside c11 ssh workspaces never get the list.
+final class BrowserRemoteLoopbackBlocker {
+    static let shared = BrowserRemoteLoopbackBlocker()
+    static let identifier = "c11-remote-workspace-loopback-block-1"
+
+    /// One url-filter per network scheme family and host form: WebKit's url-filter has no
+    /// alternation. Each matches the scheme, optional userinfo, the host, then a port, path,
+    /// query or fragment. c11's own schemes (show viewers, markdown) never touch the network.
+    static let blockedHostFilters: [String] = {
+        let schemes = [#"^https?://"#, #"^wss?://"#]
+        let userinfo = #"([^/?#@]*@)?"#
+        let end = #"[:/?#]"#
+        let hosts = [
+            #"localhost[.]?"#,
+            #"[^/?#@:]*[.]localhost[.]?"#,
+            #"localhost[.]localdomain[.]?"#,
+            #"ip6-localhost"#,
+            #"ip6-loopback"#,
+            #"127[.][0-9]+[.][0-9]+[.][0-9]+"#,
+            #"0[.]0[.]0[.]0"#,
+            #"\[::1?\]"#,
+            #"\[::ffff:7f[0-9a-f]*:[0-9a-f]*\]"#,
+            #"\[::ffff:0:0\]"#,
+        ]
+        return schemes.flatMap { scheme in hosts.map { scheme + userinfo + $0 + end } }
+    }()
+
+    static let ruleListJSON: String = {
+        let rules: [[String: Any]] = blockedHostFilters.map { filter in
+            ["trigger": ["url-filter": filter], "action": ["type": "block"]]
+        }
+        let data = (try? JSONSerialization.data(withJSONObject: rules, options: [.sortedKeys])) ?? Data("[]".utf8)
+        return String(decoding: data, as: UTF8.self)
+    }()
+
+    /// Whether the rule list blocks `url`, evaluated from `ruleListJSON`'s own url-filters the way
+    /// WebKit applies them (case-insensitive, against the canonical URL). A WebKit-free seam.
+    static func blocks(_ url: URL) -> Bool {
+        // WebKit sees the canonical URL, whose path is at least "/"; Foundation keeps it empty.
+        var text = url.absoluteString
+        if var components = URLComponents(url: url, resolvingAgainstBaseURL: true), components.path.isEmpty {
+            components.path = "/"
+            text = components.string ?? text
+        }
+        return compiledFilters.contains { $0.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil }
+    }
+
+    private static let compiledFilters: [NSRegularExpression] = {
+        guard let rules = (try? JSONSerialization.jsonObject(with: Data(ruleListJSON.utf8))) as? [[String: Any]] else { return [] }
+        return rules.compactMap { rule in
+            guard let trigger = rule["trigger"] as? [String: Any],
+                  let filter = trigger["url-filter"] as? String,
+                  (rule["action"] as? [String: Any])?["type"] as? String == "block" else { return nil }
+            return try? NSRegularExpression(pattern: filter, options: [.caseInsensitive])
+        }
+    }()
+
+    static func compile(
+        in store: WKContentRuleListStore,
+        completion: @escaping (WKContentRuleList?, Error?) -> Void
+    ) {
+        store.compileContentRuleList(
+            forIdentifier: identifier,
+            encodedContentRuleList: ruleListJSON,
+            completionHandler: completion
+        )
+    }
+
+    private var compiled: WKContentRuleList?
+    private var isCompiling = false
+    private var waiters: [(WKContentRuleList?) -> Void] = []
+
+    /// The compiled list, compiling it on first use. Main thread only.
+    func ruleList(_ completion: @escaping (WKContentRuleList?) -> Void) {
+        if let compiled {
+            completion(compiled)
+            return
+        }
+        waiters.append(completion)
+        guard !isCompiling, let store = WKContentRuleListStore.default() else { return }
+        isCompiling = true
+        Self.compile(in: store) { [weak self] list, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isCompiling = false
+                self.compiled = list
+#if DEBUG
+                if list == nil {
+                    dlog("browser.remoteLoopbackBlock.compileFailed error=\(String(describing: error))")
+                }
+#endif
+                let waiting = self.waiters
+                self.waiters = []
+                waiting.forEach { $0(list) }
+            }
+        }
+    }
+
+    /// The compiled list if it is ready, for removal.
+    var compiledRuleList: WKContentRuleList? { compiled }
+}
+
+/// A loopback listener c11 opens once and holds for its whole life, resetting every connection.
+/// A c11 ssh workspace's browser proxies to it while the workspace's broker is down, so a loaded
+/// page's requests fail rather than go direct. Holding the port keeps any other account on this
+/// Mac from binding it.
+final class BrowserRemoteProxyBlackhole {
+    static let shared = BrowserRemoteProxyBlackhole()
+
+    private let lock = NSLock()
+    private let queue = DispatchQueue(label: "com.stage11.c11.remote-proxy-blackhole", qos: .utility)
+    private var listenerFD: Int32 = -1
+    private var source: DispatchSourceRead?
+    private var cachedEndpoint: BrowserProxyEndpoint?
+    private var refusedConnections = 0
+
+    /// Connections refused so far (a test and diagnostics seam).
+    var refusedConnectionCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return refusedConnections
+    }
+
+    /// The listener's endpoint, opening it on first use; nil only if the socket cannot be opened.
+    var endpoint: BrowserProxyEndpoint? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cachedEndpoint { return cachedEndpoint }
+        cachedEndpoint = openLocked()
+        return cachedEndpoint
+    }
+
+    private func openLocked() -> BrowserProxyEndpoint? {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return nil }
+        _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = in_port_t(0)
+        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let bound = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        var actual = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let named = withUnsafeMutablePointer(to: &actual) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
+        }
+        let port = Int(UInt16(bigEndian: actual.sin_port))
+        guard bound == 0, named == 0, port > 0, listen(fd, 64) == 0 else {
+            close(fd)
+            return nil
+        }
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        source.setEventHandler { [weak self] in
+            while true {
+                let client = accept(fd, nil, nil)
+                guard client >= 0 else { break }
+                var reset = linger(l_onoff: 1, l_linger: 0)
+                _ = setsockopt(client, SOL_SOCKET, SO_LINGER, &reset, socklen_t(MemoryLayout<linger>.size))
+                close(client)
+                self?.lock.lock()
+                self?.refusedConnections += 1
+                self?.lock.unlock()
+            }
+        }
+        source.resume()
+        listenerFD = fd
+        self.source = source
+        return BrowserProxyEndpoint(host: "127.0.0.1", port: port)
+    }
 }
 
 struct BrowserRemoteWorkspaceStatus: Equatable {
@@ -611,7 +985,7 @@ final class BrowserProfileStore: ObservableObject {
         guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return nil
         }
-        let bundleId = Bundle.main.bundleIdentifier ?? "cmux"
+        let bundleId = Bundle.main.bundleIdentifier ?? C11Identity.releaseBundleIdentifier
         let namespace = BrowserHistoryStore.normalizedBrowserHistoryNamespaceForBundleIdentifier(bundleId)
         let profilesDir = appSupport
             .appendingPathComponent(namespace, isDirectory: true)
@@ -890,10 +1264,24 @@ enum BrowserInsecureHTTPSettings {
         isHostAllowed(host, rawAllowlist: defaults.string(forKey: allowlistKey))
     }
 
-    static func isHostAllowed(_ host: String, rawAllowlist: String?) -> Bool {
+    static func isHostAllowed(_ host: String, rawAllowlist: String?, forShowViewer: Bool = false) -> Bool {
         guard let normalizedHost = normalizeHost(host) else { return false }
-        return normalizedAllowlistPatterns(rawValue: rawAllowlist).contains { pattern in
+        let patterns = normalizedAllowlistPatterns(rawValue: rawAllowlist)
+        return (forShowViewer ? showViewerPatterns(patterns) : patterns).contains { pattern in
             hostMatchesPattern(normalizedHost, pattern: pattern)
+        }
+    }
+
+    /// C11H-377: a show viewer's plain-HTTP list. `localtest.me` is a public
+    /// name whose every subdomain answers 127.0.0.1, so a viewer never treats
+    /// it as a known host. Ordinary panels keep it: a c11 ssh workspace's
+    /// browser reaches its remote loopback as `c11-loopback.localtest.me`.
+    static let showViewerExcludedSuffix = "localtest.me"
+
+    static func showViewerPatterns(_ patterns: [String]) -> [String] {
+        patterns.filter { pattern in
+            let bare = pattern.hasPrefix("*.") ? String(pattern.dropFirst(2)) : pattern
+            return bare != showViewerExcludedSuffix && !bare.hasSuffix("." + showViewerExcludedSuffix)
         }
     }
 
@@ -989,21 +1377,24 @@ enum BrowserInsecureHTTPSettings {
 
 func browserShouldBlockInsecureHTTPURL(
     _ url: URL,
+    forShowViewer: Bool = false,
     defaults: UserDefaults = .standard
 ) -> Bool {
     browserShouldBlockInsecureHTTPURL(
         url,
-        rawAllowlist: defaults.string(forKey: BrowserInsecureHTTPSettings.allowlistKey)
+        rawAllowlist: defaults.string(forKey: BrowserInsecureHTTPSettings.allowlistKey),
+        forShowViewer: forShowViewer
     )
 }
 
 func browserShouldBlockInsecureHTTPURL(
     _ url: URL,
-    rawAllowlist: String?
+    rawAllowlist: String?,
+    forShowViewer: Bool = false
 ) -> Bool {
     guard url.scheme?.lowercased() == "http" else { return false }
     guard let host = BrowserInsecureHTTPSettings.normalizeHost(url.host ?? "") else { return true }
-    return !BrowserInsecureHTTPSettings.isHostAllowed(host, rawAllowlist: rawAllowlist)
+    return !BrowserInsecureHTTPSettings.isHostAllowed(host, rawAllowlist: rawAllowlist, forShowViewer: forShowViewer)
 }
 
 /// Whether a granted one-time insecure-HTTP consent covers `url`.
@@ -1058,6 +1449,17 @@ func browserShouldPersistInsecureHTTPAllowlistSelection(
 }
 
 // MARK: - Browser modal hosting
+
+/// An insecure-HTTP prompt's answer, read as the three-button prompt's (Open
+/// in Default Browser, Proceed in c11, Cancel). C11H-353: a linked machine's
+/// viewer's prompt has no default-browser button, so its first button is
+/// Proceed and its second Cancel.
+func browserInsecureHTTPPromptResponse(
+    _ response: NSApplication.ModalResponse,
+    offersDefaultBrowser: Bool
+) -> NSApplication.ModalResponse {
+    offersDefaultBrowser ? response : NSApplication.ModalResponse(rawValue: response.rawValue + 1)
+}
 
 enum BrowserInsecureHTTPPromptPolicy {
     /// The response applied when the insecure-HTTP prompt cannot be shown to
@@ -1340,7 +1742,7 @@ func browserLoadRequest(_ request: URLRequest, in webView: WKWebView) -> WKNavig
     return webView.load(browserPreparedNavigationRequest(request))
 }
 
-private let browserEmbeddedNavigationSchemes: Set<String> = [
+private let browserEmbeddedNavigationSchemes: Set<String> = Set([
     "about",
     "applewebdata",
     "blob",
@@ -1349,11 +1751,23 @@ private let browserEmbeddedNavigationSchemes: Set<String> = [
     "http",
     "https",
     "javascript",
-]
+    // C11H-228: a viewer's own scheme; in any other panel it simply fails to load.
+]).union(ShowSpec.acceptedSchemes)
 
 func browserShouldOpenURLExternally(_ url: URL) -> Bool {
     guard let scheme = url.scheme?.lowercased(), !scheme.isEmpty else { return false }
+    // A panel link is never handed to macOS: that would reach another c11
+    // instance, launch one, or open c11 (C11H-51).
+    if PanelLinkTarget.usesScheme(url) { return false }
     return !browserEmbeddedNavigationSchemes.contains(scheme)
+}
+
+/// Scripted navigation, redirects and popups to a panel link (`c11://`, and
+/// `c11://` from older text) are cancelled. Only the isolated-world anchor
+/// handler activates one, behind the native activation boundary (C11H-51).
+func browserCancelsPanelLinkNavigation(_ url: URL?) -> Bool {
+    guard let url else { return false }
+    return PanelLinkTarget.usesScheme(url)
 }
 
 enum BrowserUserAgentSettings {
@@ -1364,13 +1778,7 @@ enum BrowserUserAgentSettings {
 }
 
 func normalizedBrowserHistoryNamespace(bundleIdentifier: String) -> String {
-    if bundleIdentifier.hasPrefix("com.stage11.c11.debug.") {
-        return "com.stage11.c11.debug"
-    }
-    if bundleIdentifier.hasPrefix("com.stage11.c11.staging.") {
-        return "com.stage11.c11.staging"
-    }
-    return bundleIdentifier
+    C11Identity.browserHistoryNamespace(for: bundleIdentifier)
 }
 
 @MainActor
@@ -1970,7 +2378,7 @@ final class BrowserHistoryStore: ObservableObject {
         guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return nil
         }
-        let bundleId = Bundle.main.bundleIdentifier ?? "cmux"
+        let bundleId = Bundle.main.bundleIdentifier ?? C11Identity.releaseBundleIdentifier
         let namespace = normalizedBrowserHistoryNamespace(bundleIdentifier: bundleId)
         let dir = appSupport.appendingPathComponent(namespace, isDirectory: true)
         return dir.appendingPathComponent("browser_history.json", isDirectory: false)
@@ -2408,6 +2816,10 @@ final class BrowserPanel: Panel, ObservableObject {
         didSet {
             // C11-324: a replaced web view (crash recovery, hibernate resume) inherits keep-live.
             guard oldValue !== webView else { return }
+            // C11H-377: a dialog the replaced page left waiting answers its
+            // safe default now (hibernate, profile switch, reattach, crash
+            // recovery, context reset), never later or never.
+            dialogGate.flush(oldValue)
             oldValue.isKeepLive = false
             webView.isKeepLive = keepLive
             // The replacement has no host yet; once the swap settles, host it again if the
@@ -2436,6 +2848,54 @@ final class BrowserPanel: Panel, ObservableObject {
         )
     }
     private var websiteDataStore: WKWebsiteDataStore
+    /// C11H-228: set when this panel is a `c11 show` viewer. Its own
+    /// non-persistent store and `c11-show` scheme handler survive every
+    /// web view rebuild, workspace move and profile request.
+    let showViewer: ShowViewerSession?
+    /// Hands a URL to the operator's default browser. Tests replace it.
+    var externalBrowserOpener: (URL) -> Bool = { NSWorkspace.shared.open($0) }
+
+    /// Whether this panel may hand its page to the default browser. C11H-353:
+    /// a linked machine's viewer never does; there the page would run outside
+    /// the viewer's fence.
+    var opensInDefaultBrowser: Bool { showViewer?.handsOutDefaultBrowser ?? true }
+
+    /// The page as the default browser would open it, or nil (nothing loaded,
+    /// `about:`, or a panel that never hands its page out). C11H-395: a show
+    /// viewer's `c11-show:` page (or the retired scheme's alias) is the file
+    /// its scheme handler serves there, and a show viewer's `file:` page is
+    /// that file, each only when its name passes the hand-off type rule;
+    /// macOS is never handed a show address. No disk access (the toolbar
+    /// reads it while drawing), so a file only the disk refuses (missing, an
+    /// alias, outside `--dir`) leaves the button enabled; the click checks it.
+    var urlForDefaultBrowser: URL? {
+        guard opensInDefaultBrowser, let url = currentURL,
+              let scheme = url.scheme?.lowercased(), !scheme.isEmpty, scheme != "about" else { return nil }
+        if ShowPageGuard.isShowScheme(url) {
+            return showViewer?.servedPathForDefaultBrowser(url).map { URL(fileURLWithPath: $0.path, isDirectory: false) }
+        }
+        if showViewer != nil, url.isFileURL { return ShowServeScope.handsOff(name: url.path) ? url : nil }
+        return url
+    }
+
+    /// The toolbar's Open in Default Browser. False when nothing opened,
+    /// including a show's file the disk check refuses.
+    @discardableResult
+    func openCurrentURLInDefaultBrowser() -> Bool {
+        guard let url = urlForDefaultBrowser, let page = currentURL else { return false }
+        if ShowPageGuard.isShowScheme(page) {
+            // A show's page: the file its handler would read now, or nothing.
+            guard let file = showViewer?.defaultBrowserFile(page) else { return false }
+            return externalBrowserOpener(file)
+        }
+        if showViewer != nil, page.isFileURL {
+            guard let file = ShowServeScope.localFile(page.path, root: nil) else { return false }
+            return externalBrowserOpener(file)
+        }
+        return externalBrowserOpener(url)
+    }
+    /// C11H-228: main-frame navigation facts for a viewer's load check.
+    var showNavigationObserver: ((ShowNavigationEvent) -> Void)?
 
     /// Monotonic identity for the current WKWebView instance.
     /// Incremented whenever we replace the underlying WKWebView after a process crash.
@@ -2451,228 +2911,6 @@ final class BrowserPanel: Panel, ObservableObject {
     private var suppressWebViewFocusForAddressBar: Bool = false
     private var addressBarFocusRestoreGeneration: UInt64 = 0
     private let blankURLString = "about:blank"
-    private static let addressBarFocusCaptureScript = """
-    (() => {
-      try {
-        const syncState = (state) => {
-          window.__cmuxAddressBarFocusState = state;
-          try {
-            if (window.top && window.top !== window) {
-              window.top.postMessage({ cmuxAddressBarFocusState: state }, "*");
-            } else if (window.top) {
-              window.top.__cmuxAddressBarFocusState = state;
-            }
-          } catch (_) {}
-        };
-
-        const active = document.activeElement;
-        if (!active) {
-          syncState(null);
-          return "cleared:none";
-        }
-
-        const tag = (active.tagName || "").toLowerCase();
-        const type = (active.type || "").toLowerCase();
-        const isEditable =
-          !!active.isContentEditable ||
-          tag === "textarea" ||
-          (tag === "input" && type !== "hidden");
-        if (!isEditable) {
-          syncState(null);
-          return "cleared:noneditable";
-        }
-
-        let id = active.getAttribute("data-cmux-addressbar-focus-id");
-        if (!id) {
-          id = "cmux-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
-          active.setAttribute("data-cmux-addressbar-focus-id", id);
-        }
-
-        const state = { id, selectionStart: null, selectionEnd: null };
-        if (typeof active.selectionStart === "number" && typeof active.selectionEnd === "number") {
-          state.selectionStart = active.selectionStart;
-          state.selectionEnd = active.selectionEnd;
-        }
-        syncState(state);
-        return "captured:" + id;
-      } catch (_) {
-        return "error";
-      }
-    })();
-    """
-    private static let addressBarFocusTrackingBootstrapScript = """
-    (() => {
-      try {
-        if (window.__cmuxAddressBarFocusTrackerInstalled) return true;
-        window.__cmuxAddressBarFocusTrackerInstalled = true;
-
-        const syncState = (state) => {
-          window.__cmuxAddressBarFocusState = state;
-          try {
-            if (window.top && window.top !== window) {
-              window.top.postMessage({ cmuxAddressBarFocusState: state }, "*");
-            } else if (window.top) {
-              window.top.__cmuxAddressBarFocusState = state;
-            }
-          } catch (_) {}
-        };
-
-        if (window.top === window && !window.__cmuxAddressBarFocusMessageBridgeInstalled) {
-          window.__cmuxAddressBarFocusMessageBridgeInstalled = true;
-          window.addEventListener("message", (ev) => {
-            try {
-              const data = ev ? ev.data : null;
-              if (!data || !Object.prototype.hasOwnProperty.call(data, "cmuxAddressBarFocusState")) return;
-              window.__cmuxAddressBarFocusState = data.cmuxAddressBarFocusState || null;
-            } catch (_) {}
-          }, true);
-        }
-
-        const isEditable = (el) => {
-          if (!el) return false;
-          const tag = (el.tagName || "").toLowerCase();
-          const type = (el.type || "").toLowerCase();
-          return !!el.isContentEditable || tag === "textarea" || (tag === "input" && type !== "hidden");
-        };
-
-        const ensureFocusId = (el) => {
-          let id = el.getAttribute("data-cmux-addressbar-focus-id");
-          if (!id) {
-            id = "cmux-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
-            el.setAttribute("data-cmux-addressbar-focus-id", id);
-          }
-          return id;
-        };
-
-        const snapshot = (el) => {
-          if (!isEditable(el)) {
-            syncState(null);
-            return;
-          }
-          const state = {
-            id: ensureFocusId(el),
-            selectionStart: null,
-            selectionEnd: null
-          };
-          if (typeof el.selectionStart === "number" && typeof el.selectionEnd === "number") {
-            state.selectionStart = el.selectionStart;
-            state.selectionEnd = el.selectionEnd;
-          }
-          syncState(state);
-        };
-
-        document.addEventListener("focusin", (ev) => {
-          snapshot(ev && ev.target ? ev.target : document.activeElement);
-        }, true);
-        document.addEventListener("selectionchange", () => {
-          snapshot(document.activeElement);
-        }, true);
-        document.addEventListener("input", () => {
-          snapshot(document.activeElement);
-        }, true);
-        document.addEventListener("mousedown", (ev) => {
-          const target = ev && ev.target ? ev.target : null;
-          if (!isEditable(target)) {
-            syncState(null);
-          }
-        }, true);
-        window.addEventListener("beforeunload", () => {
-          syncState(null);
-        }, true);
-
-        snapshot(document.activeElement);
-        return true;
-      } catch (_) {
-        return false;
-      }
-    })();
-    """
-    private static let addressBarFocusRestoreScript = """
-    (() => {
-      try {
-        const readState = () => {
-          let state = window.__cmuxAddressBarFocusState;
-          try {
-            if ((!state || typeof state.id !== "string" || !state.id) &&
-                window.top && window.top.__cmuxAddressBarFocusState) {
-              state = window.top.__cmuxAddressBarFocusState;
-            }
-          } catch (_) {}
-          return state;
-        };
-
-        const clearState = () => {
-          window.__cmuxAddressBarFocusState = null;
-          try {
-            if (window.top && window.top !== window) {
-              window.top.postMessage({ cmuxAddressBarFocusState: null }, "*");
-            } else if (window.top) {
-              window.top.__cmuxAddressBarFocusState = null;
-            }
-          } catch (_) {}
-        };
-
-        const state = readState();
-        if (!state || typeof state.id !== "string" || !state.id) {
-          return "no_state";
-        }
-
-        const selector = '[data-cmux-addressbar-focus-id="' + state.id + '"]';
-        const findTarget = (doc) => {
-          if (!doc) return null;
-          const direct = doc.querySelector(selector);
-          if (direct && direct.isConnected) return direct;
-          const frames = doc.querySelectorAll("iframe,frame");
-          for (let i = 0; i < frames.length; i += 1) {
-            const frame = frames[i];
-            try {
-              const childDoc = frame.contentDocument;
-              if (!childDoc) continue;
-              const nested = findTarget(childDoc);
-              if (nested) return nested;
-            } catch (_) {}
-          }
-          return null;
-        };
-
-        const target = findTarget(document);
-        if (!target) {
-          clearState();
-          return "missing_target";
-        }
-
-        try {
-          target.focus({ preventScroll: true });
-        } catch (_) {
-          try { target.focus(); } catch (_) {}
-        }
-
-        let focused = false;
-        try {
-          focused =
-            target === target.ownerDocument.activeElement ||
-            (typeof target.matches === "function" && target.matches(":focus"));
-        } catch (_) {}
-        if (!focused) {
-          return "not_focused";
-        }
-
-        if (
-          typeof state.selectionStart === "number" &&
-          typeof state.selectionEnd === "number" &&
-          typeof target.setSelectionRange === "function"
-        ) {
-          try {
-            target.setSelectionRange(state.selectionStart, state.selectionEnd);
-          } catch (_) {}
-        }
-        clearState();
-        return "restored";
-      } catch (_) {
-        return "error";
-      }
-    })();
-    """
 
     /// Published URL being displayed
     @Published private(set) var currentURL: URL?
@@ -2837,13 +3075,22 @@ final class BrowserPanel: Panel, ObservableObject {
     private let developerToolsRestoreRetryMaxAttempts: Int = 40
     private var remoteProxyEndpoint: BrowserProxyEndpoint?
     @Published private(set) var remoteWorkspaceStatus: BrowserRemoteWorkspaceStatus?
+    /// True while this c11 ssh workspace's broker is down and the page's requests fail closed.
+    @Published private(set) var isRemoteProxyBlocked = false
+    /// The web view instance that carries the remote-workspace loopback block, if any.
+    private var remoteLoopbackBlockWebViewID: UUID?
+    /// C11H-386: the web view instance that carries the guarded show viewer's own-address block.
+    private var showViewerLoopbackBlockWebViewID: UUID?
     private var usesRemoteWorkspaceProxy: Bool
-    private struct PendingRemoteNavigation {
+    private struct HeldNavigation {
         let request: URLRequest
         let recordTypedNavigation: Bool
         let preserveRestoredSessionHistory: Bool
     }
-    private var pendingRemoteNavigation: PendingRemoteNavigation?
+    /// The load waiting for a c11 ssh workspace's broker or a guarded viewer's own-address block.
+    private var loadGate = BrowserLoadGate<HeldNavigation>()
+    /// C11H-386: a show-viewer block install is in flight (bindWebView and the first load may both ask).
+    private var isInstallingShowViewerLoopbackBlock = false
     private let developerToolsDetachedOpenGracePeriod: TimeInterval = 0.35
     private var developerToolsDetachedOpenGraceDeadline: Date?
     private var developerToolsTransitionTargetVisible: Bool?
@@ -3038,40 +3285,20 @@ final class BrowserPanel: Panel, ObservableObject {
 
     private static func makeWebView(
         profileID: UUID,
-        websiteDataStore: WKWebsiteDataStore? = nil
+        websiteDataStore: WKWebsiteDataStore? = nil,
+        showViewer: ShowViewerSession? = nil
     ) -> CmuxWebView {
-        let config = WKWebViewConfiguration()
-        config.processPool = BrowserPanel.sharedProcessPool
-        config.mediaTypesRequiringUserActionForPlayback = []
-        // Ensure browser cookies/storage persist across navigations and launches.
-        // This reduces repeated consent/bot-challenge flows on sites like Google.
-        config.websiteDataStore = websiteDataStore ?? BrowserProfileStore.shared.websiteDataStore(for: profileID)
-
-        // Enable developer extras (DevTools)
-        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
-
-        // Enable JavaScript
-        config.defaultWebpagePreferences.allowsContentJavaScript = true
-        // Keep browser console/error/dialog telemetry active from document start on every navigation.
-        config.userContentController.addUserScript(
-            WKUserScript(
-                source: Self.telemetryHookBootstrapScriptSource,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            )
-        )
-        // Track the last editable focused element continuously so omnibar exit can
-        // restore page input focus even if capture runs after first-responder handoff.
-        config.userContentController.addUserScript(
-            WKUserScript(
-                source: Self.addressBarFocusTrackingBootstrapScript,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            )
-        )
-
-        PanelLinkActivation.installScript(in: config)
+        let focusHandler = BrowserFocusStateHandler()
+        let config = makeConfiguration(profileID: profileID, websiteDataStore: websiteDataStore, showViewer: showViewer,
+                                       focusHandler: focusHandler)
         let webView = CmuxWebView(frame: .zero, configuration: config)
+        webView.focusStateHandler = focusHandler
+        // C11H-377: a show viewer never downloads, from its menu either.
+        webView.refusesDownloads = showViewer != nil
+        // C11H-395: a show viewer's own links open as the files they serve;
+        // C11H-399: the session decides what its menu hands out.
+        if let showViewer { webView.attachShowViewer(showViewer) }
+        focusHandler.webView = webView
         webView.panelLinkActivation = PanelLinkActivation(webView: webView)
         webView.allowsBackForwardNavigationGestures = true
         if #available(macOS 13.3, *) {
@@ -3085,8 +3312,75 @@ final class BrowserPanel: Panel, ObservableObject {
         return webView
     }
 
+    /// The configuration every browser panel's web view is made with; a test
+    /// reads a viewer's fence from it without making a web view.
+    static func makeConfiguration(
+        profileID: UUID,
+        websiteDataStore: WKWebsiteDataStore? = nil,
+        showViewer: ShowViewerSession? = nil,
+        focusHandler: BrowserFocusStateHandler = BrowserFocusStateHandler()
+    ) -> WKWebViewConfiguration {
+        let config = WKWebViewConfiguration()
+        config.processPool = BrowserPanel.sharedProcessPool
+        config.mediaTypesRequiringUserActionForPlayback = []
+        // Ensure browser cookies/storage persist across navigations and launches.
+        // This reduces repeated consent/bot-challenge flows on sites like Google.
+        config.websiteDataStore = websiteDataStore ?? BrowserProfileStore.shared.websiteDataStore(for: profileID)
+        // C11H-228: a viewer never rides the operator's cookies or storage,
+        // and serves its shown file under its own scheme handler.
+        if let showViewer {
+            config.websiteDataStore = showViewer.dataStore
+            if let handler = showViewer.schemeHandler {
+                for scheme in ShowSpec.acceptedSchemes {
+                    config.setURLSchemeHandler(handler, forURLScheme: scheme)
+                }
+            }
+            ShowSubframeProbe.install(in: config, session: showViewer)
+        }
+
+        // Enable developer extras (DevTools)
+        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+
+        // Enable JavaScript. C11H-353: a viewer of a linked machine's page
+        // starts with page script off; its navigation policy turns it on only
+        // for a page c11 serves itself, under that page's CSP.
+        config.defaultWebpagePreferences.allowsContentJavaScript = showViewer?.pageGuard == nil
+        if showViewer?.pageGuard != nil { ShowPageGuard.turnOffPeerConnections(in: config.preferences) }
+        // Keep browser console/error/dialog telemetry active from document start on every navigation.
+        config.userContentController.addUserScript(
+            WKUserScript(
+                source: Self.telemetryHookBootstrapScriptSource,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            )
+        )
+        // Track the last editable focused element continuously so omnibar exit can
+        // restore page input focus even if capture runs after first-responder handoff.
+        // C11H-377: in c11's own content world, reporting only to c11.
+        BrowserFocusTracking.install(into: config.userContentController, handler: focusHandler)
+
+        PanelLinkActivation.installScript(in: config)
+        return config
+    }
+
     private func bindWebView(_ webView: CmuxWebView) {
-        webView.onOperatorInput = { [weak self] in MainActor.assumeIsolated { self?.lastOperatorInputAt = Date() } }
+        applyRemoteLoopbackBlock()
+        applyShowViewerLoopbackBlock()
+        webView.onOperatorInput = { [weak self, weak webView] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = Date()
+                self.lastOperatorInputAt = now
+                // C11H-377: a dialog waiting for the operator is shown now,
+                // after AppKit has delivered this event to the page.
+                guard let webView, self.dialogGate.waitingCount > 0 else { return }
+                DispatchQueue.main.async { [weak self, weak webView] in
+                    guard let self, let webView else { return }
+                    self.dialogGate.operatorDidInteract(with: webView, at: now)
+                }
+            }
+        }
+        webView.focusStateHandler?.webView = webView
         webView.onContextMenuDownloadStateChanged = { [weak self] downloading in
             if downloading {
                 self?.beginDownloadActivity()
@@ -3106,6 +3400,7 @@ final class BrowserPanel: Panel, ObservableObject {
             )
         }
         configureNavigationDelegateCallbacks()
+        uiDelegate?.dialogGate = dialogGate
         webView.navigationDelegate = navigationDelegate
         webView.contextMenuDownloadDelegate = downloadDelegate
         webView.uiDelegate = uiDelegate
@@ -3137,6 +3432,21 @@ final class BrowserPanel: Panel, ObservableObject {
     /// When the operator last pressed a key or clicked in the page (tab sheet
     /// "touched"). Plain store, not published.
     private(set) var lastOperatorInputAt: Date?
+    /// C11H-377: the last address-bar or socket `navigate` (`navigateSmart`).
+    private var lastDeliberateNavigationAt: Date?
+    /// C11H-377: the last local `browser.*` socket command on this panel.
+    private var lastLocalBrowserCommandAt: Date?
+    /// C11H-377: decides this panel's JS dialogs and its popups'.
+    private(set) lazy var dialogGate = BrowserJSDialogGate(isShowViewer: showViewer != nil)
+    /// C11H-377: notices for blocked downloads and popups.
+    private let pageGuardNoticePresenter = PanelLinkNoticePresenter()
+
+    func noteLocalBrowserCommand() { lastLocalBrowserCommandAt = Date() }
+
+    /// What lets a download proceed in this panel (C11H-377).
+    var lastDownloadActivation: Date? {
+        BrowserActivation.latest(lastOperatorInputAt, lastDeliberateNavigationAt, lastLocalBrowserCommandAt)
+    }
     private var skipNextLoadStamp = false
 
     private func noteLoadFinished() {
@@ -3151,6 +3461,12 @@ final class BrowserPanel: Panel, ObservableObject {
         guard let navigationDelegate else { return }
         let boundWebViewInstanceID = webViewInstanceID
         let boundHistoryStore = historyStore
+        navigationDelegate.showEvent = { [weak self] webView, event in
+            MainActor.assumeIsolated {
+                guard let self, self.isCurrentWebView(webView, instanceID: boundWebViewInstanceID) else { return }
+                self.showNavigationObserver?(event)
+            }
+        }
 
         navigationDelegate.didFinish = { [weak self] webView in
             Task { @MainActor [weak self] in
@@ -3222,9 +3538,11 @@ final class BrowserPanel: Panel, ObservableObject {
         proxyEndpoint: BrowserProxyEndpoint? = nil,
         isRemoteWorkspace: Bool = false,
         remoteWebsiteDataStoreIdentifier: UUID? = nil,
-        pendingHibernate: Bool = false
+        pendingHibernate: Bool = false,
+        showViewer: ShowViewerSession? = nil
     ) {
         self.id = id ?? UUID()
+        self.showViewer = showViewer
         self.createdAt = createdAt
         // A panel rebuilt from a snapshot (older creation time, or born hibernated)
         // reloads its page on mount; that first load is not new content.
@@ -3246,13 +3564,14 @@ final class BrowserPanel: Panel, ObservableObject {
         self.remoteProxyEndpoint = proxyEndpoint
         self.usesRemoteWorkspaceProxy = isRemoteWorkspace
         self.browserThemeMode = BrowserThemeSettings.mode()
-        self.websiteDataStore = isRemoteWorkspace
+        self.websiteDataStore = showViewer?.dataStore ?? (isRemoteWorkspace
             ? WKWebsiteDataStore(forIdentifier: remoteWebsiteDataStoreIdentifier ?? workspaceId)
-            : BrowserProfileStore.shared.websiteDataStore(for: resolvedProfileID)
+            : BrowserProfileStore.shared.websiteDataStore(for: resolvedProfileID))
 
         let webView = Self.makeWebView(
             profileID: resolvedProfileID,
-            websiteDataStore: websiteDataStore
+            websiteDataStore: websiteDataStore,
+            showViewer: showViewer
         )
         self.webView = webView
         self.insecureHTTPAlertFactory = { NSAlert() }
@@ -3263,6 +3582,7 @@ final class BrowserPanel: Panel, ObservableObject {
 
         // Set up navigation delegate
         let navDelegate = BrowserNavigationDelegate()
+        navDelegate.showPageGuard = showViewer?.pageGuard
         navDelegate.openInNewPanel = { [weak self] url in
             self?.openLinkInNewPanel(url: url)
         }
@@ -3338,11 +3658,15 @@ final class BrowserPanel: Panel, ObservableObject {
             )
         }
         navDelegate.downloadDelegate = dlDelegate
+        navDelegate.isShowViewer = showViewer != nil
+        navDelegate.lastActivation = { [weak self] in self?.lastDownloadActivation }
+        navDelegate.showNotice = { [weak self] text, webView in self?.pageGuardNoticePresenter.show(text: text, in: webView) }
         self.downloadDelegate = dlDelegate
         self.navigationDelegate = navDelegate
 
         // Set up UI delegate (handles cmd+click, target=_blank, and context menu)
         let browserUIDelegate = BrowserUIDelegate()
+        browserUIDelegate.showPageGuard = showViewer?.pageGuard
         browserUIDelegate.openInNewPanel = { [weak self] url in
             guard let self else { return }
             self.openLinkInNewPanel(url: url)
@@ -3351,11 +3675,19 @@ final class BrowserPanel: Panel, ObservableObject {
             self?.requestNavigation(request, intent: intent)
         }
         browserUIDelegate.openPopup = { [weak self] configuration, windowFeatures in
-            self?.createFloatingPopup(configuration: configuration, windowFeatures: windowFeatures)
+            // C11H-353: a linked machine's page opens no window of its own (a
+            // popup window has no show guard); its popup loads in the viewer
+            // instead, like its new-panel links, through the guard.
+            // C11H-377: no show viewer opens a window, local or linked.
+            guard let self, self.showViewer == nil else { return nil }
+            return self.createFloatingPopup(configuration: configuration, windowFeatures: windowFeatures)
         }
         browserUIDelegate.requestExternalOpen = { [weak self] url, origin, userClick, requestingWebView in
             self?.requestExternalOpen(url, origin: origin, userClick: userClick, from: requestingWebView)
         }
+        browserUIDelegate.isShowViewer = showViewer != nil
+        browserUIDelegate.lastOperatorInput = { [weak self] in self?.lastOperatorInputAt }
+        browserUIDelegate.showNotice = { [weak self] text, webView in self?.pageGuardNoticePresenter.show(text: text, in: webView) }
         self.uiDelegate = browserUIDelegate
 
         bindWebView(webView)
@@ -3440,7 +3772,7 @@ final class BrowserPanel: Panel, ObservableObject {
         guard remoteProxyEndpoint != endpoint else { return }
         remoteProxyEndpoint = endpoint
         applyRemoteProxyConfigurationIfAvailable()
-        resumePendingRemoteNavigationIfNeeded()
+        resumeHeldNavigationIfNeeded()
     }
 
     func setRemoteWorkspaceStatus(_ status: BrowserRemoteWorkspaceStatus?) {
@@ -3448,27 +3780,117 @@ final class BrowserPanel: Panel, ObservableObject {
         remoteWorkspaceStatus = status
     }
 
+    private var remoteProxyRouting: BrowserRemoteProxyRouting {
+        BrowserRemoteProxyRouting.resolve(
+            usesRemoteWorkspaceProxy: usesRemoteWorkspaceProxy,
+            endpoint: remoteProxyEndpoint
+        )
+    }
+
     private func applyRemoteProxyConfigurationIfAvailable() {
         guard #available(macOS 14.0, *) else { return }
 
+        applyRemoteLoopbackBlock()
+        let routing = remoteProxyRouting
+        let blocked = routing == .blocked
+        if isRemoteProxyBlocked != blocked {
+            isRemoteProxyBlocked = blocked
+        }
         let store = webView.configuration.websiteDataStore
-        guard let endpoint = remoteProxyEndpoint else {
-            store.proxyConfigurations = []
+        // C11H-377: a guarded viewer's own data store connects only through
+        // the guard proxy, which checks the address each connection dials.
+        // It never takes a remote workspace's endpoint.
+        if showViewer?.pageGuard != nil {
+            ShowGuardProxy.shared.pin(store)
             return
         }
-
-        let host = endpoint.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !host.isEmpty,
-              endpoint.port > 0 && endpoint.port <= 65535,
-              let nwPort = NWEndpoint.Port(rawValue: UInt16(endpoint.port)) else {
-            store.proxyConfigurations = []
+        let blackhole = blocked ? BrowserRemoteProxyBlackhole.shared.endpoint : nil
+        if let configurations = routing.proxyConfigurations(blackhole: blackhole) {
+            store.proxyConfigurations = configurations
             return
         }
+        // Blocked with no refusing listener (its socket would not open): there is nothing to
+        // fail closed on, so take the page down and hold its URL until the broker is back.
+        holdCurrentPageForRemoteProxy()
+    }
 
-        let nwEndpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
-        let socks = ProxyConfiguration(socksv5Proxy: nwEndpoint)
-        let connect = ProxyConfiguration(httpCONNECTProxy: nwEndpoint)
-        store.proxyConfigurations = [socks, connect]
+    private var hasRemoteLoopbackBlock: Bool {
+        remoteLoopbackBlockWebViewID == webViewInstanceID
+    }
+
+    /// C11H-386: whether this panel is a show viewer guarded like a linked machine's (pin and CSP).
+    private var isGuardedShowViewer: Bool { showViewer?.pageGuard != nil }
+
+    private var hasShowViewerLoopbackBlock: Bool {
+        showViewerLoopbackBlockWebViewID == webViewInstanceID
+    }
+
+    /// C11H-386: adds the own-address content rule list to a guarded viewer's web view, so WebKit
+    /// cannot send a load (document or subresource) to this Mac's loopback, link-local or interface
+    /// addresses around the pinned proxy. The first load waits for it; if the list cannot be built the
+    /// viewer does not load.
+    private func applyShowViewerLoopbackBlock() {
+        guard #available(macOS 14.0, *) else { return }
+        guard isGuardedShowViewer, !hasShowViewerLoopbackBlock, !isInstallingShowViewerLoopbackBlock else { return }
+        let targetID = webViewInstanceID
+        isInstallingShowViewerLoopbackBlock = true
+        ShowViewerLoopbackBlocker.shared.install(into: webView.configuration.userContentController) { [weak self] ok in
+            guard let self else { return }
+            self.isInstallingShowViewerLoopbackBlock = false
+            guard self.isGuardedShowViewer else { return }
+            // The web view was replaced mid-compile: install on the current one.
+            guard self.webViewInstanceID == targetID else { self.applyShowViewerLoopbackBlock(); return }
+            guard ok else {
+                // Fail closed: with no block there is no proof, so the held load is never released.
+                // The agent that showed the page hears why; the next navigation tries again.
+#if DEBUG
+                dlog("browser.showViewerLoopbackBlock.unavailable panel=\(self.id.uuidString.prefix(5))")
+#endif
+                if self.loadGate.heldFor == .showViewerBlock {
+                    self.showNavigationObserver?(.failed(ShowViewerController.Reason.ownAddressBlock))
+                }
+                return
+            }
+            self.showViewerLoopbackBlockWebViewID = targetID
+            self.resumeHeldNavigationIfNeeded()
+        }
+    }
+
+    /// Adds the loopback content rule list to this panel's web view in a c11 ssh workspace and
+    /// removes it elsewhere. Navigations c11 starts in a c11 ssh workspace wait for it.
+    private func applyRemoteLoopbackBlock() {
+        if usesRemoteWorkspaceProxy {
+            guard !hasRemoteLoopbackBlock else { return }
+            BrowserRemoteLoopbackBlocker.shared.ruleList { [weak self] list in
+                guard let self, let list, self.usesRemoteWorkspaceProxy, !self.hasRemoteLoopbackBlock else { return }
+                self.webView.configuration.userContentController.add(list)
+                self.remoteLoopbackBlockWebViewID = self.webViewInstanceID
+                self.resumeHeldNavigationIfNeeded()
+            }
+        } else if hasRemoteLoopbackBlock {
+            if let list = BrowserRemoteLoopbackBlocker.shared.compiledRuleList {
+                webView.configuration.userContentController.remove(list)
+            }
+            remoteLoopbackBlockWebViewID = nil
+        }
+    }
+
+    private func holdCurrentPageForRemoteProxy() {
+        if let url = webView.url,
+           let scheme = url.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            loadGate.holdIfIdle(
+                HeldNavigation(request: URLRequest(url: url), recordTypedNavigation: false, preserveRestoredSessionHistory: true),
+                for: .remoteWorkspace
+            )
+        }
+        webView.stopLoading()
+        if let blank = URL(string: "about:blank"), webView.url != blank {
+            webView.load(URLRequest(url: blank))
+        }
+#if DEBUG
+        dlog("browser.remoteProxy.holdPage panel=\(id.uuidString.prefix(5)) reason=no_blackhole")
+#endif
     }
 
     private func beginDownloadActivity() {
@@ -3633,7 +4055,8 @@ final class BrowserPanel: Panel, ObservableObject {
 
         let replacement = Self.makeWebView(
             profileID: profileID,
-            websiteDataStore: websiteDataStore
+            websiteDataStore: websiteDataStore,
+            showViewer: showViewer
         )
         webViewInstanceID = UUID()
         webView = replacement
@@ -3651,9 +4074,9 @@ final class BrowserPanel: Panel, ObservableObject {
         workspaceId = newWorkspaceId
         lifecycle.updateWorkspaceId(newWorkspaceId)
         usesRemoteWorkspaceProxy = isRemoteWorkspace
-        let targetStore = isRemoteWorkspace
+        let targetStore = showViewer?.dataStore ?? (isRemoteWorkspace
             ? WKWebsiteDataStore(forIdentifier: remoteWebsiteDataStoreIdentifier ?? newWorkspaceId)
-            : BrowserProfileStore.shared.websiteDataStore(for: profileID)
+            : BrowserProfileStore.shared.websiteDataStore(for: profileID))
         let needsStoreSwap = webView.configuration.websiteDataStore !== targetStore
         websiteDataStore = targetStore
         remoteProxyEndpoint = proxyEndpoint
@@ -3666,7 +4089,7 @@ final class BrowserPanel: Panel, ObservableObject {
             )
         }
         applyRemoteProxyConfigurationIfAvailable()
-        resumePendingRemoteNavigationIfNeeded()
+        resumeHeldNavigationIfNeeded()
     }
 
     @discardableResult
@@ -3720,13 +4143,14 @@ final class BrowserPanel: Panel, ObservableObject {
             BrowserProfileStore.shared.noteUsed(resolvedProfileID)
         }
 
-        if !usesRemoteWorkspaceProxy {
+        if !usesRemoteWorkspaceProxy, showViewer == nil {
             websiteDataStore = BrowserProfileStore.shared.websiteDataStore(for: resolvedProfileID)
         }
 
         let replacement = Self.makeWebView(
             profileID: resolvedProfileID,
-            websiteDataStore: websiteDataStore
+            websiteDataStore: websiteDataStore,
+            showViewer: showViewer
         )
         replacement.pageZoom = desiredZoom
         webViewInstanceID = UUID()
@@ -3988,7 +4412,8 @@ final class BrowserPanel: Panel, ObservableObject {
 
         let replacement = Self.makeWebView(
             profileID: profileID,
-            websiteDataStore: websiteDataStore
+            websiteDataStore: websiteDataStore,
+            showViewer: showViewer
         )
         replacement.pageZoom = desiredZoom
         webViewInstanceID = UUID()
@@ -4078,6 +4503,10 @@ final class BrowserPanel: Panel, ObservableObject {
     func close() {
         // A prompt on the main window must not outlive the panel that asked.
         externalOpenGate.cancelPending()
+        // C11H-377: every dialog waiting for the operator answers its safe
+        // default, and the panel's downloads stop with it (`show close`).
+        dialogGate.flushAll()
+        downloadDelegate?.cancelAll()
         prepareForHostTeardown()
         if keepLive {
             // C11-324: a parked keep-live slot must not outlive its panel.
@@ -4160,12 +4589,20 @@ final class BrowserPanel: Panel, ObservableObject {
         popupControllers.removeAll { $0 === controller }
     }
 
-    private func refreshFavicon(from webView: WKWebView) {
+    /// C11H-377 test seam: when set, a favicon refresh that would start a
+    /// fetch reports its page URL here instead.
+    var faviconFetchRecorder: ((URL) -> Void)?
+
+    /// `pageURL` stands in for the web view's own URL in a test.
+    func refreshFavicon(from webView: WKWebView, pageURL testPageURL: URL? = nil) {
+        // C11H-377: c11's own fetch would bypass a guarded viewer's proxy.
+        guard showViewer?.pageGuard == nil else { return }
         faviconTask?.cancel()
         faviconTask = nil
 
-        guard let pageURL = webView.url else { return }
+        guard let pageURL = testPageURL ?? webView.url else { return }
         guard let scheme = pageURL.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
+        if let faviconFetchRecorder { faviconFetchRecorder(pageURL); return }
         faviconRefreshGeneration &+= 1
         let refreshGeneration = faviconRefreshGeneration
         let refreshWebViewInstanceID = webViewInstanceID
@@ -4256,8 +4693,15 @@ final class BrowserPanel: Panel, ObservableObject {
             }
             lastFaviconURLString = iconURLString
 
-            let remoteSession = remoteProxyURLSession()
-            defer { remoteSession?.finishTasksAndInvalidate() }
+            // In a c11 ssh workspace the favicon goes through the proxy or not at all: while the
+            // broker is down there is no session, and the fetch never falls back to a direct one.
+            let routing = remoteProxyRouting
+            guard let faviconSession = routing.faviconSession(direct: {
+                BrowserFavicon.directSession(forProfile: profileID)
+            }) else { return }
+            let ownsFaviconSession: Bool
+            if case .proxy = routing { ownsFaviconSession = true } else { ownsFaviconSession = false }
+            defer { if ownsFaviconSession { faviconSession.finishTasksAndInvalidate() } }
             var decodedPNG: Data?
             for candidate in candidates {
                 guard self.isCurrentWebView(webView, instanceID: refreshWebViewInstanceID),
@@ -4276,12 +4720,12 @@ final class BrowserPanel: Panel, ObservableObject {
                 req.setValue(BrowserUserAgentSettings.safariUserAgent, forHTTPHeaderField: "User-Agent")
                 let effectiveRequest = remoteProxyPreparedRequest(from: req, logScope: "faviconRewrite")
 #if DEBUG
-                dlog("browser.favicon.fetch panel=\(id.uuidString.prefix(5)) via=\(remoteSession == nil ? "direct" : "proxy") url=\(effectiveRequest.url?.absoluteString.prefix(200) ?? "<nil>")")
+                dlog("browser.favicon.fetch panel=\(id.uuidString.prefix(5)) via=\(ownsFaviconSession ? "proxy" : "direct") url=\(effectiveRequest.url?.absoluteString.prefix(200) ?? "<nil>")")
 #endif
                 do {
-                    let raw = try await BrowserFavicon.fetch(
+                    let raw = try await routing.fetchFavicon(
                         effectiveRequest,
-                        session: remoteSession ?? BrowserFavicon.directSession(forProfile: profileID),
+                        session: faviconSession,
                         maximumBytes: BrowserFavicon.maximumBytes
                     )
                     // Use 2x the rendered point size so Retina icons stay sharp.
@@ -4441,6 +4885,12 @@ final class BrowserPanel: Panel, ObservableObject {
             (webView as? CmuxWebView)?.panelLinkActivation?.showNotice(.activation)
             return record(disposition: .internalLinkRefused)
         }
+        // C11H-228: a viewer's own loads (a show, a restore) never hand a
+        // URL to another app; only the page-side gate, behind an operator
+        // click, can.
+        if showViewer != nil, browserShouldOpenURLExternally(url) {
+            return record(disposition: .internalLinkRefused)
+        }
         // Agent, omnibar and panel-creation loads are not page content: an
         // app link they name opens as before, without the page-side gate.
         if browserShouldOpenURLExternally(url) {
@@ -4557,55 +5007,65 @@ final class BrowserPanel: Panel, ObservableObject {
         preserveRestoredSessionHistory: Bool = false
     ) {
         guard let url = request.url, !PanelLinkTarget.usesScheme(url) else { return }
-        if usesRemoteWorkspaceProxy, remoteProxyEndpoint == nil {
-            pendingRemoteNavigation = PendingRemoteNavigation(
-                request: request,
-                recordTypedNavigation: recordTypedNavigation,
-                preserveRestoredSessionHistory: preserveRestoredSessionHistory
-            )
-            shouldRenderWebView = true
-            currentURL = Self.remoteProxyDisplayURL(for: url) ?? url
-            navigationDelegate?.lastAttemptedURL = url
-            return
-        }
-        performNavigation(
+        performNavigation(HeldNavigation(
             request: request,
-            originalURL: url,
             recordTypedNavigation: recordTypedNavigation,
             preserveRestoredSessionHistory: preserveRestoredSessionHistory
-        )
+        ))
     }
 
-    private func resumePendingRemoteNavigationIfNeeded() {
-        guard remoteProxyEndpoint != nil,
-              let pendingRemoteNavigation else {
+    /// The one funnel to `browserLoadRequest`. Every load c11 starts passes `loadGate` here, and so
+    /// does a held load when it resumes: it waits while a c11 ssh workspace's broker or loopback list
+    /// is not in, or (C11H-386) while a guarded viewer's own-address list is not in its web view, so
+    /// no subresource can fire before WebKit holds the list.
+    private func performNavigation(_ navigation: HeldNavigation) {
+        guard let url = navigation.request.url, !PanelLinkTarget.usesScheme(url) else { return }
+        guard let admitted = loadGate.admit(navigation, in: loadGateState) else {
+            showHeldNavigation(url)
             return
         }
-        self.pendingRemoteNavigation = nil
-        guard let originalURL = pendingRemoteNavigation.request.url else { return }
-        performNavigation(
-            request: pendingRemoteNavigation.request,
-            originalURL: originalURL,
-            recordTypedNavigation: pendingRemoteNavigation.recordTypedNavigation,
-            preserveRestoredSessionHistory: pendingRemoteNavigation.preserveRestoredSessionHistory
+        load(admitted)
+    }
+
+    /// A prerequisite came in (the broker endpoint, a loopback list, a show viewer's block): the
+    /// waiting load goes back through the gate.
+    private func resumeHeldNavigationIfNeeded() {
+        guard loadGate.held != nil else { return }
+        guard let admitted = loadGate.resume(in: loadGateState) else {
+            // Still held: a remote-workspace load that now waits for the show list starts its install.
+            if loadGate.heldFor == .showViewerBlock { applyShowViewerLoopbackBlock() }
+            return
+        }
+        load(admitted)
+    }
+
+    private var loadGateState: BrowserLoadGate<HeldNavigation>.State {
+        BrowserLoadGate<HeldNavigation>.State(
+            usesRemoteWorkspaceProxy: usesRemoteWorkspaceProxy,
+            remoteEndpointReady: remoteProxyEndpoint != nil,
+            remoteLoopbackBlockReady: hasRemoteLoopbackBlock,
+            guardedShowViewer: isGuardedShowViewer,
+            showViewerBlockReady: hasShowViewerLoopbackBlock
         )
     }
 
-    private func performNavigation(
-        request: URLRequest,
-        originalURL: URL,
-        recordTypedNavigation: Bool,
-        preserveRestoredSessionHistory: Bool
-    ) {
-        guard !PanelLinkTarget.usesScheme(originalURL) else { return }
-        if !preserveRestoredSessionHistory {
+    private func showHeldNavigation(_ url: URL) {
+        shouldRenderWebView = true
+        currentURL = Self.remoteProxyDisplayURL(for: url) ?? url
+        navigationDelegate?.lastAttemptedURL = url
+        if loadGate.heldFor == .showViewerBlock { applyShowViewerLoopbackBlock() }
+    }
+
+    private func load(_ navigation: HeldNavigation) {
+        guard let originalURL = navigation.request.url, !PanelLinkTarget.usesScheme(originalURL) else { return }
+        if !navigation.preserveRestoredSessionHistory {
             abandonRestoredSessionHistoryIfNeeded()
         }
-        let effectiveRequest = remoteProxyPreparedRequest(from: request, logScope: "rewrite")
+        let effectiveRequest = remoteProxyPreparedRequest(from: navigation.request, logScope: "rewrite")
         // Some installs can end up with a legacy Chrome UA override; keep this pinned.
         webView.customUserAgent = BrowserUserAgentSettings.safariUserAgent
         shouldRenderWebView = true
-        if recordTypedNavigation {
+        if navigation.recordTypedNavigation {
             historyStore.recordTypedNavigation(url: originalURL)
         }
         navigationDelegate?.lastAttemptedURL = originalURL
@@ -4628,21 +5088,6 @@ final class BrowserPanel: Panel, ObservableObject {
         )
 #endif
         return rewrittenRequest
-    }
-
-    private func remoteProxyURLSession() -> URLSession? {
-        guard let endpoint = remoteProxyEndpoint else { return nil }
-        let host = endpoint.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !host.isEmpty, endpoint.port > 0, endpoint.port <= 65535 else { return nil }
-
-        let configuration = BrowserFavicon.makeSessionConfiguration()
-        configuration.requestCachePolicy = .returnCacheDataElseLoad
-        configuration.connectionProxyDictionary = [
-            kCFNetworkProxiesSOCKSEnable as String: 1,
-            kCFNetworkProxiesSOCKSProxy as String: host,
-            kCFNetworkProxiesSOCKSPort as String: endpoint.port,
-        ]
-        return URLSession(configuration: configuration)
     }
 
     private static func remoteProxyDisplayURL(for url: URL?) -> URL? {
@@ -4672,6 +5117,19 @@ final class BrowserPanel: Panel, ObservableObject {
     func navigateSmart(_ input: String, allowInsecureHTTP: Bool = false) -> BrowserNavigationDisposition {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .proceeded }
+        // C11H-247: a `c11-show:` address is never a search. In its own
+        // viewer it reloads the shown page; anywhere else it is refused.
+        switch ShowAddressInput.decide(trimmed, viewerAddress: showViewer?.address) {
+        case .notShow:
+            break
+        case .reloadShown:
+            if ShowViewerController.shared.operatorReload(panel: id) { return record(disposition: .proceeded) }
+            (webView as? CmuxWebView)?.panelLinkActivation?.showNotice(.showAddress)
+            return record(disposition: .internalLinkRefused)
+        case .refused:
+            (webView as? CmuxWebView)?.panelLinkActivation?.showNotice(.showAddress)
+            return record(disposition: .internalLinkRefused)
+        }
         if PanelLinkTarget.isLink(trimmed) {
             (webView as? CmuxWebView)?.panelLinkActivation?.showNotice(.activation)
             PanelLinkActivation.log(target: trimmed, origin: webView.url?.absoluteString ?? "",
@@ -4683,6 +5141,8 @@ final class BrowserPanel: Panel, ObservableObject {
             if allowInsecureHTTP {
                 consentToInsecureHTTP(for: url)
             }
+            // C11H-377: the operator's address bar or a local agent asked.
+            lastDeliberateNavigationAt = Date()
             return navigate(to: url, recordTypedNavigation: true)
         }
 
@@ -4734,7 +5194,8 @@ final class BrowserPanel: Panel, ObservableObject {
         if browserMatchesOneTimeInsecureHTTPBypass(url, bypassHost: insecureHTTPBypassHostOnce) {
             return false
         }
-        return browserShouldBlockInsecureHTTPURL(url)
+        // C11H-377: a show viewer's list never holds loopback aliases.
+        return browserShouldBlockInsecureHTTPURL(url, forShowViewer: showViewer != nil)
     }
 
     @discardableResult
@@ -4791,8 +5252,15 @@ final class BrowserPanel: Panel, ObservableObject {
         let alert = insecureHTTPAlertFactory()
         alert.alertStyle = .warning
         alert.messageText = String(localized: "browser.error.insecure.title", defaultValue: "Connection isn\u{2019}t secure")
-        alert.informativeText = String(localized: "browser.error.insecure.message", defaultValue: "\(host) uses plain HTTP, so traffic can be read or modified on the network.\n\nOpen this URL in your default browser, or proceed in c11.")
-        alert.addButton(withTitle: String(localized: "browser.openInDefaultBrowser", defaultValue: "Open in Default Browser"))
+        // C11H-353: a linked machine's viewer is never offered the default
+        // browser; its prompt has Proceed and Cancel only.
+        let offersDefaultBrowser = opensInDefaultBrowser
+        if offersDefaultBrowser {
+            alert.informativeText = String(localized: "browser.error.insecure.message", defaultValue: "\(host) uses plain HTTP, so traffic can be read or modified on the network.\n\nOpen this URL in your default browser, or proceed in c11.")
+            alert.addButton(withTitle: String(localized: "browser.openInDefaultBrowser", defaultValue: "Open in Default Browser"))
+        } else {
+            alert.informativeText = String(localized: "browser.error.insecure.messageShownPage", defaultValue: "\(host) uses plain HTTP, so traffic can be read or modified on the network.\n\nA linked machine showed this page, so it stays in c11: proceed here, or cancel.")
+        }
         alert.addButton(withTitle: String(localized: "browser.proceedInCmux", defaultValue: "Proceed in c11"))
         alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
         alert.showsSuppressionButton = true
@@ -4800,7 +5268,7 @@ final class BrowserPanel: Panel, ObservableObject {
 
         let handleResponse: (NSApplication.ModalResponse) -> Void = { [weak self, weak alert] response in
             self?.handleInsecureHTTPAlertResponse(
-                response,
+                browserInsecureHTTPPromptResponse(response, offersDefaultBrowser: offersDefaultBrowser),
                 alert: alert,
                 host: host,
                 request: request,
@@ -4853,8 +5321,12 @@ final class BrowserPanel: Panel, ObservableObject {
         // "nothing loads until a human answers" after the human answered.
         switch response {
         case .alertFirstButtonReturn:
+            guard opensInDefaultBrowser else {
+                record(disposition: .blocked(host: host, reason: .declinedByOperator))
+                return
+            }
             record(disposition: .blocked(host: host, reason: .openedExternally))
-            NSWorkspace.shared.open(url)
+            _ = externalBrowserOpener(url)
         case .alertSecondButtonReturn:
             record(disposition: .proceeded)
             switch intent {
@@ -4987,7 +5459,8 @@ extension BrowserPanel {
 
         let replacement = Self.makeWebView(
             profileID: profileID,
-            websiteDataStore: websiteDataStore
+            websiteDataStore: websiteDataStore,
+            showViewer: showViewer
         )
         webViewInstanceID = UUID()
         webView = replacement
@@ -5147,6 +5620,19 @@ extension BrowserPanel {
         // A page's app link never becomes a new panel's trusted initial load.
         if browserShouldOpenURLExternally(url) {
             requestExternalOpen(url, origin: BrowserExternalOpenOrigin(pageURL: webView.url), userClick: true, from: webView)
+            return
+        }
+        // C11H-228: a link a viewer opens "in a new panel" (target=_blank,
+        // Cmd- or middle-click) loads in the same viewer, keeping its
+        // isolated store and its scheme handler. It never becomes an
+        // ordinary-profile panel that would carry the operator's cookies.
+        if ShowViewerNavigation.newPanelLink(isViewer: showViewer != nil) == .sameViewer {
+            // The operator's one-time plain-HTTP consent for this link (from
+            // the new-panel prompt) carries over, host-scoped as always.
+            if let granted = ShowViewerNavigation.carriedConsent(bypassInsecureHTTPHostOnce, for: url) {
+                insecureHTTPBypassHostOnce = granted
+            }
+            _ = navigate(to: url)
             return
         }
         guard let app = AppDelegate.shared else {
@@ -6237,7 +6723,9 @@ extension BrowserPanel {
     }
 
     private func captureAddressBarPageFocusIfNeeded() {
-        webView.evaluateJavaScript(Self.addressBarFocusCaptureScript) { [weak self] result, error in
+        webView.evaluateJavaScript(BrowserFocusTracking.captureScript, in: nil, in: BrowserFocusTracking.world) { [weak self] evaluated in
+            let result = try? evaluated.get()
+            let error: Error? = { if case .failure(let failure) = evaluated { return failure }; return nil }()
 #if DEBUG
             guard let self else { return }
             if let error {
@@ -6309,7 +6797,12 @@ extension BrowserPanel {
             completion(false)
             return
         }
-        webView.evaluateJavaScript(Self.addressBarFocusRestoreScript) { [weak self] result, error in
+        // C11H-377: restore in the frame whose field last held focus, by
+        // WebKit's word, inside c11's focus world.
+        let frame = (webView as? CmuxWebView)?.focusStateHandler?.focusedFrame
+        webView.evaluateJavaScript(BrowserFocusTracking.restoreScript, in: frame, in: BrowserFocusTracking.world) { [weak self] evaluated in
+            let result = try? evaluated.get()
+            let error: Error? = { if case .failure(let failure) = evaluated { return failure }; return nil }()
             guard let self else {
                 completion(false)
                 return
@@ -6318,6 +6811,8 @@ extension BrowserPanel {
                 completion(false)
                 return
             }
+            // A frame that went away: the next attempt asks the main frame.
+            if error != nil, frame != nil { (self.webView as? CmuxWebView)?.focusStateHandler?.forgetFrame() }
 
             let status = Self.addressBarPageFocusRestoreStatus(from: result, error: error)
             let canRetry = (status == .notFocused || status == .error)
@@ -6814,14 +7309,11 @@ struct WebContentReplacementGate {
 /// Handles WKDownload lifecycle by saving to a temp file synchronously (no UI
 /// during WebKit callbacks), then showing NSSavePanel after the download finishes.
 class BrowserDownloadDelegate: NSObject, WKDownloadDelegate {
-    private struct DownloadState {
-        let tempURL: URL
-        let suggestedFilename: String
-    }
+    private typealias DownloadState = BrowserActiveDownloads<WKDownload>.Entry
 
-    /// Tracks active downloads keyed by WKDownload identity.
-    private var activeDownloads: [ObjectIdentifier: DownloadState] = [:]
-    private let activeDownloadsLock = NSLock()
+    /// Tracks active downloads by WKDownload identity. C11H-377: closing the
+    /// panel cancels them and removes their temp files (`cancelAll`).
+    private let activeDownloads = BrowserActiveDownloads<WKDownload>()
     var onDownloadStarted: ((String) -> Void)?
     var onDownloadReadyToSave: (() -> Void)?
     /// `started` is false when the download failed before WebKit asked for a
@@ -6844,17 +7336,18 @@ class BrowserDownloadDelegate: NSObject, WKDownloadDelegate {
         return safe.isEmpty ? "download" : safe
     }
 
-    private func storeState(_ state: DownloadState, for download: WKDownload) {
-        activeDownloadsLock.lock()
-        activeDownloads[ObjectIdentifier(download)] = state
-        activeDownloadsLock.unlock()
+    private func removeState(for download: WKDownload) -> DownloadState? {
+        activeDownloads.remove(download)
     }
 
-    private func removeState(for download: WKDownload) -> DownloadState? {
-        activeDownloadsLock.lock()
-        let state = activeDownloads.removeValue(forKey: ObjectIdentifier(download))
-        activeDownloadsLock.unlock()
-        return state
+    /// C11H-377: stops every download this delegate still has in flight and
+    /// deletes what they wrote; a download that asks for a place afterwards
+    /// is refused. Called when the panel or popup that owns it closes.
+    func cancelAll() {
+        let removed = activeDownloads.cancelAll { download in download.cancel { _ in } }
+#if DEBUG
+        if !removed.isEmpty { dlog("download.cancelAll count=\(removed.count)") }
+#endif
     }
 
     private func notifyOnMain(_ action: @escaping () -> Void) {
@@ -6876,7 +7369,11 @@ class BrowserDownloadDelegate: NSObject, WKDownloadDelegate {
         let tempFilename = "\(UUID().uuidString)-\(safeFilename)"
         let destURL = Self.tempDir.appendingPathComponent(tempFilename, isDirectory: false)
         try? FileManager.default.removeItem(at: destURL)
-        storeState(DownloadState(tempURL: destURL, suggestedFilename: safeFilename), for: download)
+        guard activeDownloads.add(DownloadState(handle: download, tempURL: destURL, suggestedFilename: safeFilename)) else {
+            // Its panel has closed: write nothing.
+            completionHandler(nil)
+            return
+        }
         notifyOnMain { [weak self] in
             self?.onDownloadStarted?(safeFilename)
         }
@@ -7032,6 +7529,8 @@ func browserNavigationShouldFallbackNilTargetToNewPanel(
 private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     var didFinish: ((WKWebView) -> Void)?
     var didFailNavigation: ((WKWebView, String) -> Void)?
+    /// C11H-228: main-frame facts for a `c11 show` load check.
+    var showEvent: ((WKWebView, ShowNavigationEvent) -> Void)?
     var didTerminateWebContentProcess: ((WKWebView) -> Void)?
     var openInNewPanel: ((URL) -> Void)?
     var shouldBlockInsecureHTTPNavigation: ((URL) -> Bool)?
@@ -7047,6 +7546,20 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     /// The URL of the last navigation that was attempted. Used to preserve the omnibar URL
     /// when a provisional navigation fails (e.g. connection refused on localhost:3000).
     var lastAttemptedURL: URL?
+    /// C11H-247: whether the main frame's pending navigation is a back/forward one.
+    private var mainNavigationIsBackForward = false
+    /// C11H-353: set for a viewer of a linked machine's page. Every navigation
+    /// in any frame passes it, and it decides whether the page runs script.
+    var showPageGuard: ShowPageGuard?
+    /// C11H-377: any show viewer, local or linked. A viewer never downloads.
+    var isShowViewer = false
+    /// The latest operator input, address-bar submit or local browser command.
+    var lastActivation: (() -> Date?)?
+    var showNotice: ((String, WKWebView) -> Void)?
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        showEvent?(webView, .committed(url: webView.url?.absoluteString, freshLoad: !mainNavigationIsBackForward))
+    }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         // C11-209: belt for navigations that never pass through CmuxWebView's
@@ -7062,6 +7575,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         didSettleNavigation?(webView.url)
         didFinish?(webView)
+        showEvent?(webView, .finished(url: webView.url?.absoluteString))
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -7071,6 +7585,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         let failedURL = webView.url?.absoluteString ?? ""
         didSettleNavigation?(lastAttemptedURL ?? webView.url)
         didFailNavigation?(webView, failedURL)
+        showEvent?(webView, .failed(error.localizedDescription))
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -7097,6 +7612,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         // for it.
         didSettleNavigation?(URL(string: failedURL) ?? lastAttemptedURL)
         didFailNavigation?(webView, failedURL)
+        showEvent?(webView, .failed(nsError.localizedDescription))
         loadErrorPage(in: webView, failedURL: failedURL, error: nsError)
     }
 
@@ -7223,12 +7739,50 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         webView.loadHTMLString(html, baseURL: baseURL)
     }
 
+    /// WebKit calls this form when it exists. A guarded viewer (C11H-353)
+    /// refuses a navigation that names this Mac or leaves the web, and runs
+    /// script only in a page c11 serves; then the ordinary policy decides.
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        preferences: WKWebpagePreferences,
+        decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+    ) {
+        if let showPageGuard, let url = navigationAction.request.url {
+            let mainFrame = navigationAction.targetFrame?.isMainFrame != false
+            let fromSubframe = !mainFrame || !navigationAction.sourceFrame.isMainFrame
+            // C11H-377: a host name is judged by what it resolves to, at this
+            // hop (WebKit asks again for every server redirect).
+            showPageGuard.resolvedRefusal(for: url) { [weak self, weak webView] refusal in
+                guard let self, let webView else { decisionHandler(.cancel, preferences); return }
+                if refusal != nil {
+                    if fromSubframe { self.showEvent?(webView, .subframe) }
+#if DEBUG
+                    dlog("browser.nav.decidePolicy.action kind=showGuardRefused url=\(url.absoluteString)")
+#endif
+                    decisionHandler(.cancel, preferences)
+                    return
+                }
+                if mainFrame { preferences.allowsContentJavaScript = showPageGuard.allowsScript(for: url) }
+                self.webView(webView, decidePolicyFor: navigationAction) { policy in decisionHandler(policy, preferences) }
+            }
+            return
+        }
+        self.webView(webView, decidePolicyFor: navigationAction) { policy in decisionHandler(policy, preferences) }
+    }
+
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-        if let url = navigationAction.request.url, url.scheme?.lowercased() == "c11" {
+        // C11H-247: WebKit's own word that the document has a frame.
+        if navigationAction.targetFrame?.isMainFrame == false || !navigationAction.sourceFrame.isMainFrame {
+            showEvent?(webView, .subframe)
+        } else if navigationAction.targetFrame?.isMainFrame == true {
+            mainNavigationIsBackForward = navigationAction.navigationType == .backForward
+        }
+        if let url = navigationAction.request.url, browserCancelsPanelLinkNavigation(url) {
             PanelLinkActivation.log(target: url.absoluteString, origin: navigationAction.sourceFrame.securityOrigin.host,
                                     activation: "refused", result: "navigation_cancelled")
             decisionHandler(.cancel)
@@ -7334,8 +7888,12 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
         if !navigationResponse.isForMainFrame {
+            showEvent?(webView, .subframe)
             decisionHandler(.allow)
             return
+        }
+        if let status = (navigationResponse.response as? HTTPURLResponse)?.statusCode {
+            showEvent?(webView, .response(status: status))
         }
 
         let mime = navigationResponse.response.mimeType ?? "unknown"
@@ -7363,7 +7921,7 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
                 #if DEBUG
                 dlog("download.policy=download reason=content-disposition mime=\(mime)")
                 #endif
-                decisionHandler(.download)
+                decisionHandler(decideDownload(webView, responseURL: navigationResponse.response.url))
                 return
             }
         }
@@ -7373,11 +7931,25 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
             #if DEBUG
             dlog("download.policy=download reason=cannotShowMIME mime=\(mime)")
             #endif
-            decisionHandler(.download)
+            decisionHandler(decideDownload(webView, responseURL: navigationResponse.response.url))
             return
         }
 
         decisionHandler(.allow)
+    }
+
+    /// C11H-377: a show viewer never downloads; an ordinary panel downloads
+    /// only after the operator's input or a local browser command.
+    private func decideDownload(_ webView: WKWebView, responseURL: URL?) -> WKNavigationResponsePolicy {
+        let decision = BrowserDownloadPolicy.decide(isShowViewer: isShowViewer, lastActivation: lastActivation?())
+        guard decision != .allow else { return .download }
+#if DEBUG
+        dlog("download.policy=cancel reason=\(decision == .refuseViewer ? "show_viewer" : "no_activation")")
+#endif
+        if let text = BrowserDownloadPolicy.notice(for: decision, host: responseURL?.host ?? webView.url?.host) {
+            showNotice?(text, webView)
+        }
+        return .cancel
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
@@ -7403,7 +7975,16 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
     var openInNewPanel: ((URL) -> Void)?
     var requestNavigation: ((URLRequest, BrowserInsecureHTTPNavigationIntent) -> Void)?
     var openPopup: ((WKWebViewConfiguration, WKWindowFeatures) -> WKWebView?)?
+    /// C11H-353: set for a viewer of a linked machine's page.
+    var showPageGuard: ShowPageGuard?
     var requestExternalOpen: ((URL, BrowserExternalOpenOrigin, Bool, WKWebView) -> Void)?
+    /// C11H-377: the panel's dialog gate (shared with its popups), the
+    /// operator's last real input on the page, and the panel's notices.
+    var dialogGate: BrowserJSDialogGate?
+    var lastOperatorInput: (() -> Date?)?
+    var showNotice: ((String, WKWebView) -> Void)?
+    /// Any show viewer, local or linked: it opens no popup windows.
+    var isShowViewer = false
 
     private func javaScriptDialogTitle(for webView: WKWebView) -> String {
         if let absolute = webView.url?.absoluteString, !absolute.isEmpty {
@@ -7418,14 +7999,22 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
         completion: @escaping (NSApplication.ModalResponse) -> Void
     ) {
         // A page can raise a JS dialog at any time, including in a detached or
-        // backgrounded web view. Sheet it onto a real window when one exists,
-        // otherwise dismiss it as cancelled: app-modal `runModal()` would block
-        // the whole app on an alert nobody can see.
-        browserPresentModalAlert(
-            alert,
-            preferredWindow: webView.window,
-            safeDefaultResponse: .alertSecondButtonReturn,
-            reasonForLog: "javascript dialog",
+        // backgrounded web view. C11H-377: the gate decides (a viewer never
+        // shows one; a page away from the operator waits; a rate limit), and
+        // presents only as a sheet: app-modal `runModal()` would block the
+        // whole app on an alert nobody can see.
+        guard let dialogGate else {
+            completion(.alertSecondButtonReturn)
+            return
+        }
+        dialogGate.request(
+            for: webView,
+            safeDefault: .alertSecondButtonReturn,
+            lastOperatorInput: lastOperatorInput?(),
+            present: { [weak webView] done in
+                browserPresentModalAlert(alert, preferredWindow: webView?.window, safeDefaultResponse: .alertSecondButtonReturn,
+                                         reasonForLog: "javascript dialog", completion: done)
+            },
             completion: completion
         )
     }
@@ -7451,9 +8040,17 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
             "eventType=\(currentEventType) eventButton=\(currentEventButton)"
         )
 #endif
-        if let url = navigationAction.request.url, url.scheme?.lowercased() == "c11" {
+        if let url = navigationAction.request.url, browserCancelsPanelLinkNavigation(url) {
             PanelLinkActivation.log(target: url.absoluteString, origin: navigationAction.sourceFrame.securityOrigin.host,
                                     activation: "refused", result: "popup_cancelled")
+            return nil
+        }
+        // C11H-353: a guarded viewer's popup passes the same rule as its
+        // navigations, before the external-open gate or a popup.
+        if let showPageGuard, let url = navigationAction.request.url, showPageGuard.refusal(for: url) != nil {
+#if DEBUG
+            dlog("browser.nav.createWebView.action kind=showGuardRefused url=\(url.absoluteString)")
+#endif
             return nil
         }
         // External URL schemes → ask the operator, don't create a popup
@@ -7482,11 +8079,26 @@ private class BrowserUIDelegate: NSObject, WKUIDelegate {
             hasRecentMiddleClickIntent: CmuxWebView.hasRecentMiddleClickIntent(for: webView)
         )
 
-        if isScriptedPopup, let popupWebView = openPopup?(configuration, windowFeatures) {
+        if isScriptedPopup, !isShowViewer {
+            // C11H-377: a window only right after the operator's own input on
+            // this page while it is on screen. A sign-in button the operator
+            // clicks passes, and the popup keeps WebKit's configuration, so
+            // window.opener and postMessage still work. A refused one does not
+            // fall back to a new panel.
+            guard BrowserPopupPolicy.allows(lastOperatorInput: lastOperatorInput?(), onScreen: browserWebViewIsOnScreen(webView)) else {
 #if DEBUG
-            dlog("browser.nav.createWebView.action kind=popup")
+                dlog("browser.nav.createWebView.action kind=popupRefused reason=no_activation")
 #endif
-            return popupWebView
+                let sourceHost = navigationAction.sourceFrame.securityOrigin.host
+                showNotice?(BrowserPopupPolicy.notice(host: sourceHost.isEmpty ? webView.url?.host : sourceHost), webView)
+                return nil
+            }
+            if let popupWebView = openPopup?(configuration, windowFeatures) {
+#if DEBUG
+                dlog("browser.nav.createWebView.action kind=popup")
+#endif
+                return popupWebView
+            }
         }
 
         // Fallback: open in new tab (no opener linkage)

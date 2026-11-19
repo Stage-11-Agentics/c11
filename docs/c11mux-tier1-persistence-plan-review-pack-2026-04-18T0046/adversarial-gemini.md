@@ -18,7 +18,7 @@ The plan is fundamentally sound in its goals but contains a critical type mismat
 ### Blind Spots
 1. **Disk Wear and Battery Life:** Continually serializing up to 32MB to disk every 8 seconds during an active agent session (where progress/status updates rapidly) is hostile to laptop batteries and SSD lifespans.
 2. **Stale State Accumulation:** Zombie status entries from crashed or uninstalled agents will persist forever because there is no garbage collection or aging for `staleFromRestart=true` chips.
-3. **Claude Slug Encoding Edge Cases:** The plan assumes `cwd` to slug conversion just replaces `/` with `-` (e.g., `-Users-atin...`). What about paths with spaces, special characters, or Unicode? Does it exactly match Anthropic's slugification algorithm?
+3. **Claude Slug Encoding Edge Cases:** The plan assumes `cwd` to slug conversion just replaces `/` with `-` (e.g., `-Users-demo...`). What about paths with spaces, special characters, or Unicode? Does it exactly match Anthropic's slugification algorithm?
 4. **Schema Versioning for Metadata:** The plan says "Schema stays at v1", but we are introducing complex inner dictionaries. If we need to change the `metadata` payload structure later, we have no versioning for the inner payload, relying entirely on loose JSON types.
 
 ### Challenged Decisions

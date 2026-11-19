@@ -100,6 +100,14 @@ class UpdateController {
     /// Start the updater. If startup fails, the error is shown via the custom UI.
     func startUpdaterIfNeeded() {
         guard !didStartUpdater else { return }
+        let bundleIdentifier = Bundle.main.bundleIdentifier ?? C11Identity.releaseBundleIdentifier
+        let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+        guard C11Identity.shouldStartSparkleUpdater(
+            bundleIdentifier: bundleIdentifier,
+            feedURL: feedURL
+        ) else {
+            return
+        }
         ensureSparkleInstallationCache()
 #if DEBUG
         // Keep the permission-related defaults resettable for UI tests even though the

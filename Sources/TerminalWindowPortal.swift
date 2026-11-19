@@ -16,7 +16,8 @@ private var cmuxWindowTerminalPortalCloseObserverKey: UInt8 = 0
 // C11-18 (Ghostty surface duplicated/overdraws above pane bounds during
 // portal sync).
 //
-// Default sink: /tmp/c11-portal.log. Override with C11_PORTAL_LOG=<path>.
+// Default sink: c11-portal.log in c11's per-user folder
+// ($(getconf DARWIN_USER_TEMP_DIR)c11). Override with C11_PORTAL_LOG=<path>.
 // First call after process start truncates the log; subsequent calls append.
 // Pattern mirrors `logBackground` at Sources/GhosttyTerminalView.swift:2470-2492
 // (NSLock + monotonic UInt64 sequence + open/seek-to-end/close per write).
@@ -37,12 +38,26 @@ enum C11PortalDebug {
         return truthy(env["C11_PORTAL_DEBUG"]) || truthy(env["CMUX_PORTAL_DEBUG"])
     }()
 
-    static let logPath: String = {
-        if let override = ProcessInfo.processInfo.environment["C11_PORTAL_LOG"], !override.isEmpty {
+    static func resolveLogPath(environment: [String: String]) -> String {
+        if let override = environment["C11_PORTAL_LOG"], !override.isEmpty {
             return override
         }
-        return "/tmp/c11-portal.log"
-    }()
+        return C11Identity.portalLogPath
+    }
+
+    /// Truncates `path` once, through a descriptor that refused a symlink,
+    /// a hard link and a file another account owns (C11H-364 L21), so only
+    /// c11's own log is ever emptied.
+    static func truncateOnFirstOpen(path: String, alreadyTruncated: inout Bool) {
+        guard !alreadyTruncated else { return }
+        alreadyTruncated = true
+        if C11UserRuntime.isInsideDirectory(path) { _ = try? C11UserRuntime.ensureDirectory() }
+        guard let descriptor = C11UserRuntime.openLogForAppend(path) else { return }
+        _ = ftruncate(descriptor, 0)
+        Darwin.close(descriptor)
+    }
+
+    static let logPath: String = resolveLogPath(environment: ProcessInfo.processInfo.environment)
 
     private static let lock = NSLock()
     private nonisolated(unsafe) static var sequence: UInt64 = 0
@@ -69,21 +84,13 @@ enum C11PortalDebug {
             "thread=\(threadLabel) portal: \(event)\(suffix)\n"
         guard let data = line.data(using: .utf8) else { return }
 
-        let url = URL(fileURLWithPath: logPath)
         if !hasTruncated {
-            hasTruncated = true
             // Truncate-on-first-call so each cold start gives the operator a clean
             // log corresponding to one repro run (avoids unbounded growth across
             // repeated `repro-c11-18.sh` invocations).
-            try? Data().write(to: url)
-        } else if !FileManager.default.fileExists(atPath: logPath) {
-            FileManager.default.createFile(atPath: logPath, contents: nil)
+            truncateOnFirstOpen(path: logPath, alreadyTruncated: &hasTruncated)
         }
-        if let handle = try? FileHandle(forWritingTo: url) {
-            defer { try? handle.close() }
-            try? handle.seekToEnd()
-            try? handle.write(contentsOf: data)
-        }
+        C11UserRuntime.appendLog(data, to: logPath)
     }
 }
 
@@ -556,6 +563,9 @@ struct PortalChromeOverlaySegment {
     /// A rounded frame corner. When set, the overlay fills this path instead
     /// of `rect`, which then only bounds it for dirty-rect checks.
     var path: NSBezierPath? = nil
+    /// When set, the fill is clipped to this rect (an area frame redrawn only
+    /// where a browser covers it).
+    var clip: NSRect? = nil
 }
 
 /// The rounded corners of the window that hosts a portal, in the portal
@@ -898,11 +908,18 @@ final class PortalSplitDividerOverlayView: NSView {
         }
 
         for segment in chromeSegments where segment.rect.intersects(dirtyRect) {
+            if let clip = segment.clip {
+                NSGraphicsContext.saveGraphicsState()
+                NSBezierPath(rect: clip).addClip()
+            }
             segment.color.setFill()
             if let path = segment.path {
                 path.fill()
             } else {
                 NSBezierPath(rect: Self.pixelAligned(segment.rect)).fill()
+            }
+            if segment.clip != nil {
+                NSGraphicsContext.restoreGraphicsState()
             }
         }
     }
@@ -1179,6 +1196,7 @@ final class WindowTerminalPortal: NSObject {
     }
 
     private func synchronizeLayoutHierarchy() {
+        GraphChurnMeter.note(.portalFullSync)
         installedContainerView?.layoutSubtreeIfNeeded()
         installedReferenceView?.layoutSubtreeIfNeeded()
         hostView.superview?.layoutSubtreeIfNeeded()
@@ -1380,6 +1398,8 @@ final class WindowTerminalPortal: NSObject {
                 into: &segments
             )
         }
+        // Area frames last, so a framed area's edge wins over the window frame.
+        segments.append(contentsOf: AreaFrameRegistry.segments(in: hostView))
         return segments
     }
 
@@ -1389,6 +1409,7 @@ final class WindowTerminalPortal: NSObject {
         guard let (container, reference) = installedTargetIfStillValid(for: window) ?? installationTarget(for: window)
         else { return false }
         let browserHost = preferredBrowserHost(in: container)
+        var changedHierarchy = false
 
         if hostView.superview !== container ||
             installedContainerView !== container ||
@@ -1412,12 +1433,15 @@ final class WindowTerminalPortal: NSObject {
             NSLayoutConstraint.activate(installConstraints)
             installedContainerView = container
             installedReferenceView = reference
+            changedHierarchy = true
         } else if let browserHost {
             if !Self.isView(browserHost, above: hostView, in: container) {
                 container.addSubview(hostView, positioned: .below, relativeTo: browserHost)
+                changedHierarchy = true
             }
         } else if !Self.isView(hostView, above: reference, in: container) {
             container.addSubview(hostView, positioned: .above, relativeTo: reference)
+            changedHierarchy = true
         }
 
         // Keep the drag/mouse forwarding overlay above portal-hosted terminal views.
@@ -1425,9 +1449,17 @@ final class WindowTerminalPortal: NSObject {
            overlay.superview === container,
            !Self.isView(overlay, above: hostView, in: container) {
             container.addSubview(overlay, positioned: .above, relativeTo: hostView)
+            changedHierarchy = true
         }
 
-        synchronizeLayoutHierarchy()
+        // C11H-238: lay the window out synchronously only after (re)installing.
+        // In steady state this runs from `bind` inside SwiftUI's `updateNSView`
+        // and from hit tests; a forced layout there re-enters the root hosting
+        // view mid-update (an AttributeGraph cycle) on every bind. The deferred
+        // and external-geometry syncs lay out explicitly, outside the update.
+        if changedHierarchy {
+            synchronizeLayoutHierarchy()
+        }
         _ = synchronizeHostFrameToReference()
         ensureDividerOverlayOnTop()
 
@@ -1831,6 +1863,11 @@ final class WindowTerminalPortal: NSObject {
 #if DEBUG
         overlayInvalidationCountForTesting += 1
 #endif
+        dividerOverlayView.needsDisplay = true
+    }
+
+    /// An area frame's state, theme or geometry changed (`AreaFrameRegistry`).
+    func invalidateAreaFrames() {
         dividerOverlayView.needsDisplay = true
     }
 
@@ -2598,6 +2635,20 @@ enum TerminalWindowPortalRegistry {
 
     static func invalidateDividerOverlay(for window: NSWindow) {
         existingPortal(for: window)?.invalidateDividerOverlay()
+    }
+
+    static func invalidateAreaFrames(for window: NSWindow) {
+        existingPortal(for: window)?.invalidateAreaFrames()
+    }
+
+    static func hasPortal(for window: NSWindow) -> Bool {
+        existingPortal(for: window) != nil
+    }
+
+    /// A window whose framed areas hold no terminal still needs the overlay
+    /// that draws area frames (`AreaFrameRegistry.ensureOverlay`).
+    static func ensurePortal(for window: NSWindow) {
+        _ = portal(for: window)
     }
 
     static func windowsWithPortals() -> [NSWindow] {

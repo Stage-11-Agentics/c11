@@ -36,6 +36,41 @@ final class BundledSkillTests: XCTestCase {
         XCTAssertEqual(process.terminationStatus, 0, String(decoding: data, as: UTF8.self))
     }
 
+    /// C11H-50: the built CLI's `--version`, `version` and `hc-diagnostics` show the version
+    /// line. The script answers hc-diagnostics from a disposable socket; no app is launched.
+    func testBuiltCLIPrintsC11VersionLine() throws {
+        let products = Bundle(for: BundledSkillTests.self).bundleURL.deletingLastPathComponent()
+        let appName: String
+        #if DEBUG
+        appName = "c11 DEV.app"
+        #else
+        appName = "c11.app"
+        #endif
+        let cli = products.appendingPathComponent(appName + "/Contents/Resources/bin/c11")
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: cli.path), "Missing built CLI at \(cli.path)")
+        let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("tests_v2/test_c11_version_line.py")
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = [script.path, "--offline"]
+        var environment = ProcessInfo.processInfo.environment
+        environment["C11_CLI"] = cli.path
+        // c11's build and version, from this test bundle's own generated Info.plist: the same
+        // CURRENT_PROJECT_VERSION and MARKETING_VERSION the app is built with, expanded apart
+        // from the app's Info.plist, so a wrong base in the app's CFBundleVersion is caught.
+        let testInfo = Bundle(for: BundledSkillTests.self).infoDictionary ?? [:]
+        environment["C11_EXPECTED_BUILD"] = testInfo["CFBundleVersion"] as? String ?? ""
+        environment["C11_EXPECTED_VERSION"] = testInfo["CFBundleShortVersionString"] as? String ?? ""
+        process.environment = environment
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0, String(decoding: data, as: UTF8.self))
+    }
+
     private func withFixture(_ body: (URL) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -79,6 +114,30 @@ final class BundledSkillTests: XCTestCase {
         XCTAssertNil(C11BuildIdentity(info: [:]).commit)
         XCTAssertEqual(C11BuildIdentity(info: ["CMUXCommit": "abcdef012"]).commit, "abcdef012")
         XCTAssertEqual(C11BuildIdentity(info: ["C11Commit": "abcdef012", "CMUXCommit": "111111111"]).commit, "abcdef012")
+    }
+
+    func testVersionLineIsC11VersionElseThePlainVersion() {
+        let full = C11BuildIdentity(info: [
+            "CFBundleShortVersionString": "1.7.6", "C11Version": "1.7.6-h3",
+            "CFBundleVersion": "142", "C11Commit": "abcdef012",
+        ])
+        XCTAssertEqual(full.versionLine, "1.7.6-h3")
+        XCTAssertEqual(full.shortVersion, "1.7.6")
+        XCTAssertEqual(full.summary, "c11 1.7.6-h3 (142) [abcdef012]")
+        XCTAssertEqual(full.payload["version_line"] as? String, "1.7.6-h3")
+        XCTAssertEqual(full.payload["short_version"] as? String, "1.7.6")
+
+        let plain = C11BuildIdentity(info: ["CFBundleShortVersionString": "1.6.0"])
+        XCTAssertEqual(plain.versionLine, "1.6.0")
+        XCTAssertEqual(plain.summary, "c11 1.6.0")
+
+        let unexpanded = C11BuildIdentity(info: [
+            "CFBundleShortVersionString": "1.6.0", "C11Version": "$(MARKETING_VERSION)-h3",
+        ])
+        XCTAssertEqual(unexpanded.versionLine, "1.6.0")
+        XCTAssertNil(C11BuildIdentity.c11VersionLine(info: ["C11Version": "  "]))
+        XCTAssertNil(C11BuildIdentity(info: [:]).versionLine)
+        XCTAssertEqual(C11BuildIdentity(info: [:]).summary, "c11 version unknown")
     }
 
     func testCommitResolverUsesC11BundleStampBeforeLegacyAndEnvironment() {

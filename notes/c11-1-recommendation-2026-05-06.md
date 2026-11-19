@@ -21,14 +21,14 @@ Ticket: `task_01KPP7QBZ3NJMXS4C9NA2XW01X` — *c11mux → c11 rebrand pass (fork
 
 ### What is staged but not landed
 
-- **`c11-1-completion-audit` worktree** at `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-completion-audit`:
+- **`c11-1-completion-audit` worktree** at `~/src/c11-worktrees/c11-1-completion-audit`:
   - Branch is 1 ahead of `main` (the `f32f3d6b0` commit, now also present as squash `cd4bd7f1b`). Effectively merged.
-  - Working tree has: modified Lattice metadata (`.lattice/events|tasks|plans/task_01KPP7QBZ3NJMXS4C9NA2XW01X.*`) and an untracked artifact `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-completion-audit/.lattice/artifacts/payload/art_01KQR7R4P4KZC0T11HG1F1ZS2N.md`. The artifact is a 1-paragraph audit summary; not load-bearing — its substance is already in the ticket comment trail.
+  - Working tree has: modified Lattice metadata (`.lattice/events|tasks|plans/task_01KPP7QBZ3NJMXS4C9NA2XW01X.*`) and an untracked artifact `~/src/c11-worktrees/c11-1-completion-audit/.lattice/artifacts/payload/art_01KQR7R4P4KZC0T11HG1F1ZS2N.md`. The artifact is a 1-paragraph audit summary; not load-bearing — its substance is already in the ticket comment trail.
   - **Verdict:** safe to retire. Branch's purpose was already served by PR #111.
 
-- **`c11-1-rebrand-cleanup` worktree** at `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-rebrand-cleanup`:
+- **`c11-1-rebrand-cleanup` worktree** at `~/src/c11-worktrees/c11-1-rebrand-cleanup`:
   - Branch is **11 commits ahead** of `main`, 32 behind. **No PR exists** (`gh pr list --head c11-1-rebrand-cleanup` returns empty).
-  - Working tree has modified Lattice metadata + an untracked plan note `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-rebrand-cleanup/.lattice/notes/task_01KPP7QBZ3NJMXS4C9NA2XW01X.md`. The plan note is a careful, well-organized inventory of every `c11mux` hit categorized as whitelist vs real residue, with a "do not ship" contract for the validate phase. **Load-bearing — read it before deciding what to do with the branch.**
+  - Working tree has modified Lattice metadata + an untracked plan note `~/src/c11-worktrees/c11-1-rebrand-cleanup/.lattice/notes/task_01KPP7QBZ3NJMXS4C9NA2XW01X.md`. The plan note is a careful, well-organized inventory of every `c11mux` hit categorized as whitelist vs real residue, with a "do not ship" contract for the validate phase. **Load-bearing — read it before deciding what to do with the branch.**
   - The 11 commits (oldest → newest):
     | SHA | Subject | Overlap with PR #111 |
     |-----|---------|----------------------|
@@ -95,7 +95,7 @@ Numbered for scan. The rebrand-cleanup branch's plan note already settles many o
 
 Opinionated. Push back where it doesn't fit.
 
-**1 — Land the `c11-1-rebrand-cleanup` branch (as one rebased PR).** The auditor's recommendation to "file a follow-up ticket" was reasonable in the absence of staged work, but the staged work already exists and is well-organized. Ratifying it costs less than re-deriving it via a new ticket. The rebrand-cleanup plan note (`/Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-rebrand-cleanup/.lattice/notes/task_01KPP7QBZ3NJMXS4C9NA2XW01X.md`) is a load-bearing artifact — it draws the whitelist boundary cleanly per the cmux→c11 naming memory's "lineage talk vs residual" rule. Treat that note as the contract going forward.
+**1 — Land the `c11-1-rebrand-cleanup` branch (as one rebased PR).** The auditor's recommendation to "file a follow-up ticket" was reasonable in the absence of staged work, but the staged work already exists and is well-organized. Ratifying it costs less than re-deriving it via a new ticket. The rebrand-cleanup plan note (`~/src/c11-worktrees/c11-1-rebrand-cleanup/.lattice/notes/task_01KPP7QBZ3NJMXS4C9NA2XW01X.md`) is a load-bearing artifact — it draws the whitelist boundary cleanly per the cmux→c11 naming memory's "lineage talk vs residual" rule. Treat that note as the contract going forward.
 
 **2 — Bundle-ID test fixtures: ship in this PR.** Per the cmux→c11 naming memory, residual `cmux`/`c11mux` strings are wrong. Test fixtures hardcoded to `com.stage11.c11mux*` aren't lineage talk — they're live runtime contract checks against a bundle ID that no longer exists. Calling that out-of-scope and filing a separate ticket adds delay for no benefit; the test suite is currently in a degraded state. Land it.
 
@@ -119,13 +119,13 @@ Opinionated. Push back where it doesn't fit.
 
 Ordered. Operator can interrupt at any step.
 
-1. **Read the rebrand-cleanup plan note first.** `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-rebrand-cleanup/.lattice/notes/task_01KPP7QBZ3NJMXS4C9NA2XW01X.md`. ~5 minutes. If you disagree with its whitelist contract, everything below changes.
+1. **Read the rebrand-cleanup plan note first.** `~/src/c11-worktrees/c11-1-rebrand-cleanup/.lattice/notes/task_01KPP7QBZ3NJMXS4C9NA2XW01X.md`. ~5 minutes. If you disagree with its whitelist contract, everything below changes.
 
 2. **Pick the base.** Use `c11-1-rebrand-cleanup` as the base. The 5 overlapping commits (`44d399722`, partial `4f07efee4`, partial `8776144e2`, `bdfa7e5b1` partial) will become empty cherry-picks during the rebase onto current `main` since their content already shipped via PR #111 — git will skip them cleanly; verify with `git log --oneline` before pushing.
 
 3. **Rebase onto `origin/main`.** From inside the worktree:
    ```bash
-   cd /Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-rebrand-cleanup
+   cd ~/src/c11-worktrees/c11-1-rebrand-cleanup
    git fetch origin
    git rebase origin/main
    ```
@@ -146,7 +146,7 @@ Ordered. Operator can interrupt at any step.
 5. **Validation before merging.** Per CLAUDE.md "no local tests" policy, validation goes via CI:
    - Push branch; CI builds for scheme `c11`.
    - `./scripts/reload.sh --tag c11-1-cleanup` locally; verify the app launches, About panel shows "c11", and `New c11 Workspace Here` appears in the Services menu under macOS System Settings → Keyboard → Shortcuts → Services. (User-visible localization sanity check; doesn't require running tests locally.)
-   - `cd /Users/atin/Projects/Stage11/code/c11 && rg -il c11mux | wc -l` — number should drop from 122 to roughly 122 minus ~30 (real residue files); the remainder is the documented whitelist. Spot-check a few of the survivors map to the "do NOT ship" list in the plan note.
+   - `cd ~/src/c11 && rg -il c11mux | wc -l` — number should drop from 122 to roughly 122 minus ~30 (real residue files); the remainder is the documented whitelist. Spot-check a few of the survivors map to the "do NOT ship" list in the plan note.
    - `gh workflow run test-e2e.yml` once if you want the M5 bundle tests (`test_m5_built_bundle.py`, `test_m5_channel_identity.py`) to actually exercise the new bundle-ID assertions against a fresh tagged build.
 
 6. **Lattice writeback (after merge).** Comment on the ticket: "rebrand-cleanup PR landed (link); closes the rebrand-cleanup branch's items 1–8 from `notes/c11-1-recommendation-2026-05-06.md`." Transition `needs_human` → `done`. Retire both worktrees with `git worktree remove`.
@@ -159,10 +159,10 @@ Ordered. Operator can interrupt at any step.
 
 Absolute paths for fast navigation:
 
-- `/Users/atin/Projects/Stage11/code/c11/notes/c11-audit-2026-04-21.md` — original audit, source of truth for §7 (brand naming drift).
-- `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-rebrand-cleanup/.lattice/notes/task_01KPP7QBZ3NJMXS4C9NA2XW01X.md` — load-bearing plan note. Read first.
-- `/Users/atin/Projects/Stage11/code/c11-worktrees/c11-1-completion-audit/.lattice/artifacts/payload/art_01KQR7R4P4KZC0T11HG1F1ZS2N.md` — auditor summary (1 paragraph). Not load-bearing.
-- `/Users/atin/.claude/projects/-Users-atin-Projects-Stage11-code-c11/memory/feedback_cmux_to_c11_naming.md` — naming memory cited throughout §3.
+- `~/src/c11/notes/c11-audit-2026-04-21.md` — original audit, source of truth for §7 (brand naming drift).
+- `~/src/c11-worktrees/c11-1-rebrand-cleanup/.lattice/notes/task_01KPP7QBZ3NJMXS4C9NA2XW01X.md` — load-bearing plan note. Read first.
+- `~/src/c11-worktrees/c11-1-completion-audit/.lattice/artifacts/payload/art_01KQR7R4P4KZC0T11HG1F1ZS2N.md` — auditor summary (1 paragraph). Not load-bearing.
+- `~/.claude/projects/-Users-demo-Projects-Stage11-code-c11/memory/feedback_cmux_to_c11_naming.md` — naming memory cited throughout §3.
 - Lattice ticket: `task_01KPP7QBZ3NJMXS4C9NA2XW01X` (`C11-1`).
 - PR #111 squash on main: `cd4bd7f1b`. Source on `c11-1-completion-audit`: `f32f3d6b0`.
 - Original rebrand on main: `56ec6d5d3` (PR #36, 2026-04-20).

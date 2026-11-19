@@ -285,6 +285,8 @@ struct BrowserPanelView: View {
     let onRequestPanelFocus: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.paneDropZone) private var paneDropZone
+    /// c11 (C11H-197): the hosting window's theme override.
+    @Environment(\.c11WindowThemeName) private var windowThemeName
     @AppStorage(ThemeAppStorage.Keys.m1bBrowserChromeMigrated, store: ThemeAppStorage.defaults)
     private var m1bBrowserChromeMigrated = false
     @AppStorage(ThemeAppStorage.Keys.workspaceFrameEnabled, store: ThemeAppStorage.defaults)
@@ -442,13 +444,14 @@ struct BrowserPanelView: View {
     }
 
     private var useThemeM1bBrowserChrome: Bool {
-        m1bBrowserChromeMigrated && themeManager.isEnabled
+        themeManager.themedPathLive(flag: m1bBrowserChromeMigrated, windowThemeName: windowThemeName)
     }
 
     private var themeContext: ThemeContext {
         themeManager.makeContext(
             workspaceColor: owningWorkspace?.customColor,
-            colorScheme: colorScheme
+            colorScheme: colorScheme,
+            windowThemeName: windowThemeName
         )
     }
 
@@ -459,7 +462,8 @@ struct BrowserPanelView: View {
         let context = themeManager.makeContext(
             workspaceColor: owningWorkspace?.customColor,
             colorScheme: colorScheme,
-            isWindowFocused: isWindowFocused
+            isWindowFocused: isWindowFocused,
+            windowThemeName: windowThemeName
         )
 
         let strokeColor: NSColor = themeManager.resolve(.windowFrame_color, context: context) ?? .secondaryLabelColor
@@ -576,6 +580,7 @@ struct BrowserPanelView: View {
         VStack(spacing: 0) {
             addressBar
                 .fixedSize(horizontal: false, vertical: true)
+            remoteProxyBlockedBanner
             webView
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -597,6 +602,39 @@ struct BrowserPanelView: View {
         }
         .onReceive(webViewClickPublisher) { _ in
             handleWebViewClickIntent()
+        }
+    }
+
+    /// Shown while a c11 ssh workspace's proxy is down: the page's requests are failing closed
+    /// (none go direct) until the workspace's connection is back.
+    @ViewBuilder
+    private var remoteProxyBlockedBanner: some View {
+        if panel.isRemoteProxyBlocked {
+            let target = panel.remoteWorkspaceStatus?.target
+                ?? String(localized: "browser.remoteProxy.paused.unknownTarget", defaultValue: "the remote host")
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "bolt.horizontal.circle")
+                    .foregroundStyle(.orange)
+                Text(String(localized: "browser.remoteProxy.paused.title", defaultValue: "Remote connection unavailable"))
+                    .fontWeight(.semibold)
+                Text(String(
+                    format: String(
+                        localized: "browser.remoteProxy.paused.detail",
+                        defaultValue: "Requests from this page are blocked until the connection to %@ is back."
+                    ),
+                    target
+                ))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 11))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.14))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("BrowserRemoteProxyBlockedBanner")
         }
     }
 
@@ -637,6 +675,11 @@ struct BrowserPanelView: View {
             .onReceive(NotificationCenter.default.publisher(for: .ghosttyDefaultBackgroundDidChange)) { _ in
                 refreshBrowserChromeStyle()
             }
+            // c11 (C11H-197): a window theme change, or this panel moving to a
+            // window with another theme, repaints the chrome.
+            .onChange(of: windowThemeName) { _, _ in
+                refreshBrowserChromeStyle()
+            }
     }
 
     // MARK: - Body publishers (extracted to keep `rootView` and `body` flat)
@@ -658,7 +701,16 @@ struct BrowserPanelView: View {
 
     // MARK: - Body event handlers (extracted from view-body closures)
 
+    /// C11H-246: a pointer-down inside the panel (page, placeholder, omnibar)
+    /// is the operator opening it, focused already or not.
+    private func noteOperatorPointerOpen() {
+        TerminalNotificationStore.shared.dismissFlagNotificationForOperatorOpen(
+            workspaceId: panel.workspaceId, surfaceId: panel.id
+        )
+    }
+
     private func handleWebViewClickIntent() {
+        noteOperatorPointerOpen()
 #if DEBUG
         dlog(
             "browser.focus.clickIntent panel=\(panel.id.uuidString.prefix(5)) " +
@@ -875,7 +927,10 @@ struct BrowserPanelView: View {
                     browserImportHintToolbarChip
                 }
                 browserProfileButton
-                openInExternalBrowserButton
+                // C11H-353: a linked machine's viewer never hands its page out.
+                if panel.opensInDefaultBrowser {
+                    openInExternalBrowserButton
+                }
                 browserThemeModeButton
                 developerToolsButton
             }
@@ -1011,17 +1066,12 @@ struct BrowserPanelView: View {
         .accessibilityIdentifier("BrowserProfileButton")
     }
 
-    private var canPopOutCurrentURL: Bool {
-        guard let url = panel.currentURL else { return false }
-        let scheme = url.scheme?.lowercased() ?? ""
-        if scheme.isEmpty || scheme == "about" { return false }
-        return true
-    }
+    private var canPopOutCurrentURL: Bool { panel.urlForDefaultBrowser != nil }
 
     private var openInExternalBrowserButton: some View {
         Button(action: {
-            guard let url = panel.currentURL, canPopOutCurrentURL else { return }
-            NSWorkspace.shared.open(url)
+            // C11H-395: a show's file the click's disk check refuses opens nothing.
+            if !panel.openCurrentURLInDefaultBrowser() { NSSound.beep() }
         }) {
             Image(systemName: "arrow.up.right.square")
                 .symbolRenderingMode(.monochrome)
@@ -1222,9 +1272,11 @@ struct BrowserPanelView: View {
                     if addressBarFocused, !omnibarState.suggestions.isEmpty {
                         commitSelectedSuggestion()
                     } else {
-                        panel.navigateSmart(omnibarState.buffer)
+                        let disposition = panel.navigateSmart(omnibarState.buffer)
                         hideSuggestions()
-                        suppressNextFocusLostRevert = true
+                        // C11H-247: refused `c11-show:` input does not stay in the bar.
+                        suppressNextFocusLostRevert = !(disposition == .internalLinkRefused
+                            && ShowAddressInput.isShowInput(omnibarState.buffer))
                         setAddressBarFocused(false, reason: "omnibar.submit.navigate")
                     }
                 },
@@ -1352,6 +1404,7 @@ struct BrowserPanelView: View {
                     .contentShape(Rectangle())
                     .accessibilityIdentifier(browserContentAccessibilityIdentifier)
                     .onTapGesture {
+                        noteOperatorPointerOpen()
                         onRequestPanelFocus()
                         if addressBarFocused {
                             setAddressBarFocused(false, reason: "placeholderContent.tapBlur")
@@ -1908,6 +1961,7 @@ struct BrowserPanelView: View {
             // briefly re-acquired during `focusPane`.
             setAddressBarFocused(true, reason: "omnibar.tap")
         }
+        noteOperatorPointerOpen()
         onRequestPanelFocus()
     }
 
@@ -1930,15 +1984,19 @@ struct BrowserPanelView: View {
         // Treat this as a commit, not a user edit: don't refetch suggestions while we're navigating away.
         omnibarState.buffer = suggestion.completion
         omnibarState.isUserEditing = false
+        var refused = false
         switch suggestion.kind {
         case .switchToPanel(let workspaceId, let panelId, _, _):
             AppDelegate.shared?.workspaceManager?.focusWorkspace(workspaceId, surfaceId: panelId)
+            // C11H-246: the operator picked a "switch to panel" suggestion.
+            AppDelegate.shared?.workspaceManager?.acknowledgeOperatorOpen(workspaceId: workspaceId, panelId: panelId)
         default:
-            panel.navigateSmart(suggestion.completion)
+            refused = panel.navigateSmart(suggestion.completion) == .internalLinkRefused
+                && ShowAddressInput.isShowInput(suggestion.completion)
         }
         hideSuggestions()
         inlineCompletion = nil
-        suppressNextFocusLostRevert = true
+        suppressNextFocusLostRevert = !refused
         setAddressBarFocused(false, reason: "suggestion.commit")
     }
 
@@ -2138,6 +2196,7 @@ struct BrowserPanelView: View {
         guard remoteSuggestionsEnabled else { return }
         guard !isSingleCharacterQuery else { return }
         guard omnibarInputIntent(for: query) != .urlLike else { return }
+        guard !ShowAddressInput.isShowInput(query) else { return }
 
         // Keep current remote rows visible while fetching fresh predictions.
         let engine = searchEngine
@@ -2565,7 +2624,9 @@ func buildOmnibarSuggestions(
     }
     let singleCharacterQuery = omnibarSingleCharacterQuery(for: trimmedQuery)
     let isSingleCharacterQuery = singleCharacterQuery != nil
-    let shouldIncludeRemoteSuggestions = !isSingleCharacterQuery
+    // C11H-247: a `c11-show:` address never becomes a search or a query.
+    let isShowAddress = ShowAddressInput.isShowInput(trimmedQuery)
+    let shouldIncludeRemoteSuggestions = !isSingleCharacterQuery && !isShowAddress
     let filteredHistoryEntries: [BrowserHistoryStore.Entry]
     let filteredOpenPanelMatches: [OmnibarOpenPanelMatch]
     if let singleCharacterQuery {
@@ -2659,7 +2720,7 @@ func buildOmnibarSuggestions(
         }
     }
 
-    if !(isSingleCharacterQuery && shouldSuppressSingleCharacterSearchResult) {
+    if !(isSingleCharacterQuery && shouldSuppressSingleCharacterSearchResult), !isShowAddress {
         let searchBaseScore: Double
         switch intent {
         case .queryLike: searchBaseScore = 820

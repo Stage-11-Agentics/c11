@@ -215,7 +215,7 @@ Baseline: `origin/main` @ `36f2a70ce` (after this ticket's dependabot merges).
 | `origin/perf/phase8e-setactive-async` | 2026-05-06 | Atin | 5 | 291 | no | `e4d2ae305` |
 | `origin/release/v0.46.0` | 2026-05-06 | Atin | 1 | 287 | no | `d26724cc8` |
 | `origin/tcc-primer-debug-bundle-isolation` | 2026-05-07 | Atin | 6 | 285 | no | `7f34e5509` |
-| `origin/fix/agent-skills-onboarding-launch-trigger` | 2026-05-10 | Atin Woodard | 1 | 284 | no | `b0788e7f8` |
+| `origin/fix/agent-skills-onboarding-launch-trigger` | 2026-05-10 | Atin | 1 | 284 | no | `b0788e7f8` |
 | `origin/perf/phase4a-instrument-focus-churn` | 2026-05-12 | Atin | 6 | 291 | no | `1b71d5baf` |
 | `origin/c11-24-overnight-manifest-viewer` | 2026-05-14 | Atin | 4 | 277 | no | `9343fc03a` |
 | `origin/c11-4-overnight-audit-findings` | 2026-05-14 | Atin | 5 | 285 | no | `756174dc4` |

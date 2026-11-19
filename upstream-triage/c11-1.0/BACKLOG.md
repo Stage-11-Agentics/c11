@@ -28,24 +28,24 @@
 | D8 | Turn-ends sit behind a filter. |
 | D17 | **Workspace groups are core.** Test them carefully. |
 | D20 | **Agents can read `c11 history`,** so focus history is core. |
-| D26 | Atlas builds first. |
+| D26 | the build host builds first. |
 | D27 | Workers are Codex and Grok only. |
 | Out | D11 (federation; maybe Overwatch). D12 (Linux). D13 (call-signs are not a c11 concept). D14 (restore accounts). D15 (stable tab numbers). D16 (keybinding change). D18 (naming). D21 (sidebar rewrite). D23 (upstream Ghostty offer). D24 (phone). D25 (separate point releases: everything ships in 1.0). |
 | Later | D19, passkeys, in a later release. D22, GPU reclaim, only if the soak shows a clear bug. |
 | 1.1 | D9: remote hosts and Prime sandboxes as c11 tabs. Both the design spike and the build move to 1.1. |
-| Agreed | D10: no lid-close work in 1.0. Long-lived agents go in Atlas's own c11, and Atin keeps Macs awake with Caffeine. The terminal holder is 1.1. |
+| Agreed | D10: no lid-close work in 1.0. Long-lived agents go in the build host's own c11, and Atin keeps Macs awake with Caffeine. The terminal holder is 1.1. |
 
 ---
 
 ## Foundation (P0)
 
-**F1. c11 builds on Atlas.** Existing ticket **C11-216** (backlog). P0, M.
-- Move tagged builds, test runs and release builds off Hyperion.
-- Build mode starts when this lands. Until then the run stays in planning mode, with no builds on Hyperion.
-- Acceptance: a delegator gets a tagged artifact from Atlas without building on Hyperion.
+**F1. c11 builds on the build host.** Existing ticket **C11-216** (backlog). P0, M.
+- Move tagged builds, test runs and release builds off the laptop.
+- Build mode starts when this lands. Until then the run stays in planning mode, with no builds on the laptop.
+- Acceptance: a delegator gets a tagged artifact from the build host without building on the laptop.
 
 **F2. Fleet soak harness as the 1.0 release gate.** P0, M.
-- **What it runs:** 40 mixed agents (Claude, Codex, Grok) for an overnight run on Atlas.
+- **What it runs:** 40 mixed agents (Claude, Codex, Grok) for an overnight run on the build host.
 - **What it records:** hang telemetry, memory and IOSurface curves, a typing-latency baseline, and restart cycles.
 - **16 GB run:** one run on a 16 GB Mac (or a constrained host).
 - **Also answers D21 and D22:** sidebar and GPU memory get measured here, with no separate work.
@@ -258,7 +258,7 @@ Sources: report 01 §"Proposed c11 1.0 shape"; Astra §4 "Against the event jour
 ## Remote (P1, plus pending)
 
 **R1. `c11 ssh` smoke test and the truth in the skill.** P1, S.
-- After #490, validate `c11 ssh atlas` on a tagged build: shell, browser proxy, and refusal of remote commands.
+- After #490, validate `c11 ssh <build-host>` on a tagged build: shell, browser proxy, and refusal of remote commands.
 - Fix `skills/c11/references/api.md:431`.
 
 **R2. Moved to 1.1 (D9).** Remote hosts and Prime sandboxes, spike and build both. Not ticketed for 1.0.

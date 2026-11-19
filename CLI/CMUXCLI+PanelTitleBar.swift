@@ -450,6 +450,11 @@ extension CMUXCLI {
             if let desc = payload["description"] as? String {
                 let src = (payload["description_source"] as? String) ?? "?"
                 lines.append("description=\(desc)   [\(src)]")
+                // C11H-278: when the description text last changed.
+                if let updatedAt = payload["description_updated_at"] as? String {
+                    let age = (payload["description_age_seconds"] as? Int).map { "  age_seconds=\($0)" } ?? ""
+                    lines.append("description_updated_at=\(updatedAt)\(age)")
+                }
             }
             let collapsed = (payload["collapsed"] as? Bool) ?? true
             let visible = (payload["visible"] as? Bool) ?? true

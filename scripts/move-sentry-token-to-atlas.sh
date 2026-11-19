@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 # Copy the Sentry org auth token (stage-11-kl) into the dedicated release
-# keychain on Atlas, so a release run on Atlas uploads its dSYMs (C11-542).
+# keychain on the signing host (C11_SIGNING_HOST, from the environment or
+# ~/.config/c11/dev-hosts), so a release run there uploads its dSYMs (C11-542).
 # Rerun after rotating the token.
 #
-#   scripts/move-sentry-token-to-atlas.sh            # store, then verify on Atlas
+#   scripts/move-sentry-token-to-atlas.sh            # store, then verify on the signing host
 #   scripts/move-sentry-token-to-atlas.sh --check    # verify only: ok | missing | failed
 #
-# The token is read from the keys file (C11_KEYS_FILE, default
-# ~/Projects/Gregorovich/keys.txt, line SENTRY_AUTH_TOKEN=...). It is never in
+# The token is read from the keys file (C11_KEYS_FILE, from the environment or
+# ~/.config/c11/dev-hosts; line SENTRY_AUTH_TOKEN=...). It is never in
 # an argv, printed, logged, committed or left on disk: it goes from the keys
 # file to a 0600 file in a 0700 temp dir removed on exit, then as ssh stdin into
-# `security -i`'s stdin on Atlas. Verification runs a read-only sentry-cli call
-# on Atlas: `sentry-cli releases list` for the c11 project, with the token in
+# `security -i`'s stdin on the signing host. Verification runs a read-only
+# sentry-cli call there: `sentry-cli releases list` for the c11 project, with the token in
 # that process's environment only (an org token cannot list projects).
 set -euo pipefail
 
-HOST="${C11_SIGNING_HOST:-atlas}"
-KEYS_FILE="${C11_KEYS_FILE:-$HOME/Projects/Gregorovich/keys.txt}"
+# shellcheck source=dev-hosts.sh
+source "$(dirname "$0")/dev-hosts.sh"
+HOST="$(c11_dev_host C11_SIGNING_HOST)" || exit 2
 ORG="stage-11-kl"
 PROJECT="c11"
 SERVICE="c11-sentry-auth-token"
@@ -37,7 +39,7 @@ trap '/bin/rm -rf "$TMP"' EXIT
 : >"$TMP/token"
 chmod 600 "$TMP/token"
 
-# Runs on Atlas: stores the token from stdin (unless checking), then verifies
+# Runs on the signing host: stores the token from stdin (unless checking), then verifies
 # it with a read-only sentry-cli call and prints ok, missing or failed.
 # shellcheck disable=SC2016
 REMOTE_SCRIPT='
@@ -49,7 +51,7 @@ if [[ "$mode" != "check" ]]; then
   token="$(cat)"
   [[ "$token" =~ ^[A-Za-z0-9_=.+/-]+$ ]] || { echo "token has unexpected characters" >&2; exit 1; }
 fi
-command -v sentry-cli >/dev/null || { echo "sentry-cli is not installed on Atlas" >&2; exit 1; }
+command -v sentry-cli >/dev/null || { echo "sentry-cli is not installed on the signing host" >&2; exit 1; }
 # Armed before the request: an unlock whose probe then fails still relocks.
 leases="${C11_SIGNING_LEASES:-$HOME/.acetate-release/leases}"
 # The exit handler relocks, then checks the real lock state: a helper that
@@ -118,10 +120,12 @@ if [[ "$MODE" == "check" ]]; then
   exit 0
 fi
 
+KEYS_FILE="$(c11_dev_host C11_KEYS_FILE)" || exit 2
+[[ "$KEYS_FILE" != "~/"* ]] || KEYS_FILE="$HOME/${KEYS_FILE#\~/}"
 [[ -r "$KEYS_FILE" ]] || die "cannot read $KEYS_FILE"
 # The exact key only; the value is written straight to the 0600 file.
 awk 'index($0, "SENTRY_AUTH_TOKEN=") == 1 { v = substr($0, 19); gsub(/^["'"'"' \t]+|["'"'"' \t\r]+$/, "", v); print v; exit }' \
   "$KEYS_FILE" >"$TMP/token"
 [[ -s "$TMP/token" ]] || die "no SENTRY_AUTH_TOKEN line in $KEYS_FILE"
-result="$(remote store "$TMP/token")" || die "Atlas did not confirm the token: ${result:-no output}"
-echo "Atlas release keychain holds the Sentry token for $ORG: sentry-cli check $result (releases of $PROJECT readable). The local copy is deleted."
+result="$(remote store "$TMP/token")" || die "$HOST did not confirm the token: ${result:-no output}"
+echo "$HOST's release keychain holds the Sentry token for $ORG: sentry-cli check $result (releases of $PROJECT readable). The local copy is deleted."

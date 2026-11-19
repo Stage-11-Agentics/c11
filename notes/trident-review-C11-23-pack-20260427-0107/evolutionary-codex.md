@@ -13,19 +13,19 @@ This is not just sidebar usage monitoring. This branch is creating the first sli
 
 That position matters. Vendor dashboards can tell an operator what one provider thinks they spent. c11 can eventually tell them what the whole working room is burning across Claude, Codex, future CLIs, panes, workspaces, branches, and spawned agents. The stronger name for the capability is **cross-tool agent observability**, with cost as the first metric.
 
-The local-first pivot is the architectural unlock. `ClaudeLocalUsageFetcher` reads `~/.claude/projects` at [ClaudeLocalUsageFetcher.swift:68](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:68), and `CodexLocalUsageFetcher` reads `~/.codex/state_5.sqlite` at [CodexLocalUsageFetcher.swift:84](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:84). The privacy doc now names only status-page hosts while usage is local at [privacy-endpoints.md:16](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/docs/privacy-endpoints.md:16). That changes the product posture from "credentialed API client" to "local observability surface."
+The local-first pivot is the architectural unlock. `ClaudeLocalUsageFetcher` reads `~/.claude/projects` at [ClaudeLocalUsageFetcher.swift:68](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:68), and `CodexLocalUsageFetcher` reads `~/.codex/state_5.sqlite` at [CodexLocalUsageFetcher.swift:84](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:84). The privacy doc now names only status-page hosts while usage is local at [privacy-endpoints.md:16](~/src/c11-worktrees/c11-23-ai-usage-monitoring/docs/privacy-endpoints.md:16). That changes the product posture from "credentialed API client" to "local observability surface."
 
 ## Emerging Patterns
 
-**The provider object is becoming a capability manifest.** `AIUsageProvider` currently holds credentials, status metadata, and fetch closures at [AIUsageProvider.swift:56](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageProvider.swift:56). The branch overloads `credentialFields.isEmpty` to mean local-only/no-Keychain/no-secret UI in `AIUsageAccountStore`, `AIUsagePoller`, and `AIUsageEditorSheet`. That works, but it is an unnamed capability system trying to exist.
+**The provider object is becoming a capability manifest.** `AIUsageProvider` currently holds credentials, status metadata, and fetch closures at [AIUsageProvider.swift:56](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageProvider.swift:56). The branch overloads `credentialFields.isEmpty` to mean local-only/no-Keychain/no-secret UI in `AIUsageAccountStore`, `AIUsagePoller`, and `AIUsageEditorSheet`. That works, but it is an unnamed capability system trying to exist.
 
-**Window aggregation is duplicated provider logic that wants to be a primitive.** Claude computes cutoffs, filters entries, sums tokens, costs entries, derives utilization, and sets reset time at [ClaudeLocalUsageFetcher.swift:16](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:16). Codex repeats the same shape at [CodexLocalUsageFetcher.swift:36](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:36). This is the strongest abstraction signal in the branch: providers should produce normalized usage events; shared code should produce windows.
+**Window aggregation is duplicated provider logic that wants to be a primitive.** Claude computes cutoffs, filters entries, sums tokens, costs entries, derives utilization, and sets reset time at [ClaudeLocalUsageFetcher.swift:16](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:16). Codex repeats the same shape at [CodexLocalUsageFetcher.swift:36](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:36). This is the strongest abstraction signal in the branch: providers should produce normalized usage events; shared code should produce windows.
 
 **Static fetcher enums are the first generation of adapters.** `ClaudeLocalUsageFetcher` and `CodexLocalUsageFetcher` are namespaced static functions. That is fine for two built-in readers, but it makes test fixtures, custom roots, and future data sources harder than they need to be. The next mutation is reader instances configured with paths and clocks.
 
-**The UI already treats cost as first-class, but the model has no provenance.** `AIUsageWindow` has `tokensUsed` and `costUSD` at [AIUsageProvider.swift:3](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageProvider.swift:3), and the footer displays dollars when utilization is zero at [AIUsageFooterView.swift:71](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/UI/AIUsageFooterView.swift:71). The next useful field is not another number; it is confidence/provenance: measured, estimated, blended, or unknown.
+**The UI already treats cost as first-class, but the model has no provenance.** `AIUsageWindow` has `tokensUsed` and `costUSD` at [AIUsageProvider.swift:3](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageProvider.swift:3), and the footer displays dollars when utilization is zero at [AIUsageFooterView.swift:71](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/UI/AIUsageFooterView.swift:71). The next useful field is not another number; it is confidence/provenance: measured, estimated, blended, or unknown.
 
-**Tests did not evolve with the local-provider model.** The test file still asserts that Claude and Codex UI providers have credential fields at [AIUsageTests.swift:271](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/c11Tests/AIUsageTests.swift:271), [AIUsageTests.swift:426](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/c11Tests/AIUsageTests.swift:426), and [AIUsageTests.swift:434](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/c11Tests/AIUsageTests.swift:434). Evolutionary point: the branch needs a fixture-driven local-source test harness, not more API parser tests.
+**Tests did not evolve with the local-provider model.** The test file still asserts that Claude and Codex UI providers have credential fields at [AIUsageTests.swift:271](~/src/c11-worktrees/c11-23-ai-usage-monitoring/c11Tests/AIUsageTests.swift:271), [AIUsageTests.swift:426](~/src/c11-worktrees/c11-23-ai-usage-monitoring/c11Tests/AIUsageTests.swift:426), and [AIUsageTests.swift:434](~/src/c11-worktrees/c11-23-ai-usage-monitoring/c11Tests/AIUsageTests.swift:434). Evolutionary point: the branch needs a fixture-driven local-source test harness, not more API parser tests.
 
 ## How This Could Evolve
 
@@ -47,9 +47,9 @@ In six months, the good version is a local ledger that answers: "What did this w
 
 **Budget Governor.** Add soft and hard thresholds per workspace/session. When aggregate session cost crosses a threshold, c11 can raise a sidebar warning, write metadata, and let agent skills learn to check budget before spawning more work.
 
-**Project Heatmap.** Claude JSONL files are discovered by traversing project directories at [ClaudeLocalUsageFetcher.swift:75](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:75). Keeping the file path on each event would unlock per-project cost attribution almost for free.
+**Project Heatmap.** Claude JSONL files are discovered by traversing project directories at [ClaudeLocalUsageFetcher.swift:75](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:75). Keeping the file path on each event would unlock per-project cost attribution almost for free.
 
-**Burn Rate, Not Just Total Spend.** The sorted entries at [ClaudeLocalUsageFetcher.swift:122](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:122) and the SQL ordering at [CodexLocalUsageFetcher.swift:93](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:93) already provide enough time structure to compute tokens/minute and dollars/hour for the live session.
+**Burn Rate, Not Just Total Spend.** The sorted entries at [ClaudeLocalUsageFetcher.swift:122](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:122) and the SQL ordering at [CodexLocalUsageFetcher.swift:93](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:93) already provide enough time structure to compute tokens/minute and dollars/hour for the live session.
 
 **Local Reader Marketplace.** Gemini, Kimi, OpenCode, Aider, and future agent CLIs can be added as local readers. The rule becomes: if a tool writes timestamped usage data locally, c11 can display it.
 
@@ -61,7 +61,7 @@ The highest-leverage move is to split "read source data" from "aggregate windows
 
 The second leverage point is provider capability metadata. Today a local provider is inferred from empty credential fields. Naming that concept lets registration, editor UI, Keychain behavior, auto-detection, and docs all move from scattered conditional code into provider declarations.
 
-The third leverage point is aggregate snapshots. `AIUsagePoller.snapshots` already has every account at [AIUsagePoller.swift:21](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:21). A cross-provider total requires no new source readers, only a computed projection.
+The third leverage point is aggregate snapshots. `AIUsagePoller.snapshots` already has every account at [AIUsagePoller.swift:21](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:21). A cross-provider total requires no new source readers, only a computed projection.
 
 ## The Flywheel
 
@@ -69,7 +69,7 @@ The flywheel is: **more local readers -> better aggregate truth -> stronger oper
 
 Claude and Codex are enough to prove the loop. The next provider makes the aggregate view meaningfully better. The one after that makes vendor dashboards feel incomplete. Once budget and burn-rate signals exist, agents have a reason to consume the same data, which justifies socket/metadata exposure. Then usage monitoring becomes part of orchestration, not just display.
 
-This flywheel only spins if adding a provider gets cheaper. Hardcoded `AIUsageRegistry.all` at [AIUsageRegistry.swift:7](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageRegistry.swift:7) and hardcoded auto-registration at [AIUsageAccountStore.swift:177](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageAccountStore.swift:177) are acceptable now, but they are the first friction points to remove.
+This flywheel only spins if adding a provider gets cheaper. Hardcoded `AIUsageRegistry.all` at [AIUsageRegistry.swift:7](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageRegistry.swift:7) and hardcoded auto-registration at [AIUsageAccountStore.swift:177](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageAccountStore.swift:177) are acceptable now, but they are the first friction points to remove.
 
 ## Concrete Suggestions
 
@@ -94,23 +94,23 @@ This flywheel only spins if adding a provider gets cheaper. Hardcoded `AIUsageRe
    }
    ```
 
-   Then move the duplicated cutoff/filter/sum/reset logic from [ClaudeLocalUsageFetcher.swift:16](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:16) and [CodexLocalUsageFetcher.swift:36](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:36) into a shared `AIUsageWindowAggregator`. Claude and Codex already produce timestamped entries with model and token counts, so the migration is mechanical.
+   Then move the duplicated cutoff/filter/sum/reset logic from [ClaudeLocalUsageFetcher.swift:16](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:16) and [CodexLocalUsageFetcher.swift:36](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:36) into a shared `AIUsageWindowAggregator`. Claude and Codex already produce timestamped entries with model and token counts, so the migration is mechanical.
 
    Dependencies/risks: keep provider-specific cost functions near the provider at first; only aggregate after each event has a cost. This avoids prematurely designing a universal pricing engine.
 
 2. **Move local reader work off the main actor and make that the adapter contract.** ✅ Confirmed — verified this would work.
 
-   `AIUsagePoller` is `@MainActor` at [AIUsagePoller.swift:17](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:17), and it calls `provider.fetchUsage` from [AIUsagePoller.swift:197](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:197). Claude reads whole files at [ClaudeLocalUsageFetcher.swift:92](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:92); Codex opens and steps SQLite synchronously at [CodexLocalUsageFetcher.swift:88](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:88).
+   `AIUsagePoller` is `@MainActor` at [AIUsagePoller.swift:17](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:17), and it calls `provider.fetchUsage` from [AIUsagePoller.swift:197](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:197). Claude reads whole files at [ClaudeLocalUsageFetcher.swift:92](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:92); Codex opens and steps SQLite synchronously at [CodexLocalUsageFetcher.swift:88](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:88).
 
    The evolutionary fix is not just `Task.detached` in two places. Define the rule: provider readers may do blocking local I/O, but they must execute off-main and return normalized events. That keeps the typing-latency contract intact as more local tools join.
 
-   Dependencies/risks: cancellation from `runWithTimeout` at [AIUsagePoller.swift:246](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:246) should still cancel waiting tasks. For large JSONL reads, a future streaming reader will respond to cancellation better than whole-file reads.
+   Dependencies/risks: cancellation from `runWithTimeout` at [AIUsagePoller.swift:246](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:246) should still cancel waiting tasks. For large JSONL reads, a future streaming reader will respond to cancellation better than whole-file reads.
 
 3. **Introduce explicit provider capabilities: `isLocal`, `autoDetect`, and `usageSourceDescription`.** ✅ Confirmed — verified this would work.
 
-   Add capability fields or computed properties to `AIUsageProvider` at [AIUsageProvider.swift:56](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageProvider.swift:56). Then replace scattered `credentialFields.isEmpty` checks in [AIUsageAccountStore.swift:52](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageAccountStore.swift:52), [AIUsagePoller.swift:186](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:186), and [AIUsageEditorSheet.swift:29](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/UI/AIUsageEditorSheet.swift:29).
+   Add capability fields or computed properties to `AIUsageProvider` at [AIUsageProvider.swift:56](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageProvider.swift:56). Then replace scattered `credentialFields.isEmpty` checks in [AIUsageAccountStore.swift:52](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageAccountStore.swift:52), [AIUsagePoller.swift:186](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:186), and [AIUsageEditorSheet.swift:29](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/UI/AIUsageEditorSheet.swift:29).
 
-   Move Claude/Codex path probes out of `AIUsageAccountStore.load()` at [AIUsageAccountStore.swift:177](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageAccountStore.swift:177) and into provider declarations. This makes the third provider a provider-file change instead of a store change.
+   Move Claude/Codex path probes out of `AIUsageAccountStore.load()` at [AIUsageAccountStore.swift:177](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsageAccountStore.swift:177) and into provider declarations. This makes the third provider a provider-file change instead of a store change.
 
    Dependencies/risks: `AIUsageProvider` is `Sendable`, so closures should be `@Sendable`. Auto-detect closures must stay cheap because `load()` is synchronous today.
 
@@ -118,7 +118,7 @@ This flywheel only spins if adding a provider gets cheaper. Hardcoded `AIUsageRe
 
 4. **Add cross-provider aggregate windows to `AIUsagePoller`.** ✅ Confirmed — verified this would work.
 
-   `snapshots` already holds the account windows at [AIUsagePoller.swift:21](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:21), and the poller filters it to live accounts at [AIUsagePoller.swift:219](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:219). Add computed projections such as `aggregateSessionTokens`, `aggregateSessionCostUSD`, and `aggregateWeekCostUSD`.
+   `snapshots` already holds the account windows at [AIUsagePoller.swift:21](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:21), and the poller filters it to live accounts at [AIUsagePoller.swift:219](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/AIUsagePoller.swift:219). Add computed projections such as `aggregateSessionTokens`, `aggregateSessionCostUSD`, and `aggregateWeekCostUSD`.
 
    This enables a single footer total row when multiple accounts are active. More importantly, it creates the internal API future budget and burn-rate features will consume.
 
@@ -126,7 +126,7 @@ This flywheel only spins if adding a provider gets cheaper. Hardcoded `AIUsageRe
 
 5. **Make local fetchers fixture-driven and add real local-reader tests.** ✅ Confirmed — verified this is needed.
 
-   The fetchers hardcode `NSHomeDirectory()` at [ClaudeLocalUsageFetcher.swift:68](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:68) and [CodexLocalUsageFetcher.swift:84](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:84), which blocks clean tests. Meanwhile existing tests still encode the old credential-provider world at [AIUsageTests.swift:271](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/c11Tests/AIUsageTests.swift:271).
+   The fetchers hardcode `NSHomeDirectory()` at [ClaudeLocalUsageFetcher.swift:68](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:68) and [CodexLocalUsageFetcher.swift:84](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:84), which blocks clean tests. Meanwhile existing tests still encode the old credential-provider world at [AIUsageTests.swift:271](~/src/c11-worktrees/c11-23-ai-usage-monitoring/c11Tests/AIUsageTests.swift:271).
 
    Introduce instance readers with injected roots/db URLs and clocks. Then add tests that create temporary JSONL and SQLite fixtures, exercise malformed rows, timestamp units, cost propagation, and window cutoffs through executable paths.
 
@@ -134,7 +134,7 @@ This flywheel only spins if adding a provider gets cheaper. Hardcoded `AIUsageRe
 
 6. **Separate pricing into a small catalog with provenance.** ❓ Needs exploration — promising but needs prototyping.
 
-   Claude pricing lives in branches at [ClaudeLocalUsageFetcher.swift:125](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:125), and Codex uses blended family rates at [CodexLocalUsageFetcher.swift:116](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:116). Move these into a small `AIUsagePricingCatalog` that returns both cost and accuracy metadata: exact per-token-bucket, blended estimate, fallback estimate, unknown.
+   Claude pricing lives in branches at [ClaudeLocalUsageFetcher.swift:125](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:125), and Codex uses blended family rates at [CodexLocalUsageFetcher.swift:116](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/CodexLocalUsageFetcher.swift:116). Move these into a small `AIUsagePricingCatalog` that returns both cost and accuracy metadata: exact per-token-bucket, blended estimate, fallback estimate, unknown.
 
    The UI can then say "estimated" only when it should, and docs can explain why Codex costs are approximate. This also prevents future fetchers from scattering pricing tables across source files.
 
@@ -150,7 +150,7 @@ This flywheel only spins if adding a provider gets cheaper. Hardcoded `AIUsageRe
 
 8. **Capture project/workspace attribution.** ❓ Needs exploration — source data exists for Claude, Codex needs schema inspection.
 
-   Claude's enumerator sees the JSONL file URL at [ClaudeLocalUsageFetcher.swift:89](/Users/atin/Projects/Stage11/code/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:89). Store a sanitized project/path hint on the normalized event. Codex threads may also have title/path/session columns; inspect `state_5.sqlite` before designing the field.
+   Claude's enumerator sees the JSONL file URL at [ClaudeLocalUsageFetcher.swift:89](~/src/c11-worktrees/c11-23-ai-usage-monitoring/Sources/AIUsage/ClaudeLocalUsageFetcher.swift:89). Store a sanitized project/path hint on the normalized event. Codex threads may also have title/path/session columns; inspect `state_5.sqlite` before designing the field.
 
    This would unlock "cost by repo/branch/workspace" and make c11's own workspaces the natural unit of spend.
 

@@ -17,5 +17,9 @@ final class C11LogicTestsBundleBootstrap: NSObject {
     override init() {
         super.init()
         _ = TerminalNotificationStore.shared
+        // C11H-377: a linked machine's show URL is judged by what its name
+        // resolves to. Logic tests never touch real DNS: every name answers a
+        // documentation address unless a test sets its own lookup.
+        ShowHostResolver.lookup = { _ in ["203.0.113.10"] }
     }
 }

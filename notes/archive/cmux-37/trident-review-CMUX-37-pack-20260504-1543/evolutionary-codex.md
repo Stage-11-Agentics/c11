@@ -50,7 +50,7 @@ Another strong next step is a **workspace diff primitive**. Because `WorkspacePl
 
 ```yaml
 vars:
-  repo: ~/Projects/Stage11/code/c11
+  repo: ~/src/c11
   lattice: http://localhost:8799/
 ```
 

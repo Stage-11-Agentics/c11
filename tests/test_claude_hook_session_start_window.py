@@ -82,7 +82,9 @@ def main():
         env.update(CFFIXED_USER_HOME=str(root), HOME=str(root), CMUX_BUNDLE_ID=bundle,
                    CMUX_SURFACE_ID=panel, CMUX_WORKSPACE_ID=workspace, CMUX_CLAUDE_PID='12345',
                    C11_AGENT_INTERACTIVE_PID='12345',
-                   CMUX_CLAUDE_HOOK_STATE_PATH=str(root / 'hook-sessions.json'))
+                   CMUX_CLAUDE_HOOK_STATE_PATH=str(root / 'hook-sessions.json'),
+                   # The wrapper passed the launch note, so the hook adds no context of its own.
+                   C11_AGENT_NOTE_SENT='1')
         spool = root / 'Library/Application Support/c11/journal' / bundle / 'spool'
 
         def hook(subcommand):
@@ -102,7 +104,7 @@ def main():
             assert 'agent.event.append' in seen, f'journal event never sent: {seen}'
             assert 'set_agent_pid' in seen, f'agent PID never sent: {seen}'
             assert not list(spool.glob('*.ready')), 'SessionStart was spooled'
-            assert 'additionalContext' in result.stdout
+            assert 'additionalContext' not in result.stdout, result.stdout
             print(f'PASS session-start survives a {STALL_SECONDS} s stall ({elapsed:.2f} s)')
 
             result, elapsed = hook('prompt-submit')

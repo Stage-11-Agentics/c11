@@ -9,6 +9,7 @@ import socket_guard
 socket_guard.install()
 import os
 from pathlib import Path
+import select
 import shutil
 import signal
 import socket
@@ -22,12 +23,44 @@ ROOT = Path(__file__).resolve().parents[1]
 INTEGRATION_ROOT = Path(os.environ.get(
     "C11_SHELL_INTEGRATION_ROOT", str(ROOT / "Resources" / "shell-integration")))
 SHELLS = ("bash", "zsh")
+# macOS users' default bash is 3.2 at /bin/bash; cover it whenever PATH's bash is another.
+if os.path.exists("/bin/bash") and os.path.realpath(shutil.which("bash") or "") != "/bin/bash":
+    SHELLS += ("/bin/bash",)
+BASHES = tuple(shell for shell in SHELLS if shell != "zsh")
+# production: the shipped defaults (zsh zselect + sysparams[ppid]; bash FIFO
+# tick, kill -0, start-time identity every 30th tick). fallback: the ps
+# start-time identity on every tick, so the identity shim below acts at once.
+MODES = ("production", "fallback")
 
 
 def alive(pid):
     result = subprocess.run(["/bin/ps", "-o", "stat=", "-p", str(pid)],
                             capture_output=True, text=True, check=False)
     return bool(result.stdout.strip()) and not result.stdout.strip().startswith("Z")
+
+
+def proc_events(pid, seconds):
+    """Fork and exec notifications of one live process for `seconds` (kqueue, no root).
+
+    kqueue folds forks that land before a read into one notification, so a count is a
+    lower bound on forks; zero notifications means no fork and no exec.
+    """
+    kq = select.kqueue()
+    try:
+        kq.control([select.kevent(
+            pid, filter=select.KQ_FILTER_PROC, flags=select.KQ_EV_ADD | select.KQ_EV_CLEAR,
+            fflags=select.KQ_NOTE_FORK | select.KQ_NOTE_EXEC | select.KQ_NOTE_EXIT)], 0, 0)
+        forks = execs = 0
+        deadline = time.monotonic() + seconds
+        while (remaining := deadline - time.monotonic()) > 0:
+            for event in kq.control(None, 16, remaining):
+                forks += bool(event.fflags & select.KQ_NOTE_FORK)
+                execs += bool(event.fflags & select.KQ_NOTE_EXEC)
+                if event.fflags & select.KQ_NOTE_EXIT:
+                    return forks, execs, True
+        return forks, execs, False
+    finally:
+        kq.close()
 
 
 def eventually(predicate, timeout=3):
@@ -41,7 +74,8 @@ def eventually(predicate, timeout=3):
 
 class ShellFixture:
     """Own every process started by a case, including disowned shell helpers."""
-    def __init__(self, shell, body):
+    def __init__(self, shell, body, mode="fallback", pre_source=":"):
+        assert mode in MODES
         self.temp = tempfile.TemporaryDirectory(prefix="c11-shell-watch-")
         self.path = Path(self.temp.name)
         self.socket = socket.socket(socket.AF_UNIX)
@@ -59,7 +93,7 @@ case_dir="$1"
 integration="$2"
 export CMUX_SOCKET_PATH="$case_dir/listener.sock" CMUX_TAB_ID=fixture-tab CMUX_PANEL_ID=fixture-panel
 unset CMUX_RESTORE_SCROLLBACK_FILE GHOSTTY_BIN_DIR
-if [[ -n "${ZSH_VERSION:-}" ]]; then zmodload zsh/datetime; fi
+PRE_SOURCE
 source "$integration"
 if [[ -n "${ZSH_VERSION:-}" ]]; then
     # Invoke the production functions explicitly; script commands are not prompts.
@@ -68,6 +102,10 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
     zshexit_functions=()
     _cmux_stop_git_head_watch
     _cmux_stop_pr_poll_loop
+fi
+if [[ "$3" == fallback ]]; then
+    _CMUX_PARENT_IDENTITY_TICKS=1
+    if [[ -n "${ZSH_VERSION:-}" ]]; then _CMUX_WATCH_NATIVE=0; fi
 fi
 ps() {
     if [[ "$1" == "-o" && "$2" == "lstart=" ]]; then
@@ -100,9 +138,9 @@ wait_git_job() {
 }
 '''
         script = self.path / "driver.sh"
-        script.write_text(header + body + "\n")
+        script.write_text(header.replace("PRE_SOURCE", pre_source, 1) + body + "\n")
         args = [shutil.which(shell)] + (["-f"] if shell == "zsh" else ["--noprofile", "--norc"])
-        args += [str(script), str(self.path), str(integration)]
+        args += [str(script), str(self.path), str(integration), mode]
         self.output = open(self.path / "output", "w+")
         env = os.environ.copy()
         for key in tuple(env):
@@ -164,8 +202,8 @@ wait_git_job() {
 
 
 class ShellGitWatcherTests(unittest.TestCase):
-    def fixture(self, shell, body):
-        item = ShellFixture(shell, body)
+    def fixture(self, shell, body, mode="fallback", pre_source=":"):
+        item = ShellFixture(shell, body, mode, pre_source)
         self.addCleanup(item.close)
         return item
 
@@ -388,8 +426,8 @@ printf '%s\n' "$?" > "$case_dir/result"
                     self.assertFalse(alive(probe) or alive(leaf), "probe return must follow descendant cleanup")
 
     def test_quick_probe_success_with_live_parent_is_preserved(self):
-        for shell in SHELLS:
-            with self.subTest(shell=shell):
+        for shell, mode in ((shell, mode) for shell in SHELLS for mode in MODES):
+            with self.subTest(shell=shell, mode=mode):
                 item = self.fixture(shell, r'''
 _cmux_report_pr_for_path() {
     /bin/sh -c 'printf "%s\n" "$PPID"' > "$case_dir/probe.pid"
@@ -398,15 +436,15 @@ _cmux_report_pr_for_path() {
 }
 parent_start="$(_cmux_parent_shell_lstart "$$")"
 _cmux_run_pr_probe_with_timeout "$PWD" "$$" "$parent_start" || exit 10
-''')
+''', mode)
                 item.wait_exit()
                 self.assertIn("successful-probe", item.read("output"))
                 probe = int(item.await_file("probe.pid"))
                 self.assertFalse(alive(probe), "successful probe must be gone before fixture cleanup")
 
     def test_probe_exit_two_is_transient_and_watcher_recovers(self):
-        for shell in SHELLS:
-            with self.subTest(shell=shell):
+        for shell, mode in ((shell, mode) for shell in SHELLS for mode in MODES):
+            with self.subTest(shell=shell, mode=mode):
                 item = self.fixture(shell, r'''
 _CMUX_PR_POLL_INTERVAL=1
 _cmux_report_pr_for_path() {
@@ -420,7 +458,7 @@ _cmux_start_pr_poll_loop "$PWD" 1
 printf '%s\n' "$_CMUX_PR_POLL_PID" > "$case_dir/watch.pid"
 wait_release
 _cmux_stop_pr_poll_loop
-''')
+''', mode)
                 watcher = int(item.await_file("watch.pid"))
                 item.await_file("failed-probe")
                 item.await_file("recovered", timeout=4)
@@ -428,8 +466,8 @@ _cmux_stop_pr_poll_loop
                 item.finish()
 
     def test_real_git_checkout_and_commit_succeed_while_reporting(self):
-        for shell in SHELLS:
-            with self.subTest(shell=shell):
+        for shell, mode in ((shell, mode) for shell in SHELLS for mode in MODES):
+            with self.subTest(shell=shell, mode=mode):
                 # Driver waits for repository provisioning before sourcing/reporting.
                 item = self.fixture(shell, r'''
 while [[ ! -f "$case_dir/repo-ready" ]]; do sleep 0.05; done
@@ -450,7 +488,7 @@ printf '%s\n' "$!" > "$case_dir/reporter.pid"
 wait_release
 if [[ -n "${ZSH_VERSION:-}" ]]; then _cmux_stop_git_head_watch; fi
 wait 2>/dev/null || true
-''')
+''', mode)
                 repo = item.path / "repo"
                 repo.mkdir()
                 def git(*args):
@@ -479,6 +517,11 @@ wait 2>/dev/null || true
                 item.finish()
 
     def test_zsh_head_signature_change_reports_new_branch_without_prompt(self):
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                self.zsh_head_signature_change_reports_new_branch(mode)
+
+    def zsh_head_signature_change_reports_new_branch(self, mode):
         item = self.fixture("zsh", r'''
 mkdir -p "$case_dir/repo/.git"
 printf 'ref: refs/heads/fixture-main\n' > "$case_dir/repo/.git/HEAD"
@@ -488,7 +531,7 @@ _cmux_start_git_head_watch
 printf '%s\n' "$_CMUX_GIT_HEAD_WATCH_PID" > "$case_dir/watch.pid"
 wait_release
 _cmux_stop_git_head_watch
-''')
+''', mode)
         item.await_file("watch.pid")
         (item.path / "branch").write_text("fixture-next\n")
         (item.path / "repo/.git/HEAD").write_text("ref: refs/heads/fixture-next\n")
@@ -497,11 +540,131 @@ _cmux_stop_git_head_watch
         self.assertNotIn("--status", item.read("send.log"))
         item.finish()
 
+    def test_idle_watchers_tick_without_forking(self):
+        # C11H-347: a watcher lives as long as its panel, so a tick that forks
+        # (sleep 1, $(ps -o lstart=), a HEAD-reading subshell) multiplies by
+        # every panel. Watch the real watcher process: no fork, no exec.
+        # A user's err_exit, err_return or `set -e` reaches the watcher too, and a
+        # timed-out wait is a nonzero status: the watcher must survive it.
+        cases = [("zsh", "head"), ("zsh", "pr")] + [(shell, "pr") for shell in BASHES]
+        for (shell, kind), strict in ((case, strict) for case in cases for strict in (False, True)):
+            with self.subTest(shell=shell, kind=kind, strict=strict):
+                strict_on, strict_off = (
+                    ("setopt err_exit err_return", "unsetopt err_exit err_return") if shell == "zsh"
+                    else ("set -e", "set +e")) if strict else (":", ":")
+                body = r'''
+mkdir -p "$case_dir/repo/.git"
+printf 'ref: refs/heads/main\n' > "$case_dir/repo/.git/HEAD"
+cd "$case_dir/repo" || exit 10
+_CMUX_PR_POLL_INTERVAL=45
+_cmux_report_pr_for_path() { printf 'probe\n' >> "$case_dir/probes"; }
+''' + strict_on + (r'''
+_cmux_start_pr_poll_loop "$PWD" 1
+printf '%s\n' "$_CMUX_PR_POLL_PID" > "$case_dir/watch.pid"
+''' if kind == "pr" else r'''
+_cmux_start_git_head_watch
+printf '%s\n' "$_CMUX_GIT_HEAD_WATCH_PID" > "$case_dir/watch.pid"
+''') + strict_off + "\nwait_release\n"
+                item = self.fixture(shell, body, "production")
+                pid = int(item.await_file("watch.pid"))
+                if kind == "pr":
+                    item.await_file("probes")
+                    time.sleep(1.5)  # The probe's own subshell is reaped on the next tick.
+                forks, execs, exited = proc_events(pid, 3.5)
+                self.assertFalse(exited, "watcher must keep running while its shell lives")
+                self.assertEqual((forks, execs), (0, 0), "an idle watcher tick forked or exec'd")
+                item.finish()
+
+    def test_zsh_without_its_modules_sources_under_err_exit_and_keeps_bounded_waits(self):
+        # A zsh whose modules cannot load (module_path emptied, as in a custom
+        # install) with err_exit already on: sourcing must not end the shell, the
+        # watcher falls back to `sleep 1` and the ps identity, and the probe
+        # timeout still counts (with $SECONDS) instead of waiting forever.
+        pre = "zmodload zsh/parameter; module_path=(); setopt err_exit"
+        item = self.fixture("zsh", r'''
+print -r -- "native=$_CMUX_WATCH_NATIVE" > "$case_dir/continued"
+mkdir -p "$case_dir/repo/.git"
+printf 'ref: refs/heads/main\n' > "$case_dir/repo/.git/HEAD"
+cd "$case_dir/repo" || exit 10
+_CMUX_PR_POLL_INTERVAL=1
+_cmux_report_pr_for_path() { printf 'probe\n' >> "$case_dir/probes"; }
+_cmux_start_pr_poll_loop "$PWD" 1
+printf '%s\n' "$_CMUX_PR_POLL_PID" > "$case_dir/watch.pid"
+wait_release
+''', "production", pre)
+        self.assertEqual(item.await_file("continued").strip(), "native=0")
+        pid = int(item.await_file("watch.pid"))
+        self.assertTrue(eventually(lambda: len(item.read("probes").splitlines()) >= 2, timeout=8),
+                        "fallback waits must stay bounded: the poll loop kept probing")
+        self.assertTrue(alive(pid))
+        item.finish()
+
+        item = self.fixture("zsh", self.blocked_probe() + r'''
+_CMUX_ASYNC_JOB_TIMEOUT=1
+parent_start="$(_cmux_parent_shell_lstart "$$")"
+result=0
+_cmux_run_pr_probe_with_timeout "$PWD" "$$" "$parent_start" || result=$?
+printf '%s\n' "$result" > "$case_dir/result"
+''', "production", pre)
+        probe = int(item.await_file("probe.pid"))
+        self.assertEqual(int(item.await_file("result", timeout=6)), 1, "a wedged probe must time out without zsh/datetime")
+        item.wait_exit()
+        self.assertFalse(alive(probe))
+
+    def test_bash_without_a_tick_fifo_falls_back_to_bounded_sleeps(self):
+        # TMPDIR names a missing directory, so no FIFO: each tick is `sleep 1`.
+        for shell in BASHES:
+            with self.subTest(shell=shell):
+                item = self.fixture(shell, r'''
+mkdir -p "$case_dir/repo/.git"
+printf 'ref: refs/heads/main\n' > "$case_dir/repo/.git/HEAD"
+cd "$case_dir/repo" || exit 10
+export TMPDIR="$case_dir/missing"
+_CMUX_PR_POLL_INTERVAL=45
+_cmux_report_pr_for_path() { printf 'probe\n' >> "$case_dir/probes"; }
+_cmux_start_pr_poll_loop "$PWD" 1
+printf '%s\n' "$_CMUX_PR_POLL_PID" > "$case_dir/watch.pid"
+wait_release
+''', "production")
+                pid = int(item.await_file("watch.pid"))
+                item.await_file("probes")
+                time.sleep(1.5)
+                forks, _, exited = proc_events(pid, 3.5)
+                self.assertFalse(exited, "the watcher must keep running without its FIFO")
+                self.assertTrue(1 <= forks <= 6, f"expected about one `sleep 1` a second, saw {forks}")
+                item.finish()
+
+    def test_bash_counted_identity_check_still_catches_a_reused_pid(self):
+        # Production bash checks the start-time identity only every Nth tick; a
+        # changed identity must still end the watcher once the count comes round.
+        for shell in BASHES:
+            with self.subTest(shell=shell):
+                item = self.fixture(shell, r'''
+mkdir -p "$case_dir/repo/.git"
+printf 'ref: refs/heads/main\n' > "$case_dir/repo/.git/HEAD"
+cd "$case_dir/repo" || exit 10
+_CMUX_PARENT_IDENTITY_TICKS=3
+_CMUX_PR_POLL_INTERVAL=45
+_cmux_report_pr_for_path() { printf 'probe\n' >> "$case_dir/probes"; }
+_cmux_start_pr_poll_loop "$PWD" 1
+printf '%s\n' "$_CMUX_PR_POLL_PID" > "$case_dir/watch.pid"
+wait_release
+''', "production")
+                pid = int(item.await_file("watch.pid"))
+                item.await_file("probes")
+                time.sleep(3.5)
+                self.assertTrue(alive(pid), "same identity across a counted check must keep the watcher")
+                (item.path / "identity").write_text("replacement-start\n")
+                self.assertTrue(eventually(lambda: not alive(pid), timeout=5),
+                                "a reused pid outlived the counted identity check")
+                self.assertIsNone(item.driver.poll())
+                item.finish()
+
     def test_real_parent_sigkill_stops_watchers_without_exit_hooks(self):
-        for shell in SHELLS:
+        for shell, mode in ((shell, mode) for shell in SHELLS for mode in MODES):
             kinds = ("pr", "head") if shell == "zsh" else ("pr",)
             for kind in kinds:
-                with self.subTest(shell=shell, kind=kind):
+                with self.subTest(shell=shell, kind=kind, mode=mode):
                     body = r'''
 unset -f ps
 mkdir -p "$case_dir/repo/.git"
@@ -519,7 +682,7 @@ printf '%s\n' "$_CMUX_PR_POLL_PID" > "$case_dir/watch.pid"
 _cmux_start_git_head_watch
 printf '%s\n' "$_CMUX_GIT_HEAD_WATCH_PID" > "$case_dir/watch.pid"
 '''
-                    item = self.fixture(shell, body + "wait_release\n")
+                    item = self.fixture(shell, body + "wait_release\n", mode)
                     targets = [int(item.await_file("watch.pid"))]
                     if kind == "pr":
                         targets += [int(item.await_file(name)) for name in ("probe.pid", "leaf.pid")]

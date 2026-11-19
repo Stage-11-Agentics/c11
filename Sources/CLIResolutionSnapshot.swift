@@ -437,7 +437,7 @@ extension CLIResolutionSnapshot {
             } else {
                 status = .mismatch
                 notes.append(
-                    "`c11` on PATH (\(c11Resolved)) is not the active bundle's CLI (\(bundled))."
+                    "`c11` on PATH (\(c11Resolved)) is not the active bundle's CLI (\(bundled)). Run $C11_BUNDLED_CLI_PATH, or put its folder first on PATH."
                 )
             }
         } else {

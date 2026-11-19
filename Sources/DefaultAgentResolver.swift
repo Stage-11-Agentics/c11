@@ -519,6 +519,9 @@ struct AgentLaunchRequest: Equatable {
     /// the equivalent merge via `mergeOverlay`; this is its planner-path twin so
     /// `config launch` stays a thin client over `AgentLaunchPlanner`.
     var commandOverride: String? = nil
+    /// One line the agent's first message leads with, before the pointer to
+    /// the staged prompt file (`prompt_headline`). Ignored without a prompt.
+    var promptHeadline: String? = nil
 }
 
 /// Structured planning failures — each maps 1:1 onto a wire error code so the
@@ -709,13 +712,14 @@ enum AgentLaunchPlanner {
         }
 
         // The body never travels through the shell; only this short owned-file
-        // instruction does. Preserve the template's argv/post-boot contract.
+        // instruction does, led by the caller's one-line headline when there is one. Preserve the template's argv/post-boot contract.
         if request.prompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
            promptFilePath == nil {
             return .failure(.promptFileRequired)
         }
         let delivery = LaunchPromptDelivery.compose(
-            command: line, delivery: template.promptDelivery, promptFilePath: promptFilePath
+            command: line, delivery: template.promptDelivery, promptFilePath: promptFilePath,
+            headline: request.promptHeadline
         )
         line = delivery.launchLine
         let delayedPrompt = delivery.delayedPrompt

@@ -167,7 +167,7 @@ Doctrine check: every item above is a c11-internal fix in the app, CLI or Ghostt
 | F | L | The sidebar rewrite touches `TabItemView`'s Equatable contract and every sidebar feature c11 added. It is easy to regress typing latency. |
 | G | L | The renderer reclaim must take `7b24d1c5d`, or it adds a new teardown deadlock. Re-realizing a surface must restore content, not a blank frame. |
 
-General risk: green tests do not prove any of the hang fixes. Each needs a tagged build driven under load (many streaming panes, surface churn, autosave ticks). Run that soak on Atlas, not Hyperion.
+General risk: green tests do not prove any of the hang fixes. Each needs a tagged build driven under load (many streaming panes, surface churn, autosave ticks). Run that soak on the build host, not the laptop.
 
 ## Open questions
 

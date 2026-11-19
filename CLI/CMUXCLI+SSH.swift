@@ -24,6 +24,8 @@ extension CMUXCLI {
         let extraArguments: [String]
         let localSocketPath: String
         let remoteRelayPort: Int
+        /// The master socket path c11 chose, or nil when the operator named their own ControlPath.
+        var controlSocketPath: String? = nil
     }
 
     struct RemoteDaemonManifest: Decodable {
@@ -64,7 +66,13 @@ extension CMUXCLI {
         // Use the socket path from this invocation (supports --socket overrides).
         let localSocketPath = client.socketPath
         let remoteRelayPort = generateSSHSessionID()
-        let sshOptions = try parseSSHCommandOptions(commandArgs, localSocketPath: localSocketPath, remoteRelayPort: remoteRelayPort)
+        var sshOptions = try parseSSHCommandOptions(commandArgs, localSocketPath: localSocketPath, remoteRelayPort: remoteRelayPort)
+        if !hasSSHOptionKey(sshOptions.sshOptions, key: "ControlPath") {
+            sshOptions.controlSocketPath = try sshControlSocketPath(
+                directory: try prepareSSHControlDirectory(),
+                remoteRelayPort: remoteRelayPort
+            )
+        }
         func logSSHTiming(_ stage: String, extra: String = "") {
             let elapsedMs = Int(Date().timeIntervalSince(sshStartedAt) * 1000)
             let suffix = extra.isEmpty ? "" : " \(extra)"
@@ -94,19 +102,22 @@ extension CMUXCLI {
             remoteBootstrapScript: remoteTerminalBootstrapScript
         )
         let initialSSHCommand = remoteTerminalSSHCommand
+        let controlDirectory = sshOptions.controlSocketPath.map { ($0 as NSString).deletingLastPathComponent }
         let initialSSHStartupCommand = try buildSSHStartupCommand(
             sshCommand: initialSSHCommand,
             shellFeatures: "",
-            remoteRelayPort: sshOptions.remoteRelayPort
+            remoteRelayPort: sshOptions.remoteRelayPort,
+            controlDirectory: controlDirectory
         )
         let remoteTerminalSSHStartupCommand = try buildSSHStartupCommand(
             sshCommand: remoteTerminalSSHCommand,
             shellFeatures: shellFeaturesValue,
-            remoteRelayPort: sshOptions.remoteRelayPort
+            remoteRelayPort: sshOptions.remoteRelayPort,
+            controlDirectory: controlDirectory
         )
         let remoteSSHOptions = effectiveSSHOptions(
             sshOptions.sshOptions,
-            remoteRelayPort: sshOptions.remoteRelayPort
+            controlSocketPath: sshOptions.controlSocketPath
         )
 
         cliDebugLog(
@@ -330,8 +341,8 @@ extension CMUXCLI {
         return parts.map(shellQuote).joined(separator: " ")
     }
 
-    func effectiveSSHOptions(_ options: [String], remoteRelayPort: Int? = nil) -> [String] {
-        var merged = sshOptionsWithControlSocketDefaults(options, remoteRelayPort: remoteRelayPort)
+    func effectiveSSHOptions(_ options: [String], controlSocketPath: String? = nil) -> [String] {
+        var merged = sshOptionsWithControlSocketDefaults(options, controlSocketPath: controlSocketPath)
         if !hasSSHOptionKey(merged, key: "StrictHostKeyChecking") {
             merged.append("StrictHostKeyChecking=accept-new")
         }
@@ -529,7 +540,7 @@ extension CMUXCLI {
     func baseSSHArguments(_ options: SSHCommandOptions) -> [String] {
         let effectiveSSHOptions = effectiveSSHOptions(
             options.sshOptions,
-            remoteRelayPort: options.remoteRelayPort
+            controlSocketPath: options.controlSocketPath
         )
         var parts: [String] = ["ssh"]
         if !hasSSHOptionKey(effectiveSSHOptions, key: "SetEnv") {
@@ -562,7 +573,7 @@ extension CMUXCLI {
 
     func sshOptionsWithControlSocketDefaults(
         _ options: [String],
-        remoteRelayPort: Int? = nil
+        controlSocketPath: String? = nil
     ) -> [String] {
         var merged: [String] = []
         for option in options {
@@ -576,8 +587,8 @@ extension CMUXCLI {
         if !hasSSHOptionKey(merged, key: "ControlPersist") {
             merged.append("ControlPersist=600")
         }
-        if !hasSSHOptionKey(merged, key: "ControlPath") {
-            merged.append("ControlPath=\(defaultSSHControlPathTemplate(remoteRelayPort: remoteRelayPort))")
+        if !hasSSHOptionKey(merged, key: "ControlPath"), let controlSocketPath {
+            merged.append("ControlPath=\(controlSocketPath)")
         }
         return merged
     }
@@ -626,7 +637,8 @@ extension CMUXCLI {
     func buildSSHStartupCommand(
         sshCommand: String,
         shellFeatures: String,
-        remoteRelayPort: Int
+        remoteRelayPort: Int,
+        controlDirectory: String? = nil
     ) throws -> String {
         let trimmedFeatures = shellFeatures.trimmingCharacters(in: .whitespacesAndNewlines)
         let shellFeaturesBootstrap: String = trimmedFeatures.isEmpty
@@ -642,6 +654,22 @@ extension CMUXCLI {
             "cmux_ssh_session_end() { if [ \"${CMUX_SSH_SESSION_ENDED:-0}\" = 1 ]; then return; fi; CMUX_SSH_SESSION_ENDED=1; \(lifecycleCleanup); }",
             "trap 'cmux_ssh_session_end' EXIT HUP INT TERM",
         ]
+        if let controlDirectory {
+            // The per-user temp folder can be cleaned under a long-lived workspace; recreate the
+            // master's folder owner-only before ssh binds there, and refuse a folder that is not ours.
+            let refusal = String(
+                format: String(
+                    localized: "cli.ssh.controlFolder.startupRefused",
+                    defaultValue: "c11 ssh: the control socket folder %@ is not a private folder you own; remove it and try again"
+                ),
+                controlDirectory
+            )
+            scriptLines += [
+                "cmux_ssh_control_dir=\(shellQuote(controlDirectory))",
+                "(umask 077; mkdir -p \"$cmux_ssh_control_dir\") >/dev/null 2>&1",
+                "if [ -L \"$cmux_ssh_control_dir\" ] || [ ! -d \"$cmux_ssh_control_dir\" ] || [ ! -O \"$cmux_ssh_control_dir\" ] || [ \"$(/usr/bin/stat -f %Lp \"$cmux_ssh_control_dir\" 2>/dev/null)\" != 700 ]; then printf '%s\\n' \(shellQuote(refusal)) >&2; exit 1; fi",
+            ]
+        }
         scriptLines.append("command \(sshCommand)")
         scriptLines += [
             "cmux_ssh_status=$?",
@@ -861,7 +889,7 @@ extension CMUXCLI {
                 .appendingPathComponent("c11d-remote", isDirectory: false)
         }
         return root
-            .appendingPathComponent("c11", isDirectory: true)
+            .appendingPathComponent(C11Identity.stateDirectoryName, isDirectory: true)
             .appendingPathComponent("remote-daemons", isDirectory: true)
             .appendingPathComponent(version, isDirectory: true)
             .appendingPathComponent("\(goOS)-\(goArch)", isDirectory: true)
@@ -887,11 +915,66 @@ extension CMUXCLI {
         return false
     }
 
-    func defaultSSHControlPathTemplate(remoteRelayPort: Int? = nil) -> String {
-        if let remoteRelayPort, remoteRelayPort > 0 {
-            return "/tmp/cmux-ssh-\(getuid())-\(remoteRelayPort)-%C"
+    /// The folder for c11 ssh master sockets: `c11-ssh` inside the per-user temporary folder
+    /// (`/var/folders/.../T`, which the system creates owner-only and which ignores TMPDIR).
+    /// A shared folder such as /tmp would let another local account plant a socket at the path.
+    func prepareSSHControlDirectory() throws -> String {
+        var base = FileManager.default.temporaryDirectory.path
+#if DEBUG
+        // tests/test_cli_ssh_shell_bootstrap.py points the folder at a scratch base so it can
+        // plant hostile folders. Release builds always use the per-user temporary folder.
+        if let testBase = ProcessInfo.processInfo.environment["C11_SSH_CONTROL_DIR_TEST_BASE"], !testBase.isEmpty {
+            base = testBase
         }
-        return "/tmp/cmux-ssh-\(getuid())-%C"
+#endif
+        let directory = (base as NSString).appendingPathComponent("c11-ssh")
+        if mkdir(directory, 0o700) == 0 {
+            _ = chmod(directory, 0o700)
+        } else if errno != EEXIST {
+            let reason = String(cString: strerror(errno))
+            throw CLIError(message: String(
+                format: String(
+                    localized: "cli.ssh.controlFolder.createFailed",
+                    defaultValue: "ssh: cannot create the control socket folder %1$@: %2$@"
+                ),
+                directory,
+                reason
+            ))
+        }
+        var info = stat()
+        guard lstat(directory, &info) == 0,
+              (info.st_mode & S_IFMT) == S_IFDIR,
+              info.st_uid == getuid(),
+              (info.st_mode & 0o077) == 0 else {
+            throw CLIError(message: String(
+                format: String(
+                    localized: "cli.ssh.controlFolder.notPrivate",
+                    defaultValue: "ssh: the control socket folder %@ is not a private folder you own; remove it, or pass --ssh-option ControlPath=<path>"
+                ),
+                directory
+            ))
+        }
+        return directory
+    }
+
+    /// One master socket per `c11 ssh` run: the relay port plus a random token, so two runs that
+    /// draw the same relay port never share a master. `%C` (40 bytes) does not fit here: OpenSSH
+    /// binds at "<path>.<16 random>" before renaming, and sun_path holds 103 bytes.
+    func sshControlSocketPath(directory: String, remoteRelayPort: Int) throws -> String {
+        let alphabet = Array("abcdefghijklmnopqrstuvwxyz0123456789")
+        let token = String((0..<10).map { _ in alphabet[Int.random(in: 0..<alphabet.count)] })
+        let path = (directory as NSString).appendingPathComponent("\(max(remoteRelayPort, 0))-\(token)")
+        let opensshBindSuffixBytes = 17
+        guard path.utf8.count + opensshBindSuffixBytes < 104 else {
+            throw CLIError(message: String(
+                format: String(
+                    localized: "cli.ssh.controlPath.tooLong",
+                    defaultValue: "ssh: the control socket path %@ is too long for a Unix socket; pass --ssh-option ControlPath=<shorter path>"
+                ),
+                path
+            ))
+        }
+        return path
     }
 
     func normalizedSSHIdentityPath(_ rawPath: String?) -> String? {
@@ -937,27 +1020,16 @@ extension CMUXCLI {
             if let trimmedExplicit, !trimmedExplicit.isEmpty {
                 return trimmedExplicit
             }
-            guard let marker = try? String(contentsOfFile: "/tmp/cmux-last-debug-log-path", encoding: .utf8) else {
-                return nil
-            }
-            let trimmedMarker = marker.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmedMarker.isEmpty ? nil : trimmedMarker
+            // The dev scripts' breadcrumb, read only when it is our own file
+            // (C11H-364 L21).
+            let marker = C11UserRuntime.directoryPath() + "/" + C11UserRuntime.lastDebugLogPathFileName
+            return C11UserRuntime.readBreadcrumb(at: marker)
         }()
         guard let path else { return }
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let line = "\(timestamp) [cmux-cli] \(message())\n"
         guard let data = line.data(using: .utf8) else { return }
-        if !FileManager.default.fileExists(atPath: path) {
-            FileManager.default.createFile(atPath: path, contents: nil)
-        }
-        guard let handle = FileHandle(forWritingAtPath: path) else { return }
-        defer { try? handle.close() }
-        do {
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data)
-        } catch {
-            return
-        }
+        C11UserRuntime.appendLog(data, to: path)
 #endif
     }
 

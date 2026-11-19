@@ -90,6 +90,20 @@ extension CMUXCLI {
         return id
     }
 
+    /// C11H-342: a root item for a move's --before/--after: a group
+    /// (`workspace_group:N`) or a workspace (`workspace:N`, an index, or a UUID).
+    func normalizeWorkspaceRootHandle(_ raw: String, window: String, client: SocketClient) throws -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("workspace_group:") {
+            return try normalizeWorkspaceGroupHandle(value, window: window, client: client)
+        }
+        guard let id = try normalizeWorkspaceHandle(value, client: client, windowHandle: window) else {
+            throw CLIError(message: String(localized: "cli.workspaceGroup.error.invalidRootHandle",
+                defaultValue: "Invalid placement handle: \(value) (expected workspace_group:N, workspace:N or a UUID)"))
+        }
+        return id
+    }
+
     func workspaceGroupWorkspaceIDs(_ raw: String, window: String, client: SocketClient) throws -> [String] {
         let values = raw.split(separator: ",", omittingEmptySubsequences: false)
         return try values.map { value in
@@ -177,10 +191,11 @@ extension CMUXCLI {
             }
             for key in ["before", "after"] {
                 if let raw = options.values["--\(key)"] {
-                    if memberMove {
+                    if memberMove && !(params["to_group_id"] is NSNull) {
                         params["\(key)_id"] = try normalizeWorkspaceHandle(raw, client: client, windowHandle: window)
                     } else {
-                        params["\(key)_id"] = try normalizeWorkspaceGroupHandle(raw, window: window, client: client)
+                        // A group move, or a workspace move to the root: a group or an ungrouped workspace.
+                        params["\(key)_id"] = try normalizeWorkspaceRootHandle(raw, window: window, client: client)
                     }
                 }
             }
@@ -200,6 +215,11 @@ extension CMUXCLI {
             }
             for group in groups {
                 print("\(textHandle(group, idFormat: idFormat)) \(group["name"] as? String ?? "") members=\(group["member_count"] ?? 0)\((group["is_pinned"] as? Bool) == true ? " [pinned]" : "")\((group["is_collapsed"] as? Bool) == true ? " [collapsed]" : "")")
+            }
+            // C11H-342: the sidebar's root order, groups and ungrouped workspaces together.
+            let root = payload["root_order"] as? [[String: Any]] ?? []
+            if !groups.isEmpty, !root.isEmpty {
+                print("order=" + root.map { textHandle($0, idFormat: idFormat) }.joined(separator: ","))
             }
         } else {
             let group = payload["group"] as? [String: Any]

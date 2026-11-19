@@ -8,7 +8,7 @@ Investigate what happened during the overnight Lattice multi-delegation run that
 
 The output is a markdown report at:
 
-`/Users/atin/Projects/Stage11/code/c11/notes/overnight-retrospective-2026-05-06.md`
+`~/src/c11/notes/overnight-retrospective-2026-05-06.md`
 
 It should answer three questions, in this order, with specific evidence:
 
@@ -20,16 +20,16 @@ It should answer three questions, in this order, with specific evidence:
 
 In rough priority order:
 
-1. **`/Users/atin/Projects/Stage11/code/c11/notes/overnight-orchestration-plan-2026-05-06.md`** — the runbook. Read in full. This is the contract that was executed. Note especially the operator-confirmed policies and the resume checklist.
-2. **`/Users/atin/Projects/Stage11/code/c11/notes/overnight-meta/state.json`** — orchestrator's persistent state. Tells you the live status of each delegation as of last polling tick.
-3. **`/Users/atin/Projects/Stage11/code/c11/notes/overnight-meta/digest.md`** — heartbeat trail. The chronological story of the run, written by the meta-orchestrator. This is your timeline.
-4. **`/Users/atin/Projects/Stage11/code/c11/notes/c11-1-recommendation-2026-05-06.md`** — the C11-1 research deliverable that landed in 5:37. Worth a read for context on what the research path looks like.
+1. **`~/src/c11/notes/overnight-orchestration-plan-2026-05-06.md`** — the runbook. Read in full. This is the contract that was executed. Note especially the operator-confirmed policies and the resume checklist.
+2. **`~/src/c11/notes/overnight-meta/state.json`** — orchestrator's persistent state. Tells you the live status of each delegation as of last polling tick.
+3. **`~/src/c11/notes/overnight-meta/digest.md`** — heartbeat trail. The chronological story of the run, written by the meta-orchestrator. This is your timeline.
+4. **`~/src/c11/notes/c11-1-recommendation-2026-05-06.md`** — the C11-1 research deliverable that landed in 5:37. Worth a read for context on what the research path looks like.
 5. **The four delegator prompts in their worktrees:**
    - `c11-worktrees/c11-17-overnight-installer-purge/.lattice/prompts/c11-17-delegator.md`
    - `c11-worktrees/c11-30-overnight-close-overlay/.lattice/prompts/c11-30-delegator.md`
    - `c11-worktrees/c11-24-overnight-manifest-viewer/.lattice/prompts/c11-24-delegator.md`
    - `c11-worktrees/c11-16-overnight-fda-detect/.lattice/prompts/c11-16-delegator.md`
-6. **The lattice-delegate skill** at `/Users/atin/Projects/Stage11/.claude/skills/lattice-delegate/SKILL.md` — the pattern that was implemented. Compare its claims against what actually happened.
+6. **The lattice-delegate skill** at `~/src/.claude/skills/lattice-delegate/SKILL.md` — the pattern that was implemented. Compare its claims against what actually happened.
 7. **Validation artifacts on disk:**
    - `/tmp/c11-16-validate/` — Codex computer-use screenshots from C11-16
    - `c11-worktrees/c11-30-overnight-close-overlay/.lattice/artifacts/c11-30-validation/` — Codex screenshots from C11-30

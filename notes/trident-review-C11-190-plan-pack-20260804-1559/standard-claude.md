@@ -3,7 +3,7 @@
 - PLAN_ID: `c11-190-plan`
 - MODEL: Claude
 - Reviewed: 2026-08-04
-- Plan file: `/Users/atin/Projects/Stage11/code/c11/.lattice/plans/task_01KZ6YXZRV8SH2V7FJJKPM7QCJ.md`
+- Plan file: `~/src/c11/.lattice/plans/task_01KZ6YXZRV8SH2V7FJJKPM7QCJ.md`
 - Context read: audit comment `ev_01KZ7351DG3WBXE5N4CDAA2HEF`, merged PR #401 (`42ce4c919`), `code/platform/sentry.md`, `Sources/SentryHelper.swift`, `Sources/AppDelegate.swift`, `Sources/MainThreadHangMonitor.swift`, `CLI/c11.swift`, git refs.
 
 ---
@@ -148,7 +148,7 @@ None of these are reasons to reopen #401 as a whole. They are reasons the "under
 ## Alternatives Considered
 
 **A. One-time verification (plan's choice) vs. a standing quota alarm.**
-The plan verifies once. The alternative installs a signal: Sentry's org-level quota and spend notification emails to `projects@stage11.ai`, and/or a scheduled `stats_v2` read that fails loudly on `rate_limited > 0`. Cost differential is small; the alarm strictly dominates, because the incident's defining property was the absence of one. The alarm does not replace the one-time check, it replaces the *need to remember* the one-time check. **Alternative is better. Adopt both.**
+The plan verifies once. The alternative installs a signal: Sentry's org-level quota and spend notification emails to the project's shared mailbox, and/or a scheduled `stats_v2` read that fails loudly on `rate_limited > 0`. Cost differential is small; the alarm strictly dominates, because the incident's defining property was the absence of one. The alarm does not replace the one-time check, it replaces the *need to remember* the one-time check. **Alternative is better. Adopt both.**
 
 **B. Per-process sliding-window budget (#401's choice) vs. per-fingerprint dedupe plus a global cap.**
 #401 spends its 20/hour first-come-first-served, so a chatty non-hang warning class can crowd out a rarer, more interesting error inside the same hour. Hangs are protected against this by their sub-cap; nothing else is. The alternative, which is what acetate does via `DedupeIntegration`, is to budget by fingerprint: allow the first N occurrences of each distinct issue per window, then cap globally. That spends quota on *distinct* issues, which is what quota is actually for, and it matches the observation driving the whole fix (Sentry groups repeats into one issue anyway, so repeats buy nothing). #401's choice is simpler and was the right first move under time pressure; per-fingerprint is the better steady state. **Worth a follow-up, not a blocker.** It also makes AC3's "every distinct issue still represented" claim structurally true rather than probabilistically true.
@@ -187,7 +187,7 @@ What flips it to **Ready to execute**:
 2. **Does this ticket stay open until the fix ships and is measured, or does it close on the org-position check with a new ticket tracking post-ship verification?** I would prefer the latter, since the current ticket would otherwise sit open for weeks against an external dependency.
 3. **What is the numeric pass condition for AC3?** Proposal: over any 7-day window after the fixed build has meaningful adoption, `rate_limited == 0` for the c11 project, `accepted > 0`, and accepted events attributable to the fixed release below X per install-day. What is your X?
 4. **Do you want the verification version-filtered** (measure only the fixed release's per-install rate, answerable in days) **or fleet-total** (answerable only after adoption, weeks to months)? Given the audit's version mix, fleet-total will read as failure long after the fix is correct.
-5. **Recurrence detector: which shape?** Sentry's built-in quota/spend notification emails to `projects@stage11.ai`, a scheduled `stats_v2` check, or both? Who receives it, and what do they do when it fires?
+5. **Recurrence detector: which shape?** Sentry's built-in quota/spend notification emails to the project's shared mailbox, a scheduled `stats_v2` check, or both? Who receives it, and what do they do when it fires?
 6. **Org-wide IP and geo.** `sentry.md` says c11 is presumably storing users' IPs and cities right now, and only `acetate` was fixed. Is that in scope for C11-190, a new ticket, or an accepted risk? Note the fix needs the leaf-selector workaround and a stored-event read-back, not just the setting.
 7. **`demo-project` final disposition.** Leave the key deactivated indefinitely, or delete it? Should the Retired table carry an explicit "do not re-enable" so a future agent does not helpfully turn it back on?
 8. **Hang reporting owner.** Sentry's native app-hang tracking is still on at 8s alongside the custom watchdog at 5s, and its events bypass the hang sub-budget entirely. Should `enableAppHangTracking` be set to false so the watchdog is the single owner?

@@ -46,7 +46,7 @@ Standard orchestration layout for a single project:
 
 When the layout calls for a role agent where you already sit, launch it in a new panel beside you; don't turn your own panel into that role. Your panel keeps the conversation that built the layout, and the role agent starts cold with its own prompt.
 
-Read `c11 tree` before reshaping — splits reshape the screen and disorient every agent and operator looking at it. For multiple related outputs, prefer panels (`c11 new-panel`) over splits. Propose layouts; do not impose them.
+Read `c11 tree` before reshaping — splits reshape the screen and disorient every agent and operator looking at it. The layout above is a ceiling proposed once, up front, not grown one split at a time: once the workspace has two areas, every new panel of yours joins the area that holds its kind (`c11 new-panel --area`, `launch-agent --area`), browsers and docs in the view area, agents and shells in the terminal area. Propose layouts; do not impose them.
 
 ## Panel naming (mandatory)
 
@@ -146,7 +146,10 @@ before assuming it started.
 
 `launch-agent` returning a panel ref proves that c11 accepted the launch into a panel.
 `startup=started` additionally proves an identified foreground provider process
-was observed; `pending` means it was not proven. Neither proves the child read
+was observed; `pending` means it was not proven; `waiting_dialog` (Claude, with
+`startup_dialog`) means the process is up but stopped on a chooser such as the
+folder-trust check, whose highlighted option is `No, exit`: read the screen and
+answer it deliberately before sending work. None of them proves the child read
 the brief, landed in
 the intended cwd, resolved the intended work item, or is looking at the expected
 git head. For consequential work, the launch prompt requires one positive receipt
@@ -181,9 +184,11 @@ Use **`claude --dangerously-skip-permissions`** — never bare `claude` (stalls 
 ### Standard launch pattern
 
 ```bash
-# 1. Create the split (note the new panel ref from output)
-c11 new-split right
-# → returns panel:NNN
+# 1. Create the panel (note the new panel ref from output). new-panel --area <worker area>
+#    once the workspace has two areas; new-split right only while it has one.
+AREA=area:9   # the worker area: the workspace's existing second area, or the one split you make
+c11 new-panel --area $AREA
+# → OK panel:NNN area:MMM workspace:K
 
 # 2. Launch claude
 c11 send --workspace $WS --panel $PANEL "claude --dangerously-skip-permissions"
@@ -212,18 +217,19 @@ c11 send --workspace $WS --panel $PANEL "Your panel is named 'Lint Fixes'; your 
 
 ### Spawning multiple panels at once
 
-Loop the spawn pattern. Capture the new panel ref from each `c11 new-split` call so you can target it for the rename and send.
+Loop the spawn pattern as panels of one worker area. Capture the new panel ref from each `c11 new-panel` call so you can target it for the rename and send.
 
 ```bash
 WS=$(c11 identify | jq -r '.workspace.id')
+AREA=area:9   # the worker area: the workspace's existing second area, or one `new-split right` (the only split you make)
 for ROLE in plan impl review; do
-  PANEL=$(c11 new-split right | awk '{print $2}')
+  PANEL=$(c11 new-panel --area $AREA | awk '{print $2}')
   c11 rename-panel --workspace $WS --panel $PANEL "$ROLE"
   c11 send       --workspace $WS --panel $PANEL "claude --dangerously-skip-permissions \"<prompt>\""
 done
 ```
 
-For 5+ agents, swap `c11 new-split right` for `c11 new-panel --area <area>` so they land as panels of one area instead of unreadably narrow splits.
+Never loop `new-split`: the third right-split from the same panel leaves areas an eighth of the workspace wide, and c11 refuses any cut that would drop an agent below 80×20 cells (`pane_too_small`). Panels do not shrink.
 
 ### For complex prompts: deliver via temp file
 
@@ -423,8 +429,8 @@ When spawning sub-agents in c11, include these as first-class instructions in th
 2. **Name every panel you create in both fields, not just the title.** Title is 2–3 words, role-first, and DISTINCT from its siblings — make the first word differ (`Lint Fixes`, `Routes Impl`, `SPA Plan`). Write `c11 set-description` alongside: a one-sentence "what this area is doing right now" first, closed by a `Lineage: A → B → C` breadcrumb as the last line — description is mandatory, not an afterthought. Pass the parent title in the spawn prompt so the sub-agent can keep that breadcrumb accurate if it ever renames itself.
 3. **Report at milestones** via `c11 set-metadata`, `c11 set-status`, `c11 set-progress`, `c11 log`. Interactive `claude --dangerously-skip-permissions` inherits the auth chain, so sub-agents can self-report. **When scope shifts** (new task, different file, pivot) refresh both title and description at the pivot, not at the end — keep the description's `Lineage:` breadcrumb accurate.
 4. **Deliver complex prompts via temp files** — write to a file, tell the agent to read it. Avoids shell-escaping issues with `c11 send`.
-5. **Do not make silent splits.** For multiple related outputs, prefer panels over splits. Propose layouts when they would help; do not impose them.
-6. **Read the room before reshaping it.** `c11 tree --json` gives pixel and percent coordinates for every area — check whether a new split will fit before asking for one.
+5. **Do not make silent splits.** Panels, not areas: once the workspace has two areas, add every new panel to the area that holds its kind (`new-panel --area`, `launch-agent --area`, `browser open --area`, `markdown open --area`). Propose layouts when they would help; do not impose them.
+6. **Read the room before reshaping it.** `c11 list-areas` counts the areas; `c11 tree --json` gives pixel and percent coordinates for each. c11 refuses a split that would leave an agent under 80×20 cells or a browser under 320×240 pt (`pane_too_small`); treat a half that would land within 15% of that as too small as well, and add a panel instead.
 7. **Require a positive receipt for consequential work.** State the exact work item,
    cwd, head/base (when git-backed), mode, and return channel. Do not treat panel
    creation as proof that the child oriented successfully.

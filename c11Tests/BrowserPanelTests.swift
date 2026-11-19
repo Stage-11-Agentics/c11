@@ -159,7 +159,8 @@ final class BrowserProfileStoreLifecycleTests: XCTestCase {
     func testNeverCompletingRemovalLeavesWorkerPendingAndProfileResponsive() async throws {
         let store = BrowserProfileStore.shared
         let profile = try makeTemporaryBrowserPanelProfile(named: "Never-completes")
-        store.websiteDataRemovalHandler = { _, _, _ in }
+        let removalStartedAt = LockedUptime()
+        store.websiteDataRemovalHandler = { _, _, _ in removalStartedAt.mark() }
         defer {
             store.websiteDataRemovalHandler = nil
             store.release(profile.id)
@@ -168,21 +169,28 @@ final class BrowserProfileStoreLifecycleTests: XCTestCase {
 
         let controller = TerminalController.shared
         let timeout: TimeInterval = 0.2
-        let startedAt = DispatchTime.now()
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        // C11H-331: a busy main may start the hop late; give it time to begin
+        // so the test exercises a removal that started and never completes.
         let response = await Task.detached(priority: .utility) {
             controller.v2BrowserProfileCommand(
                 method: "browser.profiles.clear",
                 params: ["profile": profile.id.uuidString, "confirm": true],
-                timeout: timeout
+                timeout: timeout,
+                beginTimeout: 20
             )
         }.value
-        let elapsed = Double(DispatchTime.now().uptimeNanoseconds - startedAt.uptimeNanoseconds) / 1_000_000_000
+        let returnedAt = DispatchTime.now().uptimeNanoseconds
         guard case .err(let code, _, _) = response else {
-            return XCTFail("Expected a pending response, got (response)")
+            return XCTFail("Expected a pending response, got \(response)")
         }
         XCTAssertEqual(code, "operation_pending")
-        XCTAssertGreaterThanOrEqual(elapsed, timeout * 0.75)
-        XCTAssertLessThan(elapsed, timeout + 0.6)
+        let removalStart = try XCTUnwrap(removalStartedAt.value, "the removal never started")
+        XCTAssertGreaterThanOrEqual(Double(returnedAt - startedAt) / 1e9, timeout * 0.75)
+        // The ceiling proves the call returns at its timeout instead of waiting
+        // on the never-completing removal; the slack absorbs a loaded host
+        // scheduling the utility task (0.6 s failed on the build host and guest).
+        XCTAssertLessThan(Double(returnedAt - removalStart) / 1e9, timeout + 3)
         XCTAssertTrue(store.isReserved(profile.id))
         XCTAssertNotNil(store.profileDefinition(id: profile.id))
 
@@ -195,10 +203,57 @@ final class BrowserProfileStoreLifecycleTests: XCTestCase {
         guard case .ok(let payload) = listResponse,
               let object = payload as? [String: Any],
               let profiles = object["profiles"] as? [[String: Any]] else {
-            return XCTFail("Profile list did not remain responsive: (listResponse)")
+            return XCTFail("Profile list did not remain responsive: \(listResponse)")
         }
         XCTAssertEqual(profiles.filter { ($0["id"] as? String) == profile.id.uuidString }.count, 1)
     }
+
+    /// C11H-331: when main never starts the hop, nothing is reserved and nothing
+    /// runs later, so the reply is `main_thread_timeout`, not `operation_pending`.
+    func testClearThatMainNeverStartsReportsMainThreadTimeoutAndNeverRuns() throws {
+        let store = BrowserProfileStore.shared
+        let profile = try makeTemporaryBrowserPanelProfile(named: "Never-started")
+        let removalStartedAt = LockedUptime()
+        store.websiteDataRemovalHandler = { _, _, _ in removalStartedAt.mark() }
+        defer {
+            store.websiteDataRemovalHandler = nil
+            store.release(profile.id)
+            _ = store.removeProfileDefinition(id: profile.id)
+        }
+
+        let controller = TerminalController.shared
+        let profileID = profile.id.uuidString
+        let result = SelectionReadOperation<TerminalController.V2CallResult>(timeout: 5)
+        XCTAssertTrue(result.beginCapture())
+        DispatchQueue.global().async {
+            result.complete(controller.v2BrowserProfileCommand(
+                method: "browser.profiles.clear",
+                params: ["profile": profileID, "confirm": true],
+                timeout: 0.1
+            ))
+        }
+        // Holding main until the worker replies keeps the hop from starting.
+        let response = try XCTUnwrap(result.wait(), "the worker did not reply while main was held")
+        guard case .err(let code, _, let data) = response else {
+            return XCTFail("Expected main_thread_timeout, got \(response)")
+        }
+        XCTAssertEqual(code, "main_thread_timeout")
+        XCTAssertEqual((data as? [String: Any])?["profile"] as? String, profileID)
+
+        // The abandoned hop must not start once main is free.
+        drainBrowserPanelMainQueue()
+        XCTAssertNil(removalStartedAt.value)
+        XCTAssertFalse(store.isReserved(profile.id))
+        XCTAssertNotNil(store.profileDefinition(id: profile.id))
+    }
+}
+
+/// An uptime stamp a main-actor callback writes and a test reads.
+private final class LockedUptime: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stamp: UInt64?
+    func mark() { lock.lock(); if stamp == nil { stamp = DispatchTime.now().uptimeNanoseconds }; lock.unlock() }
+    var value: UInt64? { lock.lock(); defer { lock.unlock() }; return stamp }
 }
 
 

@@ -43,6 +43,8 @@ enum BrowserFavicon {
         case invalidURL
         case badResponse
         case tooLarge
+        /// A c11 ssh workspace's guard refused the URL (a literal loopback host).
+        case refused
     }
 
     static func isFetchable(_ url: URL) -> Bool {

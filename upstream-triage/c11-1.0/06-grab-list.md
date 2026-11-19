@@ -496,7 +496,7 @@ Out of scope as agreed: Design Mode and a standalone browser.
   - This costs nothing per turn and works for every agent kind, which fits the "observe from outside" doctrine.
 - **Model summary, opt-in (M, later).**
   - c11 already reads agents' session files for live model detection and tab-sheet clocks (#463), so reading a transcript for naming has precedent.
-  - The summarizer should run through a c11-owned call: a local model on Atlas, or an API key c11 holds. It must not go through hooks in the agent's config. That keeps it outside tenant config.
+  - The summarizer should run through a c11-owned call: a local model on the build host, or an API key c11 holds. It must not go through hooks in the agent's config. That keeps it outside tenant config.
   - It is gated by a setting, throttled at turn end, and cost-visible.
 
 **Recommendation:** the lock and derived names in 1.0, and the model as 1.x (question 5).

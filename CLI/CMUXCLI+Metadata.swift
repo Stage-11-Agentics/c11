@@ -442,11 +442,14 @@ extension CMUXCLI {
             return
         }
         let keyOrder = metadata.keys.sorted()
-        for k in keyOrder {
-            guard let v = metadata[k] else { continue }
-            let valueText = renderScalarOrJSON(v)
-            if includeSources, let sidecar = sources[k] {
-                let src = (sidecar["source"] as? String) ?? "?"
+        for key in keyOrder {
+            guard let v = metadata[key] else { continue }
+            // C11H-359: keys, values and sources can come from another
+            // machine; every control, a line feed too, prints as `\xHH`.
+            let k = HCCoreUtility.printable(key)
+            let valueText = HCCoreUtility.printable(renderScalarOrJSON(v))
+            if includeSources, let sidecar = sources[key] {
+                let src = HCCoreUtility.printable((sidecar["source"] as? String) ?? "?")
                 let ts = (sidecar["ts"] as? Double).map { String(format: "%.3f", $0) } ?? "?"
                 print("\(k) = \(valueText)  [\(src) @ \(ts)]")
             } else {
@@ -491,8 +494,7 @@ extension CMUXCLI {
     }
 
     /// Resolve the `workspace_id` param for a workspace metadata CLI call.
-    /// Honors `--workspace`, `CMUX_WORKSPACE_ID`, then falls back to the
-    /// currently selected workspace (server-side default).
+    /// Honors `--workspace` or `C11_WORKSPACE_ID`; never the selected workspace.
     func resolveWorkspaceMetadataTarget(
         commandArgs: [String],
         client: SocketClient,
@@ -506,6 +508,50 @@ extension CMUXCLI {
         return try resolveWorkspaceId(raw, client: client)
     }
 
+    /// The object a workspace-metadata command addresses: a workspace (by
+    /// `--workspace` or `C11_WORKSPACE_ID`) or, with `--group`, a workspace
+    /// group. The two flags are exclusive; `--window` only scopes a short
+    /// `workspace_group:N` ref and defaults to the caller's window.
+    enum WorkspaceMetadataCLITarget {
+        case workspace(String)
+        case group(String)
+
+        var methodPrefix: String {
+            switch self {
+            case .workspace: return "workspace"
+            case .group: return "workspace.group"
+            }
+        }
+        var params: [String: Any] {
+            switch self {
+            case .workspace(let id): return ["workspace_id": id]
+            case .group(let id): return ["group_id": id]
+            }
+        }
+    }
+
+    func resolveWorkspaceMetadataCLITarget(commandArgs: [String], client: SocketClient,
+                                           windowOverride: String?) throws -> WorkspaceMetadataCLITarget {
+        if let group = optionValue(commandArgs, name: "--group") {
+            guard optionValue(commandArgs, name: "--workspace") == nil else {
+                throw CLIError(message: String(localized: "cli.workspace.metadata.groupOrWorkspace",
+                    defaultValue: "Specify only one of --workspace or --group"))
+            }
+            let trimmed = group.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isUUID(trimmed) { return .group(trimmed) }
+            let window = try workspaceGroupWindow(optionValue(commandArgs, name: "--window") ?? windowOverride, client: client)
+            return .group(try normalizeWorkspaceGroupHandle(trimmed, window: window, client: client))
+        }
+        // --window only scopes a workspace_group:N ref; a workspace is never
+        // chosen by window (C11-251).
+        guard optionValue(commandArgs, name: "--window") == nil else {
+            throw CLIError(message: String(localized: "cli.workspace.metadata.windowNeedsGroup",
+                defaultValue: "--window applies only with --group"))
+        }
+        return .workspace(try resolveWorkspaceMetadataTarget(commandArgs: commandArgs, client: client,
+                                                             windowOverride: windowOverride))
+    }
+
     /// `c11 set-workspace-metadata <key> <value>` — wraps workspace.set_metadata.
     func runSetWorkspaceMetadataCommand(
         commandArgs: [String],
@@ -514,119 +560,109 @@ extension CMUXCLI {
         idFormat: CLIIDFormat,
         windowOverride: String?
     ) throws {
-        let positional = positionalWords(commandArgs, valueOptions: ["--workspace", "--key", "--value", "--json"])
-        var metadata: [String: String] = [:]
-        var singleKey: String?
-        var singleValue: String?
-
-        if let jsonStr = optionValue(commandArgs, name: "--json") {
-            guard let data = jsonStr.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                throw CLIError(message: "invalid_json: --json must be a JSON object string")
+        let valueOptions = ["--workspace", "--group", "--window", "--key", "--value", "--json", "--json-input", "--body", "--type", "--mode", "--source"]
+        let positional = positionalWords(commandArgs, valueOptions: valueOptions)
+        let metadata: [String: Any]
+        // Keep object presence separate from emptiness: replace {} clears all.
+        if let raw = optionValue(commandArgs, name: "--json-input")
+            ?? optionValue(commandArgs, name: "--body")
+            ?? optionValue(commandArgs, name: "--json") {
+            guard let data = raw.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw CLIError(message: String(localized: "cli.workspace.metadata.invalidObject", defaultValue: "invalid_json: workspace metadata must be a JSON object"))
             }
-            for (k, v) in obj {
-                guard let s = v as? String else {
-                    throw CLIError(message: "invalid_value: workspace metadata values must be strings (key '\(k)')")
-                }
-                metadata[k] = s
-            }
-        } else if let keyOpt = optionValue(commandArgs, name: "--key"),
-                  let valueOpt = optionValue(commandArgs, name: "--value") {
-            singleKey = keyOpt
-            singleValue = valueOpt
-        } else if positional.count >= 2 {
-            singleKey = positional[0]
-            singleValue = positional.dropFirst().joined(separator: " ")
+            metadata = object
         } else {
-            throw CLIError(message: "set-workspace-metadata requires <key> <value>, --key/--value, or --json '{...}'")
+            let key = optionValue(commandArgs, name: "--key") ?? positional.first
+            let raw = optionValue(commandArgs, name: "--value")
+                ?? (positional.count >= 2 ? positional.dropFirst().joined(separator: " ") : nil)
+            guard let key, let raw else {
+                throw CLIError(message: String(localized: "cli.workspace.metadata.missingValue", defaultValue: "set-workspace-metadata requires <key> <value>, --key/--value, or --json '{...}'"))
+            }
+            let value: Any
+            switch (optionValue(commandArgs, name: "--type") ?? "string").lowercased() {
+            case "string": value = raw
+            case "number":
+                if let integer = Int(raw) { value = integer }
+                else if let number = Double(raw), number.isFinite { value = number }
+                else { throw CLIError(message: String(localized: "cli.workspace.metadata.invalidNumber", defaultValue: "invalid_value: --value is not a finite number")) }
+            case "bool", "boolean":
+                switch raw.lowercased() {
+                case "true", "1", "yes": value = true
+                case "false", "0", "no": value = false
+                default: throw CLIError(message: String(localized: "cli.workspace.metadata.invalidBool", defaultValue: "invalid_value: --value is not a bool"))
+                }
+            case "json":
+                guard let data = raw.data(using: .utf8),
+                      let parsed = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
+                    throw CLIError(message: String(localized: "cli.workspace.metadata.invalidJSONValue", defaultValue: "invalid_json: --value is not JSON"))
+                }
+                value = parsed
+            default: throw CLIError(message: String(localized: "cli.workspace.metadata.invalidType", defaultValue: "invalid_value: --type must be string|number|bool|json"))
+            }
+            metadata = [key: value]
         }
-
-        let workspaceId = try resolveWorkspaceMetadataTarget(
-            commandArgs: commandArgs,
-            client: client,
-            windowOverride: windowOverride
+        let target = try resolveWorkspaceMetadataCLITarget(
+            commandArgs: commandArgs, client: client, windowOverride: windowOverride
         )
-
-        var params: [String: Any] = [:]
-        params["workspace_id"] = workspaceId
-        if !metadata.isEmpty {
-            params["metadata"] = metadata
-        } else if let singleKey, let singleValue {
-            params["key"] = singleKey
-            params["value"] = singleValue
-        }
-
-        let payload = try client.sendV2(method: "workspace.set_metadata", params: params)
+        var params = target.params
+        params["metadata"] = metadata
+        params["mode"] = (optionValue(commandArgs, name: "--mode") ?? "merge").lowercased()
+        params["source"] = (optionValue(commandArgs, name: "--source") ?? "explicit").lowercased()
+        let payload = try client.sendV2(method: "\(target.methodPrefix).set_metadata", params: params)
         printWorkspaceMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
     }
 
-    /// `cmux get-workspace-metadata [<key>]` — wraps workspace.get_metadata.
+    /// `c11 get-workspace-metadata [<key>]` — wraps workspace.get_metadata.
     func runGetWorkspaceMetadataCommand(
-        commandArgs: [String],
-        client: SocketClient,
-        jsonOutput: Bool,
-        idFormat: CLIIDFormat,
-        windowOverride: String?
+        commandArgs: [String], client: SocketClient, jsonOutput: Bool,
+        idFormat: CLIIDFormat, windowOverride: String?
     ) throws {
-        let positional = positionalWords(commandArgs, valueOptions: ["--workspace", "--key"])
-        let keyFilter = optionValue(commandArgs, name: "--key") ?? positional.first
-
-        let workspaceId = try resolveWorkspaceMetadataTarget(
-            commandArgs: commandArgs,
-            client: client,
-            windowOverride: windowOverride
+        let positional = positionalWords(commandArgs, valueOptions: ["--workspace", "--group", "--window", "--key"])
+        var keys = collectRepeatedOption(commandArgs, name: "--key")
+        keys.append(contentsOf: positional)
+        let sources = commandArgs.contains("--sources") || commandArgs.contains("--include-sources")
+        let target = try resolveWorkspaceMetadataCLITarget(
+            commandArgs: commandArgs, client: client, windowOverride: windowOverride
         )
-        var params: [String: Any] = [:]
-        params["workspace_id"] = workspaceId
-        if let keyFilter { params["key"] = keyFilter }
-
-        let payload = try client.sendV2(method: "workspace.get_metadata", params: params)
+        var params = target.params
+        params["include_sources"] = sources
+        if !keys.isEmpty { params["keys"] = keys }
+        let payload = try client.sendV2(method: "\(target.methodPrefix).get_metadata", params: params)
         if jsonOutput {
             print(jsonString(formatIDs(payload, mode: idFormat)))
             return
         }
-        let metadata = payload["metadata"] as? [String: String] ?? [:]
-        if let keyFilter {
-            if let v = metadata[keyFilter] {
-                print(v)
-            } else {
-                print("(unset)")
-            }
+        let metadata = payload["metadata"] as? [String: Any] ?? [:]
+        let provenance = payload["metadata_sources"] as? [String: [String: Any]] ?? [:]
+        // C11H-359: a value alone keeps its line feeds; a `key = value` line
+        // keeps none. Every other control prints as `\xHH`.
+        if keys.count == 1, !sources {
+            print(metadata[keys[0]].map { HCCoreUtility.printable(renderScalarOrJSON($0), keepLineFeeds: true) } ?? "(unset)")
             return
         }
-        if metadata.isEmpty {
-            print("(empty)")
-            return
-        }
+        if metadata.isEmpty { print("(empty)"); return }
         for key in metadata.keys.sorted() {
-            print("\(key) = \(metadata[key] ?? "")")
+            let suffix = sources ? " [\(HCCoreUtility.printable(provenance[key]?["source"] as? String ?? "unknown"))]" : ""
+            print("\(HCCoreUtility.printable(key)) = \(HCCoreUtility.printable(renderScalarOrJSON(metadata[key]!)))\(suffix)")
         }
     }
 
-    /// `cmux clear-workspace-metadata [<key>]` — wraps workspace.clear_metadata.
+    /// `c11 clear-workspace-metadata [<key>]` — wraps workspace.clear_metadata.
     func runClearWorkspaceMetadataCommand(
-        commandArgs: [String],
-        client: SocketClient,
-        jsonOutput: Bool,
-        idFormat: CLIIDFormat,
-        windowOverride: String?
+        commandArgs: [String], client: SocketClient, jsonOutput: Bool,
+        idFormat: CLIIDFormat, windowOverride: String?
     ) throws {
-        let positional = positionalWords(commandArgs, valueOptions: ["--workspace", "--key"])
-        var keys: [String] = collectRepeatedOption(commandArgs, name: "--key")
-        if keys.isEmpty, let first = positional.first {
-            keys = [first]
-        }
-
-        let workspaceId = try resolveWorkspaceMetadataTarget(
-            commandArgs: commandArgs,
-            client: client,
-            windowOverride: windowOverride
+        let positional = positionalWords(commandArgs, valueOptions: ["--workspace", "--group", "--window", "--key", "--source"])
+        var keys = collectRepeatedOption(commandArgs, name: "--key")
+        keys.append(contentsOf: positional)
+        let target = try resolveWorkspaceMetadataCLITarget(
+            commandArgs: commandArgs, client: client, windowOverride: windowOverride
         )
-        var params: [String: Any] = [:]
-        params["workspace_id"] = workspaceId
+        var params = target.params
+        params["source"] = (optionValue(commandArgs, name: "--source") ?? "explicit").lowercased()
         if !keys.isEmpty { params["keys"] = keys }
-
-        let payload = try client.sendV2(method: "workspace.clear_metadata", params: params)
+        let payload = try client.sendV2(method: "\(target.methodPrefix).clear_metadata", params: params)
         printWorkspaceMetadataResult(payload, jsonOutput: jsonOutput, idFormat: idFormat)
     }
 
@@ -667,17 +703,20 @@ extension CMUXCLI {
             return
         }
         var parts = ["OK"]
-        if let handle = formatHandle(payload, kind: "workspace", idFormat: idFormat) {
+        if let handle = formatHandle(payload, kind: "workspace", idFormat: idFormat)
+            ?? formatHandle(payload, kind: "group", idFormat: idFormat) {
             parts.append(handle)
         }
         print(parts.joined(separator: " "))
-        let metadata = payload["metadata"] as? [String: String] ?? [:]
-        if metadata.isEmpty {
-            print("  (empty)")
-            return
+        let metadata = payload["metadata"] as? [String: Any] ?? [:]
+        let applied = payload["applied"] as? [String: Bool] ?? [:]
+        let reasons = payload["reasons"] as? [String: String] ?? [:]
+        for key in applied.keys.sorted() where applied[key] == false {
+            print("  \(key): skipped (\(reasons[key] ?? "not_applied"))")
         }
+        if metadata.isEmpty { print("  (empty)"); return }
         for key in metadata.keys.sorted() {
-            print("  \(key) = \(metadata[key] ?? "")")
+            print("  \(HCCoreUtility.printable(key)) = \(HCCoreUtility.printable(renderScalarOrJSON(metadata[key]!)))")
         }
     }
 

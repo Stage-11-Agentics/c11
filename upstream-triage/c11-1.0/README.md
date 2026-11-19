@@ -50,6 +50,6 @@ Atin's answers, as recorded in `BACKLOG.md`:
   - Tier 2, 51 bugs: ride along in the same PRs.
   - Tier 3, 34 bugs: parked.
 - **B058:** D15 stands. Tab numbers keep resetting. The c11 skill tells agents to hold tab UUIDs across restarts.
-- **Run control:** the orchestrator stays in planning mode (wave 0) on Hyperion. No build mode until Atin's explicit go, relayed by the lead.
+- **Run control:** the orchestrator stays in planning mode (wave 0) on the laptop. No build mode until Atin's explicit go, relayed by the lead.
 - **Model routing:** save GPT-6-Astra for the hard tickets. Grok owns the rest.
-- **Atlas:** Atin is preparing it with the Atlas Fleet Prep tab (tab:138).
+- **The build host:** Atin is preparing it with the Build Host Fleet Prep tab (tab:138).

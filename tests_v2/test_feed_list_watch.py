@@ -66,7 +66,7 @@ def require_guest():
     cli = os.environ.get("C11_CLI")
     if not path or not cli:
         raise SystemExit("Set C11_SOCKET_PATH and C11_CLI to an isolated guest")
-    if path.endswith("Application Support/c11/c11.sock"):
+    if path.endswith("Application Support/c11/c11.sock") or path.endswith("Application Support/c11/c11.sock"):
         raise SystemExit("Refusing the operator socket")
     if "sandbox" not in path and "c11-sb-" not in path:
         raise SystemExit("Refusing a socket outside the sandbox guest")

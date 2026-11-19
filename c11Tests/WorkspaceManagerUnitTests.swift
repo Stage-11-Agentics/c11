@@ -355,16 +355,24 @@ final class WorkspaceManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
             return true
         }
 
+        // C11H-24: the test host's terminals are hc terminals, so the summary
+        // says the close ends their sessions.
+        XCTAssertTrue(Self.holdsLiveHCSessions(manager.workspaces[0]))
+        XCTAssertTrue(Self.holdsLiveHCSessions(second))
+
         manager.closeWorkspacesWithConfirmation([manager.workspaces[0].id, second.id], allowPinned: true)
 
-        let expectedMessage = String(
-            format: String(
-                localized: "dialog.closeWorkspaces.message",
-                defaultValue: "This will close %1$lld workspaces and all of their panels:\n%2$@"
+        let expectedMessage = HCCloseCopy.groupMessage(
+            String(
+                format: String(
+                    localized: "dialog.closeWorkspaces.message",
+                    defaultValue: "This will close %1$lld workspaces and all of their panels:\n%2$@"
+                ),
+                locale: .current,
+                Int64(2),
+                "• Alpha\n• Beta"
             ),
-            locale: .current,
-            Int64(2),
-            "• Alpha\n• Beta"
+            endsSession: true
         )
         XCTAssertEqual(prompts.count, 1, "Expected a single confirmation prompt for multi-close")
         XCTAssertEqual(
@@ -387,16 +395,22 @@ final class WorkspaceManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
             return false
         }
 
+        XCTAssertTrue(Self.holdsLiveHCSessions(manager.workspaces[0]))
+        XCTAssertTrue(Self.holdsLiveHCSessions(second))
+
         manager.closeWorkspacesWithConfirmation([manager.workspaces[0].id, second.id], allowPinned: true)
 
-        let expectedMessage = String(
-            format: String(
-                localized: "dialog.closeWorkspacesWindow.message",
-                defaultValue: "This will close the current window, its %1$lld workspaces, and all of their panels:\n%2$@"
+        let expectedMessage = HCCloseCopy.groupMessage(
+            String(
+                format: String(
+                    localized: "dialog.closeWorkspacesWindow.message",
+                    defaultValue: "This will close the current window, its %1$lld workspaces, and all of their panels:\n%2$@"
+                ),
+                locale: .current,
+                Int64(2),
+                "• Alpha\n• Beta"
             ),
-            locale: .current,
-            Int64(2),
-            "• Alpha\n• Beta"
+            endsSession: true
         )
         XCTAssertEqual(prompts.count, 1)
         // Title differentiates "close window" (last workspaces) from
@@ -471,20 +485,52 @@ final class WorkspaceManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
         XCTAssertEqual(manager.selectedWorkspaceId, foreground.id)
     }
 
-    func testClosingLoneIdleTerminalWorkspaceDoesNotPrompt() {
+    /// C11H-24 (Settled 10): closing an hc terminal ends its session and every
+    /// job it started, so even a lone terminal at an idle prompt asks first.
+    func testClosingLoneIdleHCTerminalWorkspaceStillPrompts() throws {
+        // Explicit ends go through the installed coordinator, so install one on
+        // the fake: an end sent on a declined close would show up there.
+        let session = HCEndFakeSession()
+        HCSessionEnd.keyShownByLivePanel = { _ in .none }
+        HCSessionEnd.install(session: session, store: HCEndMemoryStore())
+        defer {
+            HCSessionEnd.keyShownByLivePanel = { _ in .unknown }
+            HCSessionEnd.resetForTesting()
+        }
+        let coordinator = try XCTUnwrap(HCSessionEnd.coordinator)
         let manager = WorkspaceManager()
+        defer { for workspace in manager.workspaces { workspace.teardownAllPanels() } }
         let second = manager.addWorkspace()
+        let panelId = try XCTUnwrap(second.focusedPanelId)
+        let terminal = try XCTUnwrap(second.terminalPanel(for: panelId))
+        terminal.surface.usePersistentHCForTesting(session: session)
+        // Everything but the hc rule says this close needs no confirmation.
+        terminal.surface.setNeedsConfirmCloseOverrideForTesting(false)
+        second.updatePanelShellActivityState(panelId: panelId, state: .promptIdle)
+        XCTAssertEqual(second.panels.count, 1)
+        XCTAssertFalse(second.isPinned)
 
-        var promptCount = 0
-        manager.workspaceCloseConfirmationHandler = { _, _ in
-            promptCount += 1
+        var prompts: [(title: String, message: String)] = []
+        manager.workspaceCloseConfirmationHandler = { title, message in
+            prompts.append((title, message))
             return false
         }
 
         manager.closeWorkspaceWithConfirmation(second)
 
-        XCTAssertEqual(promptCount, 0)
-        XCTAssertFalse(manager.workspaces.contains(where: { $0.id == second.id }))
+        XCTAssertEqual(prompts.count, 1, "An idle hc terminal still asks before its session ends")
+        XCTAssertEqual(
+            prompts.first?.title,
+            String(localized: "dialog.closeWorkspace.title", defaultValue: "Close workspace?")
+        )
+        XCTAssertTrue(
+            prompts.first?.message.hasSuffix(HCCloseCopy.groupSuffix) == true,
+            "The prompt says the close ends the terminal session: \(prompts.first?.message ?? "nil")"
+        )
+        XCTAssertTrue(manager.workspaces.contains(where: { $0.id == second.id }), "Cancelling keeps the workspace")
+        // requestEnd marks a panel pending synchronously, before any hop.
+        XCTAssertFalse(coordinator.isEndPending(panelID: panelId), "Cancelling ends nothing")
+        XCTAssertTrue(session.ends.isEmpty, "Cancelling ends nothing")
     }
 
     func testClosingPinnedWorkspacePromptsEvenWhenIdle() {
@@ -538,16 +584,22 @@ final class WorkspaceManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
             return false
         }
 
+        XCTAssertTrue(Self.holdsLiveHCSessions(manager.workspaces[0]))
+        XCTAssertTrue(Self.holdsLiveHCSessions(second))
+
         manager.closeCurrentWorkspaceWithConfirmation()
 
-        let expectedMessage = String(
-            format: String(
-                localized: "dialog.closeWorkspaces.message",
-                defaultValue: "This will close %1$lld workspaces and all of their panels:\n%2$@"
+        let expectedMessage = HCCloseCopy.groupMessage(
+            String(
+                format: String(
+                    localized: "dialog.closeWorkspaces.message",
+                    defaultValue: "This will close %1$lld workspaces and all of their panels:\n%2$@"
+                ),
+                locale: .current,
+                Int64(2),
+                "• Alpha\n• Beta"
             ),
-            locale: .current,
-            Int64(2),
-            "• Alpha\n• Beta"
+            endsSession: true
         )
         XCTAssertEqual(prompts.count, 1, "Expected Cmd+Shift+W path to reuse the multi-close summary dialog")
         XCTAssertEqual(
@@ -557,20 +609,86 @@ final class WorkspaceManagerCloseWorkspacesWithConfirmationTests: XCTestCase {
         XCTAssertEqual(prompts.first?.message, expectedMessage)
         XCTAssertEqual(manager.workspaces.map(\.title), ["Alpha", "Beta", "Gamma"])
     }
+
+    /// The test host activates hc at launch, so its terminals are persistent
+    /// hc terminals whose close ends a live session (C11H-24 copy applies).
+    private static func holdsLiveHCSessions(_ workspace: Workspace) -> Bool {
+        workspace.closeEndsHCSession(panelIds: Array(workspace.panels.keys))
+    }
 }
 
 
 @MainActor
 final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
-    func testRuntimeCloseSkipsConfirmationWhenShellReportsPromptIdle() {
+    /// C11H-24 (Settled 10): a prompt-idle shell no longer skips the question
+    /// for an hc terminal, because closing it ends its session and every job.
+    func testRuntimeCloseOfPromptIdleHCTerminalStillAsks() throws {
+        // The synchronous handler belongs to the legacy alert path, not the area card.
+        let flagKey = AreaInteractionFeatureFlag.userDefaultsKey
+        let oldFlag = UserDefaults.standard.object(forKey: flagKey)
+        UserDefaults.standard.set(false, forKey: flagKey)
+        defer {
+            if let oldFlag { UserDefaults.standard.set(oldFlag, forKey: flagKey) }
+            else { UserDefaults.standard.removeObject(forKey: flagKey) }
+        }
+        // Explicit ends go through the installed coordinator, so install one on
+        // the fake: an end sent on a declined close would show up there.
+        let session = HCEndFakeSession()
+        HCSessionEnd.keyShownByLivePanel = { _ in .none }
+        HCSessionEnd.install(session: session, store: HCEndMemoryStore())
+        defer {
+            HCSessionEnd.keyShownByLivePanel = { _ in .unknown }
+            HCSessionEnd.resetForTesting()
+        }
+        let coordinator = try XCTUnwrap(HCSessionEnd.coordinator)
         let manager = WorkspaceManager()
-        guard let workspace = manager.selectedWorkspace,
-              let panelId = workspace.focusedPanelId,
-              let terminalPanel = workspace.terminalPanel(for: panelId) else {
-            XCTFail("Expected selected workspace and focused terminal panel")
-            return
+        defer { for workspace in manager.workspaces { workspace.teardownAllPanels() } }
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        let terminalPanel = try XCTUnwrap(workspace.terminalPanel(for: panelId))
+
+        terminalPanel.surface.usePersistentHCForTesting(session: session)
+        // Everything but the hc rule says this close needs no confirmation.
+        terminalPanel.surface.setNeedsConfirmCloseOverrideForTesting(false)
+        workspace.updatePanelShellActivityState(panelId: panelId, state: .promptIdle)
+
+        var prompts: [(title: String, message: String)] = []
+        manager.confirmCloseHandler = { title, message, _ in
+            prompts.append((title, message))
+            return false
         }
 
+        manager.closeRuntimeSurfaceWithConfirmation(workspaceId: workspace.id, surfaceId: panelId)
+        drainMainQueue()
+        drainMainQueue()
+
+        XCTAssertEqual(prompts.count, 1, "A prompt-idle hc terminal still asks before its session ends")
+        XCTAssertEqual(prompts.first?.title, HCCloseCopy.panelTitle)
+        XCTAssertEqual(prompts.first?.message, HCCloseCopy.panelMessage)
+        XCTAssertNotNil(workspace.panels[panelId], "Declining keeps the original panel open")
+        XCTAssertEqual(workspace.panels.count, 1)
+        // requestEnd marks a panel pending synchronously, before any hop.
+        XCTAssertFalse(coordinator.isEndPending(panelID: panelId), "Declining ends nothing")
+        XCTAssertTrue(session.ends.isEmpty, "Declining ends nothing")
+    }
+
+    /// An exec shell (no hc session to end) keeps the shell-state rule: a
+    /// reported idle prompt overrides Ghostty's own needs-confirm answer.
+    func testRuntimeCloseOfExecShellSkipsConfirmationWhenShellReportsPromptIdle() throws {
+        let flagKey = AreaInteractionFeatureFlag.userDefaultsKey
+        let oldFlag = UserDefaults.standard.object(forKey: flagKey)
+        UserDefaults.standard.set(false, forKey: flagKey)
+        defer {
+            if let oldFlag { UserDefaults.standard.set(oldFlag, forKey: flagKey) }
+            else { UserDefaults.standard.removeObject(forKey: flagKey) }
+        }
+        let manager = WorkspaceManager()
+        defer { for workspace in manager.workspaces { workspace.teardownAllPanels() } }
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        let terminalPanel = try XCTUnwrap(workspace.terminalPanel(for: panelId))
+
+        terminalPanel.surface.useExecShellForTesting()
         terminalPanel.surface.setNeedsConfirmCloseOverrideForTesting(true)
         workspace.updatePanelShellActivityState(panelId: panelId, state: .promptIdle)
 
@@ -589,7 +707,7 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
         XCTAssertEqual(workspace.panels.count, 1, "Expected a replacement surface after closing the last panel")
     }
 
-    func testRuntimeClosePromptsWhenShellReportsRunningCommand() {
+    func testRuntimeClosePromptsWhenShellReportsRunningCommand() throws {
         // This handler belongs to the legacy alert path, not the area card.
         let flagKey = AreaInteractionFeatureFlag.userDefaultsKey
         let oldFlag = UserDefaults.standard.object(forKey: flagKey)
@@ -599,13 +717,14 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
             else { UserDefaults.standard.removeObject(forKey: flagKey) }
         }
         let manager = WorkspaceManager()
-        guard let workspace = manager.selectedWorkspace,
-              let panelId = workspace.focusedPanelId,
-              let terminalPanel = workspace.terminalPanel(for: panelId) else {
-            XCTFail("Expected selected workspace and focused terminal panel")
-            return
-        }
+        defer { for workspace in manager.workspaces { workspace.teardownAllPanels() } }
+        let workspace = try XCTUnwrap(manager.selectedWorkspace)
+        let panelId = try XCTUnwrap(workspace.focusedPanelId)
+        let terminalPanel = try XCTUnwrap(workspace.terminalPanel(for: panelId))
 
+        // An exec shell, so only the reported running command can ask (an hc
+        // terminal always asks, which would hide a broken shell-state rule).
+        terminalPanel.surface.useExecShellForTesting()
         terminalPanel.surface.setNeedsConfirmCloseOverrideForTesting(false)
         workspace.updatePanelShellActivityState(panelId: panelId, state: .commandRunning)
 
@@ -634,11 +753,14 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
 
         XCTAssertEqual(manager.selectedWorkspaceId, secondWorkspace.id)
         XCTAssertEqual(secondWorkspace.panels.count, 1)
+        // C11H-24: the lone hc terminal makes the workspace close ask; accept it.
+        let workspacePrompts = acceptWorkspaceCloses(manager)
 
         manager.closeCurrentPanelWithConfirmation()
         drainMainQueue()
         drainMainQueue()
 
+        XCTAssertEqual(workspacePrompts.count, 1, "Cmd+W on the last surface routes to the workspace close")
         XCTAssertEqual(manager.workspaces.map(\.id), [firstWorkspace.id])
         XCTAssertEqual(manager.selectedWorkspaceId, firstWorkspace.id)
         XCTAssertNil(secondWorkspace.panels[secondPanelId])
@@ -665,11 +787,16 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
         }
 
         let initialWorkspaceId = workspace.id
+        // This test is about the keep-open preference, not hc confirmation:
+        // an idle exec shell closes without a card.
+        useIdleExecShell(workspace, panelId: initialPanelId)
+        let workspacePrompts = acceptWorkspaceCloses(manager)
 
         manager.closeCurrentPanelWithConfirmation()
         drainMainQueue()
         drainMainQueue()
 
+        XCTAssertEqual(workspacePrompts.count, 0, "Keep-open Cmd+W never routes to the workspace close")
         XCTAssertEqual(manager.workspaces.count, 1)
         XCTAssertEqual(manager.selectedWorkspaceId, initialWorkspaceId)
         XCTAssertEqual(manager.workspaces.first?.id, initialWorkspaceId)
@@ -697,11 +824,14 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
             return
         }
 
+        // C11H-24: the lone hc terminal makes the workspace close ask; accept it.
+        let workspacePrompts = acceptWorkspaceCloses(manager)
         secondWorkspace.markExplicitClose(bonsplitTabId: secondSurfaceId)
         XCTAssertFalse(secondWorkspace.closePanel(secondPanelId))
         drainMainQueue()
         drainMainQueue()
 
+        XCTAssertEqual(workspacePrompts.count, 1, "The close button on the last tab routes to the workspace close")
         XCTAssertEqual(manager.workspaces.map(\.id), [firstWorkspace.id])
         XCTAssertEqual(manager.selectedWorkspaceId, firstWorkspace.id)
         XCTAssertNil(secondWorkspace.panels[secondPanelId])
@@ -735,11 +865,14 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
             return
         }
 
+        // C11H-24: the lone hc terminal makes the workspace close ask; accept it.
+        let workspacePrompts = acceptWorkspaceCloses(manager)
         secondWorkspace.markExplicitClose(bonsplitTabId: secondSurfaceId)
         XCTAssertFalse(secondWorkspace.closePanel(secondPanelId))
         drainMainQueue()
         drainMainQueue()
 
+        XCTAssertEqual(workspacePrompts.count, 1, "The close button on the last tab routes to the workspace close")
         XCTAssertEqual(manager.workspaces.map(\.id), [firstWorkspace.id])
         XCTAssertEqual(manager.selectedWorkspaceId, firstWorkspace.id)
         XCTAssertNil(secondWorkspace.panels[secondPanelId])
@@ -757,6 +890,9 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
         let initialWorkspaceId = workspace.id
         XCTAssertEqual(manager.workspaces.count, 1)
         XCTAssertEqual(workspace.panels.count, 1)
+        // About the replacement-terminal invariant, not hc confirmation: an
+        // idle exec shell closes on the first request.
+        useIdleExecShell(workspace, panelId: initialPanelId)
 
         XCTAssertTrue(workspace.closePanel(initialPanelId))
         drainMainQueue()
@@ -832,6 +968,9 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
             body: ""
         )
         XCTAssertTrue(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: initialPanelId))
+        // About notification cleanup on close, not hc confirmation: an idle
+        // exec shell closes without a card.
+        useIdleExecShell(workspace, panelId: initialPanelId)
 
         manager.closeCurrentPanelWithConfirmation()
         drainMainQueue()
@@ -839,6 +978,36 @@ final class WorkspaceManagerCloseCurrentPanelTests: XCTestCase {
 
         XCTAssertNil(workspace.panels[initialPanelId], "Closing the selected panel must remove it")
         XCTAssertFalse(store.hasUnreadNotification(forWorkspaceId: workspace.id, surfaceId: initialPanelId))
+    }
+
+    /// Workspace-close prompts seen by `acceptWorkspaceCloses`, each accepted.
+    private final class AcceptedWorkspaceClosePrompts {
+        var messages: [String] = []
+        var count: Int { messages.count }
+    }
+
+    /// Accepts every workspace-close prompt through the synchronous test seam.
+    private func acceptWorkspaceCloses(_ manager: WorkspaceManager) -> AcceptedWorkspaceClosePrompts {
+        let prompts = AcceptedWorkspaceClosePrompts()
+        manager.workspaceCloseConfirmationHandler = { _, message in
+            prompts.messages.append(message)
+            return true
+        }
+        return prompts
+    }
+
+    /// The test host makes every terminal a persistent hc terminal, which always
+    /// asks before closing (C11H-24). Tests about other close behaviour run the
+    /// panel as an idle exec shell, which closes on the first request.
+    private func useIdleExecShell(_ workspace: Workspace, panelId: UUID) {
+        guard let terminal = workspace.terminalPanel(for: panelId) else {
+            XCTFail("Expected a terminal panel")
+            return
+        }
+        terminal.surface.useExecShellForTesting()
+        terminal.surface.setNeedsConfirmCloseOverrideForTesting(false)
+        workspace.updatePanelShellActivityState(panelId: panelId, state: .promptIdle)
+        XCTAssertFalse(workspace.panelNeedsConfirmClose(panelId: panelId, fallbackNeedsConfirmClose: false))
     }
 }
 
@@ -1584,6 +1753,12 @@ final class StartupBundledReportsTests: XCTestCase {
         let workspace = try XCTUnwrap(manager.selectedWorkspace)
         let bashPanel = try XCTUnwrap(workspace.focusedPanelId)
         let zshPanel = try XCTUnwrap(workspace.newTerminalSurfaceInFocusedPane(focus: false)).id
+        // The close policy is this test's window onto the applied activity
+        // state. A persistent hc terminal always asks (C11H-24), so run both
+        // as exec shells, whose close policy follows the reported activity.
+        for panel in [bashPanel, zshPanel] {
+            try XCTUnwrap(workspace.terminalPanel(for: panel)).surface.useExecShellForTesting()
+        }
         let controller = TerminalController.makeForTesting()
         let originalPortsCallback = PortScanner.shared.onPortsUpdated
         let root = URL(fileURLWithPath: "/tmp", isDirectory: true)

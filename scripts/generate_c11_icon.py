@@ -5,12 +5,13 @@ Source art: design/c11mux-lattice-icon-source.png — Hyperfuturistic
 lattice (white on black), from Gregorovitch art.
 
 Produces:
-  Assets.xcassets/AppIcon.appiconset/*.png            (stable)
-  Assets.xcassets/AppIcon-Debug.appiconset/*.png      (gold DEV banner, 70% alpha)
-  Assets.xcassets/AppIcon-Nightly.appiconset/*.png    (purple NIGHTLY banner)
-  Assets.xcassets/AppIcon-Staging.appiconset/*.png    (dim STAGING banner)
+  Assets.xcassets/AppIcon.appiconset/*.png            (stable, corner h badge)
+  Assets.xcassets/AppIcon-Debug.appiconset/*.png      (gold DEV banner, 70% alpha, corner h badge)
+  Assets.xcassets/AppIcon-Nightly.appiconset/*.png    (purple NIGHTLY banner, corner h badge)
+  Assets.xcassets/AppIcon-Staging.appiconset/*.png    (dim STAGING banner, corner h badge)
   Assets.xcassets/AppIconLight.imageset/AppIconLight.png
   Assets.xcassets/AppIconDark.imageset/AppIconDark.png
+  AppIcon.icon                                          (same corner h badge)
 
 Also updates each appiconset's Contents.json.
 """
@@ -208,6 +209,53 @@ def add_banner(
     return composed
 
 
+def _badge_font(size: int) -> ImageFont.ImageFont:
+    for path in (
+        "/System/Library/Fonts/SFCompact-Bold.otf",
+        "/System/Library/Fonts/SFCompactDisplay.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ):
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
+
+
+def add_h_badge(icon: Image.Image) -> Image.Image:
+    """Corner h so a c11 icon is not the unmarked c11 lattice.
+
+    Drawn here: a filled rounded rect plus the letter h. No new source art.
+    """
+    icon = icon.copy().convert("RGBA")
+    w, h = icon.size
+    if w < 8 or h < 8:
+        return icon
+    inset = max(1, int(round(w * 0.12)))
+    badge = max(4, int(round(w * 0.18)))
+    if inset + badge > w - 1:
+        badge = max(3, w // 3)
+        inset = max(1, (w - badge) // 5)
+    x1 = w - inset
+    y0 = inset
+    x0 = x1 - badge
+    y1 = y0 + badge
+    overlay = Image.new("RGBA", icon.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    radius = max(1, badge // 4)
+    draw.rounded_rectangle((x0, y0, x1, y1), radius=radius, fill=(255, 255, 255, 235))
+    font = _badge_font(max(4, int(round(badge * 0.72))))
+    bbox = draw.textbbox((0, 0), "h", font=font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+    tx = x0 + (badge - tw) // 2 - bbox[0]
+    ty = y0 + (badge - th) // 2 - bbox[1]
+    draw.text((tx, ty), "h", fill=(0, 0, 0, 255), font=font)
+    return Image.alpha_composite(icon, overlay)
+
+
 def dark_variant(icon: Image.Image) -> Image.Image:
     """Return a dark-appearance variant. For c11mux the palette does not
     diverge between light and dark modes, so the dark variant is
@@ -224,6 +272,7 @@ def write_appiconset(set_name: str, transform) -> None:
     for filename, pixel_size in SIZES:
         base_icon = render_icon(pixel_size)
         light = transform(base_icon) if transform else base_icon
+        light = add_h_badge(light)
         light.save(os.path.join(out_dir, filename), "PNG")
         dark_name = filename.replace(".png", "_dark.png")
         dark_variant(light).save(os.path.join(out_dir, dark_name), "PNG")
@@ -268,7 +317,7 @@ def write_contents_json(out_dir: str) -> None:
 def write_imagesets() -> None:
     """Render the runtime imagesets used by the in-app icon picker
     (Sources/cmuxApp.swift references "AppIconLight" / "AppIconDark")."""
-    base = render_icon(IMAGESET_SIZE)
+    base = add_h_badge(render_icon(IMAGESET_SIZE))
     targets = [
         ("AppIconLight.imageset", "AppIconLight.png"),
         ("AppIconDark.imageset", "AppIconDark.png"),
@@ -303,8 +352,8 @@ def write_icon_format() -> None:
         if name.endswith(".png"):
             os.remove(os.path.join(assets_dir, name))
 
-    base = render_icon(IMAGESET_SIZE)
-    source_name = "c11mux-lattice.png"
+    base = add_h_badge(render_icon(IMAGESET_SIZE))
+    source_name = "c11-lattice.png"
     base.save(os.path.join(assets_dir, source_name), "PNG")
 
     icon_config = {
@@ -315,7 +364,7 @@ def write_icon_format() -> None:
                     {
                         "glass": False,
                         "image-name": source_name,
-                        "name": "c11mux-lattice",
+                        "name": "c11-lattice",
                         "position": {
                             "scale": 1,
                             "translation-in-points": [0, 0],

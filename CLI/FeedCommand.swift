@@ -257,8 +257,11 @@ enum FeedCommand {
             return
         }
         let rows = payload["rows"] as? [[String: Any]] ?? []
+        // C11H-330: who lowered the last flag and why.
+        let lowered = FeedFlagLowered.cliLine(payload["flag_lowered"])
         if rows.isEmpty {
             print("No feed rows.")
+            if let lowered { print(lowered) }
             fflush(stdout)
             return
         }
@@ -270,10 +273,14 @@ enum FeedCommand {
             let flagPart = flag.map { "flag=\($0)" } ?? "no-flag"
             let workspace = row["workspace_id"] as? String ?? ""
             let panel = (row["panel_id"] ?? row["tab_id"]) as? String ?? ""
-            print("\(workspace)  \(panel)  \(kind)  \(state)  \(flagPart)  \(prompt)")
+            // C11H-359: a flag reason can come from another machine; the row
+            // stays one line and any control prints as `\xHH`.
+            print(HCCoreUtility.printable("\(workspace)  \(panel)  \(kind)  \(state)  \(flagPart)  \(prompt)"))
         }
+        if let lowered { print(lowered) }
         fflush(stdout)
     }
+
 
     private static func watch(client: SocketClient, scope: FeedScope, json: Bool, reconnect: () throws -> Void) throws {
         var parser = FeedWatchParser()
@@ -288,7 +295,7 @@ enum FeedCommand {
             printContinuity()
             rebind(refreshed, parser: &parser, instance: &instance, logURL: &logURL, offset: &offset, missingAnnounced: &missingAnnounced)
             printList(refreshed, json: json)
-        } else if jsonLine(refreshed["rows"] ?? []) != jsonLine(listed["rows"] ?? []) {
+        } else if FeedFlagLowered.feedListChanged(refreshed, listed) {
             printList(refreshed, json: json)
         }
         listed = refreshed
@@ -329,7 +336,7 @@ enum FeedCommand {
                                         printContinuity()
                                         rebind(next, parser: &parser, instance: &instance, logURL: &logURL, offset: &offset, missingAnnounced: &missingAnnounced)
                                         printList(next, json: json)
-                                    } else if jsonLine(next["rows"] ?? []) != jsonLine(listed["rows"] ?? []) {
+                                    } else if FeedFlagLowered.feedListChanged(next, listed) {
                                         printList(next, json: json)
                                     }
                                     listed = next
@@ -355,7 +362,7 @@ enum FeedCommand {
                             printContinuity()
                             rebind(next, parser: &parser, instance: &instance, logURL: &logURL, offset: &offset, missingAnnounced: &missingAnnounced)
                             printList(next, json: json)
-                        } else if jsonLine(next["rows"] ?? []) != jsonLine(listed["rows"] ?? []) {
+                        } else if FeedFlagLowered.feedListChanged(next, listed) {
                             printList(next, json: json)
                         }
                         listed = next

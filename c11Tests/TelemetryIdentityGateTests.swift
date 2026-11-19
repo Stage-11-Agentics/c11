@@ -13,7 +13,7 @@ final class TelemetryIdentityGateTests: XCTestCase {
         "com.stage11.c11.staging.rel.v1.7.9",
         "com.stage11.c11.debug",
         "com.stage11.c11.debug.c11.575",
-        "com.stage11.c11h",
+        "com.stage11.c11h", // c11-2.0:keep (the retired identity)
         "com.example.unknown",
         "com.stage11.c11.nightly.extra",
         "COM.STAGE11.C11",
@@ -88,7 +88,7 @@ final class TelemetryStartupTests: XCTestCase {
     }
 
     func testOffIdentityStartsNeitherSDKAndLogsOneLine() {
-        for identity in ["com.stage11.c11.staging", "com.stage11.c11.debug.c11.575", "com.stage11.c11h", "com.example.unknown"] {
+        for identity in ["com.stage11.c11.staging", "com.stage11.c11.debug.c11.575", "com.stage11.c11h", "com.example.unknown"] { // c11-2.0:keep
             let decision = TelemetryIdentityGate.decide(bundleIdentifier: identity, userEnabled: true)
             let result = run(TelemetryStartup(decision: decision, isRunningUnderXCTest: false))
             XCTAssertEqual(result.sentry, [], identity)
@@ -138,7 +138,7 @@ final class PostHogAnalyticsGateTests: XCTestCase {
         let offDecisions: [TelemetryLaunchDecision] = [
             TelemetryIdentityGate.decide(bundleIdentifier: "com.stage11.c11.staging", userEnabled: true),
             TelemetryIdentityGate.decide(bundleIdentifier: "com.stage11.c11.debug.c11.575", userEnabled: true),
-            TelemetryIdentityGate.decide(bundleIdentifier: "com.stage11.c11h", userEnabled: true),
+            TelemetryIdentityGate.decide(bundleIdentifier: "com.stage11.c11h", userEnabled: true), // c11-2.0:keep
             TelemetryIdentityGate.decide(bundleIdentifier: "com.stage11.c11", userEnabled: false),
         ]
         for decision in offDecisions {

@@ -15,8 +15,8 @@ import Sentry
 
 extension CMUXCLI {
 
-    func runFleetCommand(client: SocketClient, jsonOutput: Bool) throws {
-        let response = try client.sendV2(method: "system.fleet")
+    func runFleetCommand(commandArgs: [String] = [], client: SocketClient, jsonOutput: Bool) throws {
+        let response = try client.sendV2(method: "system.fleet", params: try Self.fleetParams(commandArgs))
         if jsonOutput {
             // The versioned fleet schema always carries UUIDs, never short refs.
             print(jsonString(response))
@@ -24,19 +24,61 @@ extension CMUXCLI {
         }
         func cell(_ value: Any?, width: Int) -> String {
             let text = value is NSNull || value == nil ? "-" : String(describing: value!)
-            let safe = String(String.UnicodeScalarView(text.unicodeScalars.map {
+            // C11H-359: controls show as `\xHH`; format characters (bidi
+            // overrides and the like) still become a space.
+            let safe = String(String.UnicodeScalarView(HCCoreUtility.printable(text).unicodeScalars.map {
                 CharacterSet.controlCharacters.contains($0) ? UnicodeScalar(32)! : $0
             }))
             let clipped = safe.count > width ? String(safe.prefix(width - 1)) + "…" : safe
             return clipped.padding(toLength: width, withPad: " ", startingAt: 0)
         }
         // Headers are schema field names, shared with JSON and the API reference.
+        // `blocked` prints its reason (C11H-320); the JSON row has the rest.
         let columns = [("workspace_title", 24), ("panel_title", 28), ("agent_type", 12),
-                       ("model", 20), ("lifecycle", 9), ("flag", 5), ("mailbox_unread_count", 20)]
+                       ("model", 20), ("lifecycle", 9), ("blocked", 17), ("flag", 5), ("mailbox_unread_count", 20)]
         print(columns.map { cell($0.0, width: $0.1) }.joined(separator: "  "))
         for panel in response["panels"] as? [[String: Any]] ?? [] {
-            print(columns.map { cell(panel[$0.0], width: $0.1) }.joined(separator: "  "))
+            print(columns.map { column in
+                let value = column.0 == "blocked" ? (panel["blocked"] as? [String: Any])?["reason"] : panel[column.0]
+                return cell(value, width: column.1)
+            }.joined(separator: "  "))
         }
+    }
+
+    /// C11H-320: `fleet`'s filters and delta cursor as `system.fleet` params.
+    /// Refs and UUIDs pass through; the app resolves them against `tree`'s handles.
+    static func fleetParams(_ args: [String]) throws -> [String: Any] {
+        var params: [String: Any] = [:]
+        var index = 0
+        func value(_ flag: String) throws -> String {
+            guard index + 1 < args.count, !args[index + 1].hasPrefix("--") else {
+                throw CLIError(message: "fleet: \(flag) needs a value")
+            }
+            index += 1
+            return args[index]
+        }
+        while index < args.count {
+            switch args[index] {
+            case "--json": break
+            case "--flagged": params["flagged"] = true
+            case "--blocked": params["blocked"] = true
+            case "--stalled": params["stalled"] = true
+            case "--workspace": params["workspace"] = try value("--workspace")
+            case "--group": params["group"] = try value("--group")
+            case "--parent": params["parent"] = try value("--parent")
+            case "--lifecycle":
+                params["lifecycle"] = try value("--lifecycle").split(separator: ",").map {
+                    $0.trimmingCharacters(in: .whitespaces)
+                }
+            case "--since":
+                let raw = try value("--since")
+                params["since"] = Int(raw).map { $0 as Any } ?? raw
+            default:
+                throw CLIError(message: "fleet: unknown argument '\(args[index])'. Usage: c11 fleet [--json] [--workspace <ref>] [--group <ref|id|name>] [--lifecycle <a,b>] [--flagged] [--blocked] [--stalled] [--parent <ref>] [--since <seq|time>]")
+            }
+            index += 1
+        }
+        return params
     }
 
     enum TreeScope: String {
@@ -123,17 +165,21 @@ extension CMUXCLI {
                 ["panel_id": id, "panel_ref": node["ref"] as? String ?? ""],
                 idFormat: idFormat
             ) ?? id
-            let type = node["type"] as? String ?? "panel"
-            let title = (node["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let state = node["state"] as? String ?? "unknown"
+            let type = HCCoreUtility.printable(node["type"] as? String ?? "panel")
+            let title = HCCoreUtility.printable((node["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+            let state = HCCoreUtility.printable(node["state"] as? String ?? "unknown")
             let delegation = (node["delegated"] as? Bool) == true ? " [delegate]" : ""
             let workspaceRef = node["workspace_ref"] as? String ?? "workspace"
-            let workspaceTitle = (node["workspace_title"] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let workspaceTitle = HCCoreUtility.printable((node["workspace_title"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
             let workspace = workspaceTitle.isEmpty
                 ? workspaceRef
                 : "\(workspaceRef) \"\(workspaceTitle)\""
-            print("\(marker)\(ref) [\(type)]\(title.isEmpty ? "" : " \(title)") [\(state)]\(delegation) — \(workspace)")
+            // A child's place in the tree already says who made it.
+            let origin = depth == 0 || node["origin"] as? String != "panel"
+                ? lineageOriginText(node).map { " (\($0))" } ?? ""
+                : ""
+            print("\(marker)\(ref) [\(type)]\(title.isEmpty ? "" : " \(title)") [\(state)]\(delegation)\(origin) — \(workspace)")
         }
     }
 
@@ -248,7 +294,7 @@ extension CMUXCLI {
                 let wsRef = (ws["ref"] as? String) ?? "?"
                 let panes = ws["areas"] as? [[String: Any]] ?? []
                 let sCount = panes.reduce(0) { $0 + (($1["panels"] as? [[String: Any]])?.count ?? 0) }
-                out += "\n### \(wsTitle) (\(wsRef)) — "
+                out += "\n### \(HCCoreUtility.printable(wsTitle)) (\(wsRef)) — "
                 out += "\(panes.count) \(plural(panes.count, "area")), "
                 out += "\(sCount) \(plural(sCount, "panel"))\n"
                 summaryRows.append("| \(wi + 1) | \(mdCell(wsTitle)) | \(panes.count) | \(sCount) |")
@@ -280,15 +326,17 @@ extension CMUXCLI {
         // Prefer the canonical manifest title; the tree's title can be a stale
         // auto-title.
         let title = (md["title"] as? String) ?? (surf["title"] as? String) ?? "(untitled)"
-        let kind = (surf["type"] as? String) ?? "terminal"
+        let kind = HCCoreUtility.printable((surf["type"] as? String) ?? "terminal")
 
+        // C11H-359: every manifest value can come from another machine; each
+        // prints with its controls as `\xHH`.
         var chips: [String] = []
-        if let t = md["terminal_type"] as? String, !t.isEmpty { chips.append(t) }
-        if let m = md["model"] as? String, !m.isEmpty { chips.append(m) }
+        if let t = md["terminal_type"] as? String, !t.isEmpty { chips.append(HCCoreUtility.printable(t)) }
+        if let m = md["model"] as? String, !m.isEmpty { chips.append(HCCoreUtility.printable(m)) }
         if let st = (md["status"] as? String) ?? (md["lifecycle_state"] as? String), !st.isEmpty {
-            chips.append(st)
+            chips.append(HCCoreUtility.printable(st))
         }
-        if let role = md["role"] as? String, !role.isEmpty { chips.append("role=\(role)") }
+        if let role = md["role"] as? String, !role.isEmpty { chips.append("role=\(HCCoreUtility.printable(role))") }
 
         var marker = ""
         if (surf["here"] as? Bool) == true { marker = " ← here" }
@@ -300,13 +348,13 @@ extension CMUXCLI {
         line += marker + "\n"
 
         if kind == "browser", let url = surf["url"] as? String, !url.isEmpty {
-            line += "  - \(url)\n"
+            line += "  - \(HCCoreUtility.printable(url))\n"
         }
         if let desc = md["description"] as? String, !desc.isEmpty {
-            line += "  - \(desc.replacingOccurrences(of: "\n", with: " "))\n"
+            line += "  - \(mdInline(desc))\n"
         }
         if let addr = md["mailbox.address"] as? String, !addr.isEmpty {
-            line += "  - mailbox: `\(addr)`\n"
+            line += "  - mailbox: `\(HCCoreUtility.printable(addr))`\n"
         }
         return line
     }
@@ -329,15 +377,17 @@ extension CMUXCLI {
         n == 1 ? word : "\(word)s"
     }
 
-    /// Escape a value for a Markdown table cell (pipes + newlines).
+    /// Escape a value for a Markdown table cell (pipes + newlines; other
+    /// controls as `\xHH`, C11H-359).
     func mdCell(_ s: String) -> String {
-        s.replacingOccurrences(of: "|", with: "\\|")
-            .replacingOccurrences(of: "\n", with: " ")
+        HCCoreUtility.printable(s.replacingOccurrences(of: "|", with: "\\|")
+            .replacingOccurrences(of: "\n", with: " "))
     }
 
-    /// Escape a value used inside inline emphasis (`**…**`).
+    /// Escape a value used inside inline emphasis (`**…**`): a newline is a
+    /// space, other controls `\xHH` (C11H-359).
     func mdInline(_ s: String) -> String {
-        s.replacingOccurrences(of: "\n", with: " ")
+        HCCoreUtility.printable(s.replacingOccurrences(of: "\n", with: " "))
     }
 
     func parseTreeCommandOptions(_ args: [String]) throws -> TreeCommandOptions {
@@ -962,11 +1012,28 @@ extension CMUXCLI {
                 guard let id = workspace["group_id"] as? String else { return true }
                 return !groupIDs.contains(id.lowercased())
             }
-            // Shared sidebar order: pinned groups, pinned ungrouped, other groups, other ungrouped.
+            // The sidebar's root order (C11H-342), from the app; an older app
+            // sends none and draws pinned groups, pinned ungrouped, other groups, other ungrouped.
             var roots: [(isGroup: Bool, item: [String: Any])] = []
-            for pinned in [true, false] {
-                roots += groups.filter { (($0["is_pinned"] as? Bool) == true) == pinned }.map { (true, $0) }
-                roots += ungrouped.filter { (($0["pinned"] as? Bool) == true) == pinned }.map { (false, $0) }
+            let rootOrder = window["root_order"] as? [[String: Any]] ?? []
+            if !rootOrder.isEmpty {
+                func byID(_ items: [[String: Any]]) -> [String: [String: Any]] {
+                    Dictionary(items.compactMap { item in (item["id"] as? String).map { ($0.lowercased(), item) } },
+                               uniquingKeysWith: { first, _ in first })
+                }
+                let groupsByID = byID(groups), workspacesByID = byID(ungrouped)
+                for entry in rootOrder {
+                    guard let id = (entry["id"] as? String)?.lowercased() else { continue }
+                    if let group = groupsByID[id] { roots.append((true, group)) }
+                    else if let workspace = workspacesByID[id] { roots.append((false, workspace)) }
+                }
+                let placed = Set(rootOrder.compactMap { ($0["id"] as? String)?.lowercased() })
+                roots += ungrouped.filter { !placed.contains(($0["id"] as? String)?.lowercased() ?? "") }.map { (false, $0) }
+            } else {
+                for pinned in [true, false] {
+                    roots += groups.filter { (($0["is_pinned"] as? Bool) == true) == pinned }.map { (true, $0) }
+                    roots += ungrouped.filter { (($0["pinned"] as? Bool) == true) == pinned }.map { (false, $0) }
+                }
             }
             for (index, root) in roots.enumerated() {
                 let last = index == roots.count - 1
@@ -979,7 +1046,7 @@ extension CMUXCLI {
                 let members = workspaces.filter { id != nil && ($0["group_id"] as? String)?.lowercased() == id }
                 let pin = (group["is_pinned"] as? Bool) == true ? " [pinned]" : ""
                 let collapse = (group["is_collapsed"] as? Bool) == true ? " [collapsed]" : ""
-                treeLines.append("\(last ? "└── " : "├── ")workspace_group \(textHandle(group, idFormat: idFormat)) \(group["name"] as? String ?? "")\(pin)\(collapse) members=\(group["member_count"] ?? members.count)")
+                treeLines.append("\(last ? "└── " : "├── ")workspace_group \(textHandle(group, idFormat: idFormat)) \(HCCoreUtility.printable(group["name"] as? String ?? ""))\(pin)\(collapse) members=\(group["member_count"] ?? members.count)")
                 // Inspection always includes members, including collapsed folders.
                 for (memberIndex, workspace) in members.enumerated() {
                     appendWorkspace(workspace, prefix: last ? "    " : "│   ", isLast: memberIndex == members.count - 1)
@@ -993,6 +1060,13 @@ extension CMUXCLI {
 
     func treeWindowLabel(_ window: [String: Any], idFormat: CLIIDFormat) -> String {
         var parts = ["window \(textHandle(window, idFormat: idFormat))"]
+        // c11 (C11H-197): the window's name and its display.
+        if let name = window["name"] as? String {
+            parts.append("\"" + HCCoreUtility.printable(name).replacingOccurrences(of: "\"", with: "\\\"") + "\"")
+        }
+        if let display = window["display"] as? [String: Any], let ref = display["ref"] as? String {
+            parts.append("on \(ref)")
+        }
         if (window["current"] as? Bool) == true {
             parts.append("[current]")
         }
@@ -1006,11 +1080,11 @@ extension CMUXCLI {
         var parts = ["workspace \(textHandle(workspace, idFormat: idFormat))"]
         let title = (workspace["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !title.isEmpty {
-            parts.append("\"\(title)\"")
+            parts.append("\"\(HCCoreUtility.printable(title))\"")
         }
         if let root = (workspace["root_directory"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !root.isEmpty {
-            parts.append("root=\((root as NSString).abbreviatingWithTildeInPath)")
+            parts.append("root=\(HCCoreUtility.printable((root as NSString).abbreviatingWithTildeInPath))")
         }
         if (workspace["selected"] as? Bool) == true {
             parts.append("[selected]")
@@ -1076,10 +1150,12 @@ extension CMUXCLI {
     func treeSurfaceLabel(_ surface: [String: Any], idFormat: CLIIDFormat) -> String {
         let rawType = ((surface["type"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let surfaceType = rawType.isEmpty ? "unknown" : rawType
-        var parts = ["panel \(textHandle(surface, idFormat: idFormat))", "[\(surfaceType)]"]
+        var parts = ["panel \(textHandle(surface, idFormat: idFormat))", "[\(HCCoreUtility.printable(surfaceType))]"]
+        // C11H-359: a title, a parent's title and a URL can come from another
+        // machine; each prints with its controls as `\xHH`.
         let title = (surface["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !title.isEmpty {
-            parts.append("\"\(title)\"")
+            parts.append("\"\(HCCoreUtility.printable(title))\"")
         }
         if (surface["selected"] as? Bool) == true {
             parts.append("[selected]")
@@ -1094,14 +1170,46 @@ extension CMUXCLI {
            !parentRef.isEmpty {
             let parentTitle = (surface["parent_panel_title"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            parts.append("↳ child of \(parentRef)\(parentTitle.isEmpty ? "" : " \(parentTitle)")")
+            parts.append("↳ child of \(HCCoreUtility.printable(parentRef))\(parentTitle.isEmpty ? "" : " \(HCCoreUtility.printable(parentTitle))")")
+        } else if let origin = lineageOriginText(surface) {
+            parts.append("↳ \(origin)")
         }
         if surfaceType.lowercased() == "browser",
            let url = surface["url"] as? String,
            !url.isEmpty {
-            parts.append(url)
+            parts.append(HCCoreUtility.printable(url))
         }
         return parts.joined(separator: " ")
+    }
+
+    /// Who made a panel, from a lineage node's `origin` and `origin_detail`.
+    /// nil for a child (its parent says it) and for a server too old to send
+    /// an origin. The human is "operator", never "you".
+    func lineageOriginText(_ node: [String: Any]) -> String? {
+        switch node["origin"] as? String {
+        case "operator":
+            return "launched by operator"
+        case "app":
+            let detail = (node["origin_detail"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if detail == "launch" {
+                // Local time in the operator's locale ("Nov 13, 10:57 AM"), never UTC.
+                guard let raw = node["created_at"] as? String,
+                      let created = ISO8601DateFormatter().date(from: raw) else { return "created by c11 launch" }
+                func part(_ template: String) -> String {
+                    let formatter = DateFormatter()
+                    formatter.setLocalizedDateFormatFromTemplate(template)
+                    return formatter.string(from: created)
+                }
+                return "created by c11 launch at \(part("MMMd")), \(part("jmm"))"
+            }
+            return detail.isEmpty ? "launched by c11" : "launched by c11 (\(HCCoreUtility.printable(detail)))"
+        case "external":
+            return "launched from outside c11"
+        case "unknown":
+            return "origin not recorded"
+        default:
+            return nil
+        }
     }
 
     func isUUID(_ value: String) -> Bool {

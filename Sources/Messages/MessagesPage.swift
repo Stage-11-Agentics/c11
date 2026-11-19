@@ -5,7 +5,7 @@ enum MessagesPageLayout {
     static let directoryName = "messages"
     static let fileName = "messages.html"
 
-    private static let productionBundleIdentifier = "com.stage11.c11"
+    private static let productionBundleIdentifier = C11Identity.releaseBundleIdentifier
 
     static func directoryURL(state: URL) -> URL {
         state.appendingPathComponent(directoryName, isDirectory: true)
@@ -266,6 +266,8 @@ struct MessagesPageMailboxArtifact {
     /// The dispatcher's stamp of the sending panel (`ext.c11_sender_panel_id`),
     /// when it recorded one. Senders cannot forge it.
     var senderPanelID: String? = nil
+    /// C11H-360: the linked machine a relayed envelope came from (`ext.c11h`).
+    var relayMachine: String? = nil
     /// The recipient panel whose inbox held this copy, from the inbox path.
     var recipientPanelID: String? = nil
 }
@@ -485,6 +487,10 @@ enum MessagesPageBuilder {
         if record.timestamp.isEmpty { record.timestamp = artifact.timestamp ?? "" }
         if record.workspace == nil { record.workspace = artifact.workspace }
         if record.sender == nil { record.sender = artifact.from }
+        // C11H-360: relayed mail names its machine wherever its sender shows.
+        if let machine = artifact.relayMachine, let from = artifact.from {
+            record.sender = MailboxEnvelope.senderLabel(from, relayMachine: machine)
+        }
         if record.senderID == nil { record.senderID = artifact.senderPanelID }
         if let panel = artifact.recipientPanelID, !record.recipientPanelIDs.contains(panel) {
             record.recipientPanelIDs.append(panel)
@@ -555,6 +561,10 @@ enum MessagesPageBuilder {
         switch suffix {
         case "accepted":
             record.sender = record.sender ?? MessagesPageJSON.string(payload["from"])
+            // C11H-360: relayed mail names its machine, artifact or not.
+            if let machine = MessagesPageJSON.string(payload["relay_machine"]), let from = MessagesPageJSON.string(payload["from"]) {
+                record.sender = MailboxEnvelope.senderLabel(from, relayMachine: machine)
+            }
             record.recipient = record.recipient ?? MessagesPageJSON.string(payload["to"])
             record.targetTitle = record.targetTitle ?? MessagesPageJSON.string(payload["to"])
             if MessagesPageJSON.bool(payload["text_recorded"]) == false {
@@ -982,7 +992,8 @@ enum MessagesPageSource {
             textRecorded: textRecorded,
             recordedBytes: textRecorded ? nil : (rawBody?.utf8.count ?? 0),
             senderPanelID: MessagesPageJSON.string(ext[MailboxEnvelope.senderPanelKey])
-                .flatMap(UUID.init(uuidString:))?.uuidString
+                .flatMap(UUID.init(uuidString:))?.uuidString,
+            relayMachine: MailboxEnvelope.relayMachine(raw: object)
         )
     }
 

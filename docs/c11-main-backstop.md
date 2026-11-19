@@ -1,8 +1,8 @@
-# Atlas main-tip backstop
+# Build-host main-tip backstop
 
-`c11/main-atlas` reports an app build, the full eight-worker logic suite, serial host tests, six built-CLI Python checks and the shell watcher checks. Atlas applies both `all` and `atlas` quarantine rows and records them. Every native suite must execute at least one test. A successful slow run stays successful; build/test failures are `failure`, infrastructure/result-reading faults are `error`, and yields post nothing. An xcodebuild stage (app, logic or host) that fails in under a minute with a linker or CodeSign stale-cache shape logs `stale-cache`, empties that dependency key's DerivedData except `SourcePackages` and reruns the gate once from the app build, with new result bundle paths; the rerun's result is the status. Result bundles are read through the poller's reader: 120 seconds, one retry, then `error` whose `c11/main-atlas` description is the reason (`result unreadable: xcresulttool timed out after 120s 104s`).
+`c11/main-atlas` reports an app build, the full eight-worker logic suite, serial host tests, six built-CLI Python checks and the shell watcher checks. The build host applies both `all` and `remote` quarantine rows and records them. Every native suite must execute at least one test. A successful slow run stays successful; build/test failures are `failure`, infrastructure/result-reading faults are `error`, and yields post nothing. An xcodebuild stage (app, logic or host) that fails in under a minute with a linker or CodeSign stale-cache shape logs `stale-cache`, empties that dependency key's DerivedData except `SourcePackages` and reruns the gate once from the app build, with new result bundle paths; the rerun's result is the status. Result bundles are read through the poller's reader: 120 seconds, one retry, then `error` whose `c11/main-atlas` description is the reason (`result unreadable: xcresulttool timed out after 120s 104s`).
 
-GitHub's `CI main (macOS)` remains a separate hourly/dispatch clean-machine check, with its own status and green-record skip. An Atlas pass cannot skip or overwrite that check. Neither lane is a self-hosted Actions runner.
+GitHub's `CI main (macOS)` remains a separate hourly/dispatch clean-machine check, with its own status and green-record skip. A build-host pass cannot skip or overwrite that check. Neither lane is a self-hosted Actions runner.
 
 ## Deployment gate
 
@@ -18,7 +18,7 @@ Normal main advances leave the current build running. There is no per-push queue
 
 ## Manual dry run
 
-Copy these files into an isolated scratch `bin` directory on Atlas: `c11-main-backstop.py`, `c11-pr-swift-poller.py`, `host_test_quarantine.py`. Run:
+Copy these files into an isolated scratch `bin` directory on the build host: `c11-main-backstop.py`, `c11-pr-swift-poller.py`, `host_test_quarantine.py`. Run:
 
 ```bash
 /usr/bin/python3 ~/c11-466-scratch/bin/c11-main-backstop.py once --root ~/c11-466-scratch --force
@@ -28,14 +28,14 @@ This executes the real fixed gate but posts **no status**. Exit 0 means success 
 
 ## Install and update (after GO-INSTALL)
 
-Run on Atlas from a trusted clone containing the merged scripts:
+Run on the build host from a trusted clone containing the merged scripts:
 
 ```bash
 python3 scripts/c11-main-backstop-service.py install --source "$PWD"
 python3 ~/c11-main-backstop/bin/c11-main-backstop-service.py health
 ```
 
-The service uses Atlas's existing `gh` login, as the poller does; it writes no credential file. Its label is `com.stage11.c11-main-backstop`. The plist supplies only the fixed installed supervisor command with `--publish`. Publishing additionally requires the default root and `state/enabled.json`.
+The service uses the build host's existing `gh` login, as the poller does; it writes no credential file. Its label is `com.stage11.c11-main-backstop`. The plist supplies only the fixed installed supervisor command with `--publish`. Publishing additionally requires the default root and `state/enabled.json`.
 
 Update fetches and verifies all replacement files **before** stopping the independent backstop. Stop bootouts only this label and requires process-tree recovery using the staged new controller. The previous `bin` is retained as `previous`, then the staged directory is renamed into place and the service bootstraps:
 
@@ -64,4 +64,4 @@ Health prints the exact service, installed manifest, last completed result and a
 
 ## Acceptance
 
-On Atlas, `python3 scripts/c11-main-backstop-test.py` executes real temporary Git histories, gate subprocesses, private slot contention and process-tree cancellation with fixture tool responses. It does not contact GitHub or use the shared slots. `python3 scripts/c11-main-backstop-mutations.py /path/to/evidence` removes each guarded behavior in a disposable copy, requires each named test to fail, then runs the restored suite. The overnight evidence includes per-guard mutations and the real main-tip warm run; fixtures alone are not a timing claim for the native suite.
+On the build host, `python3 scripts/c11-main-backstop-test.py` executes real temporary Git histories, gate subprocesses, private slot contention and process-tree cancellation with fixture tool responses. It does not contact GitHub or use the shared slots. `python3 scripts/c11-main-backstop-mutations.py /path/to/evidence` removes each guarded behavior in a disposable copy, requires each named test to fail, then runs the restored suite. The overnight evidence includes per-guard mutations and the real main-tip warm run; fixtures alone are not a timing claim for the native suite.

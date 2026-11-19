@@ -18,6 +18,8 @@ struct MarkdownPanelView: View {
     @State private var focusFlashAnimationGeneration: Int = 0
     @State private var isDropTargeted: Bool = false
     @Environment(\.colorScheme) private var colorScheme
+    /// c11 (C11H-197): the hosting window's theme override.
+    @Environment(\.c11WindowThemeName) private var windowThemeName
     @AppStorage(ThemeAppStorage.Keys.m1bMarkdownChromeMigrated, store: ThemeAppStorage.defaults)
     private var m1bMarkdownChromeMigrated = false
 
@@ -56,7 +58,13 @@ struct MarkdownPanelView: View {
             if isVisibleInUI {
                 // Observe left-clicks without intercepting them so markdown text
                 // selection and link activation continue to use the native path.
-                MarkdownPointerObserver(onPointerDown: onRequestPanelFocus)
+                MarkdownPointerObserver(onPointerDown: {
+                    // C11H-246: a click inside the panel opens it.
+                    TerminalNotificationStore.shared.dismissFlagNotificationForOperatorOpen(
+                        workspaceId: panel.workspaceId, surfaceId: panel.id
+                    )
+                    onRequestPanelFocus()
+                })
             }
         }
         .overlay {
@@ -213,8 +221,8 @@ struct MarkdownPanelView: View {
     // MARK: - Theme
 
     private var backgroundColor: Color {
-        if m1bMarkdownChromeMigrated, themeManager.isEnabled {
-            let context = themeManager.makeContext(colorScheme: colorScheme)
+        if themeManager.themedPathLive(flag: m1bMarkdownChromeMigrated, windowThemeName: windowThemeName) {
+            let context = themeManager.makeContext(colorScheme: colorScheme, windowThemeName: windowThemeName)
             if let themed: NSColor = themeManager.resolve(.markdownChrome_background, context: context) {
                 return Color(nsColor: themed)
             }
@@ -724,6 +732,8 @@ private struct MarkdownWebViewHost: NSViewRepresentable {
 /// so a discarded replacement never leaves the visible reader empty (C11-485).
 final class MarkdownWebViewContainer: NSView {
     let webView: MarkdownWKWebView
+    /// C11H-330: the evaporation bar on the reader's top edge, created on first use.
+    let evaporationBarMount = FlagEvaporationBarMount()
 
     init(webView: MarkdownWKWebView) {
         self.webView = webView
@@ -735,6 +745,16 @@ final class MarkdownWebViewContainer: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     var holdsWebView: Bool { webView.superview === self }
+
+    /// A claimed web view lands on top; the bar goes back above it.
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        evaporationBarMount.keepAbove(subview, in: self)
+        // C11H-330: the bar's host exists only once this container holds the
+        // web view (a first visit mounts it after the seen refresh), and a
+        // replacement container takes it over; either brings the running bar.
+        if subview === webView { FlagEvaporationController.shared.barHostDidMount() }
+    }
 
     /// In a visible window and not hidden. A closed window that is still alive
     /// does not count.
@@ -855,4 +875,15 @@ final class MarkdownPanelPointerObserverView: NSView {
             self?.handleEventIfNeeded(event) ?? event
         }
     }
+}
+
+// C11H-330: markdown panels show the evaporation bar over the reader.
+extension MarkdownWebViewContainer: FlagEvaporationBarHost {
+    func startEvaporationBar(color: NSColor, duration: TimeInterval, elapsed: TimeInterval) {
+        evaporationBarMount.start(in: self, above: nil, color: color, duration: duration, elapsed: elapsed)
+    }
+
+    func cancelEvaporationBar() { evaporationBarMount.cancel() }
+    func prepareEvaporationFade() {}
+    func evaporationLowered() { evaporationBarMount.fadeOut() }
 }

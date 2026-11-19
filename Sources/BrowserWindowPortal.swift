@@ -2091,6 +2091,8 @@ final class BrowserAreaDropTargetView: NSView {
 }
 
 final class WindowBrowserSlotView: NSView {
+    /// C11H-330: the evaporation bar on this slot's top edge, created on first use.
+    let evaporationBarMount = FlagEvaporationBarMount()
     override var isOpaque: Bool { false }
     override var isHidden: Bool {
         didSet {
@@ -2104,6 +2106,8 @@ final class WindowBrowserSlotView: NSView {
     private var searchOverlayConfiguration: BrowserPortalSearchOverlayConfiguration?
     private var companionOverlayHost: BrowserCompanionOverlayHost?
     private var companionConfiguration: BrowserPortalCompanionConfiguration?
+    /// A companion veil covers the page: no pointer input, side buttons included, reaches it.
+    var companionVeilBlocksPage: Bool { companionOverlayHost?.isBlocking == true }
     private var paneInteractionOverlay: AreaInteractionOverlayHost?
     private var paneInteractionActivityCancellable: AnyCancellable?
     private weak var hostedWebView: WKWebView?
@@ -2548,6 +2552,9 @@ final class WindowBrowserSlotView: NSView {
         }
         guard subview !== paneDropTargetView else { return }
         refreshInteractionLayersAndFocus(reason: "subviewAdded")
+        // C11H-330: a web view that joins this slot after its flag's run
+        // started brings the running bar here.
+        if subview is WKWebView { FlagEvaporationController.shared.barHostDidMount() }
     }
 
     private var activeDropZone: DropZone? {
@@ -2641,11 +2648,26 @@ final class WindowBrowserSlotView: NSView {
     }
 
     private func interactionLayerPriority(of view: NSView) -> Int {
-        if view === searchOverlayHostingView { return 1 }
-        if view === companionOverlayHost { return 2 }
-        if view === paneDropTargetView { return 3 }
-        if view === paneInteractionOverlay { return 4 }
+        // C11H-330: the evaporation bar sits over the page, under every interaction layer.
+        if let bar = evaporationBarMount.bar, view === bar { return 1 }
+        if view === searchOverlayHostingView { return 2 }
+        if view === companionOverlayHost { return 3 }
+        if view === paneDropTargetView { return 4 }
+        if view === paneInteractionOverlay { return 5 }
         return 0
+    }
+
+    /// Orders the slot's subviews by interaction layer, with no focus change.
+    fileprivate func sortInteractionLayers() {
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        sortSubviews({ lhs, rhs, context in
+            guard let context else { return .orderedSame }
+            let slotView = Unmanaged<WindowBrowserSlotView>.fromOpaque(context).takeUnretainedValue()
+            let lhsPriority = slotView.interactionLayerPriority(of: lhs)
+            let rhsPriority = slotView.interactionLayerPriority(of: rhs)
+            if lhsPriority == rhsPriority { return .orderedSame }
+            return lhsPriority < rhsPriority ? .orderedAscending : .orderedDescending
+        }, context: context)
     }
 
     private func refreshInteractionLayersAndFocus(reason: String) {
@@ -2663,15 +2685,7 @@ final class WindowBrowserSlotView: NSView {
             overlayContainer.addSubview(dropZoneOverlayView, positioned: .above, relativeTo: nil)
         }
 
-        let context = Unmanaged.passUnretained(self).toOpaque()
-        sortSubviews({ lhs, rhs, context in
-            guard let context else { return .orderedSame }
-            let slotView = Unmanaged<WindowBrowserSlotView>.fromOpaque(context).takeUnretainedValue()
-            let lhsPriority = slotView.interactionLayerPriority(of: lhs)
-            let rhsPriority = slotView.interactionLayerPriority(of: rhs)
-            if lhsPriority == rhsPriority { return .orderedSame }
-            return lhsPriority < rhsPriority ? .orderedAscending : .orderedDescending
-        }, context: context)
+        sortInteractionLayers()
 
         if let paneInteractionOverlay, !paneInteractionOverlay.isHidden {
             _ = paneInteractionOverlay.requestKeyboardFocus(reason: "browserPortal.\(reason)")
@@ -3016,6 +3030,14 @@ final class WindowBrowserPortal: NSObject {
                 windowCorners: windowCorners,
                 into: &segments
             )
+        }
+        // The terminal overlay draws every area frame, below this host; redraw
+        // the parts a web view covers.
+        if AreaFrameRegistry.hasAnchors {
+            segments.append(contentsOf: AreaFrameRegistry.segments(
+                in: hostView,
+                clipRects: hostedFramesForChromeOverlay(in: hostView)
+            ))
         }
         return segments
     }
@@ -3534,6 +3556,11 @@ final class WindowBrowserPortal: NSObject {
 #if DEBUG
         overlayInvalidationCountForTesting += 1
 #endif
+        chromeOverlayView.needsDisplay = true
+    }
+
+    /// An area frame's state, theme or geometry changed (`AreaFrameRegistry`).
+    func invalidateAreaFrames() {
         chromeOverlayView.needsDisplay = true
     }
 
@@ -4672,6 +4699,15 @@ final class WindowBrowserPortal: NSObject {
     }
 
     func webViewAtWindowPoint(_ windowPoint: NSPoint) -> WKWebView? {
+        browserHitAtWindowPoint(windowPoint)?.webView
+    }
+
+    func isVeiled(webViewId: ObjectIdentifier) -> Bool {
+        entriesByWebViewId[webViewId]?.containerView?.companionVeilBlocksPage == true
+    }
+
+    /// The browser under a window point, and whether a companion veil covers it.
+    func browserHitAtWindowPoint(_ windowPoint: NSPoint) -> (webView: WKWebView, veiled: Bool)? {
         guard ensureInstalled() else { return nil }
         let point = hostView.convert(windowPoint, from: nil)
         for subview in hostView.subviews.reversed() {
@@ -4682,7 +4718,7 @@ final class WindowBrowserPortal: NSObject {
                 .first(where: { _, entry in entry.containerView === container })?
                 .value
                 .webView else { continue }
-            return webView
+            return (webView, container.companionVeilBlocksPage)
         }
         return nil
     }
@@ -4769,6 +4805,10 @@ enum BrowserWindowPortalRegistry {
 
     static func invalidateChromeOverlay(for window: NSWindow) {
         existingPortal(for: window)?.invalidateChromeOverlay()
+    }
+
+    static func invalidateAreaFrames(for window: NSWindow) {
+        existingPortal(for: window)?.invalidateAreaFrames()
     }
 
     static func windowsWithPortals() -> [NSWindow] {
@@ -4960,6 +5000,18 @@ enum BrowserWindowPortalRegistry {
         return portal.webViewAtWindowPoint(windowPoint)
     }
 
+    static func browserHitAtWindowPoint(_ windowPoint: NSPoint, in window: NSWindow) -> (webView: WKWebView, veiled: Bool)? {
+        portalsByWindowId[ObjectIdentifier(window)]?.browserHitAtWindowPoint(windowPoint)
+    }
+
+    /// A companion veil covers this web view's page.
+    static func isVeiled(webView: WKWebView) -> Bool {
+        let webViewId = ObjectIdentifier(webView)
+        guard let windowId = webViewToWindowId[webViewId],
+              let portal = portalsByWindowId[windowId] else { return false }
+        return portal.isVeiled(webViewId: webViewId)
+    }
+
     static func refresh(webView: WKWebView, reason: String) {
         let webViewId = ObjectIdentifier(webView)
         guard let windowId = webViewToWindowId[webViewId],
@@ -5020,4 +5072,27 @@ extension BrowserWindowPortalRegistry {
     static func diagnosticSnapshot(window: NSWindow, geometry: PortalSnapshotGeometry, identities: [ObjectIdentifier: [String: UUID]]) -> [String: Any] {
         portalsByWindowId[ObjectIdentifier(window)]?.diagnosticSnapshot(geometry, identities: identities) ?? ["present": false]
     }
+}
+
+// C11H-330: browser panels show the evaporation bar over the page, in the
+// portal slot (a SwiftUI overlay would sit under the portal-hosted web view).
+extension WindowBrowserSlotView: FlagEvaporationBarHost {
+    /// The slot hosting `webView`; DevTools may wrap it, so walk up.
+    static func enclosing(_ webView: WKWebView) -> WindowBrowserSlotView? {
+        var current = webView.superview
+        while let view = current {
+            if let slot = view as? WindowBrowserSlotView { return slot }
+            current = view.superview
+        }
+        return nil
+    }
+
+    func startEvaporationBar(color: NSColor, duration: TimeInterval, elapsed: TimeInterval) {
+        evaporationBarMount.start(in: self, above: nil, color: color, duration: duration, elapsed: elapsed)
+        sortInteractionLayers()
+    }
+
+    func cancelEvaporationBar() { evaporationBarMount.cancel() }
+    func prepareEvaporationFade() {}
+    func evaporationLowered() { evaporationBarMount.fadeOut() }
 }

@@ -149,8 +149,8 @@ final class PiConversationTests: XCTestCase {
     /// wrap in `--…--`. Dots are preserved (pi does not map `.`).
     func testPiSessionSlugMatchesPiEncoding() {
         XCTAssertEqual(
-            PiScraper.sessionSlug(forCwd: "/Users/atin/Projects/Gregorovich"),
-            "--Users-atin-Projects-Gregorovich--"
+            PiScraper.sessionSlug(forCwd: "/Users/demo/src/notes"),
+            "--Users-demo-src-notes--"
         )
         XCTAssertEqual(
             PiScraper.sessionSlug(forCwd: "/work/my.proj"),

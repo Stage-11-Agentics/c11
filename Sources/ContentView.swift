@@ -8974,7 +8974,7 @@ struct WorkspaceSidebar: View {
                                             if case .group = run.rows[0] {
                                                 tileRows(run.rows, workspacesById: workspacesById,
                                                          chromeTokens: chromeTokens, palette: groupPalette,
-                                                         style: sidebarStyle)
+                                                         style: sidebarStyle, sidebarWidth: proxy.size.width)
                                             } else {
                                                 // Every tile is the full card. A fixed-height row
                                                 // proposes its tallest card's height to each cell,
@@ -8983,7 +8983,7 @@ struct WorkspaceSidebar: View {
                                                     HStack(alignment: .top, spacing: 0) {
                                                         tileRows(line.rows, workspacesById: workspacesById,
                                                                  chromeTokens: chromeTokens, palette: groupPalette,
-                                                                 style: sidebarStyle)
+                                                                 style: sidebarStyle, sidebarWidth: proxy.size.width)
                                                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                                                         ForEach(line.rows.count..<columns, id: \.self) { _ in
                                                             Color.clear.frame(maxWidth: .infinity).frame(height: 0)
@@ -9000,7 +9000,7 @@ struct WorkspaceSidebar: View {
                                     switch row {
                                     case .group(let header):
                                         groupHeader(header, chromeTokens: chromeTokens, palette: groupPalette,
-                                                    states: sidebarStyle.statePalette)
+                                                    style: sidebarStyle, sidebarWidth: proxy.size.width)
                                             .overlay(alignment: .topLeading) {
                                                 groupColorBar(
                                                     groupId: header.group.id,
@@ -9377,12 +9377,15 @@ struct WorkspaceSidebar: View {
         }
     }
 
+    /// `sidebarWidth` is the stack's width; the header is 6pt in from each side.
     private func groupHeader(_ header: WorkspaceGroupSidebarHeader, chromeTokens: ChromeScaleTokens,
-                             palette: [WorkspaceColorEntry], states: ThemeStatePalette) -> some View {
+                             palette: [WorkspaceColorEntry], style: SidebarThemeStyle,
+                             sidebarWidth: CGFloat) -> some View {
         WorkspaceGroupHeaderView(
             group: header.group, summary: header.summary, isActive: header.isActive,
             scale: chromeTokens.multiplier, colorScheme: colorScheme, palette: palette,
-            compact: sidebarDensity == .compact, captain: header.captain, states: states,
+            compact: sidebarDensity == .compact, captain: header.captain, states: style.statePalette,
+            style: style, availableWidth: max(0, sidebarWidth - 12),
             onToggleCollapse: { id in
                 guard let group = workspaceManager.workspaceGroups.first(where: { $0.id == id }) else { return }
                 try? workspaceManager.setWorkspaceGroupCollapsed(id: id, collapsed: !group.isCollapsed)
@@ -9636,12 +9639,13 @@ struct WorkspaceSidebar: View {
     @ViewBuilder
     private func tileRows(_ rows: [WorkspaceGroupSidebarRow], workspacesById: [UUID: Workspace],
                           chromeTokens: ChromeScaleTokens, palette: [WorkspaceColorEntry],
-                          style: SidebarThemeStyle) -> some View {
+                          style: SidebarThemeStyle, sidebarWidth: CGFloat) -> some View {
         ForEach(rows) { row in
             Group {
                 switch row {
                 case .group(let header):
-                    groupHeader(header, chromeTokens: chromeTokens, palette: palette, states: style.statePalette)
+                    groupHeader(header, chromeTokens: chromeTokens, palette: palette, style: style,
+                                sidebarWidth: sidebarWidth)
                         .overlay(alignment: .topLeading) {
                             groupColorBar(
                                 groupId: header.group.id,

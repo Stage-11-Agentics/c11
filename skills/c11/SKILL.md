@@ -14,7 +14,7 @@ This card holds what you need at launch and every rule whose breach destroys wor
 
 ## What ends your work
 
-- **Closing a panel ends everything its terminal started**, including `nohup` and background jobs. Don't close a panel that runs something you still need.
+- **Closing a panel ends everything its terminal started**, including `nohup` and background jobs (never c11). Don't close a panel that runs something you still need.
 - **Quitting, updating or crashing c11 detaches** persistent terminals: agents, shells, watchers and background jobs keep running and get no notice. A `not kept` fallback terminal ends with the app; a reboot or a holder loss ends every terminal.
 - **Stop a process you started by its PID**, never by a name match: every agent here is a process on the same Mac. Save `$!` and `kill "$PID"`; for a port, kill the listener's PID (`lsof -t -nP -iTCP:$PORT -sTCP:LISTEN`). When only a pattern will do, preview it with `pgrep -lf -- '<pattern>'` and put every option before `--`: macOS pkill reads anything after the first pattern as another pattern, so `pkill -f "server.ts" -n` matches every terminal's shell.
 - **If your conversation was resumed rather than reattached** (you may get one mail from `c11`, topic `c11.relaunch`), restart every watcher or monitor you depend on and re-resolve any short ref you kept.

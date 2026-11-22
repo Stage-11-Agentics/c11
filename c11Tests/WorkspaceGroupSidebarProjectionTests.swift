@@ -689,3 +689,166 @@ extension WorkspaceGroupSidebarProjectionTests {
         XCTAssertEqual(coordinator.projection.rows.map(\.id), [.workspace(flagship.id), .group(group.id)])
     }
 }
+
+/// C11H-410: a group header gives its name the width. What yields, and when,
+/// depends only on the width, the scale and what the operator configured.
+extension WorkspaceGroupSidebarProjectionTests {
+    private typealias Layout = WorkspaceGroupHeaderLayout
+    /// The narrowest sidebar (180 pt) less the header's 6 pt inset on each side.
+    private static let narrowestHeader = CGFloat(SessionPersistencePolicy.minimumSidebarWidth) - 12
+
+    private func shown(_ layout: Layout) -> [String] {
+        [("pin", layout.showsPin), ("glyph", layout.showsAttentionGlyph),
+         ("icon", layout.showsIcon), ("captain", layout.showsCaptain)].filter(\.1).map(\.0)
+    }
+
+    func testPartsYieldToTheNameInOrderAsTheHeaderNarrows() {
+        for scale: CGFloat in [1, 1.25, 1.55] {
+            var hiddenOrder: [String] = []
+            var previous = shown(Layout.resolve(width: 600, scale: scale, hasIcon: true, hasCaptain: true, isPinned: true))
+            XCTAssertEqual(previous, ["pin", "glyph", "icon", "captain"], "everything shows at a wide sidebar")
+            for width in stride(from: CGFloat(599), through: 60, by: -1) {
+                let now = shown(Layout.resolve(width: width, scale: scale, hasIcon: true, hasCaptain: true, isPinned: true))
+                XCTAssertTrue(Set(now).isSubset(of: Set(previous)), "a part never returns as the header narrows (\(width) pt at \(scale)x)")
+                hiddenOrder += previous.filter { !now.contains($0) }
+                previous = now
+            }
+            XCTAssertEqual(hiddenOrder, ["pin", "glyph", "icon", "captain"], "yield order at \(scale)x")
+        }
+    }
+
+    func testTheNameKeepsItsFloorAtTheNarrowestSidebar() {
+        for scale: CGFloat in [0.9, 1, 1.25, 1.55] {
+            for (icon, captain, pinned) in [(false, false, false), (true, true, true), (false, true, false)] {
+                let layout = Layout.resolve(width: Self.narrowestHeader, scale: scale,
+                                            hasIcon: icon, hasCaptain: captain, isPinned: pinned)
+                if layout.nameWidth < Layout.nameFloor * scale {
+                    XCTAssertEqual(shown(layout), [], "below the floor only once every part has yielded (\(scale)x)")
+                }
+            }
+        }
+        // Atin's sidebar on 2026-11-18: 180 pt at Large. h18 left the name about 10 pt ("Th...").
+        let large = Layout.resolve(width: Self.narrowestHeader, scale: 1.25, hasIcon: false, hasCaptain: false, isPinned: false)
+        XCTAssertGreaterThanOrEqual(large.nameWidth, 90)
+    }
+
+    func testTheDecorationsYieldSoAWholeNameFits() {
+        // "Swarm Research", pinned, at Large: where dropping the pin and the count's glyph lets the
+        // whole name fit, they give way. Wide enough, they stay.
+        var swarm = WorkspaceGroup(name: "Swarm Research")
+        swarm.isPinned = true
+        let needed = WorkspaceGroupHeaderView.nameWidth(swarm.name, scale: 1.25)
+        // The header width at which the name fits only once both decorations are gone.
+        let fixed = (Layout.tabLeading + Layout.chevronWidth + Layout.tabTrailing + 2 * Layout.chipInset
+                     + Layout.slotCountWidth) * 1.25
+        let tight = ceil(needed + fixed)
+        XCTAssertLessThan(tight - fixed - (Layout.slotGlyphWidth + Layout.pinWidth) * 1.25, needed,
+                          "with both decorations the name would be cut off")
+        let narrow = WorkspaceGroupHeaderView.layout(group: swarm, icon: nil, captain: .unset,
+                                                     width: tight, scale: 1.25)
+        XCTAssertFalse(narrow.showsPin)
+        XCTAssertFalse(narrow.showsAttentionGlyph)
+        XCTAssertGreaterThanOrEqual(narrow.nameWidth, needed, "the whole name fits")
+        let wide = WorkspaceGroupHeaderView.layout(group: swarm, icon: nil, captain: .unset, width: 300, scale: 1.25)
+        XCTAssertTrue(wide.showsPin)
+        XCTAssertTrue(wide.showsAttentionGlyph)
+    }
+
+    func testWhatYieldsAtLargeScaleFollowsTheWidth() {
+        func row(_ width: CGFloat) -> [String] {
+            shown(Layout.resolve(width: width, scale: 1.25, hasIcon: true, hasCaptain: true, isPinned: true))
+        }
+        // Width table at 1.25x with an icon, a Captain and a pin, for a long name: the
+        // decorations yield below 150 pt of name, the identity marks below 90 pt.
+        XCTAssertEqual(row(274), ["pin", "glyph", "icon", "captain"])
+        XCTAssertEqual(row(273), ["glyph", "icon", "captain"])
+        XCTAssertEqual(row(261), ["icon", "captain"])
+        XCTAssertEqual(row(187), ["icon", "captain"])
+        XCTAssertEqual(row(186), ["captain"])
+        XCTAssertEqual(row(Self.narrowestHeader), ["captain"])
+        XCTAssertEqual(row(120), [])
+        let slot = Layout.resolve(width: 120, scale: 1.25, hasIcon: false, hasCaptain: false, isPinned: false).slotWidth
+        XCTAssertEqual(slot, Layout.slotCountWidth * 1.25, "the attention slot never yields: it holds the actions menu on hover")
+    }
+
+    func testCountsAndCaptainPresenceNeverMoveTheHeader() {
+        let group = WorkspaceGroup(name: "The Constellation Bus")
+        let unheld = WorkspaceCaptainSummary(address: "bus-captain", holders: [], scope: .workspaceGroup, groupID: group.id)
+        let held = WorkspaceCaptainSummary(
+            address: "bus-captain",
+            holders: [WorkspaceCaptainProjection.Holder(panelID: UUID(), workspaceID: UUID(), address: "bus-captain", title: "Bus Captain")],
+            scope: .workspaceGroup, groupID: group.id)
+        for width: CGFloat in [120, Self.narrowestHeader, 220, 400] {
+            let before = WorkspaceGroupHeaderView.layout(group: group, icon: nil, captain: unheld, width: width, scale: 1.25)
+            XCTAssertEqual(WorkspaceGroupHeaderView.layout(group: group, icon: nil, captain: held, width: width, scale: 1.25),
+                           before, "a Captain arriving moves nothing at \(width) pt")
+        }
+        let none = WorkspaceGroupHeaderView.layout(group: group, icon: nil, captain: .unset, width: 400, scale: 1)
+        XCTAssertFalse(none.showsCaptain, "a group with no Captain address reserves no mark slot")
+    }
+
+    func testAShortNameKeepsItsIconAtTheNarrowestSidebar() {
+        // Large scale, 180 pt: "Ops" needs about 25 pt, so its icon stays; a long name takes it.
+        var ops = WorkspaceGroup(name: "Ops")
+        ops.icon = "🚀"
+        let icon = SidebarIconGlyph.forGroupIcon(ops.icon)
+        XCTAssertNotNil(icon)
+        let short = WorkspaceGroupHeaderView.layout(group: ops, icon: icon, captain: .unset,
+                                                    width: Self.narrowestHeader, scale: 1.25)
+        XCTAssertTrue(short.showsIcon)
+        XCTAssertTrue(short.showsAttentionGlyph)
+        var long = ops
+        long.name = "Stage 11 Deployments and Client Work"
+        let longLayout = WorkspaceGroupHeaderView.layout(group: long, icon: icon, captain: .unset,
+                                                         width: Self.narrowestHeader, scale: 1.25)
+        XCTAssertFalse(longLayout.showsIcon)
+        XCTAssertGreaterThanOrEqual(longLayout.nameWidth, Layout.nameFloor * 1.25)
+    }
+
+    func testTheNameFrameIsTheSameSelectedOrNot() {
+        // A heavier weight for the selected group moved the tab's edge 2 to 7 pt (review of #394).
+        for name in ["Swarm Research", "Stage 11 Deployments and Client Work", "Ops"] {
+            for scale: CGFloat in [1, 1.25, 1.55] {
+                var group = WorkspaceGroup(name: name)
+                group.isPinned = true
+                for width in [Self.narrowestHeader, 300] {
+                    let layout = WorkspaceGroupHeaderView.layout(group: group, icon: nil, captain: .unset,
+                                                                 width: width, scale: scale)
+                    XCTAssertEqual(
+                        WorkspaceGroupHeaderView.nameFrameWidth(name, scale: scale, isActive: true, layout: layout),
+                        WorkspaceGroupHeaderView.nameFrameWidth(name, scale: scale, isActive: false, layout: layout),
+                        "\(name) at \(scale)x, \(width) pt")
+                }
+            }
+        }
+    }
+
+    func testTheCountSlotHolds99PlusAtEveryScale() {
+        for scale: CGFloat in [1, 1.25, 1.55] {
+            let font = NSFont.monospacedDigitSystemFont(ofSize: 10 * scale, weight: .semibold)
+            let text = ("99+" as NSString).size(withAttributes: [.font: font]).width + 2 * scale
+            XCTAssertLessThanOrEqual(text, Layout.slotCountWidth * scale, "\"99+\" alone at \(scale)x")
+            let config = NSImage.SymbolConfiguration(pointSize: 8 * scale, weight: .regular)
+            for symbol in ["flag.fill", "hourglass"] {
+                let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(config)?.size.width ?? .infinity
+                XCTAssertLessThanOrEqual(glyph + 2 * scale + text, (Layout.slotCountWidth + Layout.slotGlyphWidth) * scale,
+                                         "\(symbol) and \"99+\" at \(scale)x")
+            }
+        }
+    }
+
+    func testHeaderRedrawsWhenItsWidthOrThemeChanges() {
+        let group = WorkspaceGroup(name: "Acme")
+        func header(width: CGFloat, style: SidebarThemeStyle = .unset) -> WorkspaceGroupHeaderView {
+            WorkspaceGroupHeaderView(group: group, summary: .zero, isActive: false, style: style, availableWidth: width,
+                onToggleCollapse: { _ in }, onFocus: { _ in }, onRename: { _, _ in }, onSetColor: { _, _ in },
+                onSetIcon: { _, _ in }, onTogglePin: { _ in }, onUngroup: { _ in }, onDelete: { _ in })
+        }
+        XCTAssertTrue(header(width: 168) == header(width: 168))
+        XCTAssertFalse(header(width: 168) == header(width: 240))
+        var themed = SidebarThemeStyle()
+        themed.stamp = 7
+        XCTAssertFalse(header(width: 168) == header(width: 168, style: themed))
+    }
+}

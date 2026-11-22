@@ -10,7 +10,10 @@
 //   windows <pid>              on-screen layer-0 windows of the pid: id, title, bounds
 //   activate <pid> | foreground
 //   click <x> <y>              one timestamped HID click at a global point
-//   key <keycode> [cmd]        one HID key press (53 = Escape, 13 = w)
+//   key <keycode> [cmd|cmd-shift]  one HID key press (53 = Escape, 13 = w, 35 = p, 36 = Return)
+//   type <text>                the text as HID key presses, one per character
+//   focus <pid>                the app's key (AXFocusedWindow) and main window titles, and its windows' frames
+//   keywin <pid> <title>       raise the window with this exact title and make it key (AXFocused), not main
 import AppKit
 import ApplicationServices
 
@@ -52,13 +55,25 @@ func roots(_ pid: pid_t) -> [AXUIElement] {
     if let m = attr(app, kAXMenuBarAttribute) { out.append(m as! AXUIElement) }
     return out
 }
-func post(key: CGKeyCode, cmd: Bool) {
+func post(key: CGKeyCode, flags: CGEventFlags) {
     let src = CGEventSource(stateID: .hidSystemState)
     for down in [true, false] {
         let ev = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: down)!
-        if cmd { ev.flags = .maskCommand }
+        ev.flags = flags
         ev.post(tap: .cghidEventTap)
         usleep(60_000)
+    }
+}
+func post(text: String) {
+    let src = CGEventSource(stateID: .hidSystemState)
+    for ch in text {
+        let units = Array(String(ch).utf16)
+        for down in [true, false] {
+            let ev = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: down)!
+            ev.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
+            ev.post(tap: .cghidEventTap)
+            usleep(30_000)
+        }
     }
 }
 
@@ -86,15 +101,21 @@ case "click":
     emit(["clicked": [x, y]])
 case "key":
     guard a.count >= 3, let code = UInt16(a[2]) else { exit(2) }
-    post(key: code, cmd: a.count > 3 && a[3] == "cmd")
-    emit(["key": Int(code)])
+    let mods = a.count > 3 ? a[3] : ""
+    let flags: CGEventFlags = mods == "cmd-shift" ? [.maskCommand, .maskShift] : mods == "cmd" ? .maskCommand : []
+    post(key: code, flags: flags)
+    emit(["key": Int(code), "mods": mods])
+case "type":
+    guard a.count == 3 else { exit(2) }
+    post(text: a[2])
+    emit(["typed": a[2]])
 case "windows":
     guard a.count == 3, let pid = Int(a[2]) else { exit(2) }
     let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
     emit(list.filter { ($0[kCGWindowOwnerPID as String] as? Int) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
         .map { ["id": $0[kCGWindowNumber as String] ?? 0, "title": $0[kCGWindowName as String] ?? "",
                 "bounds": $0[kCGWindowBounds as String] ?? [:]] })
-case "dump", "find", "press", "menu", "openmenu":
+case "dump", "find", "press", "menu", "openmenu", "raise", "focus", "keywin":
     guard a.count >= 3, let pid = pid_t(a[2]) else { exit(2) }
     guard AXIsProcessTrusted() else { emit(["error": "not trusted for accessibility"]); exit(3) }
     switch a[1] {
@@ -131,6 +152,34 @@ case "dump", "find", "press", "menu", "openmenu":
         }
         guard let e = hit else { emit(["error": "no element \(a[3])"]); exit(4) }
         emit(["pressed": a[3], "result": Int(AXUIElementPerformAction(e, kAXPressAction as CFString).rawValue)])
+    case "raise":
+        // Raise the app's window with this exact title and make it main, as a click on it would.
+        guard a.count == 4 else { exit(2) }
+        let app = AXUIElementCreateApplication(pid)
+        let windows = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+        guard let w = windows.first(where: { str($0, kAXTitleAttribute) == a[3] }) else { emit(["error": "no window \(a[3])"]); exit(4) }
+        let raised = AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+        let main = AXUIElementSetAttributeValue(w, kAXMainAttribute as CFString, kCFBooleanTrue)
+        emit(["raised": a[3], "result": Int(raised.rawValue), "main": Int(main.rawValue)])
+    case "focus":
+        let app = AXUIElementCreateApplication(pid)
+        func title(_ ref: CFTypeRef?) -> String {
+            guard let ref, CFGetTypeID(ref) == AXUIElementGetTypeID() else { return "" }
+            return str(ref as! AXUIElement, kAXTitleAttribute) ?? ""
+        }
+        let windows = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+        emit(["key": title(attr(app, kAXFocusedWindowAttribute)), "main": title(attr(app, kAXMainWindowAttribute)),
+              "windows": windows.map { ["title": str($0, kAXTitleAttribute) ?? "", "frame": (frame($0) as Any?) ?? NSNull()] as [String: Any] }])
+    case "keywin":
+        // Raise the window with this exact title and make it key without asking for main, as a click on a
+        // panel does.
+        guard a.count == 4 else { exit(2) }
+        let app = AXUIElementCreateApplication(pid)
+        let windows = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+        guard let w = windows.first(where: { str($0, kAXTitleAttribute) == a[3] }) else { emit(["error": "no window \(a[3])"]); exit(4) }
+        let raised = AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+        let focused = AXUIElementSetAttributeValue(w, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        emit(["keywin": a[3], "result": Int(raised.rawValue), "focused": Int(focused.rawValue)])
     case "menu", "openmenu":
         let app = AXUIElementCreateApplication(pid)
         guard let barRef = attr(app, kAXMenuBarAttribute) else { emit(["error": "no menu bar"]); exit(4) }

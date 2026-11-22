@@ -146,7 +146,8 @@ QA launches also skip creating the first-run welcome workspace.
 ./scripts/launch-tagged-automation.sh <tag> --qa           # fresh (clean slate)
 ./scripts/launch-tagged-automation.sh <tag> --qa resume    # restore prior session
 
-# Any other launch path — set the env var directly:
+# Any other launch path — set the env var directly. From a c11 terminal this is safe:
+# the app drops that terminal's identity at launch, so closing the panel leaves it running.
 C11_QA_LAUNCH=fresh open "/path/to/c11 DEV <tag>.app"
 
 # Release/staging build — QA mode is passed through to the app:

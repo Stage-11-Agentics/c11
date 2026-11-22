@@ -1,9 +1,10 @@
 import Foundation
 import OSLog
+import os
 
 /// Part 2B provides the inventory factory; part 2C provides attachment/native
 /// composition. Keeping both injected lets the lifecycle land independently.
-actor HCManagedSession: HCShardSession, HCCreationSettling {
+actor HCManagedSession: HCShardSession, HCCreationSettling, HCCarrierReleaseReporting {
     private static let logger = Logger(subsystem: "com.stage11.c11", category: "hc.lifecycle")
     typealias PrepareAttachment = @Sendable (HCTerminalKey, UInt64, any HCOutputSink, HCDisplayState) async throws -> HCDisplayState
     typealias InventoryFactory = @Sendable (any HCConnection, HCBuildIdentity) async throws -> any HCInventorySource
@@ -58,6 +59,17 @@ actor HCManagedSession: HCShardSession, HCCreationSettling {
     private var creatingPlacements: [UUID: HCPanelPlacement] = [:]
     /// C11H-359 (M3): a panel's placement as the app created or restored it.
     private let placements: @Sendable (UUID) -> HCPanelPlacement?
+    /// C11H-415: c11 app processes that hc would end with a terminal (`HCScopeCarriers.live`).
+    private let scopeCarriers: @Sendable () -> [HCScopeCarrier]
+    /// C11H-415: ends held for a carrier, so each is logged once.
+    private var heldForCarrier: Set<HCTerminalKey> = []
+    /// C11H-417: told when a held end goes ahead (or its terminal finished by itself).
+    private nonisolated let carrierReleases = HCCarrierReleases()
+
+    nonisolated func observeCarrierReleases(on queue: DispatchQueue,
+                                            handler: @escaping @Sendable (HCTerminalKey) -> Void) -> HCObservation {
+        carrierReleases.observe(on: queue, handler: handler)
+    }
     /// C11H-365 (N13): machines whose link was migrated while hc held a line
     /// to them, each with the hc core process that held it. That line was
     /// dialed through the old, pinless via, so c11 opens no terminal there
@@ -139,8 +151,10 @@ actor HCManagedSession: HCShardSession, HCCreationSettling {
          checkFolders: @escaping @Sendable (HCLaunchConfiguration, Bool) -> Bool = { HCLauncher.repairPrivateFolders($0, repair: $1) },
          storedLinks: HCStoredLinkReview? = nil,
          redialHolds: C11RelayStateFile<[String: HCProcessIdentity]>? = nil,
-         placements: @escaping @Sendable (UUID) -> HCPanelPlacement? = { HCPanelPlacements.shared.placement(for: $0) }) {
+         placements: @escaping @Sendable (UUID) -> HCPanelPlacement? = { HCPanelPlacements.shared.placement(for: $0) },
+         scopeCarriers: @escaping @Sendable () -> [HCScopeCarrier] = { HCScopeCarriers.live() }) {
         self.placements = placements
+        self.scopeCarriers = scopeCarriers
         self.redialHolds = redialHolds ?? Self.redialHoldsFile(configuration)
         self.checkFolders = checkFolders
         self.storedLinks = storedLinks
@@ -926,6 +940,7 @@ actor HCManagedSession: HCShardSession, HCCreationSettling {
             let snapshot = await currentSnapshot()
             guard case .ready = snapshot.readiness, let record = snapshot.records[key] else { return .unresolved(key, .inventoryPending) }
             if record.state == .finished {
+                if heldForCarrier.remove(key) != nil { carrierReleases.publish(key) }
                 // C11H-308: which creation ended, so a close can tell it from a replacement.
                 let creation = record.labels["c11.creation"].flatMap(UUID.init(uuidString:))
                 return .confirmed(HCEndEvidence(id: UUID(), key: key, creationID: creation, revision: snapshot.revision, kind: .finished,
@@ -933,6 +948,20 @@ actor HCManagedSession: HCShardSession, HCCreationSettling {
                                                endedAtMilliseconds: record.finishedMilliseconds))
             }
             let address = try addressFor(key, record: record, ownCoreID: connected.verified.identity.coreID)
+            // C11H-415: hc ends everything carrying the terminal's `HC_SCOPE`
+            // token, and a c11 app opened from that terminal carries it. Never
+            // end c11 with a panel: the end waits, retried on each ready
+            // revision and kept across restarts, until no c11 app carries it.
+            if key.owningCoreID == connected.verified.identity.coreID, let carrier = carrierEnded(by: key) {
+                if heldForCarrier.insert(key).inserted {
+                    Self.logger.notice("hc.end.held reason=app_carries_scope terminal=\(key.localAddress, privacy: .public) session=\(self.sessionName, privacy: .public) app_pid=\(carrier.pid) bundle=\(carrier.bundleID, privacy: .public)")
+                }
+                return .unresolved(key, .appCarriesScope)
+            }
+            if heldForCarrier.remove(key) != nil {
+                Self.logger.notice("hc.end.released terminal=\(key.localAddress, privacy: .public) session=\(self.sessionName, privacy: .public)")
+                carrierReleases.publish(key)
+            }
             _ = try await connected.connection.request(HCRPCRequest(method: "terminal.kill", params: .object(["terminal": .string(address)]),
                 deadlineUptimeNanoseconds: HCMonotonic.deadline(after: HCLimits.connectSeconds)))
             attachments.removeValue(forKey: key)?.detach()
@@ -943,6 +972,16 @@ actor HCManagedSession: HCShardSession, HCCreationSettling {
             _ = await inventory.refresh()
             return .pending(key)
         } catch { return .unresolved(key, Self.reason(error)) }
+    }
+
+    /// C11H-415: the c11 app process ending this local terminal would end,
+    /// nil when none. The terminal's recorded token is read only when some c11
+    /// app carries a token at all.
+    private func carrierEnded(by key: HCTerminalKey) -> HCScopeCarrier? {
+        let carriers = scopeCarriers()
+        guard !carriers.isEmpty else { return nil }
+        let scope = HCScopeCarriers.recordedScope(address: key.localAddress, stateDirectory: configuration.stateDirectory)
+        return carriers.first { $0.isEnded(byTerminal: key.localAddress, socket: configuration.socketURL.path, scope: scope) }
     }
 
     func diagnostics() async -> HCDiagnostics {
@@ -1432,4 +1471,126 @@ struct HCStoredLinkReview: Sendable {
     let home: URL
     let linkScript: URL?
     var runner: any HCMachineSetupRunner = HCMachineSetupProcessRunner()
+}
+
+/// C11H-415: a c11 app process that hc would end with a terminal. hc ends what
+/// a terminal started by its `HC_SCOPE` token: every process whose exec-time
+/// environment (`HCExecEnvironment`) carries the token, and everything beneath
+/// one that does, short of hc's own processes (hc `sweep.rs`, `members`). An
+/// app opened from a c11 terminal (`open -a`, or its binary run there) carries
+/// that terminal's token unless its launch blanked it, which no build before
+/// C11H-415 does.
+struct HCScopeCarrier: Equatable, Sendable {
+    /// One `HC_SCOPE` token in the recorded environment of the app or of one of
+    /// its ancestors, with hc's terminal labels recorded beside it.
+    struct Mark: Equatable, Sendable {
+        let scope: String
+        let terminalID: String?
+        let terminalSocket: String?
+        /// The process whose recorded environment holds it: the app or an ancestor.
+        let holderPID: Int32
+    }
+
+    let pid: Int32
+    let bundleID: String
+    let marks: [Mark]
+
+    /// Ending terminal `address` of the core on `socket` would end this app.
+    /// hc sweeps by the token, so with the terminal's recorded token (`scope`)
+    /// only a mark holding that token counts; hc's labels for that terminal on
+    /// that core stand in only when no token is recorded. A reused address
+    /// with a new token holds nothing.
+    func isEnded(byTerminal address: String, socket: String, scope: String?) -> Bool {
+        marks.contains { mark in
+            if let scope { return mark.scope == scope }
+            return mark.terminalID == address && mark.terminalSocket == socket
+        }
+    }
+}
+
+enum HCScopeCarriers {
+    /// c11's app bundles: c11 and c11h, and their debug and tagged builds.
+    static func isC11App(bundleID: String) -> Bool {
+        bundleID == "com.stage11.c11" || bundleID == "com.stage11.c11h" // c11-2.0:keep
+            || bundleID.hasPrefix("com.stage11.c11.") || bundleID.hasPrefix("com.stage11.c11h.") // c11-2.0:keep
+    }
+
+    /// `/x/Name.app` for an app's own executable, `/x/Name.app/Contents/MacOS/<exe>`; nil otherwise.
+    static func appBundle(ofExecutable path: String) -> String? {
+        guard let range = path.range(of: ".app/Contents/MacOS/", options: .backwards) else { return nil }
+        let executable = path[range.upperBound...]
+        guard !executable.isEmpty, !executable.contains("/") else { return nil }
+        return String(path[..<range.lowerBound]) + ".app"
+    }
+
+    /// The marks hc would end `pid` by: its own recorded tokens and every
+    /// ancestor's, walking parents up to launchd. A process hc marks as its own
+    /// (`HC_RUNTIME=1`) is never ended, nor anything beneath it, so the walk
+    /// stops there. An environment the kernel hides (Apple's binaries) is hidden
+    /// from hc too: it adds nothing and the walk goes on.
+    static func marks(of pid: Int32, parent: (Int32) -> Int32?,
+                      environment: (Int32) -> [(name: String, value: String)]?) -> [HCScopeCarrier.Mark] {
+        var marks: [HCScopeCarrier.Mark] = []
+        var current = pid
+        var seen = Set<Int32>()
+        while current > 1, seen.insert(current).inserted, seen.count <= 64 {
+            if let entries = environment(current) {
+                if entries.contains(where: { $0.name == "HC_RUNTIME" && $0.value == "1" }) { break }
+                let terminalID = entries.first { $0.name == "HC_TERMINAL_ID" }?.value
+                let socket = entries.first { $0.name == "HC_TERMINAL_SOCKET" }?.value
+                for entry in entries where entry.name == "HC_SCOPE" && !entry.value.isEmpty {
+                    marks.append(HCScopeCarrier.Mark(scope: entry.value, terminalID: terminalID,
+                                                     terminalSocket: socket, holderPID: current))
+                }
+            }
+            guard let next = parent(current) else { break }
+            current = next
+        }
+        return marks
+    }
+
+    /// Every live c11 app process of ours that carries a mark, this one
+    /// included. A test process reads no real process table (as
+    /// `HCAbandonedDiagnostics`): tests pass their carriers.
+    static func live() -> [HCScopeCarrier] {
+        guard !QALaunchPolicy.currentProcessIsHostedTest,
+              let table = HCKernelAbandonedHost().processes() else { return [] }
+        let parents = Dictionary(table.map { ($0.identity.pid, $0.parentPID) }, uniquingKeysWith: { first, _ in first })
+        var carriers: [HCScopeCarrier] = []
+        for process in table {
+            let pid = process.identity.pid
+            guard let path = executablePath(pid), let bundle = appBundle(ofExecutable: path),
+                  let bundleID = bundleIdentifier(bundle), isC11App(bundleID: bundleID) else { continue }
+            let marks = marks(of: pid, parent: { parents[$0] },
+                              environment: { HCExecEnvironment.read(pid: $0).map(HCExecEnvironment.entries) })
+            if !marks.isEmpty { carriers.append(HCScopeCarrier(pid: pid, bundleID: bundleID, marks: marks)) }
+        }
+        return carriers
+    }
+
+    /// The `HC_SCOPE` token hc recorded for terminal `address` in its session's
+    /// `terminals.json`; nil when the record is missing, unreadable or lists no token.
+    static func recordedScope(address: String, stateDirectory: URL) -> String? {
+        let file = stateDirectory.appendingPathComponent("terminals.json")
+        guard let data = try? PrivateFileWriter.readPrivateFile(at: file, maxBytes: HCAbandonedSessions.maxRecordBytes),
+              let terminals = HCAbandonedSessions.parseTerminals(data) else { return nil }
+        return terminals.first { $0.address == address }?.scope
+    }
+
+    private static func executablePath(_ pid: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
+        return String(cString: buffer)
+    }
+
+    private static let bundleIDs = OSAllocatedUnfairLock(initialState: [String: String]())
+
+    /// The bundle's `CFBundleIdentifier`, read once per path.
+    private static func bundleIdentifier(_ bundle: String) -> String? {
+        if let known = bundleIDs.withLock({ $0[bundle] }) { return known }
+        guard let plist = NSDictionary(contentsOfFile: bundle + "/Contents/Info.plist"),
+              let identifier = plist["CFBundleIdentifier"] as? String else { return nil }
+        bundleIDs.withLock { $0[bundle] = identifier }
+        return identifier
+    }
 }

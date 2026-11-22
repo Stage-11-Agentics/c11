@@ -9,8 +9,9 @@ import Foundation
 /// draws. The view is `WhatsDifferentView.swift`; AppDelegate presents it.
 enum WhatsDifferent {
     /// Bump when the sheet's content changes, so it shows once more after the
-    /// update that carries the change. Never lower it.
-    static let contentVersion = 1
+    /// update that carries the change. Never lower it. 2: one page per
+    /// concept (C11H-335).
+    static let contentVersion = 2
 
     /// The highest content version this profile has shown, in c11's own
     /// defaults domain.
@@ -41,49 +42,91 @@ enum WhatsDifferent {
     /// Set once when the upgrade variant appears, so it shows once per profile.
     static let upgradeNoteShownKey = "c11.upgradeNote.shown"
 
+    /// Set once when the adoption variant appears (C11H-335).
+    static let adoptNoteShownKey = "c11.adoptNote.shown"
+
     /// What this launch shows on its own. The upgrade note goes only to a
-    /// profile that came from c11 1.x; everyone else keeps the sheet's
-    /// ordinary once-per-content-version rule (a fresh install sees it beside
-    /// the welcome workspace; a c11 profile has already seen it).
+    /// profile that came from c11 1.x, the adoption note only to one c11 took
+    /// over from the earlier app; everyone else keeps the sheet's ordinary
+    /// once-per-content-version rule (a fresh install sees it beside the
+    /// welcome workspace).
     enum Presentation: Equatable {
         case nothing
         case standard
         case upgradeFrom1x
+        case adopted
     }
 
     static func autoPresentation(qa: QALaunchPolicy, origin: C11UpgradeOrigin, upgradeNoteShown: Bool,
+                                 adoptNoteShown: Bool,
                                  shownVersion: Int, current: Int = contentVersion) -> Presentation {
         guard !qa.isActive else { return .nothing }
-        // An upgrader sees the upgrade note once. Showing it records the
-        // standard sheet's version too, so afterwards only a later content
-        // change brings the sheet back, as for everyone.
+        // Each note shows once. Showing one records the standard sheet's
+        // version too, so afterwards only a later content change brings the
+        // sheet back, as for everyone.
         if origin == .c11v1, !upgradeNoteShown { return .upgradeFrom1x }
+        if origin.isAdopted, !adoptNoteShown { return .adopted }
         return shownVersion < current ? .standard : .nothing
     }
 
     /// The variant this profile reads, for Help ▸ and for the first launch.
     static func audience(origin: C11UpgradeOrigin) -> WhatsDifferentAudience {
-        origin == .c11v1 ? .upgradeFrom1x : .standard
+        if origin == .c11v1 { return .upgradeFrom1x }
+        if origin.isAdopted { return .adopted }
+        return .standard
     }
 
     static func upgradeNoteShown(defaults: UserDefaults = .standard) -> Bool {
         defaults.bool(forKey: upgradeNoteShownKey)
     }
 
-    /// Records whichever variant appeared. The upgrade note also counts as
-    /// the standard sheet's current version: it carries the same teaching.
+    static func adoptNoteShown(defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: adoptNoteShownKey)
+    }
+
+    /// Records whichever variant appeared. Either note also counts as the
+    /// standard sheet's current version.
     static func markShown(_ audience: WhatsDifferentAudience, defaults: UserDefaults = .standard) {
         markShown(defaults: defaults)
-        if audience == .upgradeFrom1x { defaults.set(true, forKey: upgradeNoteShownKey) }
+        switch audience {
+        case .standard: break
+        case .upgradeFrom1x: defaults.set(true, forKey: upgradeNoteShownKey)
+        case .adopted: defaults.set(true, forKey: adoptNoteShownKey)
+        }
+    }
+
+    /// The pages each variant reads, in order (C11H-335): one concept per
+    /// page, the one that can lose work first. An adopted profile already
+    /// knows them and reads only what changed.
+    static func pages(for audience: WhatsDifferentAudience) -> [WhatsDifferentPage] {
+        switch audience {
+        case .standard, .upgradeFrom1x: return [.terminals, .machines, .mail]
+        case .adopted: return [.adopted]
+        }
     }
 }
 
-/// Which copy the What's Different window carries.
+/// One page of the What's New sheet.
+enum WhatsDifferentPage: String, Equatable, CaseIterable {
+    /// Terminals outlive the app; closing a panel ends one.
+    case terminals
+    /// Terminals on other machines, in this window.
+    case machines
+    /// Agents mail each other.
+    case mail
+    /// c11 took over the earlier app's terminals on this Mac.
+    case adopted
+}
+
+/// Which copy the What's New window carries.
 enum WhatsDifferentAudience: Equatable {
     /// How c11 terminals work, for anyone.
     case standard
     /// The first 2.0 launch after c11 1.x: what changed, and how to stop it.
     case upgradeFrom1x
+    /// The first launch after c11 took over the earlier app's terminals on
+    /// this Mac (`C11UpgradeOrigin.adopted`).
+    case adopted
 }
 
 /// Where this profile came from, as the c11 2.0 first-launch migration
@@ -94,9 +137,14 @@ enum WhatsDifferentAudience: Equatable {
 enum C11UpgradeOrigin: String, Equatable {
     case fresh
     case c11v1 = "c11-1x"
-    case c11
-    /// c11 1.x and c11 both present: 2.0 takes c11's world.
+    /// c11 took over the earlier app's world; `C11Migration` records it
+    /// under that app's name.
+    case adopted = "c11h"  // c11-2.0:legacy
+    /// c11 1.x and the earlier app both present: 2.0 takes the earlier app's world.
     case both
+
+    /// A profile c11 took over, with or without c11 1.x beside it.
+    var isAdopted: Bool { self == .adopted || self == .both }
 
     static let defaultsKey = "c11.migration.origin"
 
@@ -201,6 +249,9 @@ extension WhatsDifferentPlaces {
 @MainActor
 final class WhatsDifferentModel: ObservableObject {
     @Published private(set) var places: [WhatsDifferentPlace]
+    /// The page on screen. Here rather than in the view, so Help ▸ reopening
+    /// an open sheet starts it again at page 1.
+    @Published var page = 0
     private let source: () -> [WhatsDifferentPlace]
     private var timer: Timer?
 

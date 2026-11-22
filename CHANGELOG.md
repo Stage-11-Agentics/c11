@@ -6,6 +6,8 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+- c11 installs only its own skills (`c11`, `c11-browser`, `c11-markdown`, `c11-debug-windows`, `c11-computer-use`, `c11-fanout`). Stage 11's workflow skills (Tone, Chord, Sounding, Resonance, distribution, venture-partner, lattice-orchestrator) no longer ship in the app; copies already installed stay where they are.
+
 ## [2.0.0] - Unreleased
 
 Headline: **c11 2.0. Your terminals keep running when c11 quits, crashes or updates, they can run on other Macs you link, agents can show you what they made, and the window stays responsive under a large fleet.**
@@ -16,7 +18,7 @@ c11 2.0 is the line Stage 11 developed as c11h, a separate app built on c11 1.8.
 
 - **Quitting c11 no longer ends your terminals.** A background helper, hc, holds every terminal, so shells, agents and jobs keep running through a quit, a crash or an update, and c11 reattaches to them when it opens. A reboot still ends them. Settings ▸ General ▸ **Keep Terminals After Quit** (on by default) turns this off: then quitting ends every terminal, as in 1.x. Updates keep terminals either way. (C11H-3, C11H-4, C11H-100, C11H-267)
 - **Closing a panel ends everything its terminal started**, `nohup` and background jobs included, and apps you `open` from it. In 1.x those jobs outlived the panel. The close button now says **End Session** and names what ends. (C11H-3, C11H-267)
-- **The first launch after updating explains this once**, in a "What's New in c11 2.0" sheet: what hc is, how to stop it, and what End Session ends. Help ▸ What's New in c11 2.0 reopens it. (C11H-267)
+- **The first launch after updating explains this once**, in a "What's New in c11 2.0" sheet with one short page each on terminals that outlive the app (what hc is, how to stop it, what End Session ends), terminals on other machines, and agent mail; a Mac that ran c11h reads one page on what changed instead. Help ▸ What's New in c11 2.0 reopens it. (C11H-267, C11H-335)
 - **c11 2.0 sends no crash reports or analytics.** c11 1.8.1 sent them from release builds unless you turned them off in Settings. 2.0 starts neither, whatever the setting says, and Settings ▸ Data & Privacy says so. (`3304c468`, C11H-183)
 
 ### Added
@@ -63,6 +65,12 @@ c11 2.0 is the line Stage 11 developed as c11h, a separate app built on c11 1.8.
 - **A snapshot restores a linked machine's terminal on that machine,** and never types a resume line for it; a resume line never types a folder holding a control byte. A file saved from a `data:` link or image carries macOS's download mark, so Gatekeeper checks it when opened. (C11H-365)
 - **The c11 skill is shorter**: a card with what an agent needs at launch, and `c11 guide <page>` for the rest. It now covers persistence, other machines and `c11 show` (`c11 guide persistence`). (`30ce02da`, C11H-269)
 - **c11 refuses a linked machine whose core id is missing, matches this Mac's, or is shared with another link.** One far core linked under two names (for example its LAN and tailnet addresses) now refuses both, and their terminals leave c11 until you remove one in Settings ▸ Herder Topography. (C11H-359)
+- **A workspace group's header is a section label, not a card.** No folder icon (an icon you set still shows), a smaller name on a tab with a rule in the group's color, and one chip with the Captain mark, the pin and one attention count. In a narrow sidebar the name comes first: the pin, the count's glyph, the icon and the Captain mark give way in that order, and the full name is the tooltip. Selecting a member or raising a flag moves nothing in the row. (C11H-410)
+
+### Fixed
+
+- **Closing the panel that opened c11 no longer quits c11.** If you reopened c11 with `open -a` from one of its own terminals, closing that panel later ended c11 (its terminals kept running). c11 now drops that terminal's marks when it starts, and an End Session that would still reach a running c11 waits, with an **End held** notice, until it can end that terminal alone. (C11H-415, C11H-417)
+- **Closed browser panels free their memory.** Every closed browser panel, `c11 show` viewers included, kept its page's script handlers and content controller alive for the rest of the session; they are now released when the last view using them closes. (C11H-390)
 
 ### Removed
 

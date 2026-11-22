@@ -65,6 +65,8 @@ enum HCUnavailableReason: String, Error, Codable, Sendable {
     case fileDescriptorLimit, intentStoreFailure, creationPending, creationUncertain
     case recoveryRequired, inputFault, screenUnavailable, staleIdentity, ambiguousIdentity
     case deadlineExceeded, malformedResponse, bufferOverflow, cancelled
+    /// C11H-415: an end waits because a c11 app carries the terminal's `HC_SCOPE` token.
+    case appCarriesScope
 }
 
 enum HCLifecycle: Sendable {

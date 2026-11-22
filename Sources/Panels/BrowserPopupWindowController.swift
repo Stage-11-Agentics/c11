@@ -91,6 +91,10 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
 
     private static var associatedObjectKey: UInt8 = 0
 
+    /// C11H-390 test seam: logic tests build popups through the real
+    /// construction path without putting a window on screen.
+    static var presentsWindows = true
+
     init(
         configuration: WKWebViewConfiguration,
         windowFeatures: WKWindowFeatures,
@@ -111,6 +115,9 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         // Create popup web view with WebKit's supplied configuration (preserves
         // internal browsing-context state for opener linkage / postMessage).
         let webView = CmuxWebView(frame: .zero, configuration: configuration)
+        // C11H-390: WebKit's popup configuration shares the opener's content
+        // controller, so the popup keeps its handlers installed too.
+        BrowserScriptHandlerLease.hold(for: webView)
         webView.allowsBackForwardNavigationGestures = true
         if #available(macOS 13.3, *) {
             webView.isInspectable = true
@@ -252,7 +259,9 @@ final class BrowserPopupWindowController: NSObject, NSWindowDelegate {
         dlog("popup.init depth=\(nestingDepth) size=\(Int(contentRect.width))x\(Int(contentRect.height)) opener=\(openerPanel?.id.uuidString.prefix(5) ?? "nil")")
         #endif
 
-        panel.makeKeyAndOrderFront(self)
+        if Self.presentsWindows {
+            panel.makeKeyAndOrderFront(self)
+        }
     }
 
     // MARK: - Child popup tracking

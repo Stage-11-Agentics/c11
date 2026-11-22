@@ -6127,6 +6127,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         attemptStartupSessionRestoreIfNeeded(primaryWindow: window)
         resumeStartupSessionAfterSocketChange()
+        // C11H-417: a held end's notice waits for a window (the last one closed);
+        // the next turn, once the window's workspaces are in place.
+        DispatchQueue.main.async { MainActor.assumeIsolated { HCHeldEndNotices.shared.reassert() } }
         if !isTerminatingApp {
             _ = saveSessionSnapshot(includeScrollback: false)
         }
@@ -7843,11 +7846,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
 
+        HCHeldEndNotices.shared.capture()
         if let store = notificationStore {
             for workspace in context.workspaceManager.workspaces {
                 store.clearNotifications(forWorkspaceId: workspace.id)
             }
         }
+        // C11H-417: a held end's notice moves to a window that remains, or waits for one.
+        DispatchQueue.main.async { MainActor.assumeIsolated { HCHeldEndNotices.shared.reassert() } }
     }
 
     /// Workspace routing can skip a context whose window has already gone
@@ -9271,11 +9277,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// ready so its counts are true. Never under `C11_QA_LAUNCH` or XCTest.
     /// It gates nothing: terminals have already started.
     func presentWhatsDifferentIfNeeded() {
-        // C11H-267: a c11 1.x upgrader gets the upgrade note once; everyone
-        // else the standard sheet once per content version.
+        // C11H-267, C11H-335: a c11 1.x upgrader gets the upgrade note once,
+        // an adopted profile the adoption note once; everyone else the
+        // standard sheet once per content version.
         let presentation: WhatsDifferent.Presentation = isRunningUnderXCTestCached ? .nothing : WhatsDifferent.autoPresentation(
             qa: QALaunchPolicy.current(), origin: C11UpgradeOrigin.current(),
-            upgradeNoteShown: WhatsDifferent.upgradeNoteShown(), shownVersion: WhatsDifferent.shownVersion())
+            upgradeNoteShown: WhatsDifferent.upgradeNoteShown(), adoptNoteShown: WhatsDifferent.adoptNoteShown(),
+            shownVersion: WhatsDifferent.shownVersion())
         let audience: WhatsDifferentAudience
         switch presentation {
         case .nothing:
@@ -9283,6 +9291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return
         case .standard: audience = .standard
         case .upgradeFrom1x: audience = .upgradeFrom1x
+        case .adopted: audience = .adopted
         }
         whatsDifferentAutoAudience = audience
         // Wait for hc's first ready inventory, so the machines are known when
@@ -9315,7 +9324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    /// Help > What's Different in c11 (`takeFocus`), and the first-launch path,
+    /// Help > What's New in c11 2.0 (`takeFocus`), and the first-launch path,
     /// which brings the window forward without taking the keyboard from a
     /// terminal the user may already be typing in.
     /// `audience` nil is this profile's own variant (Help menu).
@@ -9324,6 +9333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         WhatsDifferent.markShown(audience)
         if let existing = whatsDifferentWindow {
             whatsDifferentModel?.refresh()
+            whatsDifferentModel?.page = 0
             if takeFocus {
                 existing.makeKeyAndOrderFront(nil)
                 NSApp.activate(ignoringOtherApps: true)
@@ -9342,12 +9352,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
         window.title = WhatsDifferentSheet.windowTitle(audience)
         window.isReleasedWhenClosed = false
-        window.identifier = NSUserInterfaceItemIdentifier("c11.whatsDifferent")
+        window.identifier = WhatsDifferentSheet.windowIdentifier
         // Open on the Space the user is on, beside a full-screen window too.
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        let hosting = NSHostingController(rootView: WhatsDifferentSheet(model: model, audience: audience, onDone: { [weak window] in
-            window?.close()
-        }))
+        // C11H-335: each page's link reuses an operator action: Window ▸ hc
+        // Core, and Settings ▸ Herder Topography.
+        let hosting = NSHostingController(rootView: WhatsDifferentSheet(
+            model: model,
+            audience: audience,
+            onOpenCore: { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, let manager = self.synchronizeActiveMainWindowContext() else { return }
+                    PanelLineage.shared.withOrigin(.operator) { manager.openCoreUtility() }
+                    // The operator clicked: bring the window holding the new
+                    // hc Core panel forward, as Window ▸ hc Core does.
+                    if let context = self.mainWindowContexts.values.first(where: { $0.workspaceManager === manager }) {
+                        (context.window ?? self.windowForMainWindowId(context.windowId))?.makeKeyAndOrderFront(nil)
+                    }
+                }
+            },
+            onOpenMachines: { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.openPreferencesWindow(debugSource: "whatsNew", navigationTarget: .machines)
+                }
+            },
+            onDone: { [weak window] in
+                window?.close()
+            }))
         if #available(macOS 13.0, *) {
             hosting.sizingOptions = [.preferredContentSize]
         }
@@ -13084,6 +13115,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let unconfirmed = !identities.isEmpty && (coordinator == nil || identities.contains {
                 outcomes[$0.panelID]?.isSettled != true
             })
+            // C11H-415/C11H-417: ends a c11 app holds are named in the sheet; their
+            // lasting notice comes from the end coordinator.
+            let held = HCCloseOutcomeReport.report(outcomes, live: []).heldByApp
             // Exec fallback has no persistent lifecycle notice. Use the
             // existing last-panel close path, which removes an empty workspace
             // instead of automatically creating another terminal.
@@ -13100,6 +13134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 alert.informativeText = coordinator == nil
                     ? String(localized: "dialog.endAllSessions.unavailableMessage", defaultValue: "The session backend is unavailable. Reconnect and choose End All Sessions again to confirm that every session has ended.")
                     : String(localized: "dialog.endAllSessions.pendingMessage", defaultValue: "End requests for known sessions are saved and will continue when the backend is available. If the session inventory could not be read, reconnect and choose End All Sessions again to include every session.")
+                        + (held > 0 ? "\n\n" + HCCloseOutcomeReport.heldNotice(count: held).body : "")
                 alert.addButton(withTitle: String(localized: "common.ok", defaultValue: "OK"))
                 // Completion-handler form: the async overload would suspend
                 // this task until the operator answers the sheet.
@@ -15429,11 +15464,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         commandPaletteSnapshotByWindowId.removeValue(forKey: removed.windowId)
 
         // Avoid stale notifications that can no longer be opened once the owning window is gone.
+        HCHeldEndNotices.shared.capture()
         if let store = notificationStore {
             for workspace in removed.workspaceManager.workspaces {
                 store.clearNotifications(forWorkspaceId: workspace.id)
             }
         }
+        // C11H-417: a held end's notice moves to a window that remains, or waits for one.
+        DispatchQueue.main.async { MainActor.assumeIsolated { HCHeldEndNotices.shared.reassert() } }
 
         // C11-243: a really closed window drops its panels' last-seen stamps. A
         // workspace move re-homes the workspace before this runs, so moved panels

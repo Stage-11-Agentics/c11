@@ -12,6 +12,15 @@ enum HCEndOrigin: String, Codable, Sendable {
     case endAll
 }
 
+/// C11H-417: an owed end began or stopped being held by a c11 app that carries
+/// its terminal's token. `held` is reported once per end, however it got there
+/// (a fresh close, a late hold after a reconnect, a record restored at launch);
+/// `released` when that end settles.
+enum HCCarrierHoldChange: Equatable, Sendable {
+    case held(UUID)
+    case released(UUID)
+}
+
 /// What an explicit close did to one panel's hc terminal, as far as the
 /// backend has proved it. `pending` is never a claim that the processes died.
 enum HCPanelEndOutcome: Equatable, Sendable {
@@ -158,6 +167,11 @@ final class HCExplicitEndCoordinator: @unchecked Sendable {
         /// C11H-313: one of the panel's creations settled with no run while
         /// an attempt was in flight; retry when it completes.
         var settledDuringAttempt = false
+        /// C11H-415: the live recheck of an end a c11 app holds; an older one is void.
+        var carrierRecheck: UInt64 = 0
+        /// C11H-417: when this end first became held (monotonic), and whether
+        /// `held` was reported, so `released` follows exactly once.
+        var heldSince: UInt64?
     }
 
     private enum Phase {
@@ -205,6 +219,8 @@ final class HCExplicitEndCoordinator: @unchecked Sendable {
     /// decline their creations through it, and no-run settlements wake ends.
     private let settling: (any HCCreationSettling)?
     private var settlementObservation: HCObservation?
+    /// C11H-417: the session's carrier releases.
+    private var releaseObservation: HCObservation?
 
     private let publishedLock = NSLock()
     private var publishedPanelIDs: Set<UUID> = []
@@ -219,9 +235,38 @@ final class HCExplicitEndCoordinator: @unchecked Sendable {
 
     private static let settledMemory = 256
 
+    /// C11H-415: seconds between attempts of an end a c11 app holds. The app
+    /// quitting changes nothing hc reports, so no inventory revision would
+    /// wake the end; this does, on the coordinator's own queue.
+    static let carrierRecheckSeconds: TimeInterval = 3
+    /// C11H-417: after the first minute of a hold, the recheck slows to this.
+    /// An older c11 app may stay open for days; each recheck scans the process table.
+    static let carrierBackoffAfterSeconds: TimeInterval = 60
+    static let carrierBackedOffSeconds: TimeInterval = 30
+    private let carrierRecheckSeconds: TimeInterval
+    private let carrierBackoffAfterSeconds: TimeInterval
+    private let carrierBackedOffSeconds: TimeInterval
+    /// C11H-417: told on the coordinator's queue when an end becomes or stops being held.
+    private let onCarrierHold: (@Sendable (HCCarrierHoldChange) -> Void)?
+
+    /// C11H-417: the wait before the next recheck of an end held `heldFor` seconds.
+    static func carrierRecheckDelay(heldFor: TimeInterval, base: TimeInterval = carrierRecheckSeconds,
+                                    backoffAfter: TimeInterval = carrierBackoffAfterSeconds,
+                                    backedOff: TimeInterval = carrierBackedOffSeconds) -> TimeInterval {
+        heldFor < backoffAfter ? base : max(base, backedOff)
+    }
+
     init(session: any HCSession, store: any HCPendingEndStore,
          heldElsewhere: @escaping @Sendable (HCTerminalKey) async -> HCHolderAnswer = { _ in .none },
-         queue: DispatchQueue = DispatchQueue(label: "c11.hc.explicit-end", qos: .userInitiated)) {
+         queue: DispatchQueue = DispatchQueue(label: "c11.hc.explicit-end", qos: .userInitiated),
+         carrierRecheckSeconds: TimeInterval = HCExplicitEndCoordinator.carrierRecheckSeconds,
+         carrierBackoffAfterSeconds: TimeInterval = HCExplicitEndCoordinator.carrierBackoffAfterSeconds,
+         carrierBackedOffSeconds: TimeInterval = HCExplicitEndCoordinator.carrierBackedOffSeconds,
+         onCarrierHold: (@Sendable (HCCarrierHoldChange) -> Void)? = nil) {
+        self.carrierRecheckSeconds = carrierRecheckSeconds
+        self.carrierBackoffAfterSeconds = carrierBackoffAfterSeconds
+        self.carrierBackedOffSeconds = carrierBackedOffSeconds
+        self.onCarrierHold = onCarrierHold
         self.queue = queue
         self.session = session
         self.settling = session as? any HCCreationSettling
@@ -250,6 +295,11 @@ final class HCExplicitEndCoordinator: @unchecked Sendable {
         observation = session.observe(on: queue) { [weak self] snapshot in
             self?.handleSnapshot(snapshot)
         }
+        // C11H-417: a held end that goes ahead is no longer the app's, whatever
+        // the kill then does: reported now, not when the end settles.
+        releaseObservation = (session as? any HCCarrierReleaseReporting)?.observeCarrierReleases(on: queue) { [weak self] key in
+            self?.carrierReleased(key)
+        }
         queue.async { [self] in
             for panelID in entries.keys { attempt(panelID) }
         }
@@ -258,6 +308,7 @@ final class HCExplicitEndCoordinator: @unchecked Sendable {
     deinit {
         observation?.cancel()
         settlementObservation?.cancel()
+        releaseObservation?.cancel()
     }
 
     // MARK: - Public API
@@ -551,6 +602,7 @@ final class HCExplicitEndCoordinator: @unchecked Sendable {
         switch result {
         case .settled(let outcome):
             entries.removeValue(forKey: panelID)
+            if entry.heldSince != nil { onCarrierHold?(.released(panelID)) }
             remember(panelID, outcome)
             persistAndPublish()
             notifyWaiters()
@@ -578,6 +630,20 @@ final class HCExplicitEndCoordinator: @unchecked Sendable {
                 persistAndPublish()
             }
             entry.phase = .needsEnd(reason)
+            if reason == .appCarriesScope {
+                // C11H-417: reported once, however the end came to be held.
+                if entry.heldSince == nil {
+                    entry.heldSince = HCMonotonic.now
+                    onCarrierHold?(.held(panelID))
+                }
+                // C11H-415: its own wake-up; a later result replaces it.
+                entry.carrierRecheck &+= 1
+                let heldFor = Double(HCMonotonic.now &- (entry.heldSince ?? HCMonotonic.now)) / 1_000_000_000
+                scheduleCarrierRecheck(panelID, generation: entry.carrierRecheck,
+                    after: Self.carrierRecheckDelay(heldFor: heldFor, base: carrierRecheckSeconds,
+                                                    backoffAfter: carrierBackoffAfterSeconds,
+                                                    backedOff: carrierBackedOffSeconds))
+            }
         case .awaitingEvidence(let key):
             let keyChanged = entry.record.key != key
             entry.record.key = key
@@ -598,6 +664,31 @@ final class HCExplicitEndCoordinator: @unchecked Sendable {
         // A ready revision may have arrived while this attempt was in flight.
         if latestReady, let latest = latestRevision, latest != entry.lastAttemptRevision {
             attempt(panelID)
+        }
+    }
+
+    /// C11H-417: the session let this key's held end go ahead.
+    private func carrierReleased(_ key: HCTerminalKey) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        for (panelID, var entry) in entries where entry.heldSince != nil && entry.record.key == key {
+            entry.heldSince = nil
+            entries[panelID] = entry
+            onCarrierHold?(.released(panelID))
+        }
+    }
+
+    /// C11H-415: attempts an end a c11 app holds again after
+    /// `carrierRecheckSeconds`, whatever hc reports meanwhile. Void once the end
+    /// settles, moves on, or a newer result schedules its own. A record restored
+    /// at launch gets one the same way, from its first attempt's result.
+    private func scheduleCarrierRecheck(_ panelID: UUID, generation: UInt64, after delay: TimeInterval) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, var entry = self.entries[panelID], entry.carrierRecheck == generation,
+                  case .needsEnd(.appCarriesScope?) = entry.phase else { return }
+            entry.lastAttemptRevision = nil
+            self.entries[panelID] = entry
+            self.attempt(panelID)
         }
     }
 
@@ -710,6 +801,9 @@ enum HCSessionEnd {
     static func install(session: any HCSession, store: any HCPendingEndStore = HCPendingEndFileStore()) {
         let coordinator = HCExplicitEndCoordinator(session: session, store: store, heldElsewhere: { key in
             await MainActor.run { HCSessionEnd.keyShownByLivePanel(key) }
+        }, onCarrierHold: { change in
+            // C11H-417: the notice follows the hold itself, never a close's report window.
+            DispatchQueue.main.async { MainActor.assumeIsolated { HCHeldEndNotices.shared.apply(change) } }
         })
         lock.lock()
         installed = coordinator

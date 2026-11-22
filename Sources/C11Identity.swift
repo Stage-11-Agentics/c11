@@ -379,6 +379,8 @@ enum C11Identity {
     /// build writes them. Every line carries `c11-2.0:legacy` so the rename
     /// codemod leaves it alone.
     enum Legacy {
+        /// The earlier app's name, as copy shows it (C11H-335).
+        static let appName = "c11h" // c11-2.0:legacy
         static let releaseBundleIdentifier = "com.stage11.c11h" // c11-2.0:legacy
         static let untaggedDebugBundleIdentifier = "com.stage11.c11h.debug" // c11-2.0:legacy
         static let stagingBundleIdentifier = "com.stage11.c11h.staging" // c11-2.0:legacy

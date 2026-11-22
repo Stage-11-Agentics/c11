@@ -17,7 +17,9 @@ extension TerminalPanel {
         let endsLiveSession = hcEndsLiveSession
         hcClosingForEnd = true
         coordinator.requestEnd([identity], origin: origin)
-        C11TipCenter.noteSessionsEnded(count: endsLiveSession ? 1 : 0, window: hostedView.window)
+        // C11H-415: the tip and any hold notice follow the end's outcome, not the request.
+        HCCloseOutcomeReport.observe(panelIDs: [identity.panelID], live: endsLiveSession ? [identity.panelID] : [],
+                                     coordinator: coordinator, workspaceID: workspaceId, window: hostedView.window)
         return true
     }
 
@@ -64,16 +66,18 @@ extension Workspace {
     /// never call this.
     func endSessionsForExplicitClose(panelIds: [UUID], origin: HCEndOrigin) {
         guard hcExplicitEndSuppressionDepth == 0, let coordinator = HCSessionEnd.coordinator else { return }
-        var liveEnds = 0
+        var live = Set<UUID>()
         let identities = panelIds.compactMap { panelId -> HCPanelIdentity? in
             guard let panel = terminalPanel(for: panelId), let identity = panel.hcEndIdentity else { return nil }
-            if panel.hcEndsLiveSession { liveEnds += 1 }
+            if panel.hcEndsLiveSession { live.insert(identity.panelID) }
             panel.hcClosingForEnd = true
             return identity
         }
         coordinator.requestEnd(identities, origin: origin)
         let window = panelIds.lazy.compactMap { self.terminalPanel(for: $0)?.hostedView.window }.first
-        C11TipCenter.noteSessionsEnded(count: liveEnds, window: window)
+        // C11H-415: the tip and any hold notice follow the ends' outcomes, not the request.
+        HCCloseOutcomeReport.observe(panelIDs: identities.map(\.panelID), live: live, coordinator: coordinator,
+                                     workspaceID: id, window: window)
     }
 
     /// True when any of these panels is an hc terminal, so closing it sends

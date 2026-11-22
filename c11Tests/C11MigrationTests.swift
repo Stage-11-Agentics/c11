@@ -1316,9 +1316,37 @@ final class C11MigrationTests: XCTestCase {
             XCTAssertEqual(bound, 0)
             close(fd)  // a socket file with nobody listening, as after a reboot
         }
-        let started = Date()
+        // The shipped probe, real clock: every stale socket refuses, so the world is dead.
         XCTAssertFalse(C11MigrationLaunch.coresAlive(layout))
-        XCTAssertLessThan(Date().timeIntervalSince(started), 0.6, "\(names.count) dead sockets stay inside the 0.4 s budget")
+        // The schedule on a clock only the probe's own waits advance: three full
+        // passes over every socket, two 0.2 s retries, inside the budget. Load
+        // cannot move this clock, so it proves the schedule, not the machine.
+        var clock: TimeInterval = 0
+        XCTAssertEqual(C11MigrationLaunch.coreLiveness(layout, now: { clock }, sleep: { clock += $0 }), .dead)
+        XCTAssertEqual(clock, 0.4, accuracy: 1e-9,
+                       "\(names.count) dead sockets take the 0.4 s schedule and no more")
+        XCTAssertLessThan(clock, C11MigrationLaunch.coreProbeBudget)
+        // A loaded machine the budget must tolerate (C11H-283): the first retry
+        // wait overruns to 0.6 s, the second takes its 0.2 s. Every socket still
+        // refuses, so the world is dead, not cut short as unknown. A 0.55 s
+        // budget, or a longer retry interval, turns this unknown.
+        clock = 0
+        var overruns: [TimeInterval] = [0.4, 0]
+        var asked: [TimeInterval] = []
+        let loaded = C11MigrationLaunch.coreLiveness(layout, now: { clock }, sleep: {
+            asked.append($0); clock += $0 + (overruns.isEmpty ? 0 : overruns.removeFirst())
+        })
+        XCTAssertEqual(loaded, .dead, "a first retry that overruns to 0.6 s still proves the world dead")
+        XCTAssertEqual(asked, [0.2, 0.2], "two retry waits of 0.2 s")
+        XCTAssertEqual(clock, 0.8, accuracy: 1e-9)
+        // A stalled machine: the first retry wait overruns to 1.85 s. With 0.15 s
+        // left the probe starts no 0.2 s wait it cannot finish, and reports the
+        // cut-short proof as unknown, never as dead.
+        clock = 0
+        var waits = 0
+        let stalled = C11MigrationLaunch.coreLiveness(layout, now: { clock }, sleep: { _ in waits += 1; clock += 1.85 })
+        XCTAssertEqual(stalled, .unknown("core probe deadline"))
+        XCTAssertEqual(waits, 1, "no wait starts that the budget cannot hold")
 
         var state = C11MigrationState(owner: "com.stage11.c11", phase: .converged, origin: "c11h", startedAt: "t", updatedAt: "t")  // c11-2.0:legacy
         XCTAssertFalse(C11MigrationLaunch.needsLivenessProbe(record: state, legacyState: true, convergeEnabled: true), "a converged launch never probes")

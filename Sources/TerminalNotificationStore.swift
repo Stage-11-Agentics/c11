@@ -232,6 +232,9 @@ enum TerminalNotificationOrigin: String, Hashable, Sendable {
     case other
     case turnEnd = "turn_end"
     case needsYou = "needs_you"
+    /// C11H-417: c11's own "End held" notice. It keeps a workspace slot of its
+    /// own, so it neither replaces nor is replaced by other workspace notices.
+    case heldEnd = "held_end"
 }
 
 struct TerminalNotification: Identifiable, Hashable {
@@ -422,6 +425,9 @@ final class TerminalNotificationStore: ObservableObject {
     private var notificationSettingsURLOpener: (URL) -> Void = { url in
         NSWorkspace.shared.open(url)
     }
+#if DEBUG
+    private var systemCopyRetirementHandlerForTesting: (([String]) -> Void)?
+#endif
     private var notificationDeliveryHandler: (TerminalNotificationStore, TerminalNotification) -> Void = {
         store,
         notification in
@@ -728,7 +734,8 @@ final class TerminalNotificationStore: ObservableObject {
         var updated = notifications
         var idsToClear: [String] = []
         updated.removeAll { existing in
-            guard existing.workspaceId == workspaceId, existing.surfaceId == surfaceId else { return false }
+            guard existing.workspaceId == workspaceId, existing.surfaceId == surfaceId,
+                  (existing.origin == .heldEnd) == (origin == .heldEnd) else { return false }
             idsToClear.append(existing.id.uuidString)
             return true
         }
@@ -1200,13 +1207,66 @@ final class TerminalNotificationStore: ObservableObject {
         }
     }
 
+    /// C11H-417: new text for a notification, in place: same id, time and read
+    /// state, no banner and no sound. Its Notification Center copies, which
+    /// carry the old text, are retired.
+    func updateText(id: UUID, title: String, body: String) {
+        guard let index = notifications.firstIndex(where: { $0.id == id }) else { return }
+        let old = notifications[index]
+        guard old.title != title || old.body != body else { return }
+        var updated = notifications
+        updated[index] = TerminalNotification(
+            id: old.id, systemIdentifier: old.systemIdentifier, workspaceId: old.workspaceId, surfaceId: old.surfaceId,
+            title: title, subtitle: old.subtitle, body: body, createdAt: old.createdAt, isRead: old.isRead,
+            deliversSound: old.deliversSound, origin: old.origin
+        )
+        notifications = updated
+        retireSystemCopies([old.systemIdentifier ?? old.id.uuidString])
+    }
+
+    /// C11H-417: the "End held" notice moved to `workspaceId` because its own
+    /// workspace or window is gone: no banner, no sound, read as it was. It
+    /// takes the workspace's held slot.
+    func placeHeldEndNotice(workspaceId: UUID, title: String, body: String, isRead: Bool) {
+        var updated = notifications
+        var retired: [String] = []
+        updated.removeAll { existing in
+            guard existing.origin == .heldEnd, existing.surfaceId == nil else { return false }
+            retired.append(existing.systemIdentifier ?? existing.id.uuidString)
+            return true
+        }
+        updated.insert(TerminalNotification(
+            id: UUID(), workspaceId: workspaceId, surfaceId: nil, title: title, subtitle: "", body: body,
+            createdAt: Date(), isRead: isRead, deliversSound: false, origin: .heldEnd
+        ), at: 0)
+        notifications = updated
+        if !retired.isEmpty { retireSystemCopies(retired) }
+    }
+
     func remove(id: UUID) {
         var updated = notifications
-        let originalCount = updated.count
+        guard let removed = updated.first(where: { $0.id == id }) else { return }
         updated.removeAll { $0.id == id }
-        guard updated.count != originalCount else { return }
         notifications = updated
-        center?.removeDeliveredNotificationsOffMain(withIdentifiers: [id.uuidString])
+        retireSystemCopies([removed.systemIdentifier ?? id.uuidString])
+    }
+
+    /// C11H-417: a record's delivered and pending Notification Center copies,
+    /// retired because the record changed or went.
+    private func retireSystemCopies(_ identifiers: [String]) {
+#if DEBUG
+        if let handler = systemCopyRetirementHandlerForTesting {
+            handler(identifiers)
+            return
+        }
+#endif
+        center?.removeDeliveredNotificationsOffMain(withIdentifiers: identifiers)
+        center?.removePendingNotificationRequestsOffMain(withIdentifiers: identifiers)
+    }
+
+    /// C11H-417: an "End held" delivery still matches its record (same text, still there).
+    private func heldEndDeliveryIsCurrent(_ notification: TerminalNotification) -> Bool {
+        notifications.contains { $0.id == notification.id && $0.title == notification.title && $0.body == notification.body }
     }
 
     /// The held-back repeat of an ask: its text replaces the panel's needs-you
@@ -1308,50 +1368,68 @@ final class TerminalNotificationStore: ObservableObject {
             : NotificationSoundResolution.quiet
         requestRoutineAuthorization { [weak self] authorized in
             guard let self, authorized else { return }
+            // C11H-417: an "End held" notice whose text changed, or that went,
+            // while authorization was asked is never posted with its old text.
+            guard notification.origin == .heldEnd else { return self.postRoutineNotification(notification, channel: channel, sound: sound, commandDefaults: commandDefaults) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard self.heldEndDeliveryIsCurrent(notification) else { return }
+                    self.postRoutineNotification(notification, channel: channel, sound: sound, commandDefaults: commandDefaults)
+                }
+            }
+        }
+    }
 
-            let content = UNMutableNotificationContent()
-            let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
-                ?? "cmux"
-            content.title = notification.title.isEmpty ? appName : notification.title
-            content.subtitle = notification.subtitle
-            content.body = notification.body
-            content.sound = sound.notificationSound
-            content.categoryIdentifier = Self.categoryIdentifier
-            content.userInfo = Self.userInfo(for: notification)
+    private func postRoutineNotification(_ notification: TerminalNotification, channel: NotificationSoundChannel,
+                                         sound: NotificationSoundResolution, commandDefaults: UserDefaults) {
+        let content = UNMutableNotificationContent()
+        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? "cmux"
+        content.title = notification.title.isEmpty ? appName : notification.title
+        content.subtitle = notification.subtitle
+        content.body = notification.body
+        content.sound = sound.notificationSound
+        content.categoryIdentifier = Self.categoryIdentifier
+        content.userInfo = Self.userInfo(for: notification)
 
-            let request = UNNotificationRequest(
-                identifier: notification.systemIdentifier ?? notification.id.uuidString,
-                content: content,
-                trigger: nil
+        let request = UNNotificationRequest(
+            identifier: notification.systemIdentifier ?? notification.id.uuidString,
+            content: content,
+            trigger: nil
+        )
+
+        self.addRoutineNotification(request) { error in
+            // The completion arrives on Notification Center's queue.
+            let record = RoutineNotificationRecord(
+                action: error == nil ? .posted : .failed,
+                channel: channel,
+                identifier: request.identifier,
+                workspaceId: notification.workspaceId,
+                surfaceId: notification.surfaceId,
+                sound: sound
             )
-
-            self.addRoutineNotification(request) { error in
-                // The completion arrives on Notification Center's queue.
-                let record = RoutineNotificationRecord(
-                    action: error == nil ? .posted : .failed,
-                    channel: channel,
-                    identifier: request.identifier,
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self.recordRoutineNotification(record)
+                    // C11H-417: posted just as its record changed: retire the stale copy.
+                    if notification.origin == .heldEnd, error == nil, !self.heldEndDeliveryIsCurrent(notification) {
+                        self.retireSystemCopies([request.identifier])
+                    }
+                }
+            }
+            if let error {
+                NSLog("Failed to schedule notification: \(error)")
+            } else {
+                NotificationSoundSettings.runCustomCommand(
+                    title: content.title,
+                    subtitle: content.subtitle,
+                    body: content.body,
                     workspaceId: notification.workspaceId,
                     surfaceId: notification.surfaceId,
-                    sound: sound
+                    kind: .routine,
+                    defaults: commandDefaults
                 )
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { self.recordRoutineNotification(record) }
-                }
-                if let error {
-                    NSLog("Failed to schedule notification: \(error)")
-                } else {
-                    NotificationSoundSettings.runCustomCommand(
-                        title: content.title,
-                        subtitle: content.subtitle,
-                        body: content.body,
-                        workspaceId: notification.workspaceId,
-                        surfaceId: notification.surfaceId,
-                        kind: .routine,
-                        defaults: commandDefaults
-                    )
-                }
             }
         }
     }
@@ -1860,6 +1938,11 @@ final class TerminalNotificationStore: ObservableObject {
         _ handler: @escaping (TerminalNotificationStore, TerminalNotification) -> Void
     ) {
         notificationDeliveryHandler = handler
+    }
+
+    /// C11H-417: sees the system copies a record's change retires.
+    func configureSystemCopyRetirementForTesting(_ handler: (([String]) -> Void)?) {
+        systemCopyRetirementHandlerForTesting = handler
     }
 
     func resetNotificationDeliveryHandlerForTesting() {

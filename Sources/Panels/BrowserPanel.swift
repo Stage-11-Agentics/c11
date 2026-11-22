@@ -3292,6 +3292,9 @@ final class BrowserPanel: Panel, ObservableObject {
         let config = makeConfiguration(profileID: profileID, websiteDataStore: websiteDataStore, showViewer: showViewer,
                                        focusHandler: focusHandler)
         let webView = CmuxWebView(frame: .zero, configuration: config)
+        // C11H-390: the web view, not the configuration it was made from,
+        // keeps the controller's handlers installed while it lives.
+        BrowserScriptHandlerLease.hold(for: webView)
         webView.focusStateHandler = focusHandler
         // C11H-377: a show viewer never downloads, from its menu either.
         webView.refusesDownloads = showViewer != nil
@@ -3360,6 +3363,9 @@ final class BrowserPanel: Panel, ObservableObject {
         BrowserFocusTracking.install(into: config.userContentController, handler: focusHandler)
 
         PanelLinkActivation.installScript(in: config)
+        // C11H-390: WebKit keeps a controller with handlers alive until they
+        // are removed; the lease removes them once nothing holds it.
+        BrowserScriptHandlerLease.start(on: config)
         return config
     }
 

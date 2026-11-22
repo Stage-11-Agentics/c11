@@ -247,6 +247,9 @@ struct C11MigrationExecutor {
     enum Failure: Error, Equatable { case sourceChanged(String), occupied(String), injected(String), io(String) }
 
     static let originKey = "c11.migration.origin"
+    /// The origins an adoption records; `C11UpgradeOrigin` reads them (C11H-335).
+    static let adoptedOrigin = "c11h"  // c11-2.0:legacy
+    static let adoptedBesideOneXOrigin = "both"
 
     func run(_ decision: C11MigrationDecision) throws {
         switch decision {
@@ -308,7 +311,7 @@ struct C11MigrationExecutor {
 
     func adopt(keepOneXAside: Bool) throws {
         var state = (try C11MigrationState.load(home: layout.home))
-            ?? newState(.adopting, origin: keepOneXAside ? "both" : "c11h", keep: keepOneXAside)  // c11-2.0:legacy
+            ?? newState(.adopting, origin: keepOneXAside ? Self.adoptedBesideOneXOrigin : Self.adoptedOrigin, keep: keepOneXAside)
         log.line("plan", "ok", ["decision": "adopt", "keep_1x": state.keepOneX, "resumed": !state.steps.isEmpty])
         try save(&state)
         try keepOneXStep(&state)
@@ -429,7 +432,7 @@ struct C11MigrationExecutor {
     func converge(keepOneXAside: Bool, fromAdoption: Bool) throws {
         let previous = try C11MigrationState.load(home: layout.home)
         var state = previous
-            ?? newState(.converging, origin: keepOneXAside ? "both" : "c11h", keep: keepOneXAside, fromAdoption: fromAdoption) // c11-2.0:legacy
+            ?? newState(.converging, origin: keepOneXAside ? Self.adoptedBesideOneXOrigin : Self.adoptedOrigin, keep: keepOneXAside, fromAdoption: fromAdoption)
         if state.phase == .converging, state.target == .adopted {
             try rollBackConvergence()
             return

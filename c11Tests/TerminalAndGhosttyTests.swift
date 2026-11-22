@@ -3964,9 +3964,14 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         for pointer in pointers { free(pointer) }
         defer { surface.teardownSurface() }
         XCTAssertNil(surface.surface, "The source buffers must die before native creation")
+        // A host with an hc core (the bundled helper, else the external pin) runs
+        // this on a persistent hc terminal, the real path. A runner built without
+        // the hc cache has neither: the creation falls back to c11's own shell,
+        // which replaces the first native surface.
+        let hostHasHCCore = FileManager.default.isExecutableFile(atPath: HCCoreBinary.current.executableURL.path)
         surface.requestBackgroundSurfaceStartIfNeeded()
         await nextMainTurn()
-        let native = try XCTUnwrap(surface.surface)
+        XCTAssertNotNil(surface.surface, "Native creation follows the start request")
         for _ in 0..<150 {
             if let observed = try? String(contentsOf: output, encoding: .utf8), observed.contains("|") { break }
             try await Task.sleep(nanoseconds: 20_000_000)
@@ -3976,14 +3981,22 @@ final class TerminalSurfaceColdLifecycleTests: XCTestCase {
         let observedDirectory = try XCTUnwrap(observed.count == 2 ? String(observed[1]) : nil)
         XCTAssertEqual(URL(fileURLWithPath: observedDirectory).resolvingSymlinksInPath().path,
                        directory.resolvingSymlinksInPath().path)
-        // This runs on the test host's persistent hc terminal, the real path:
-        // the env and cwd above reached the command through hc. hc restores a
-        // persistent terminal itself, so c11 never replays its scrollback (C11H-4).
+        // The surface running the command, read only now: a fallback frees the
+        // first one, and calling into a freed surface crashes the test host.
+        let native = try XCTUnwrap(surface.surface)
         let panel = TerminalPanel(workspaceId: surface.workspaceId, surface: surface)
-        XCTAssertEqual(surface.hcSession?.identity.persistence, .persistent, "Precondition: an hc terminal")
         XCTAssertTrue(surface.hasLiveProcess(), "Precondition: liveness alone would qualify")
-        XCTAssertFalse(panel.shouldPersistScrollbackForSessionSnapshot(),
-                       "A persistent hc terminal never persists scrollback, even while its command runs")
+        if hostHasHCCore {
+            // The env and cwd above reached the command through hc. hc restores a
+            // persistent terminal itself, so c11 never replays its scrollback (C11H-4).
+            XCTAssertEqual(surface.hcSession?.identity.persistence, .persistent, "Precondition: an hc terminal")
+            XCTAssertFalse(panel.shouldPersistScrollbackForSessionSnapshot(),
+                           "A persistent hc terminal never persists scrollback, even while its command runs")
+        } else {
+            XCTAssertEqual(surface.hcSession?.identity.persistence, .nonpersistent, "With no hc core, c11's own fallback shell")
+            XCTAssertTrue(panel.shouldPersistScrollbackForSessionSnapshot(),
+                          "A terminal c11 runs itself keeps its scrollback while its command runs")
+        }
         // Inheritance reads the main-owned scalar immediately, without waiting
         // for the asynchronous renderer font-grid update.
         let observedFontPoints = c11CurrentSurfaceFontSizePoints(native)

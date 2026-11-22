@@ -435,3 +435,219 @@ final class BrowserLoadGateTests: XCTestCase {
         XCTAssertEqual(gate.held, "taken-down")
     }
 }
+
+/// C11H-390: WebKit keeps a content controller alive while it holds a script message handler, so a
+/// browser configuration's controller is freed only once nothing holds its handler lease. Each case
+/// makes the real objects inside a pool, keeps only weak probes (checked while the objects lived),
+/// drains the main run loop briefly, and asserts the controller is gone.
+@MainActor
+final class BrowserConfigurationReleaseTests: XCTestCase {
+    private static let guarded = ShowOrigin.remote(machine: "studio", container: nil)
+
+    private func viewerSession(_ origin: ShowOrigin) -> ShowViewerSession {
+        ShowViewerSession(caller: UUID(), source: .url("https://example.com/shown"), origin: origin, fetcher: nil, callerTitle: "A")
+    }
+
+    /// Its own pool, so what main-queue work autoreleases while it runs is freed here, not when the
+    /// test returns.
+    private func drainMainRunLoop() {
+        autoreleasepool { RunLoop.main.run(until: Date().addingTimeInterval(0.25)) }
+    }
+
+    /// c11's shared process pool keeps the page it closed last, with its controller, until the
+    /// next page made in that pool closes: one slot, not a leak. Closing one more page here frees
+    /// that slot, so the probe sees only what still holds the case's own controller.
+    private func closeOneMorePageInTheSharedPool() {
+        drainMainRunLoop()
+        autoreleasepool {
+            let config = BrowserPanel.makeConfiguration(profileID: UUID(), websiteDataStore: .nonPersistent())
+            let page = WKWebView(frame: .zero, configuration: config)
+            withExtendedLifetime(page) {}
+        }
+        drainMainRunLoop()
+    }
+
+    private func label(_ origin: ShowOrigin?) -> String {
+        switch origin {
+        case nil: return "no viewer"
+        case .local?: return "local viewer"
+        case .remote?: return "guarded viewer"
+        }
+    }
+
+    private func assertConfigurationControllerIsFreed(_ origin: ShowOrigin?, makesWebView: Bool,
+                                                      file: StaticString = #filePath, line: UInt = #line) {
+        weak var controller: WKUserContentController?
+        weak var webView: WKWebView?
+        weak var session: ShowViewerSession?
+        autoreleasepool {
+            let viewer = origin.map { viewerSession($0) }
+            let config = BrowserPanel.makeConfiguration(profileID: UUID(), websiteDataStore: viewer?.dataStore ?? .nonPersistent(),
+                                                        showViewer: viewer)
+            controller = config.userContentController
+            session = viewer
+            if makesWebView {
+                let made = WKWebView(frame: .zero, configuration: config)
+                webView = made
+                XCTAssertNotNil(webView, file: file, line: line)
+            }
+            XCTAssertNotNil(controller, "the probe was never set", file: file, line: line)
+        }
+        if makesWebView { closeOneMorePageInTheSharedPool() } else { drainMainRunLoop() }
+        let what = "\(label(origin)), \(makesWebView ? "with" : "without") a web view"
+        XCTAssertNil(webView, "the web view outlived its last owner (\(what))", file: file, line: line)
+        if origin != nil { XCTAssertNil(session, "the viewer session outlived its last owner (\(what))", file: file, line: line) }
+        XCTAssertNil(controller, "makeConfiguration's content controller outlived every owner (\(what))", file: file, line: line)
+    }
+
+    func testAConfigurationsControllerIsFreedWithoutAWebView() {
+        _ = NSApplication.shared
+        for origin in [nil, ShowOrigin.local, Self.guarded] {
+            assertConfigurationControllerIsFreed(origin, makesWebView: false)
+        }
+    }
+
+    func testAConfigurationsControllerIsFreedWithItsWebView() {
+        _ = NSApplication.shared
+        for origin in [nil, ShowOrigin.local, Self.guarded] {
+            assertConfigurationControllerIsFreed(origin, makesWebView: true)
+        }
+    }
+
+    func testAClosedPanelsControllerIsFreed() {
+        _ = NSApplication.shared
+        for origin in [nil, Self.guarded] {
+            weak var controller: WKUserContentController?
+            weak var webView: WKWebView?
+            weak var panel: BrowserPanel?
+            autoreleasepool {
+                let made = BrowserPanel(workspaceId: UUID(), showViewer: origin.map { viewerSession($0) })
+                panel = made
+                webView = made.webView
+                controller = made.webView.configuration.userContentController
+                XCTAssertNotNil(controller, "the probe was never set")
+                made.close()
+            }
+            closeOneMorePageInTheSharedPool()
+            XCTAssertNil(panel, "the closed panel outlived its last owner (\(label(origin)))")
+            XCTAssertNil(webView, "the closed panel's web view outlived it (\(label(origin)))")
+            XCTAssertNil(controller, "the closed panel's content controller outlived it (\(label(origin)))")
+        }
+    }
+
+    // The lease belongs to the web view, not to the configuration it was made from: once the
+    // configuration is gone, the open panel's page still reaches c11's focus handler.
+    func testAnOpenPanelsFocusHandlerStillHearsItsPage() {
+        _ = NSApplication.shared
+        let panel = BrowserPanel(workspaceId: UUID())
+        defer { panel.close() }
+        guard let handler = (panel.webView as? CmuxWebView)?.focusStateHandler else { return XCTFail("the panel has no focus handler") }
+        drainMainRunLoop()
+        XCTAssertTrue(focusReport(from: panel.webView, reaches: handler), "the page's focus report never reached c11's handler")
+    }
+
+    /// Loads a page with a field into `webView` and fires `focusin` on it until c11's focus
+    /// handler hears it, for up to 10 s. The report goes through the content controller's script
+    /// message handler, so it arrives only while that handler is installed.
+    private func focusReport(from webView: WKWebView, reaches handler: BrowserFocusStateHandler) -> Bool {
+        webView.loadHTMLString("<html><body><input id=\"f\"></body></html>", baseURL: URL(string: "https://c11-fixture.example/"))
+        let focusIn = "(() => { const f = document.getElementById('f'); "
+            + "if (f) f.dispatchEvent(new FocusEvent('focusin', { bubbles: true })); return 0; })();"
+        let deadline = Date().addingTimeInterval(10)
+        while !handler.hasFocusedField, Date() < deadline {
+            webView.evaluateJavaScript(focusIn, completionHandler: nil)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        return handler.hasFocusedField
+    }
+
+    /// Opens a popup through `createFloatingPopup`, the path `window.open` takes, without a window
+    /// on screen. WebKit hands a popup a configuration that shares its opener's content controller;
+    /// the opener's own configuration does the same here, and the test checks that it does.
+    private func openHiddenPopup(from panel: BrowserPanel, file: StaticString = #filePath, line: UInt = #line) -> WKWebView? {
+        let saved = BrowserPopupWindowController.presentsWindows
+        BrowserPopupWindowController.presentsWindows = false
+        defer { BrowserPopupWindowController.presentsWindows = saved }
+        let opener = panel.webView
+        let popup = panel.createFloatingPopup(configuration: opener.configuration, windowFeatures: WKWindowFeatures())
+        XCTAssertNotNil(popup?.window, "the popup has no window", file: file, line: line)
+        XCTAssertTrue(popup?.configuration.userContentController === opener.configuration.userContentController,
+                      "the popup does not share its opener's content controller", file: file, line: line)
+        return popup
+    }
+
+    // REPAIR-1: a profile switch or a workspace context reset replaces the opener's web view and
+    // leaves its popups open. The popup still holds the shared controller's lease, so its page
+    // still reaches c11's handlers, and the controller is freed only once the popup goes too.
+    // Everything is made inside a pool: AppKit autoreleases a web view while making it, and the
+    // test's own pool would keep the opener alive until the test returns.
+    func testAPopupKeepsTheSharedHandlersWhenItsOpenerIsReplaced() {
+        _ = NSApplication.shared
+        weak var controller: WKUserContentController?
+        weak var opener: WKWebView?
+        weak var popup: WKWebView?
+        var panel: BrowserPanel?
+        var handler: BrowserFocusStateHandler?
+        var popupView: WKWebView?
+        autoreleasepool {
+            let made = BrowserPanel(workspaceId: UUID(), initialURL: URL(string: "https://example.com/opener")!,
+                                    pendingHibernate: true)
+            panel = made
+            opener = made.webView
+            controller = made.webView.configuration.userContentController
+            handler = (made.webView as? CmuxWebView)?.focusStateHandler
+            popupView = openHiddenPopup(from: made)
+            popup = popupView
+        }
+        autoreleasepool {
+            panel?.resetForWorkspaceContextChange(reason: "test")
+            XCTAssertFalse(panel?.webView === opener, "the reset kept the opener's web view")
+        }
+        closeOneMorePageInTheSharedPool()
+        XCTAssertNil(opener, "the replaced opener's web view outlived its replacement")
+        autoreleasepool {
+            guard let handler, let popupView else { return XCTFail("no focus handler or no popup") }
+            XCTAssertTrue(focusReport(from: popupView, reaches: handler),
+                          "the popup's page lost c11's handlers when its opener's web view was replaced")
+            popupView.window?.close()
+        }
+        autoreleasepool {
+            popupView = nil
+            handler = nil
+        }
+        closeOneMorePageInTheSharedPool()
+        XCTAssertNil(popup, "the closed popup's web view outlived it")
+        XCTAssertNil(controller, "the shared controller outlived the popup, its last holder")
+        autoreleasepool {
+            panel?.close()
+            panel = nil
+        }
+    }
+
+    // REPAIR-1, the other order: closing the popup first leaves the open opener's handlers
+    // callable, and the shared controller is freed once the opener closes.
+    func testClosingAPopupFirstLeavesItsOpenersHandlers() {
+        _ = NSApplication.shared
+        weak var controller: WKUserContentController?
+        weak var popup: WKWebView?
+        weak var opener: BrowserPanel?
+        autoreleasepool {
+            let panel = BrowserPanel(workspaceId: UUID())
+            opener = panel
+            controller = panel.webView.configuration.userContentController
+            autoreleasepool {
+                let made = openHiddenPopup(from: panel)
+                popup = made
+                made?.window?.close()
+            }
+            closeOneMorePageInTheSharedPool()
+            XCTAssertNil(popup, "the closed popup's web view outlived it")
+            guard let handler = (panel.webView as? CmuxWebView)?.focusStateHandler else { return XCTFail("the panel has no focus handler") }
+            XCTAssertTrue(focusReport(from: panel.webView, reaches: handler), "closing the popup took its opener's handlers")
+            panel.close()
+        }
+        closeOneMorePageInTheSharedPool()
+        XCTAssertNil(opener, "the closed opener outlived its last owner")
+        XCTAssertNil(controller, "the shared controller outlived the popup and its opener")
+    }
+}

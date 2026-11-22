@@ -275,7 +275,9 @@ def run_row(cli: str, socket_path: str, server: Server, md: str, label: str, tem
         server.accepted_mutations = []
     env = fake_server_env(socket_path)
     env["C11_SOCKET_PASSWORD"] = ""
-    proc = subprocess.run([cli, "--json", *argv], env=env, capture_output=True, text=True, timeout=30)
+    # The fake's path is named by --socket: a socket variable naming a path that
+    # is not c11's is refused by design (C11H-282), whatever the test.
+    proc = subprocess.run([cli, "--socket", socket_path, "--json", *argv], env=env, capture_output=True, text=True, timeout=30)
     out = proc.stdout + proc.stderr
     failures = []
     name = f"{label} [{variant}]"
@@ -340,7 +342,7 @@ def main() -> int:
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
             env = fake_server_env(path)
-            proc = subprocess.run([cli, "--json", "list-panels"], env=env, capture_output=True, text=True, timeout=30)
+            proc = subprocess.run([cli, "--socket", path, "--json", "list-panels"], env=env, capture_output=True, text=True, timeout=30)
             if proc.returncode != 0 or PANELS[0]["id"] not in proc.stdout and PANELS[0]["ref"] not in proc.stdout:
                 failures.append(f"default list-panels: rc={proc.returncode} {proc.stdout.strip()[:300]} {proc.stderr.strip()[:300]}")
         finally:

@@ -598,15 +598,26 @@ and `empty_group`.
 
 ### Sidebar folder controls and attention
 
-A folder header has a chevron, icon, name, pin marker and menu, followed by fixed
-slots for member, flag, waiting and unread counts. A long name truncates with its
-full text in the tooltip. Count slots keep their width at zero and cap visually
-at `99+`; accessibility labels and tooltips retain the exact count.
+A folder header is a section label, not a card: an opaque tab holds the chevron,
+the folder's icon when one is set, and the name; a hairline in the folder's color
+(the theme's rule color when it has none) runs to a small chip holding the Captain mark (when the folder declares one), the
+pin marker and one attention count (flags when any are up, else waiting). A long
+name truncates with its full text in the tooltip. At a narrow sidebar parts give
+way to the name in a fixed order: the pin, then the count's glyph (while the
+name is cut off and under about 120 pt, times Chrome Scale), then the icon, then
+the Captain mark (only to keep the name about 72 pt). A name shorter than either
+costs nothing. Width, scale, name and configuration decide it, so nothing moves
+when a count changes or the selection moves. The count keeps its slot
+at zero and caps visually at `99+`; under the pointer the slot holds the actions
+menu, which is also the header's context menu. The name's tooltip is the full name,
+plus the Captain when its mark has given way; the count's tooltip and accessibility
+label carry its exact number, and the name's accessibility label carries the member,
+flag, waiting and unread counts.
 
 - Click the chevron to collapse or expand. Collapse hides sidebar member rows
   only: the selected workspace and its live terminal remain active, and numeric
-  workspace shortcuts still use the canonical flat order. A header is highlighted
-  when it contains the selected workspace, including while collapsed. Click its
+  workspace shortcuts still use the canonical flat order. A header's name is drawn
+  in full ink (same weight) when it contains the selected workspace, including while collapsed. Click its
   name to focus the current member or first member. Empty folders stay empty.
 - New Group in the sidebar menu opens a name editor and creates an empty folder.
   The header menu offers Rename Group, Color, Icon, Pin/Unpin Group, Ungroup and

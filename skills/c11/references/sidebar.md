@@ -27,11 +27,13 @@ summary expose the complete title/address; long names truncate in the card.
 Compact cards keep two lines as holders arrive, leave or rename.
 
 A workspace group can carry a Captain for all its members, and it shows once, on
-the group header, never per member: a fixed mark slot on the name row, beside the
-pin, in full and compact headers alike. The cap is filled while one open panel
+the group header, never per member: a mark beside the pin in the header's
+right-hand chip, in full and compact sidebars alike. The cap is filled while one open panel
 holds the address, hollow when nobody does, and a warning glyph when several do;
-the holder's title and the address are in its tooltip. The slot is always
-reserved, so nothing moves when a Captain arrives or leaves. A member card leaves its own
+the holder's title and the address are in its tooltip. The slot is reserved
+while the group declares an address, so nothing moves when a Captain arrives or
+leaves; at the narrowest sidebar it is the last part to give way to the name, and
+the name's tooltip then names the Captain. A member card leaves its own
 captain slot empty when its resolved Captain is the address its group shows; a
 member with a different Captain of its own still shows it on its card. Tooltips
 and hover cards say "Group captain: ..." for an inherited Captain.

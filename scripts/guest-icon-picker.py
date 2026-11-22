@@ -164,7 +164,9 @@ elif PHASE == 'group':
     s = load()
     header = f'workspace-group-header-{s["groups"]["Emoji Group"]}'
     activate()
-    ax('pressin', header, 'Group actions')
+    # The header's actions menu shows only under the pointer (C11H-410); its
+    # context menu holds the same items. AXShowMenu blocks while the menu tracks.
+    ax('showmenu', header, check=False)
     time.sleep(0.6)
     ax('menuitem', 'Icon…')
     wait_for(lambda: subprocess.run([AX, str(pid()), 'frame', 'sidebar-icon-picker-grid'],

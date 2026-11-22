@@ -531,7 +531,11 @@ for binary in Resources/bin/c11 Resources/bin/ghostty; do
   bin_archs="$(lipo -archs "$PRISTINE/Contents/$binary")" || die "lipo failed on $binary"
   [[ "$bin_archs" == "arm64" ]] || die "$binary architectures are '$bin_archs'; releases are arm64-only"
 done
-note "bundled CLI and Ghostty helper: arm64"
+if [[ -e "$PRISTINE/Contents/Helpers/herdr-core" ]]; then
+  hc_archs="$(lipo -archs "$PRISTINE/Contents/Helpers/herdr-core")" || die "lipo failed on Helpers/herdr-core"
+  [[ "$hc_archs" == "arm64" ]] || die "Helpers/herdr-core architectures are '$hc_archs'; releases are arm64-only"
+fi
+note "bundled CLI, Ghostty helper and hc helper: arm64"
 DTXCODE="$(/usr/libexec/PlistBuddy -c 'Print :DTXcode' "$PRISTINE/Contents/Info.plist")"
 DTSDK="$(/usr/libexec/PlistBuddy -c 'Print :DTSDKName' "$PRISTINE/Contents/Info.plist")"
 note "toolchain: DTXcode $DTXCODE, SDK $DTSDK (pinned DTXcode $RELEASE_DTXCODE)"
@@ -620,6 +624,45 @@ if [ -f "$HELPER_PATH" ]; then
   /usr/bin/codesign --force --options runtime --timestamp ${KC_ARGS[@]+"${KC_ARGS[@]}"} --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$HELPER_PATH"
 fi
 /usr/bin/codesign --force --options runtime --timestamp ${KC_ARGS[@]+"${KC_ARGS[@]}"} --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" --deep "$APP_PATH"
+# C11H-66: the bundled hc core, as scripts/c11-release.sh signs it. --deep above
+# gave it the app's entitlements and its file name as identifier, and changed its
+# bytes, so hc-pin.json no longer names it and the app would refuse to start hc.
+# Sign it again alone, hardened, with no entitlements and c11's helper identifier
+# (HCRetainedTrust requires it), seal the signed file's hash into hc-pin.json,
+# then sign the app again without --deep so the helper keeps its own signature.
+HC_HELPER="$APP_PATH/Contents/Helpers/herdr-core"
+HC_MANIFEST="$APP_PATH/Contents/Resources/hc-pin.json"
+HC_HELPER_ID="com.stage11.c11.herdr-core"
+if [[ -e "$HC_HELPER" || -e "$HC_MANIFEST" ]]; then
+  [[ -f "$HC_HELPER" && -f "$HC_MANIFEST" ]] \
+    || die "the app carries only half of the hc helper (Contents/Helpers/herdr-core and Contents/Resources/hc-pin.json)"
+  chmod 0755 "$(dirname "$HC_HELPER")"
+  /usr/bin/codesign --force --options runtime --timestamp ${KC_ARGS[@]+"${KC_ARGS[@]}"} --identifier "$HC_HELPER_ID" --sign "$SIGNING_IDENTITY" "$HC_HELPER"
+  python3 - "$HC_MANIFEST" "$HC_HELPER" <<'PY_HC_PIN' || die "could not seal the signed hc helper's hash into hc-pin.json"
+import hashlib, json, os, sys
+manifest, helper = sys.argv[1:]
+with open(manifest, encoding="utf-8") as handle:
+    record = json.load(handle)
+digest = hashlib.sha256()
+with open(helper, "rb") as handle:
+    for chunk in iter(lambda: handle.read(1 << 20), b""):
+        digest.update(chunk)
+record["executableSHA256"] = digest.hexdigest()
+with open(manifest + ".tmp", "w", encoding="utf-8") as handle:
+    json.dump(record, handle, separators=(",", ":"))
+    handle.write("\n")
+os.replace(manifest + ".tmp", manifest)
+PY_HC_PIN
+  /usr/bin/codesign --force --options runtime --timestamp ${KC_ARGS[@]+"${KC_ARGS[@]}"} --sign "$SIGNING_IDENTITY" --entitlements "$ENTITLEMENTS" "$APP_PATH"
+  HC_PIN_SHA="$(jq -r .executableSHA256 "$HC_MANIFEST")"
+  HC_FILE_SHA="$(shasum -a 256 "$HC_HELPER" | awk '{print $1}')"
+  [[ "$HC_PIN_SHA" == "$HC_FILE_SHA" ]] || die "hc-pin.json names $HC_PIN_SHA but the signed helper is $HC_FILE_SHA"
+  HC_SIGNED_ID="$(/usr/bin/codesign -dv "$HC_HELPER" 2>&1 | awk -F= '$1 == "Identifier" {print $2}')"
+  [[ "$HC_SIGNED_ID" == "$HC_HELPER_ID" ]] || die "hc helper identifier is '$HC_SIGNED_ID', not $HC_HELPER_ID"
+  note "hc helper signed as $HC_HELPER_ID; hc-pin.json executableSHA256 $HC_FILE_SHA"
+else
+  note "no bundled hc helper (a 1.x tree); nothing to seal"
+fi
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 # --------------------------------------------------------- notarize: app --

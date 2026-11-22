@@ -250,7 +250,16 @@ struct HCFileLimitPlan: Equatable, Sendable {
 ///   carries a terminal marker, unless `ALLOW_SOCKET_OVERRIDE` says the override
 ///   is intended. A launch script or a UI test sets a socket path with no panel
 ///   id beside it; an inherited one always arrives with them.
-/// - the legacy `CMUX_*` namespace, except `cmuxLaunchSettings`.
+/// - the legacy `CMUX_*` namespace, except `cmuxLaunchSettings`;
+/// - every bare `HC_*` (C11H-415): hc's marks on the host terminal
+///   (`HC_SCOPE`, `HC_TERMINAL_ID`, `HC_TERMINAL_SOCKET`, `HC_SESSION`,
+///   `HC_SOCKET`). The app needs no inherited `HC_*`: its cores get theirs
+///   from the launch tuple alone.
+///
+/// The scrub also blanks those names in this process's exec-time environment
+/// (`blankExecEnvironment`), which `unsetenv` leaves in place. hc ends a
+/// terminal's leftovers by the `HC_SCOPE` token it finds there, so an app opened
+/// from a c11 terminal (`open -a`) was hung up when that panel closed.
 ///
 /// What stays is the allowlist: the `C11_*` namespace is c11's own launch
 /// settings (`C11_QA_LAUNCH`, `C11_DEBUG_LOG`, `C11_TAG`, `C11_SOCKET_MODE`,
@@ -328,6 +337,7 @@ enum HCLaunchEnvironmentScrub {
         return environment.keys.filter { key in
             if key == "ZDOTDIR" { return zdotdirIsShellIntegration(environment) }
             if isAgentOrHostTerminalVariable(key) { return true }
+            if key.hasPrefix("HC_") { return true }
             guard let family = familyName(key) else { return false }
             if isHostIdentityName(family.name) { return true }
             if socketPathNames.contains(family.name) {
@@ -381,6 +391,243 @@ enum HCLaunchEnvironmentScrub {
             logger.notice("launch.env.scrubbed count=\(names.count, privacy: .public) names=\(names.joined(separator: ","), privacy: .public)")
         }
         return names
+    }
+
+    /// C11H-415: what `blankExecEnvironment` did. Names only, never values.
+    struct ExecBlockOutcome: Equatable, Sendable {
+        /// Names whose recorded strings were overwritten, sorted, each once.
+        var blanked: [String] = []
+        /// Recorded strings left as they were because a live pointer still
+        /// names them or their bytes no longer match the kernel's copy.
+        var skipped = 0
+        /// Why nothing was written, when the block could not be located.
+        var refused: String?
+    }
+
+    /// C11H-415: overwrites, in this process's own memory, every string of the
+    /// exec-time environment (`HCExecEnvironment`) whose name is in `names`, so
+    /// `KERN_PROCARGS2` (hc's sweep, `ps -E`) no longer shows it. Each byte
+    /// becomes `_`, which keeps every other string where it was and defines no
+    /// variable. Call it after `unsetenv`: the live environment no longer points
+    /// at these strings.
+    ///
+    /// The block is located from the kernel's own copy (`procargs`), never
+    /// guessed. The arguments must sit at the kernel's offsets with its bytes,
+    /// and an entry of the live environment must land exactly on one of the
+    /// block's strings, which confirms the mapping. A string is then written
+    /// only when its bytes still equal the copy and no live environment entry
+    /// points at it. That is all the code checks: it cannot see a pointer some
+    /// code kept from an earlier `getenv`. What makes that safe is when it runs:
+    /// from the first stored property of the `@main` App, before c11 starts a
+    /// thread, Sentry or any service, on names nothing earlier reads (agent
+    /// markers, c11's terminal identity, hc's marks). Pure over the memory it
+    /// is handed: tests pass a synthetic block.
+    static func blankExecEnvironment(names: Set<String>, procargs: [UInt8],
+                                     arguments: [UnsafeMutablePointer<CChar>],
+                                     live: [UnsafeMutablePointer<CChar>]) -> ExecBlockOutcome {
+        guard let layout = HCExecEnvironment.layout(procargs) else { return ExecBlockOutcome(refused: "unreadable") }
+        let wanted = layout.strings.filter { HCExecEnvironment.name(of: $0, in: procargs).map(names.contains) ?? false }
+        guard !wanted.isEmpty else { return ExecBlockOutcome() }
+        let block: ExecBlock
+        switch locateExecBlock(procargs: procargs, arguments: arguments, live: live) {
+        case .success(let located): block = located
+        case .failure(let refusal): return ExecBlockOutcome(refused: refusal.rawValue)
+        }
+        let livePointers = Set(live.map { UnsafeRawPointer($0) })
+        var outcome = ExecBlockOutcome()
+        var blanked = Set<String>()
+        for range in wanted {
+            let pointer = block.address(range.lowerBound)
+            guard !livePointers.contains(pointer), block.holds(procargs, range, at: pointer) else {
+                outcome.skipped += 1
+                continue
+            }
+            memset(UnsafeMutableRawPointer(mutating: pointer), Int32(UInt8(ascii: "_")), range.count)
+            if let name = HCExecEnvironment.name(of: range, in: procargs) { blanked.insert(name) }
+        }
+        outcome.blanked = blanked.sorted()
+        return outcome
+    }
+
+    /// Where the kernel's copy (`procargs`) of the exec-time strings sits in
+    /// this process's memory, measured from the first argument.
+    struct ExecBlock {
+        let layout: HCExecEnvironment.Layout
+        let base: UnsafeRawPointer
+        let origin: Int
+
+        func address(_ offset: Int) -> UnsafeRawPointer { base + (offset - origin) }
+
+        /// The string `range` of the copy is at `pointer`, NUL included. Byte by
+        /// byte, so a shorter string's NUL stops the read where it ends.
+        func holds(_ procargs: [UInt8], _ range: Range<Int>, at pointer: UnsafeRawPointer) -> Bool {
+            for (index, byte) in procargs[range].enumerated() where pointer.load(fromByteOffset: index, as: UInt8.self) != byte {
+                return false
+            }
+            return pointer.load(fromByteOffset: range.count, as: UInt8.self) == 0
+        }
+    }
+
+    enum ExecBlockRefusal: String, Error { case unreadable, arguments, argumentsMoved = "arguments_moved", unconfirmed }
+
+    /// The block, located only when every argument sits at the kernel's offset
+    /// with the kernel's bytes and a live environment pointer lands exactly on
+    /// one of the block's strings. Reads argument memory only; writes nothing.
+    static func locateExecBlock(procargs: [UInt8], arguments: [UnsafeMutablePointer<CChar>],
+                                live: [UnsafeMutablePointer<CChar>]) -> Result<ExecBlock, ExecBlockRefusal> {
+        guard let layout = HCExecEnvironment.layout(procargs) else { return .failure(.unreadable) }
+        guard layout.arguments.count == arguments.count, let first = arguments.first,
+              let origin = layout.arguments.first else { return .failure(.arguments) }
+        let block = ExecBlock(layout: layout, base: UnsafeRawPointer(first), origin: origin)
+        for (index, pointer) in arguments.enumerated() {
+            let offset = layout.arguments[index]
+            let end = procargs[offset...].firstIndex(of: 0) ?? procargs.endIndex
+            guard UnsafeRawPointer(pointer) == block.address(offset),
+                  block.holds(procargs, offset..<end, at: UnsafeRawPointer(pointer)) else { return .failure(.argumentsMoved) }
+        }
+        let livePointers = Set(live.map { UnsafeRawPointer($0) })
+        guard layout.strings.contains(where: { livePointers.contains(block.address($0.lowerBound)) }) else {
+            return .failure(.unconfirmed)
+        }
+        return .success(block)
+    }
+
+    /// This process's arguments and every entry of its live environment
+    /// (`*_NSGetEnviron()`), for `locateExecBlock`. Swift does not see
+    /// `crt_externs.h` here, so the function is found by name; without it the
+    /// list is empty and `locateExecBlock` refuses (`unconfirmed`).
+    static func ownArgumentsAndEnvironment() -> (arguments: [UnsafeMutablePointer<CChar>], live: [UnsafeMutablePointer<CChar>]) {
+        typealias GetEnviron = @convention(c) () -> UnsafeMutablePointer<UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?>?
+        let argv = CommandLine.unsafeArgv
+        let arguments = (0..<Int(CommandLine.argc)).compactMap { argv[$0] }
+        var live: [UnsafeMutablePointer<CChar>] = []
+        // RTLD_DEFAULT.
+        if let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_NSGetEnviron"),
+           var cursor = unsafeBitCast(symbol, to: GetEnviron.self)()?.pointee {
+            while let entry = cursor.pointee {
+                live.append(entry)
+                cursor += 1
+            }
+        }
+        return (arguments, live)
+    }
+
+    /// C11H-415: `blankExecEnvironment` on this process, for the names the
+    /// launch scrub removes from its exec-time environment (`alsoNames` adds the
+    /// live scrub's own list), then a fresh read of what hc and `ps -E` now see.
+    /// Logs one line, names only.
+    @discardableResult
+    static func blankOwnExecEnvironment(alsoNames: [String] = []) -> ExecBlockOutcome {
+        let pid = getpid()
+        guard let before = HCExecEnvironment.read(pid: pid) else {
+            logger.error("launch.env.exec_block refused=unreadable")
+            return ExecBlockOutcome(refused: "unreadable")
+        }
+        let names = Set(namesToRemove(from: HCExecEnvironment.variables(before))).union(alsoNames)
+        guard !names.isEmpty else { return ExecBlockOutcome() }
+        let own = ownArgumentsAndEnvironment()
+        let outcome = blankExecEnvironment(names: names, procargs: before, arguments: own.arguments, live: own.live)
+        let remaining = HCExecEnvironment.read(pid: pid).map {
+            HCExecEnvironment.variables($0).keys.filter(names.contains).sorted()
+        }
+        let remainingText = remaining.map { $0.isEmpty ? "none" : $0.joined(separator: ",") } ?? "unreadable"
+        let line = "launch.env.exec_block blanked=\(outcome.blanked.joined(separator: ",")) skipped=\(outcome.skipped) " +
+            "refused=\(outcome.refused ?? "none") remaining=\(remainingText)"
+        if outcome.refused != nil || remaining != [] {
+            logger.error("\(line, privacy: .public)")
+        } else {
+            logger.notice("\(line, privacy: .public)")
+        }
+        return outcome
+    }
+}
+
+/// C11H-415: a process's environment as the kernel recorded it at exec
+/// (`KERN_PROCARGS2`: argc, the executable path and its padding, the arguments,
+/// then each environment string, all NUL-terminated). This, not the live
+/// `environ`, is what `ps -E` prints and what hc reads when it ends a
+/// terminal's leftovers: every process whose recorded environment holds that
+/// terminal's `HC_SCOPE` token is hung up, then terminated, then killed, with
+/// everything beneath it (hc `sweep.rs`, `members`). `unsetenv` leaves these
+/// strings in place.
+enum HCExecEnvironment {
+    struct Layout: Equatable {
+        /// Where each argument string starts.
+        let arguments: [Int]
+        /// Every non-empty string after the arguments (the environment, then any
+        /// of the kernel's own strings), without its NUL.
+        let strings: [Range<Int>]
+    }
+
+    /// Larger than any argument space macOS allows (`kern.argmax`, 1 MiB).
+    static let maxBytes = 4 << 20
+
+    static func layout(_ bytes: [UInt8]) -> Layout? {
+        guard bytes.count > MemoryLayout<Int32>.size else { return nil }
+        let argc = Int(bytes.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) })
+        guard argc >= 0 else { return nil }
+        var cursor = MemoryLayout<Int32>.size
+        while cursor < bytes.count, bytes[cursor] != 0 { cursor += 1 } // the executable path
+        while cursor < bytes.count, bytes[cursor] == 0 { cursor += 1 } // its padding
+        var arguments: [Int] = []
+        while arguments.count < argc {
+            guard cursor < bytes.count else { return nil }
+            arguments.append(cursor)
+            while cursor < bytes.count, bytes[cursor] != 0 { cursor += 1 }
+            cursor += 1
+        }
+        var strings: [Range<Int>] = []
+        while cursor < bytes.count {
+            let start = cursor
+            while cursor < bytes.count, bytes[cursor] != 0 { cursor += 1 }
+            if cursor > start { strings.append(start..<cursor) }
+            cursor += 1
+        }
+        return Layout(arguments: arguments, strings: strings)
+    }
+
+    /// The name of a `NAME=value` string, nil when it has no `=` or no name.
+    static func name(of range: Range<Int>, in bytes: [UInt8]) -> String? {
+        guard let equals = bytes[range].firstIndex(of: UInt8(ascii: "=")), equals > range.lowerBound else { return nil }
+        return String(decoding: bytes[range.lowerBound..<equals], as: UTF8.self)
+    }
+
+    /// Every recorded `NAME` and `value`, in order; a name may repeat.
+    static func entries(_ bytes: [UInt8]) -> [(name: String, value: String)] {
+        guard let layout = layout(bytes) else { return [] }
+        return layout.strings.compactMap { range in
+            guard let equals = bytes[range].firstIndex(of: UInt8(ascii: "=")), equals > range.lowerBound else { return nil }
+            return (String(decoding: bytes[range.lowerBound..<equals], as: UTF8.self),
+                    String(decoding: bytes[(equals + 1)..<range.upperBound], as: UTF8.self))
+        }
+    }
+
+    /// The recorded environment as a dictionary; the first of a repeated name wins.
+    static func variables(_ bytes: [UInt8]) -> [String: String] {
+        var result: [String: String] = [:]
+        for entry in entries(bytes) where result[entry.name] == nil { result[entry.name] = entry.value }
+        return result
+    }
+
+    /// One process's `KERN_PROCARGS2`, nil when the kernel refuses (another
+    /// user's process, or one that ended).
+    static func read(pid: Int32) -> [UInt8]? {
+#if os(macOS)
+        guard pid > 0 else { return nil }
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0,
+              size > MemoryLayout<Int32>.size, size <= maxBytes else { return nil }
+        var bytes = [UInt8](repeating: 0, count: size)
+        let result = bytes.withUnsafeMutableBytes { sysctl(&mib, u_int(mib.count), $0.baseAddress, &size, nil, 0) }
+        guard result == 0, size > MemoryLayout<Int32>.size else { return nil }
+        bytes.removeSubrange(size...)
+        return bytes
+#else
+        // The Linux relay CLI never launches or ends a c11 app, so it reads no
+        // other process's exec-time block (C11H-191's Linux build).
+        return nil
+#endif
     }
 }
 
@@ -580,7 +827,7 @@ struct HCCoreBinary: Equatable, Sendable {
         "8f68032d030e4fef4bc7dbc4b8102907fd994dcb6cd771447419b7ce9011f52f",
         "14b315d8af18d5f073388c2d513929b3645bd65c461803abe2d498740a8f59b2",
         "3f1b58dca952f6a35272111854f8d455324255fe5d56dccc5420a4b8f040d5bc",
-        // c11h 1.8.1-h16 to h20 (C11H-394), each from its signed app's hc manifest,  // c11-2.0:legacy
+        // c11h 1.8.1-h16 to h22 (C11H-394), each from its signed app's hc manifest,  // c11-2.0:legacy
         // the helper hashed to match. Respins superseded before install are left out.
         // c11h 1.8.1-h16 (build 150.16, 3158f9e3e).  // c11-2.0:legacy
         "03339dce9273efa37f9cbb0402e3220e2cf7b3a0890c408149f46e8693f65030",
@@ -592,6 +839,10 @@ struct HCCoreBinary: Equatable, Sendable {
         "9351840eacff0fdabdff75e8d9be4c7e26b215293c06b98be02968db30e66896",
         // c11h 1.8.1-h20 (build 150.20, e63cd891b).  // c11-2.0:legacy
         "0df3a843035dd82772880f963d92020c09084e812f58f5a01b918ce58f14f193",
+        // c11h 1.8.1-h21 (build 150.21, ded53a647).  // c11-2.0:legacy
+        "32a9aaeae71878a70a72f94ea3fcf90db935f78b5d30e283aa2e4a981177bb23",
+        // c11h 1.8.1-h22 (build 150.22, 2132cb34b).  // c11-2.0:legacy
+        "1e294d6c047cc58de008f9fecd9053892d032820ecb674e17f413693c7aac1ff",
     ]
 
     static func decodeManifest(at url: URL) throws -> Manifest {

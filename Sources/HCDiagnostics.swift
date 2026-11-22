@@ -74,6 +74,7 @@ enum HCDiagnosticTokens {
         case .malformedResponse: return "malformed_response"
         case .bufferOverflow: return "buffer_overflow"
         case .cancelled: return "cancelled"
+        case .appCarriesScope: return "app_carries_scope"
         }
     }
 

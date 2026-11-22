@@ -124,6 +124,34 @@ protocol HCCreationSettling: Sendable {
     func recordedNeverRun(_ identity: HCPanelIdentity) async -> HCEndEvidence?
 }
 
+/// C11H-417: a session let an end go ahead that a c11 app had held (the app
+/// no longer carries the terminal's token). Reported before `terminal.kill`, so
+/// a kill that then fails or confirms slowly is no longer blamed on the app.
+protocol HCCarrierReleaseReporting: Sendable {
+    func observeCarrierReleases(on queue: DispatchQueue,
+                                handler: @escaping @Sendable (HCTerminalKey) -> Void) -> HCObservation
+}
+
+/// C11H-417: the subscribers to one session's carrier releases.
+final class HCCarrierReleases: @unchecked Sendable {
+    private let lock = NSLock()
+    private var subscribers: [UUID: (queue: DispatchQueue, handler: @Sendable (HCTerminalKey) -> Void)] = [:]
+
+    func observe(on queue: DispatchQueue, handler: @escaping @Sendable (HCTerminalKey) -> Void) -> HCObservation {
+        let id = UUID()
+        lock.lock(); subscribers[id] = (queue, handler); lock.unlock()
+        return HCObservation { [weak self] in
+            guard let self else { return }
+            self.lock.lock(); self.subscribers.removeValue(forKey: id); self.lock.unlock()
+        }
+    }
+
+    func publish(_ key: HCTerminalKey) {
+        lock.lock(); let targets = Array(subscribers.values); lock.unlock()
+        for target in targets { target.queue.async { target.handler(key) } }
+    }
+}
+
 /// C11H-313: one session's creations under way, the ones a close declined,
 /// and its no-run settlements. A decline of a creation under way is kept until
 /// that creation ends; only a decline of a creation not yet started (a close

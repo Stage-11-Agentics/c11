@@ -125,7 +125,6 @@ sleep 14
 say "B windows:"; windows | tee -a "$LOG"
 shot B-relaunch-screen
 has_window "What's New in c11 2.0" && result B-not-shown-again FAIL || result B-not-shown-again pass
-has_window "What's Different" && result B-no-standard-sheet-either FAIL || result B-no-standard-sheet-either pass
 
 # --- C: a QA launch never shows it ---------------------------------------------------------------
 stop_app
@@ -145,9 +144,10 @@ launch /tmp/c11-c267-d.sock ""
 sleep 16
 say "D windows:"; windows | tee -a "$LOG"
 shot D-fresh-screen
-win_shot D-fresh-sheet "What's Different"
-has_window "What's New in c11 2.0" && result D-fresh-no-upgrade-note FAIL || result D-fresh-no-upgrade-note pass
-has_window "What's Different" && result D-fresh-standard-sheet pass || result D-fresh-standard-sheet FAIL
+# C11H-335: every profile's sheet is titled What's New in c11 2.0; a fresh one records no upgrade note.
+win_shot D-fresh-sheet "What's New in c11 2.0"
+[[ "$(pref c11.upgradeNote.shown)" == "(unset)" ]] && result D-fresh-no-upgrade-note pass || result D-fresh-no-upgrade-note FAIL
+has_window "What's New in c11 2.0" && result D-fresh-standard-sheet pass || result D-fresh-standard-sheet FAIL
 C11_SOCKET=/tmp/c11-c267-d.sock "$CLI" list-workspaces > "$OUT/D-workspaces.txt" 2>&1
 grep -qi welcome "$OUT/D-workspaces.txt" && result D-fresh-welcome-workspace pass || result D-fresh-welcome-workspace "check D-workspaces.txt"
 

@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Group Header</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%23000000'/%3E%3Cg fill='%23e8e8e8' transform='translate(34.96 387.08) scale(0.35913 -0.35913)'%3E%3Cpath transform='translate(0)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3Cpath transform='translate(600)' d='M89 0V90H284V641L88 495V607L254 730H383V90H543V0Z'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root{
+  --page:#0d0e10; --ink:#e8e8e8; --ink2:#8a8b8d; --rule:#26282c;
+  --mono:"JetBrains Mono","SF Mono",Menlo,monospace;
+  --ui:-apple-system,"SF Pro Text",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){ --page:#f4f3f0; --ink:#141414; --ink2:#5c5d60; --rule:#d6d4cf; }
+}
+:root[data-theme="light"]{ --page:#f4f3f0; --ink:#141414; --ink2:#5c5d60; --rule:#d6d4cf; }
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:13px/1.4 var(--mono);padding:16px}
+h1{font-size:15px;margin:0 0 4px;letter-spacing:.04em;text-transform:uppercase}
+.sub{color:var(--ink2);margin:0 0 14px;max-width:1100px}
+.bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.bar button{font:inherit;font-size:12px;background:transparent;color:var(--ink);border:1px solid var(--rule);padding:6px 10px;cursor:pointer;min-width:120px;text-align:left}
+.bar button[aria-pressed="true"]{background:var(--ink);color:var(--page);border-color:var(--ink)}
+.note{color:var(--ink2);min-height:3.6em;max-width:1100px;margin:0 0 14px}
+.grid{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start}
+.col h2{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);margin:0 0 6px;max-width:260px}
+.sb{position:relative;padding:8px 6px 10px 6px;border:1px solid var(--rule);overflow:hidden}
+.row{position:relative}
+.gbar{position:absolute;left:1px;top:0;width:3px;pointer-events:none}
+/* workspace card (compact density, Beacon grammar) */
+.card{position:relative;margin:0 0 var(--gap) 12px;padding:calc(5px*var(--s)) calc(8px*var(--s)) calc(5px*var(--s)) calc(8px*var(--s));
+  background:var(--fill);border:var(--bw) solid var(--edge);border-radius:var(--r);color:var(--text);font-family:var(--ui)}
+.card.ungrouped{margin-left:0}
+.card .t{display:flex;justify-content:space-between;gap:6px;font-weight:700;font-size:calc(13px*var(--s))}
+.card .t span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .ws{font:600 calc(10px*var(--s)) var(--mono);color:var(--dim);letter-spacing:.06em;white-space:nowrap}
+.card .m{margin-top:2px;height:calc(12px*var(--s));display:flex;gap:6px;align-items:center;font:calc(10px*var(--s)) var(--mono);color:var(--text2)}
+.card .m i{display:inline-block;width:40px;height:4px;background:var(--status);border-radius:1px}
+.abs{position:absolute;pointer-events:none}
+/* group header */
+.gh{position:relative;display:flex;align-items:center;margin:0 0 var(--gap) 0;font-family:var(--ui);cursor:default;user-select:none}
+.gh .chev{flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+.gh .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.gh .slot{flex:0 0 auto;display:flex;align-items:center;justify-content:center;font:600 calc(10px*var(--s)) var(--ui);font-variant-numeric:tabular-nums}
+.gh .slot .menu{display:none;letter-spacing:.1em;font-weight:800}
+.gh:hover .slot .count{display:none}
+.gh:hover .slot .menu{display:inline}
+.gh:hover .chip{background:var(--chipfill) !important}
+.gh .acc{flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:calc(9px*var(--s))}
+.gh .tip{display:none;position:absolute;left:24px;top:100%;z-index:3;background:#000;color:#fff;font:11px var(--ui);padding:3px 6px;border-radius:3px;white-space:nowrap}
+.gh:hover .tip{display:block}
+.legend{color:var(--ink2);font-size:11px;margin-top:6px;max-width:260px}
+</style>
+</head>
+<body>
+<h1>Workspace group header: three treatments, seven themes (A built)</h1>
+<p class="sub">Atin, 2026-11-18 13:38: at a narrow sidebar a group header showed only "Th...". Every column is the sidebar at the chosen width and Chrome Scale, beside compact cards in Beacon's grammar (C11H Swarm is selected). Hover a header: the count slot turns into the actions menu and the full name shows. The group colour bar on the far left is unchanged.</p>
+<div class="bar" id="variants"></div>
+<div class="bar" id="widths"></div>
+<div class="bar" id="backs"></div>
+<p class="note" id="note"></p>
+<div class="grid" id="grid"></div>
+<script>
+const THEMES = [
+  {id:"c11", name:"c11 / Stage 11 (dark)", sb:"#0A0C0F", fill:"#111317", fillActive:"#111317", text:"#E9EAEB", text2:"#8A8F96", dim:"#6a7078", rule:"rgba(138,143,150,.35)", edge:"rgba(112,130,145,.32)", sel:"#FFFFFF", r:12, bw:1, label:null, waiting:"#E8E8E8", flag:"#9D8AD9"},
+  {id:"light", name:"Stage 11 (light)", sb:"#E9E6E0", fill:"#F5F2ED", fillActive:"#F5F2ED", text:"#141414", text2:"#55585c", dim:"#7a7d80", rule:"rgba(85,88,92,.35)", edge:"rgba(112,130,145,.32)", sel:"#111111", r:12, bw:1, label:null, waiting:"#1A1A1A", flag:"#7B66C4", light:true},
+  {id:"nocturne", name:"Nocturne", sb:"#050607", fill:"#0B0C0F", fillActive:"#0F1115", text:"#E8EAEE", text2:"#8A909A", dim:"#5B606A", rule:"#1A1D22", edge:"#1A1D22", sel:"#C9D6EA", r:4, bw:1, label:{mono:true,upper:true,track:.1,scale:.91}, waiting:"#E0A33C", flag:"#9D8AD9"},
+  {id:"bigboard", name:"Big Board", sb:"#05070A", fill:"#080B10", fillActive:"#0B1118", text:"#DFE8EE", text2:"#8AA0B2", dim:"#52677A", rule:"#15202B", edge:"#15202B", sel:"#3DDC84", r:2, bw:1, label:{mono:false,upper:true,track:.12,scale:.91}, waiting:"#F5B841", flag:"#9D8AD9"},
+  {id:"outrun", name:"Outrun Horizon", sb:"linear-gradient(#26104F,#4A1A82 50%,#E2367F 64%,#FF9F45 69%,#3A1066 71%,#2A0B4C)", fill:"#0E0820", fillActive:"#080414", text:"#F3EEFF", text2:"#C3B5E6", dim:"#8D7FB3", rule:"rgba(255,255,255,.14)", edge:"rgba(45,226,230,.22)", sel:"#2DE2E6", r:6, bw:1.5, label:{mono:true,upper:false,track:0,scale:1}, waiting:"#FF9F45", flag:"#9D8AD9"},
+  {id:"grid", name:"Terminal Grid", sb:"#0B0B0C", fill:"#0B0B0C", fillActive:"#0F0F11", text:"#D6D6D2", text2:"#8A8B8D", dim:"#5E5F62", rule:"#2A2B2E", edge:"#2A2B2E", sel:"#C8C8C4", r:0, bw:1, label:{mono:true,upper:false,track:0,scale:1}, waiting:"#FF6A1F", flag:"#9D8AD9"},
+  {id:"mono", name:"Datasheet Mono", sb:"#0C0D0F", fill:"#111214", fillActive:"#111214", text:"rgba(255,255,255,.92)", text2:"rgba(255,255,255,.58)", dim:"rgba(255,255,255,.46)", rule:"#1F2024", edge:"#2C2E33", sel:"#FFFFFF", r:0, bw:1, label:{mono:true,upper:true,track:.06,scale:.95}, waiting:"#FF7A1A", flag:"#9D8AD9"},
+];
+const SUNSET = "linear-gradient(#2D1060,#6B1F8F 42%,#C2307F 72%,#4A1366)";
+
+// The sidebar from the screenshot: three groups (one collapsed), then ungrouped cards.
+const ROWS = [
+  {g:{name:"The Constellation Bus", color:"#9D8AD9", flags:6, waiting:0, members:3, captain:true}},
+  {w:{name:"Acetate", ws:8, status:"#2ECC71"}, gid:0},
+  {w:{name:"Coevolution Lab", ws:10, status:"#3a6ea5"}, gid:0},
+  {w:{name:"C11H Swarm", ws:11, status:"#2ECC71", color:"#5AA9E6"}, gid:0, last:true},
+  {g:{name:"Swarm Research", color:null, flags:0, waiting:0, members:1, pinned:true}},
+  {w:{name:"Tally Swarm", ws:15, status:"#3a6ea5"}, gid:1, last:true},
+  {g:{name:"Stage 11 Deployments", color:"#E0A33C", flags:2, waiting:3, members:4, collapsed:true}},
+  {w:{name:"Flagship", ws:2, status:"#2ECC71", color:"#D7E36B"}},
+  {w:{name:"Inbound", ws:4, status:"#2ECC71"}},
+];
+const SELECTED = "C11H Swarm";
+
+const VARIANTS = [
+  {key:"today", label:"0 · Today (h18)",
+   note:"What ships: chevron, folder icon, 13pt name, the attention badge, a reserved Captain slot and the menu, all on an opaque rounded card. At 180pt and Large scale the name gets two letters."},
+  {key:"tab", label:"A · Tab and rule (built)",
+   note:"Built in C11H-410. A section divider. An opaque tab hugs the chevron and the 11pt name; a hairline in the group colour runs to the count, which sits on its own small chip. No folder, no card fill across the row, no edge. The menu and the full name appear on hover in the count's slot, so nothing moves. Opaque chips keep the text legible on Sunset Mall and Outrun gradients."},
+  {key:"band", label:"B · Flat band",
+   note:"A short opaque band (24pt against the cards' 44pt), square-ish corners, tinted with the group colour, the name in the theme's label voice (caps where the theme uses caps). Distinct, but still a box: it competes with the cards for the eye."},
+  {key:"caps", label:"C · Tab, label caps",
+   note:"Tab and rule with the name in tracked capitals, the theme's label voice. Most 'section heading' of the three, but capitals cost about a quarter more width per letter: at 180pt it shows two to three fewer letters than A."},
+];
+
+const hash = new URLSearchParams(location.hash.slice(1));
+let variant = hash.get("v") || "tab";
+let width = +(hash.get("w") || 180);
+let scale = +(hash.get("s") || 1.25);
+let backdrop = hash.get("b") || "theme";
+
+function el(tag, attrs={}, kids=[]){ const e=document.createElement(tag); for(const[k,v] of Object.entries(attrs)){ if(k==="text") e.textContent=v; else if(k==="style") Object.assign(e.style,v); else e.setAttribute(k,v);} for(const k of kids) if(k) e.appendChild(k); return e; }
+const px = v => v+"px";
+
+// Mirrors WorkspaceGroupHeaderLayout in Swift. The pin and the count's glyph give way while the
+// name is cut off and under 120pt (times scale); a custom icon and the Captain mark give way only
+// to keep the name 72pt. Either target is the name's own width when that is less.
+const measureCtx = document.createElement("canvas").getContext("2d");
+function layout(contentWidth, s, g){
+  const fixed = 2 + 15 + 6 + 2*2, slotCount = 20, glyph = 11, icon = 16, captain = 14, pin = 10;
+  measureCtx.font = `700 ${11*s}px -apple-system, "SF Pro Text", system-ui, sans-serif`;
+  const needed = Math.ceil(measureCtx.measureText(g.name).width) + 1;
+  const show = {pin:!!g.pinned, glyph:true, icon:!!g.icon, captain:!!g.captain};
+  const nameWidth = () => contentWidth - s*(fixed + slotCount + (show.glyph?glyph:0) + (show.icon?icon:0)
+     + (show.captain?captain:0) + (show.pin?pin:0));
+  const order = [["pin", Math.min(120*s, needed)], ["glyph", Math.min(120*s, needed)],
+                 ["icon", Math.min(72*s, needed)], ["captain", Math.min(72*s, needed)]];
+  for(const [k, target] of order){ if(show[k] && nameWidth() < target) show[k]=false; }
+  return {...show, slot: s*(slotCount + (show.glyph?glyph:0)), nameWidth: nameWidth()};
+}
+
+function tinted(hex, pct, base){ return hex ? `color-mix(in srgb, ${hex} ${pct}%, ${base})` : base; }
+
+function header(th, g, V, s, contentWidth){
+  const h = el("div",{class:"gh"});
+  const ink = th.text2, nameInk = g.active ? th.text : th.text2;
+  const attnCount = g.flags>0 ? g.flags : g.waiting;
+  const attnColor = g.flags>0 ? th.flag : th.waiting;
+  const attnGlyph = g.flags>0 ? "⚑" : "⧗";
+  const lab = th.label || {mono:false, upper:false, track:0, scale:1};
+  const tip = el("div",{class:"tip",text:g.name});
+  if(V.key==="today"){
+    Object.assign(h.style,{height:px(32*s),padding:`0 ${px(8)}`,background:th.light?"#FFFFFF":"#1C1E22",borderRadius:px(5*s),gap:px(4*s),color:th.text});
+    h.append(
+      el("span",{class:"chev",text:g.collapsed?"›":"⌄",style:{width:px(16*s),fontSize:px(12*s)}}),
+      el("span",{class:"acc",text:"▰",style:{width:px(14*s),fontSize:px(13*s),color:g.flags?th.flag:(g.color||ink)}}),
+      el("span",{class:"name",text:g.name,style:{flex:"1 1 auto",fontSize:px(13*s),fontWeight:500}}),
+      el("span",{class:"slot",style:{width:px(32*s),color:attnCount?attnColor:ink,justifyContent:"flex-start"}},[el("span",{class:"count",text:`${attnGlyph} ${attnCount}`}),el("span",{class:"menu",text:`${attnGlyph} ${attnCount}`})]),
+      el("span",{class:"acc",text:g.captain?"⛉":"",style:{width:px(14*s),color:th.sel}}),
+      el("span",{class:"acc",text:"···",style:{width:px(18*s),fontWeight:800}}),
+      tip);
+    return h;
+  }
+  const L = layout(contentWidth, s, g);
+  const fontSize = (V.key==="caps" ? 10 * lab.scale : 11) * s;
+  const caps = V.key==="caps" || (V.key==="band" && lab.upper);
+  const family = (V.key!=="tab" && lab.mono) ? "var(--mono)" : "var(--ui)";
+  const track = caps ? Math.max(lab.track, .08) : 0;
+  const nameEl = el("span",{class:"name",text:caps ? g.name.toUpperCase() : g.name,
+    style:{fontSize:px(fontSize),fontWeight:g.active?700:600,letterSpacing:track+"em",color:nameInk,fontFamily:family}});
+  const chev = el("span",{class:"chev",text:g.collapsed?"›":"⌄",style:{width:px(12*s),height:px(16*s),fontSize:px(11*s),color:g.color||ink,fontWeight:700}});
+  const count = el("span",{class:"count",text: attnCount ? (L.glyph?`${attnGlyph} ${attnCount}`:`${attnCount}`) : (g.collapsed?`${g.members}`:""), style:{color:attnCount?attnColor:th.dim}});
+  const slot = el("span",{class:"slot",style:{width:px(L.slot),height:px(16*s)}},[count, el("span",{class:"menu",text:"···",style:{color:th.text}})]);
+  const extras = [];
+  if(L.captain) extras.push(el("span",{class:"acc",text:"⛉",title:"Captain",style:{width:px(14*s),color:th.sel}}));
+  if(L.pin) extras.push(el("span",{class:"acc",text:"⚲",style:{width:px(10*s),color:th.dim}}));
+  const base = th.fill;
+  const chipR = Math.min(th.r, 4)*s;
+  if(V.key==="band"){
+    Object.assign(h.style,{height:px(24*s),padding:`0 ${px(4*s)}`,gap:px(4*s),borderRadius:px(Math.min(th.r,3)*s),
+      background:tinted(g.color, th.light?18:22, base)});
+    nameEl.style.flex="1 1 auto";
+    h.append(chev, nameEl, ...extras, slot, tip);
+    return h;
+  }
+  // Tab and rule (A, C): an opaque tab around chevron + name, a rule that shrinks to nothing
+  // first, and the count chip. At the narrowest widths the two chips meet and read as one band.
+  Object.assign(h.style,{height:px(24*s),gap:"0"});
+  chev.style.width = px(15*s);
+  nameEl.style.paddingRight = px(6*s);
+  const tab = el("span",{style:{display:"flex",alignItems:"center",height:px(20*s),padding:`0 0 0 ${px(2*s)}`,
+    background:base,borderRadius:px(chipR),minWidth:"0",flex:"0 1 auto"}},[chev, nameEl]);
+  const rule = el("span",{style:{flex:"1 1 0",minWidth:"0",height:"1px",background:g.color?`color-mix(in srgb, ${g.color} 70%, transparent)`:th.rule}});
+  // A chip with nothing to show has no fill; the rule runs through it to the edge.
+  const ruleInk = g.color?`color-mix(in srgb, ${g.color} 70%, transparent)`:th.rule;
+  const chipBg = (extras.length || attnCount) ? base : `linear-gradient(transparent calc(50% - .5px), ${ruleInk} calc(50% - .5px), ${ruleInk} calc(50% + .5px), transparent calc(50% + .5px))`;
+  const right = el("span",{class:"chip",style:{display:"flex",alignItems:"center",gap:"0",height:px(20*s),padding:`0 ${px(2*s)}`,background:chipBg,borderRadius:px(chipR),flex:"0 0 auto"}},[...extras, slot]);
+  right.style.setProperty("--chipfill", base);
+  h.append(tab, rule, right, tip);
+  return h;
+}
+
+function card(th, w, s, grouped){
+  const isSel = w.name===SELECTED;
+  const c = el("div",{class:"card"+(grouped?"":" ungrouped")});
+  const st=c.style;
+  st.setProperty("--fill", isSel?`color-mix(in srgb, ${th.sel} 12%, ${th.fillActive})`:th.fill);
+  st.setProperty("--text",th.text); st.setProperty("--text2",th.text2); st.setProperty("--dim",th.dim); st.setProperty("--status",w.status);
+  let r=th.r, bw=th.bw, edge=th.edge;
+  if(isSel){ bw=3; edge=th.sel; r=Math.min(th.r,3); st.boxShadow=`0 0 18px color-mix(in srgb, ${th.sel} 34%, transparent)`; st.paddingRight=px(16*s); }
+  st.setProperty("--r",px(r)); st.setProperty("--bw",px(bw)); st.setProperty("--edge",edge);
+  if(w.color){ c.appendChild(el("div",{class:"abs",style:{left:"0",top:"0",bottom:"0",width:"4px",background:w.color}})); st.paddingLeft=px(12*s); }
+  if(isSel){
+    c.appendChild(el("div",{class:"abs",style:{right:"0",top:"0",bottom:"0",width:"8px",background:th.sel}}));
+    c.appendChild(el("div",{class:"abs",style:{right:`-${bw+7}px`,top:"50%",transform:"translateY(-50%)",borderTop:"7px solid transparent",borderBottom:"7px solid transparent",borderLeft:`7px solid ${th.sel}`}}));
+  }
+  c.append(el("div",{class:"t"},[el("span",{text:w.name}),el("span",{class:"ws",text:"WS "+w.ws})]),
+           el("div",{class:"m"},[el("span",{text:"⚑ "+(w.ws%5+1)}),el("i")]));
+  return c;
+}
+
+function column(th, V){
+  const s=scale;
+  const sb=el("div",{class:"sb",style:{width:px(width),background: backdrop==="sunset" ? SUNSET : th.sb}});
+  sb.style.setProperty("--s", s); sb.style.setProperty("--gap", px(4*s));
+  const groups = ROWS.filter(r=>r.g).map(r=>r.g);
+  // The header's content width: sidebar minus the row's 6pt outer padding each side.
+  const contentWidth = width - 12;
+  ROWS.forEach(r=>{
+    if(r.g){
+      const g={...r.g, active: r.g.name==="The Constellation Bus"};
+      const row = el("div",{class:"row"},[header(th,g,V,s,contentWidth - (V.key==="today"?16:0))]);
+      if(g.color){ row.appendChild(el("div",{class:"gbar",style:{top:"0",bottom:g.collapsed?"0":`-${4*s}px`,background:g.color}})); }
+      sb.appendChild(row);
+    } else {
+      const g = r.gid!=null ? groups[r.gid] : null;
+      if(g && g.collapsed) return;
+      const row = el("div",{class:"row"},[card(th,r.w,s,r.gid!=null)]);
+      if(g && g.color) row.appendChild(el("div",{class:"gbar",style:{top:"0",bottom:r.last?`${4*s}px`:`-${0}px`,background:g.color}}));
+      sb.appendChild(row);
+    }
+  });
+  return el("div",{class:"col"},[el("h2",{text:th.name}), sb]);
+}
+
+function button(label, pressed, onclick){ const b=el("button",{"aria-pressed":String(pressed),text:label}); b.onclick=onclick; return b; }
+function sync(){ location.hash = `v=${variant}&w=${width}&s=${scale}&b=${backdrop}`; render(); }
+
+function render(){
+  const vb=document.getElementById("variants"); vb.innerHTML="";
+  VARIANTS.forEach(v=>vb.appendChild(button(v.label, v.key===variant, ()=>{variant=v.key;sync();})));
+  const wb=document.getElementById("widths"); wb.innerHTML="";
+  [[180,1.25,"180pt · Large (Atin's)"],[180,1,"180pt · Default"],[220,1.25,"220pt · Large"],[300,1,"300pt · Default"],[180,1.55,"180pt · Extra Large"]]
+    .forEach(([w,s,l])=>wb.appendChild(button(l, w===width&&s===scale, ()=>{width=w;scale=s;sync();})));
+  const bb=document.getElementById("backs"); bb.innerHTML="";
+  [["theme","Backdrop: the theme's"],["sunset","Backdrop: Sunset Mall (stage11's Dark default)"]]
+    .forEach(([k,l])=>bb.appendChild(button(l, k===backdrop, ()=>{backdrop=k;sync();})));
+  const V=VARIANTS.find(v=>v.key===variant);
+  document.getElementById("note").textContent=V.note;
+  const grid=document.getElementById("grid"); grid.innerHTML="";
+  THEMES.forEach(th=>grid.appendChild(column(th,V)));
+}
+render();
+</script>
+</body>
+</html>

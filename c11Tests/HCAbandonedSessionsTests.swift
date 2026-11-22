@@ -671,3 +671,365 @@ private extension Result where Success == HCAbandonedSessions.EndResult, Failure
         return nil
     }
 }
+
+/// C11H-415: which c11 app processes hc would end with a terminal, by hc's own
+/// rule: the token in a process's recorded environment, or in an ancestor's,
+/// short of hc's own processes.
+final class HCScopeCarriersTests: XCTestCase {
+    private typealias Env = [(name: String, value: String)]
+
+    func testAnAppIsEndedByItsOwnTokenOrAnAncestorsButNeverThroughAnHcProcess() {
+        let parents: [Int32: Int32] = [100: 1, 200: 150, 150: 120, 120: 1, 300: 250, 250: 240, 240: 1]
+        let environments: [Int32: Env] = [
+            // c11 opened with `open -a` from terminal t1: launchd's child, carrying the token.
+            100: [("HOME", "/Users/a"), ("HC_SCOPE", "1-aaa"), ("HC_TERMINAL_ID", "t1"), ("HC_TERMINAL_SOCKET", "/run/c11-s1.sock")],
+            // c11 run directly by an agent in t2: its own block is clean, its parent's is not.
+            200: [("HOME", "/Users/a")],
+            150: [("HC_SCOPE", "2-bbb"), ("HC_TERMINAL_ID", "t2"), ("HC_TERMINAL_SOCKET", "/run/c11-s1.sock")],
+            // 120 is Apple's shell: its environment is hidden from hc and from us.
+            // c11 under an hc core: nothing above the core ends it.
+            300: [("HOME", "/Users/a")],
+            250: [("HC_RUNTIME", "1"), ("HC_SCOPE", "3-ccc")],
+            240: [("HC_SCOPE", "4-ddd")],
+        ]
+        func marks(_ pid: Int32) -> [HCScopeCarrier.Mark] {
+            HCScopeCarriers.marks(of: pid, parent: { parents[$0] }, environment: { environments[$0] })
+        }
+        XCTAssertEqual(marks(100), [.init(scope: "1-aaa", terminalID: "t1", terminalSocket: "/run/c11-s1.sock", holderPID: 100)])
+        XCTAssertEqual(marks(200), [.init(scope: "2-bbb", terminalID: "t2", terminalSocket: "/run/c11-s1.sock", holderPID: 150)])
+        XCTAssertEqual(marks(300), [])
+    }
+
+    func testAnEndMatchesTheRecordedTokenOrHcsLabelsForThatTerminalOnThatCore() {
+        let carrier = HCScopeCarrier(pid: 100, bundleID: "com.stage11.c11", marks: [
+            .init(scope: "1-aaa", terminalID: "t1", terminalSocket: "/run/c11-s1.sock", holderPID: 100)])
+        XCTAssertTrue(carrier.isEnded(byTerminal: "t9", socket: "/run/c11-s2.sock", scope: "1-aaa"), "the token itself")
+        XCTAssertTrue(carrier.isEnded(byTerminal: "t1", socket: "/run/c11-s1.sock", scope: nil), "hc's labels, token unknown")
+        XCTAssertFalse(carrier.isEnded(byTerminal: "t1", socket: "/run/c11-s2.sock", scope: nil), "t1 of another core")
+        XCTAssertFalse(carrier.isEnded(byTerminal: "t2", socket: "/run/c11-s1.sock", scope: "2-bbb"))
+        XCTAssertFalse(carrier.isEnded(byTerminal: "t1", socket: "/run/c11-s1.sock", scope: "9-new"),
+                       "t1 reissued on that core with a new token: hc would never sweep the app for it")
+    }
+
+    func testOnlyC11AppExecutablesAreCandidates() {
+        for id in ["com.stage11.c11", "com.stage11.c11h", "com.stage11.c11.debug.c11-orch2", "com.stage11.c11h.debug"] {
+            XCTAssertTrue(HCScopeCarriers.isC11App(bundleID: id), id)
+        }
+        for id in ["com.stage11.c11hx", "com.stage11.lattice", "com.example.c11", "com.mitchellh.ghostty"] {
+            XCTAssertFalse(HCScopeCarriers.isC11App(bundleID: id), id)
+        }
+        XCTAssertEqual(HCScopeCarriers.appBundle(ofExecutable: "/Applications/c11.app/Contents/MacOS/c11"), "/Applications/c11.app")
+        XCTAssertNil(HCScopeCarriers.appBundle(ofExecutable: "/Applications/c11.app/Contents/Helpers/herdr-core"))
+        XCTAssertNil(HCScopeCarriers.appBundle(ofExecutable: "/Applications/c11.app/Contents/MacOS/bin/tool"))
+    }
+
+    func testTheRecordedTokenComesFromHcsOwnRecordOfThatTerminal() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("scope-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        XCTAssertNil(HCScopeCarriers.recordedScope(address: "t1", stateDirectory: folder), "no record yet")
+        let terminals: [String: Any] = [
+            "1": ["address": "t1", "state": "live", "pid": 4001, "program_started_ms": 1_000, "scope": "1-aaa"],
+            "2": ["address": "t2", "state": "live", "pid": 4002, "program_started_ms": 1_000],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: ["next_id": 3, "terminals": terminals])
+        try data.write(to: folder.appendingPathComponent("terminals.json"))
+        XCTAssertEqual(HCScopeCarriers.recordedScope(address: "t1", stateDirectory: folder), "1-aaa")
+        XCTAssertNil(HCScopeCarriers.recordedScope(address: "t2", stateDirectory: folder), "hc recorded no token")
+        XCTAssertNil(HCScopeCarriers.recordedScope(address: "t3", stateDirectory: folder))
+    }
+}
+
+/// C11H-415: a close reports what its ends did, not what it asked for. The End
+/// Session tip ("That ended the terminal and everything it started") needs a
+/// confirmed `.ended`; an end a c11 app holds gets the lasting notice instead.
+final class HCCloseOutcomeReportTests: XCTestCase {
+    func testTheEndedTipWaitsForAnEndAndAHeldEndGetsTheNotice() {
+        let ended = UUID(), held = UUID(), pending = UUID(), kept = UUID(), already = UUID()
+        let outcomes: [UUID: HCPanelEndOutcome] = [
+            ended: .ended, held: .pending(.appCarriesScope), pending: .pending(.inventoryPending),
+            kept: .kept(nil), already: .alreadyEnded,
+        ]
+        let live: Set<UUID> = [ended, held, pending, kept]
+        XCTAssertEqual(HCCloseOutcomeReport.report(outcomes, live: live), .init(endedLive: 1, heldByApp: 1))
+        XCTAssertEqual(HCCloseOutcomeReport.report([held: .pending(.appCarriesScope)], live: [held]),
+                       .init(endedLive: 0, heldByApp: 1), "a held end never earns the ended tip")
+        XCTAssertEqual(HCCloseOutcomeReport.report([:], live: [ended]), .init(), "nothing settled in time: no claim")
+    }
+
+    func testTheHeldNoticeNamesTheHoldAndCountsIt() {
+        let one = HCCloseOutcomeReport.heldNotice(count: 1)
+        XCTAssertEqual(one.title, "End held")
+        XCTAssertTrue(one.body.hasPrefix("One session is held") && one.body.contains("c11 app"), one.body)
+        let three = HCCloseOutcomeReport.heldNotice(count: 3)
+        XCTAssertTrue(three.body.hasPrefix("3 sessions keep running"), three.body)
+        XCTAssertFalse(one.body.contains("ended the terminal"))
+    }
+}
+
+/// C11H-417: the "End held" notice follows the holds themselves, not a close's
+/// report window. Every new hold reaches the operator once, unread; a notice
+/// read or cleared stays so until a new hold; it moves only when its workspace
+/// or window is gone; its system copies never outlive its text.
+@MainActor
+final class HCHeldEndNoticeTests: XCTestCase {
+    private final class Sink: HCHeldEndNoticeSink {
+        var open: [UUID] = []
+        var record: HCHeldEndNoticeRecord?
+        var posts = 0, places = 0, updates = 0, removes = 0
+        var isQuitting = false
+        func current() -> HCHeldEndNoticeRecord? { record }
+        func isOpen(_ workspaceID: UUID) -> Bool { open.contains(workspaceID) }
+        func anyOpenWorkspace() -> UUID? { open.first }
+        func post(workspaceID: UUID, title: String, body: String) {
+            posts += 1
+            record = HCHeldEndNoticeRecord(id: UUID(), workspaceID: workspaceID, body: body, isRead: false)
+        }
+        func place(workspaceID: UUID, title: String, body: String, isRead: Bool) {
+            places += 1
+            record = HCHeldEndNoticeRecord(id: UUID(), workspaceID: workspaceID, body: body, isRead: isRead)
+        }
+        func update(id: UUID, title: String, body: String) {
+            updates += 1
+            if let old = record { record = HCHeldEndNoticeRecord(id: old.id, workspaceID: old.workspaceID, body: body, isRead: old.isRead) }
+        }
+        func remove(id: UUID) { removes += 1; record = nil }
+        func read() { if let old = record { record = HCHeldEndNoticeRecord(id: old.id, workspaceID: old.workspaceID, body: old.body, isRead: true) } }
+        /// A workspace or window close: its notices are cleared.
+        func clear(_ workspaceID: UUID) { if record?.workspaceID == workspaceID { record = nil } }
+    }
+
+    private var one: String { HCCloseOutcomeReport.heldNotice(count: 1).body }
+    private var two: String { HCCloseOutcomeReport.heldNotice(count: 2).body }
+
+    func testAHoldWithNoWindowWaitsAndAppearsOnceAWindowRegisters() {
+        let sink = Sink(), notices = HCHeldEndNotices(sink: sink, schedule: { $0() }), workspace = UUID()
+        notices.apply(.held(UUID()))
+        XCTAssertEqual(sink.posts, 0, "the last window closed: nothing can show it yet")
+        sink.open = [workspace]
+        notices.reassert()
+        XCTAssertEqual(sink.posts, 1)
+        XCTAssertEqual(sink.record?.workspaceID, workspace)
+        XCTAssertEqual(sink.record?.body, one)
+        XCTAssertEqual(sink.record?.isRead, false)
+        notices.reassert()
+        XCTAssertEqual(sink.posts, 1, "a window registering again never alerts twice")
+    }
+
+    func testEveryNewHoldIsPostedUnreadEvenAfterTheFirstWasRead() {
+        let sink = Sink(), notices = HCHeldEndNotices(sink: sink, schedule: { $0() }), a = UUID(), b = UUID()
+        sink.open = [UUID()]
+        notices.apply(.held(a))
+        sink.read()
+        notices.apply(.held(b))
+        XCTAssertEqual(sink.posts, 2, "the second hold reaches the operator too")
+        XCTAssertEqual(sink.record?.isRead, false)
+        XCTAssertEqual(sink.record?.body, two)
+        XCTAssertEqual(sink.removes, 0, "the held slot replaces it in place: never two, and no waiting blink")
+        notices.apply(.held(a))
+        XCTAssertEqual(sink.posts, 2, "a hold reported again is not new")
+        sink.read()
+        notices.apply(.released(a))
+        XCTAssertEqual(sink.record?.body, one)
+        XCTAssertEqual(sink.record?.isRead, true, "a release rewords it quietly and leaves it read")
+        XCTAssertEqual(sink.posts, 2)
+        notices.apply(.released(b))
+        XCTAssertNil(sink.record, "no hold left: no notice saying one runs")
+    }
+
+    func testANoticeTheOperatorClearedStaysClearedUntilANewHold() {
+        let sink = Sink(), notices = HCHeldEndNotices(sink: sink, schedule: { $0() }), workspace = UUID(), other = UUID()
+        sink.open = [workspace, other]
+        notices.apply(.held(UUID()))
+        sink.record = nil  // the operator clears it
+        // An unrelated workspace closes, then a window registers.
+        notices.capture()
+        sink.open = [workspace]
+        notices.reassert()
+        notices.reassert()
+        XCTAssertEqual(sink.posts + sink.places, 1, "a cleared notice never comes back on its own")
+        XCTAssertNil(sink.record)
+        notices.apply(.held(UUID()))
+        XCTAssertEqual(sink.posts, 2, "a new hold is told")
+    }
+
+    /// Production order of a window close: the window leaves the registry,
+    /// then `capture`, then the clear, then `reassert`. A notice the operator
+    /// cleared before that stays cleared, and a new hold is still told.
+    func testAClearedNoticeStaysClearedWhenItsOwnWindowCloses() {
+        let sink = Sink(), notices = HCHeldEndNotices(sink: sink, schedule: { $0() }), own = UUID(), other = UUID()
+        sink.open = [own, other]
+        notices.apply(.held(UUID()))
+        XCTAssertEqual(sink.record?.workspaceID, own)
+        sink.record = nil  // the operator clears it
+        sink.open = [other]
+        notices.capture()
+        sink.clear(own)
+        notices.reassert()
+        XCTAssertNil(sink.record, "a cleared notice came back when its window closed")
+        notices.reassert()  // a window registers
+        XCTAssertEqual(sink.posts + sink.places, 1)
+        notices.apply(.held(UUID()))
+        XCTAssertEqual(sink.posts, 2, "a new hold after a clear is told")
+        XCTAssertEqual(sink.record?.isRead, false)
+    }
+
+    func testAClearedNoticeStaysClearedThroughTheLastWindowClosingAndANewOne() {
+        let sink = Sink(), notices = HCHeldEndNotices(sink: sink, schedule: { $0() }), own = UUID()
+        sink.open = [own]
+        notices.apply(.held(UUID()))
+        sink.record = nil
+        sink.open = []
+        notices.capture()
+        sink.clear(own)
+        notices.reassert()
+        sink.open = [UUID()]
+        notices.reassert()
+        XCTAssertNil(sink.record, "a cleared notice came back with the next window")
+        XCTAssertEqual(sink.posts + sink.places, 1)
+    }
+
+    /// Production order of a last shell exiting: `capture`, the workspace's
+    /// clear, the window closing (its own `capture` finds nothing), then a new
+    /// window. The notice moves read or unread as it was.
+    func testALastShellExitMovesTheNoticeWithItsReadState() {
+        for wasRead in [true, false] {
+            let sink = Sink(), notices = HCHeldEndNotices(sink: sink, schedule: { $0() }), own = UUID()
+            sink.open = [own]
+            notices.apply(.held(UUID()))
+            if wasRead { sink.read() }
+            notices.capture()
+            sink.clear(own)
+            sink.open = []
+            notices.capture()
+            notices.reassert()
+            XCTAssertNil(sink.record, "no window: it waits")
+            sink.open = [UUID()]
+            notices.reassert()
+            XCTAssertEqual(sink.record?.isRead, wasRead, "the move keeps its read state (was read: \(wasRead))")
+            XCTAssertEqual(sink.places, 1)
+            XCTAssertEqual(sink.posts, 1)
+        }
+    }
+
+    /// End All over several held terminals: one post, counting them all.
+    func testHoldsThatArriveTogetherPostOnce() {
+        let sink = Sink()
+        var later: [() -> Void] = []
+        let notices = HCHeldEndNotices(sink: sink, schedule: { later.append($0) })
+        sink.open = [UUID()]
+        for _ in 0..<3 { notices.apply(.held(UUID())) }
+        XCTAssertEqual(later.count, 1, "one turn for the three")
+        later.forEach { $0() }
+        XCTAssertEqual(sink.posts, 1)
+        XCTAssertEqual(sink.record?.body, HCCloseOutcomeReport.heldNotice(count: 3).body)
+    }
+
+    func testANoticeMovesOnlyWhenItsWorkspaceIsGoneQuietlyAndAsReadAsItWas() {
+        let sink = Sink(), notices = HCHeldEndNotices(sink: sink, schedule: { $0() }), gone = UUID(), remaining = UUID()
+        sink.open = [gone, remaining]
+        notices.apply(.held(UUID()))
+        XCTAssertEqual(sink.record?.workspaceID, gone)
+        sink.read()
+        notices.capture()
+        sink.clear(gone)
+        sink.open = [remaining]
+        notices.reassert()
+        XCTAssertEqual(sink.record?.workspaceID, remaining)
+        XCTAssertEqual(sink.record?.isRead, true)
+        XCTAssertEqual(sink.posts, 1, "moved, not posted again")
+        XCTAssertEqual(sink.places, 1)
+    }
+
+    func testAMovedRecordReplacesTheOneLeftInAClosedWorkspace() {
+        let sink = Sink(), notices = HCHeldEndNotices(sink: sink, schedule: { $0() }), gone = UUID(), remaining = UUID()
+        sink.open = [gone, remaining]
+        notices.apply(.held(UUID()))
+        sink.open = [remaining]  // its workspace closed without clearing it
+        notices.reassert()
+        XCTAssertEqual(sink.removes, 1)
+        XCTAssertEqual(sink.record?.workspaceID, remaining)
+    }
+
+    func testNothingIsPostedOrMovedWhileTheAppQuits() {
+        let sink = Sink(), notices = HCHeldEndNotices(sink: sink, schedule: { $0() })
+        sink.open = [UUID()]
+        sink.isQuitting = true
+        notices.apply(.held(UUID()))
+        XCTAssertEqual(sink.posts + sink.places, 0)
+    }
+
+    /// The store keeps the held notice in a workspace slot of its own: it
+    /// neither replaces nor is replaced by another workspace-level notice.
+    func testTheHeldNoticeKeepsItsOwnWorkspaceSlotInTheStore() {
+        // The bare logic runner has no NSApp to ask (as FlagNotificationTests).
+        AppFocusState.overrideIsFocused = false
+        defer { AppFocusState.overrideIsFocused = nil }
+        let store = TerminalNotificationStore.makeForNotificationCommandTesting()
+        let settings = UserDefaults(suiteName: "c11h-417-\(UUID().uuidString)")!
+        store.configureNotificationSettingsDefaultsForTesting(settings)
+        store.configureNotificationDeliveryHandlerForTesting { _, _ in }
+        let workspace = UUID()
+        store.addNotification(workspaceId: workspace, surfaceId: nil, title: "Panel numbers", subtitle: "", body: "x")
+        store.addNotification(workspaceId: workspace, surfaceId: nil, title: "End held", subtitle: "", body: "one",
+                              origin: .heldEnd)
+        store.addNotification(workspaceId: workspace, surfaceId: nil, title: "Notice", subtitle: "", body: "y")
+        XCTAssertEqual(Set(store.notifications.map(\.title)), ["End held", "Notice"],
+                       "another workspace notice still replaces its own kind, never the held one")
+    }
+
+    /// Notification Center never keeps an obsolete copy: a change or removal
+    /// retires the delivered and pending copy, and a delivery that was still
+    /// waiting on authorization when the text changed is never posted.
+    func testNotificationCenterNeverKeepsAStaleHeldCopy() {
+        AppFocusState.overrideIsFocused = false
+        defer { AppFocusState.overrideIsFocused = nil }
+        let store = TerminalNotificationStore.makeForNotificationCommandTesting()
+        let settings = UserDefaults(suiteName: "c11h-417-\(UUID().uuidString)")!
+        settings.set(NotificationLevel.normal.rawValue, forKey: NotificationLevel.key)
+        store.configureNotificationSettingsDefaultsForTesting(settings)
+        store.resetNotificationDeliveryHandlerForTesting()
+        var waiting: [(Bool) -> Void] = [], posted: [(id: String, body: String)] = [], retired: [String] = []
+        store.configureRoutineNotificationDeliveryHooksForTesting(
+            authorization: { waiting.append($0) },
+            add: { request, completion in posted.append((request.identifier, request.content.body)); completion(nil) })
+        store.configureSystemCopyRetirementForTesting { retired += $0 }
+        let workspace = UUID()
+
+        // Its count changes while the delivery waits: the old text is never posted.
+        store.addNotification(workspaceId: workspace, surfaceId: nil, title: "End held", subtitle: "", body: "one",
+                              origin: .heldEnd)
+        let first = store.notifications.first { $0.origin == .heldEnd }!.id.uuidString
+        store.updateText(id: UUID(uuidString: first)!, title: "End held", body: "two")
+        XCTAssertTrue(retired.contains(first))
+        let ready = waiting; waiting.removeAll(); ready.forEach { $0(true) }
+        drainMain()
+        XCTAssertTrue(posted.isEmpty, "a stale copy was posted: \(posted)")
+
+        // Delivered, then the count changes and one releases: each change retires the posted copy.
+        store.addNotification(workspaceId: workspace, surfaceId: nil, title: "End held", subtitle: "", body: "one",
+                              origin: .heldEnd)
+        let second = store.notifications.first { $0.origin == .heldEnd }!.id
+        let readyAgain = waiting; waiting.removeAll(); readyAgain.forEach { $0(true) }
+        drainMain()
+        XCTAssertEqual(posted.map(\.body), ["one"])
+        retired.removeAll()
+        store.updateText(id: second, title: "End held", body: "two")
+        XCTAssertEqual(retired, [second.uuidString], "the posted \"one\" copy is retired")
+        store.remove(id: second)
+        XCTAssertEqual(retired, [second.uuidString, second.uuidString])
+    }
+
+    private func drainMain() {
+        let drained = expectation(description: "main drained")
+        DispatchQueue.main.async { DispatchQueue.main.async { drained.fulfill() } }
+        wait(for: [drained], timeout: 2)
+    }
+
+    func testTheRecheckSlowsAfterTheFirstMinuteOfAHold() {
+        XCTAssertEqual(HCExplicitEndCoordinator.carrierRecheckDelay(heldFor: 0), 3)
+        XCTAssertEqual(HCExplicitEndCoordinator.carrierRecheckDelay(heldFor: 59), 3)
+        XCTAssertEqual(HCExplicitEndCoordinator.carrierRecheckDelay(heldFor: 60), 30)
+        XCTAssertEqual(HCExplicitEndCoordinator.carrierRecheckDelay(heldFor: 86_400), 30)
+    }
+}

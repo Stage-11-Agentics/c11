@@ -1769,6 +1769,16 @@ private actor HCTestRunHold {
     func release() { released = true }
 }
 
+/// C11H-415: the c11 apps a test says carry a token.
+private final class HCTestCarriers: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [HCScopeCarrier] = []
+    var value: [HCScopeCarrier] {
+        get { lock.lock(); defer { lock.unlock() }; return stored }
+        set { lock.lock(); stored = newValue; lock.unlock() }
+    }
+}
+
 extension HCSessionTests {
     /// A session whose connection already serves another panel's terminal
     /// (t2), attached; `run` answers terminal.run, and terminal.kill finishes
@@ -1779,6 +1789,8 @@ extension HCSessionTests {
         readOnly: Bool = false,
         settleSeconds: TimeInterval = HCManagedSession.preflightSettleSeconds,
         refuse: HCTestSwitch? = nil,
+        scopeCarriers: @escaping @Sendable () -> [HCScopeCarrier] = { [] },
+        kill: (@Sendable (HCRPCRequest, HCTestInventory) async throws -> HCJSONValue)? = nil,
         run: @escaping @Sendable (HCRPCRequest, HCTestInventory) async throws -> HCJSONValue
     ) async throws -> (HCManagedSession, HCTestLog, HCCreationIntentStore, HCTestInventory) {
         let c = try configuration(), log = HCTestLog(), inventory = HCTestInventory()
@@ -1787,6 +1799,7 @@ extension HCSessionTests {
             switch request.method {
             case "terminal.attach": return .object(["channel": .integer(9)])
             case "terminal.kill":
+                if let kill { return try await kill(request, inventory) }
                 await inventory.finish(address: request.params["terminal"].string ?? "")
                 return .object([:])
             case "terminal.run": return try await run(request, inventory)
@@ -1809,7 +1822,8 @@ extension HCSessionTests {
                 if let bridge = sink as? HCNativeBridge { _ = bridge.bind(generation: generation, input: attachment.input) }
                 return attachment
             },
-            readOnly: readOnly, prepareRemote: prepareRemote, preflightSettleSeconds: settleSeconds)
+            readOnly: readOnly, prepareRemote: prepareRemote, preflightSettleSeconds: settleSeconds,
+            scopeCarriers: scopeCarriers)
         _ = try await session.attach(HCTerminalKey(owningCoreID: "core", localAddress: "t2"), sink: HCAcceptingSink(),
             display: HCDisplayState(revision: HCDisplayRevision(attachmentGeneration: 0, displayGeneration: 1),
                                     grid: HCGridSize(columns: 80, rows: 24)))
@@ -1935,6 +1949,198 @@ extension HCSessionTests {
         XCTAssertEqual(log.read().filter { $0 == "terminal.run" }.count, 1)
         XCTAssertEqual(log.read().filter { $0 == "terminal.kill" }.count, 1)
         await assertSharedConnectionKept(session, log, "closed during the claim")
+    }
+
+    /// C11H-415: hc ends everything that carries a terminal's `HC_SCOPE` token,
+    /// and c11 opened from that terminal with `open -a` carries it. Closing the
+    /// panel must never end c11: the end waits, with no `terminal.kill`, and
+    /// ends the terminal once no c11 app carries the token, with nothing else
+    /// changing in hc (the app quitting is no hc event).
+    func testClosingThePanelThatOpenedC11WaitsUntilNoC11AppCarriesItsTerminal() async throws {
+        let panel = UUID(), creation = UUID(), carriers = HCTestCarriers()
+        let socket = try configuration().socketURL.path
+        let (session, log, _, inventory) = try await sharedConnection(scopeCarriers: { carriers.value }) { request, inventory in
+            try await Self.listedRun(request, inventory, address: "t1")
+        }
+        guard case .bound(let record) = await session.create(HCCreateRequest(
+            identity: HCPanelIdentity(panelID: panel, origin: .fresh), creationID: creation, argv: ["sh"])) else {
+            return XCTFail("the terminal was not created")
+        }
+        carriers.value = [HCScopeCarrier(pid: 4242, bundleID: "com.stage11.c11", marks: [
+            .init(scope: "1234-abcd", terminalID: "t1", terminalSocket: socket, holderPID: 4242)])]
+        guard case .unresolved(_, .appCarriesScope) = await session.end(record.key) else {
+            return XCTFail("an end that would end c11 must wait")
+        }
+        XCTAssertFalse(log.read().contains("terminal.kill"), "c11 is never ended with a panel")
+
+        let coordinator = HCExplicitEndCoordinator(session: session, store: HCEndMemoryStore(), carrierRecheckSeconds: 0.05)
+        coordinator.requestEnd([HCPanelIdentity(panelID: panel, creationID: creation, origin: .fresh)], origin: .panelClose)
+        let held = await closeOutcome(coordinator, panel: panel, session: session, within: 0.5)
+        XCTAssertEqual(held, .pending(.appCarriesScope))
+        XCTAssertEqual(HCCloseCopy.endOutcomeMessage(.pending(.appCarriesScope)).hasPrefix("End held"), true)
+        XCTAssertFalse(log.read().contains("terminal.kill"), "rechecked while held, never killed")
+
+        // That c11 quit, and nothing in hc changed: the end's own recheck ends the terminal.
+        carriers.value = []
+        let revision = await inventory.snapshot().revision
+        let ended = await closeOutcome(coordinator, panel: panel, session: session, within: 2)
+        XCTAssertEqual(ended, .ended)
+        XCTAssertEqual(log.read().filter { $0 == "terminal.kill" }.count, 1)
+        let terminals = await inventory.records.count, after = await inventory.snapshot().revision
+        XCTAssertEqual(terminals, 2, "no other terminal was added to wake it")
+        XCTAssertEqual(after.sequence, revision.sequence + 1, "only the kill moved hc")
+    }
+
+    /// C11H-415: a held end is kept for the next launch, and the restored end
+    /// is rechecked the same way: it ends once the carrier quits, with no hc
+    /// change and one `terminal.kill` in all.
+    func testAHeldEndRestoredAtLaunchEndsOnceTheCarrierQuits() async throws {
+        let panel = UUID(), creation = UUID(), carriers = HCTestCarriers()
+        let socket = try configuration().socketURL.path
+        let (session, log, _, inventory) = try await sharedConnection(scopeCarriers: { carriers.value }) { request, inventory in
+            try await Self.listedRun(request, inventory, address: "t1")
+        }
+        guard case .bound = await session.create(HCCreateRequest(
+            identity: HCPanelIdentity(panelID: panel, origin: .fresh), creationID: creation, argv: ["sh"])) else {
+            return XCTFail("the terminal was not created")
+        }
+        carriers.value = [HCScopeCarrier(pid: 4242, bundleID: "com.stage11.c11h", marks: [
+            .init(scope: "1234-abcd", terminalID: "t1", terminalSocket: socket, holderPID: 4242)])]
+        let store = HCEndMemoryStore()
+        var first: HCExplicitEndCoordinator? = HCExplicitEndCoordinator(session: session, store: store,
+                                                                        carrierRecheckSeconds: 0.05)
+        first?.requestEnd([HCPanelIdentity(panelID: panel, creationID: creation, origin: .fresh)], origin: .panelClose)
+        let held = await first?.outcomes(for: [panel], timeout: 0.3)[panel]
+        XCTAssertEqual(held, .pending(.appCarriesScope))
+        XCTAssertEqual(store.saved.map(\.identity.panelID), [panel], "the held end is kept for the next launch")
+        first = nil
+
+        let holds = HCTestLog()
+        let next = HCExplicitEndCoordinator(session: session, store: HCEndMemoryStore(store.saved), carrierRecheckSeconds: 0.05,
+                                            onCarrierHold: { holds.add("\($0)") })
+        let restored = await next.outcomes(for: [panel], timeout: 0.3)[panel]
+        XCTAssertEqual(restored, .pending(.appCarriesScope), "restored while the app still carries the token")
+        XCTAssertEqual(holds.read(), ["held(\(panel))"], "C11H-417: a restored hold is reported, so it gets its notice")
+        XCTAssertFalse(log.read().contains("terminal.kill"))
+        carriers.value = []
+        let revision = await inventory.snapshot().revision
+        let ended = await next.outcomes(for: [panel], timeout: 2)[panel]
+        XCTAssertEqual(ended, .ended)
+        XCTAssertEqual(log.read().filter { $0 == "terminal.kill" }.count, 1)
+        let after = await inventory.snapshot().revision
+        XCTAssertEqual(after.sequence, revision.sequence + 1, "only the kill moved hc")
+        XCTAssertEqual(holds.read(), ["held(\(panel))", "released(\(panel))"])
+    }
+
+    /// C11H-417: a hold found after the close's own report window (hc was
+    /// catching up when the panel closed) is still reported, once, and its
+    /// release too. Nothing reports the end as ended while it is held.
+    func testAHoldFoundAfterTheCloseReportWindowIsStillReportedOnce() async throws {
+        let panel = UUID(), creation = UUID(), carriers = HCTestCarriers(), holds = HCTestLog()
+        let socket = try configuration().socketURL.path
+        let (session, log, _, inventory) = try await sharedConnection(scopeCarriers: { carriers.value }) { request, inventory in
+            try await Self.listedRun(request, inventory, address: "t1")
+        }
+        guard case .bound = await session.create(HCCreateRequest(
+            identity: HCPanelIdentity(panelID: panel, origin: .fresh), creationID: creation, argv: ["sh"])) else {
+            return XCTFail("the terminal was not created")
+        }
+        carriers.value = [HCScopeCarrier(pid: 4242, bundleID: "com.stage11.c11h", marks: [
+            .init(scope: "1234-abcd", terminalID: "t1", terminalSocket: socket, holderPID: 4242)])]
+        await inventory.catchUp()
+        let coordinator = HCExplicitEndCoordinator(session: session, store: HCEndMemoryStore(), carrierRecheckSeconds: 0.05,
+                                                   onCarrierHold: { holds.add("\($0)") })
+        coordinator.requestEnd([HCPanelIdentity(panelID: panel, creationID: creation, origin: .fresh)], origin: .panelClose)
+        let early = await coordinator.outcomes(for: [panel], timeout: 0.3)
+        XCTAssertEqual(early[panel], .pending(.inventoryPending))
+        XCTAssertEqual(HCCloseOutcomeReport.report(early, live: [panel]), .init(),
+                       "the close's own window saw neither an end nor a hold: no tip")
+        XCTAssertTrue(holds.read().isEmpty)
+
+        await inventory.caughtUp()
+        let held = await coordinator.outcomes(for: [panel], timeout: 0.5)[panel]
+        XCTAssertEqual(held, .pending(.appCarriesScope))
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(holds.read(), ["held(\(panel))"], "reported once, however often it is rechecked")
+        XCTAssertFalse(log.read().contains("terminal.kill"))
+
+        carriers.value = []
+        let ended = await coordinator.outcomes(for: [panel], timeout: 2)[panel]
+        XCTAssertEqual(ended, .ended)
+        XCTAssertEqual(holds.read(), ["held(\(panel))", "released(\(panel))"])
+    }
+
+    /// C11H-417: the hold ends when the end goes ahead, not when it settles. The
+    /// carrier quits and the kill is sent, but hc confirms nothing: the end is
+    /// still pending and the app is no longer named as its reason.
+    func testAHeldEndIsReleasedWhenItGoesAheadEvenIfTheKillIsNeverConfirmed() async throws {
+        let panel = UUID(), creation = UUID(), carriers = HCTestCarriers(), holds = HCTestLog()
+        let socket = try configuration().socketURL.path
+        let (session, log, _, _) = try await sharedConnection(scopeCarriers: { carriers.value },
+                                                              kill: { _, _ in .object([:]) }) { request, inventory in
+            try await Self.listedRun(request, inventory, address: "t1")
+        }
+        guard case .bound = await session.create(HCCreateRequest(
+            identity: HCPanelIdentity(panelID: panel, origin: .fresh), creationID: creation, argv: ["sh"])) else {
+            return XCTFail("the terminal was not created")
+        }
+        carriers.value = [HCScopeCarrier(pid: 4242, bundleID: "com.stage11.c11h", marks: [
+            .init(scope: "1234-abcd", terminalID: "t1", terminalSocket: socket, holderPID: 4242)])]
+        let coordinator = HCExplicitEndCoordinator(session: session, store: HCEndMemoryStore(), carrierRecheckSeconds: 0.05,
+                                                   onCarrierHold: { holds.add("\($0)") })
+        coordinator.requestEnd([HCPanelIdentity(panelID: panel, creationID: creation, origin: .fresh)], origin: .panelClose)
+        let held = await coordinator.outcomes(for: [panel], timeout: 0.3)[panel]
+        XCTAssertEqual(held, .pending(.appCarriesScope))
+        carriers.value = []
+        let after = await coordinator.outcomes(for: [panel], timeout: 0.5)[panel]
+        XCTAssertEqual(log.read().filter { $0 == "terminal.kill" }.count, 1, "the end went ahead")
+        XCTAssertNotEqual(after, .ended, "hc confirmed nothing")
+        XCTAssertNotEqual(after, .pending(.appCarriesScope), "the app is no longer the reason")
+        XCTAssertEqual(holds.read(), ["held(\(panel))", "released(\(panel))"],
+                       "released when it went ahead, before any settle")
+    }
+
+    /// C11H-417: after the first stretch of a hold its recheck slows, driven
+    /// through the coordinator (0.05 s, slowing to 1 s after 0.1 s).
+    func testAHeldEndsRecheckSlowsAfterItsFirstStretch() async throws {
+        let panel = UUID(), creation = UUID(), carriers = HCTestCarriers(), scans = HCTestLog()
+        let socket = try configuration().socketURL.path
+        let (session, _, _, _) = try await sharedConnection(scopeCarriers: { scans.add("scan"); return carriers.value }) { request, inventory in
+            try await Self.listedRun(request, inventory, address: "t1")
+        }
+        guard case .bound = await session.create(HCCreateRequest(
+            identity: HCPanelIdentity(panelID: panel, origin: .fresh), creationID: creation, argv: ["sh"])) else {
+            return XCTFail("the terminal was not created")
+        }
+        carriers.value = [HCScopeCarrier(pid: 4242, bundleID: "com.stage11.c11h", marks: [
+            .init(scope: "1234-abcd", terminalID: "t1", terminalSocket: socket, holderPID: 4242)])]
+        let coordinator = HCExplicitEndCoordinator(session: session, store: HCEndMemoryStore(), carrierRecheckSeconds: 0.05,
+                                                   carrierBackoffAfterSeconds: 0.1, carrierBackedOffSeconds: 1)
+        coordinator.requestEnd([HCPanelIdentity(panelID: panel, creationID: creation, origin: .fresh)], origin: .panelClose)
+        try await Task.sleep(nanoseconds: 800_000_000)
+        let count = scans.read().count
+        XCTAssertGreaterThanOrEqual(count, 2, "rechecked during its first stretch")
+        XCTAssertLessThanOrEqual(count, 5, "kept at 0.05 s it would have scanned about 16 times; it scanned \(count)")
+        _ = coordinator
+    }
+
+    /// C11H-415: a c11 app that carries another terminal's token, or this
+    /// terminal's id on another core, does not hold this end.
+    func testAC11AppCarryingAnotherTerminalsTokenDoesNotHoldTheEnd() async throws {
+        let panel = UUID(), carriers = HCTestCarriers()
+        let socket = try configuration().socketURL.path
+        carriers.value = [HCScopeCarrier(pid: 4242, bundleID: "com.stage11.c11h", marks: [
+            .init(scope: "9-other", terminalID: "t7", terminalSocket: socket, holderPID: 4242),
+            .init(scope: "8-other", terminalID: "t1", terminalSocket: "/other/c11-s3.sock", holderPID: 4241)])]
+        let (session, log, _, _) = try await sharedConnection(scopeCarriers: { carriers.value }) { request, inventory in
+            try await Self.listedRun(request, inventory, address: "t1")
+        }
+        guard case .bound(let record) = await session.create(HCCreateRequest(
+            identity: HCPanelIdentity(panelID: panel, origin: .fresh), creationID: UUID(), argv: ["sh"])) else {
+            return XCTFail("the terminal was not created")
+        }
+        guard case .pending = await session.end(record.key) else { return XCTFail("the end goes ahead") }
+        XCTAssertEqual(log.read().filter { $0 == "terminal.kill" }.count, 1)
     }
 
     /// The same order on a replacement claimed but not yet sent: the panel

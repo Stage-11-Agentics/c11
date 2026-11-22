@@ -1882,6 +1882,194 @@
         }
       }
     },
+    "hc.close.outcome.pendingAppCarriesScope": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "End held: a c11 app was opened from this terminal and would quit with it. c11 ends the session once that app is gone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了は保留されています。このターミナルから c11 アプリが起動されており、セッションと一緒に終了してしまいます。そのアプリが終了したら、c11 がセッションを終了します。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершення утримується: з цього термінала відкрито застосунок c11, який завершився б разом із ним. c11 завершить сеанс, щойно цей застосунок закриється."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료 보류 중: 이 터미널에서 c11 앱이 열려 있어 세션과 함께 종료됩니다. 해당 앱이 종료되면 c11이 세션을 종료합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束已暂缓：已从此终端打开了一个 c11 应用，它会随会话一同退出。待该应用退出后，c11 会结束该会话。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結束作業已暫緩：已從此終端機開啟一個 c11 應用程式，它會隨工作階段一同結束。待該應用程式結束後，c11 會結束此工作階段。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершение отложено: из этого терминала открыто приложение c11, которое закрылось бы вместе с ним. c11 завершит сеанс, как только это приложение закроется."
+          }
+        }
+      }
+    },
+    "hc.close.heldNotice.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "End held"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了は保留されています"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершення утримується"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료 보류 중"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束已暂缓"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結束作業已暫緩"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершение отложено"
+          }
+        }
+      }
+    },
+    "hc.close.heldNotice.one": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One session is held: a c11 app was opened from its terminal and would quit with it. c11 ends it once that app is gone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッション 1 件の終了は保留されています。そのセッションのターミナルから c11 アプリが起動されており、セッションと一緒に終了してしまうためです。そのアプリが終了したら、c11 がセッションを終了します。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершення одного сеансу утримується: з термінала цього сеансу відкрито застосунок c11, який завершився б разом із ним. c11 завершить сеанс, щойно цей застосунок закриється."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 1개의 종료가 보류 중입니다. 해당 세션의 터미널에서 c11 앱이 열려 있어 세션과 함께 종료되기 때문입니다. 해당 앱이 종료되면 c11이 세션을 종료합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有一个会话的结束已暂缓：已从该会话的终端打开了一个 c11 应用，它会随会话一同退出。待该应用退出后，c11 会结束该会话。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有一個工作階段的結束已暫緩：已從該工作階段的終端機開啟一個 c11 應用程式，它會隨工作階段一同結束。待該應用程式結束後，c11 會結束該工作階段。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершение одного сеанса удерживается: из терминала этого сеанса открыто приложение c11, которое закрылось бы вместе с ним. c11 завершит сеанс, как только это приложение закроется."
+          }
+        }
+      }
+    },
+    "hc.close.heldNotice.other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sessions keep running: a c11 app was opened from their terminals and would quit with them. c11 ends them once that app is gone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件のセッションは実行を続けます。それらのターミナルから c11 アプリが起動されており、セッションと一緒に終了してしまうためです。そのアプリが終了したら、c11 がセッションを終了します。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сеанси продовжують працювати (%lld): з їхніх терміналів відкрито застосунок c11, який завершився б разом із ними. c11 завершить їх, щойно цей застосунок закриється."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 %lld개가 계속 실행됩니다. 해당 터미널에서 c11 앱이 열려 있어 세션과 함께 종료되기 때문입니다. 해당 앱이 종료되면 c11이 세션을 종료합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个会话继续运行：已从这些终端打开了 c11 应用，它会随会话一同退出。待该应用退出后，c11 会结束这些会话。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 個工作階段繼續執行：已從這些終端機開啟 c11 應用程式，它會隨工作階段一同結束。待該應用程式結束後，c11 會結束這些工作階段。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сеансы продолжают работать (%lld): из их терминалов открыто приложение c11, которое закрылось бы вместе с ними. c11 завершит их, как только это приложение закроется."
+          }
+        }
+      }
+    },
     "hc.close.panel.message": {
       "extractionState": "manual",
       "localizations": {
@@ -29992,53 +30180,6 @@
         }
       }
     },
-    "menu.help.whatsDifferent": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "What's Different in c11"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11の違い"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Чим відрізняється c11"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11의 다른 점"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11 有何不同"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11 有何不同"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Чем отличается c11"
-          }
-        }
-      }
-    },
     "settings.machines.color": {
       "extractionState": "manual",
       "localizations": {
@@ -31120,6 +31261,2121 @@
         }
       }
     },
+    "whatsDifferent.adopted.name.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app, the `c11` command and the `C11_` variables use c11's names, and updates come from c11's feed. The %@ names still work."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリ、`c11` コマンド、`C11_` 変数はc11の名前を使い、アップデートはc11のフィードから届きます。%@の名前も引き続き使えます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Застосунок, команда `c11` і змінні `C11_` мають імена c11, а оновлення надходять із каналу c11. Імена %@ усе ще працюють."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱, `c11` 명령, `C11_` 변수는 c11의 이름을 사용하고, 업데이트는 c11의 피드에서 옵니다. %@ 이름도 계속 작동합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用、`c11` 命令和 `C11_` 变量都使用 c11 的名称，更新来自 c11 的更新源。%@ 的名称仍然可用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App、`c11` 指令和 `C11_` 變數都使用 c11 的名稱，更新來自 c11 的更新來源。%@ 的名稱仍然可用。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приложение, команда `c11` и переменные `C11_` носят имена c11, а обновления приходят из канала c11. Имена %@ по-прежнему работают."
+          }
+        }
+      }
+    },
+    "whatsDifferent.adopted.name.lead": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One name."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前はひとつ。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Одне ім’я."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름은 하나."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有一个名称。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有一個名稱。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Одно имя."
+          }
+        }
+      }
+    },
+    "whatsDifferent.adopted.relink.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings > Herder Topography > Link Again… puts a machine %1$@ linked on c11's own link beside %1$@'s, so new terminals and mail work there at once. Terminals %1$@ opened there keep running."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定 > Herder トポグラフィー > 再リンク… を選ぶと、%1$@で接続していたマシンが、%1$@のリンクはそのままに、c11独自のリンクでも接続されます。新しいターミナルとメールがすぐに使えます。%1$@がそこで開いたターミナルは動き続けます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Налаштування > Топографія herder > З’єднати знову… підключає комп’ютер, який ви з’єднали через %1$@, ще й через власне з’єднання c11, поруч зі з’єднанням %1$@, тож нові термінали й пошта працюють там одразу. Термінали, які %1$@ відкрив там, продовжують працювати."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 > 허더 토폴로지 > 다시 연결…을 선택하면 %1$@에서 연결했던 컴퓨터가 %1$@의 연결과 나란히 c11 자체 연결로도 연결되어, 새 터미널과 메일이 바로 작동합니다. %1$@에서 그 컴퓨터에 연 터미널은 계속 실행됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选取“设置 > Herder 拓扑 > 重新链接…”，c11 会通过自己的链接，在 %1$@ 的链接旁边再连上 %1$@ 链接过的设备，新终端和邮件随即就能在那里使用。%1$@ 在那里打开的终端会继续运行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇「設定 > Herder 拓撲 > 重新連結…」，c11 會透過自己的連結，在 %1$@ 的連結旁邊再連上 %1$@ 連結過的機器，新終端機和郵件隨即就能在那裡使用。%1$@ 在那裡打開的終端機會繼續執行。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Настройки > Топография herder > Связать снова… подключает компьютер, связанный через %1$@, ещё и по собственной связи c11, рядом со связью %1$@, так что новые терминалы и почта работают там сразу. Терминалы, которые %1$@ открыл там, продолжают работать."
+          }
+        }
+      }
+    },
+    "whatsDifferent.adopted.relink.lead": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link each machine again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マシンを一台ずつ再リンクします。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "З’єднайте кожен комп’ютер знову."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컴퓨터마다 다시 연결하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给每台设备重新链接。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "為每部機器重新連結。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свяжите каждый компьютер снова."
+          }
+        }
+      }
+    },
+    "whatsDifferent.adopted.sessions.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminals on this Mac kept running, and c11 attached to them. Keep %@.app installed for now: they still use its helper."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このMacのターミナルは動き続けていて、c11がそれらに接続しました。いまのところ%@.appは残しておいてください。ターミナルはまだそのヘルパーを使っています。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Термінали на цьому Mac продовжили працювати, і c11 під’єднався до них. Поки що залиште %@.app встановленим: вони все ще використовують його помічника."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac의 터미널은 계속 실행되었고, c11이 그 터미널에 연결되었습니다. %@.app은 당분간 그대로 설치해 두세요. 터미널이 아직 그 도우미를 사용합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 Mac 上的终端一直在运行，c11 已接入它们。请暂时保留 %@.app：它们仍在使用它的助手。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台 Mac 上的終端機一直在執行，c11 已接上它們。請暫時保留 %@.app：它們仍在使用它的輔助程式。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Терминалы на этом Mac продолжили работать, и c11 подключился к ним. Пока оставьте %@.app установленным: они всё ещё используют его помощник."
+          }
+        }
+      }
+    },
+    "whatsDifferent.adopted.sessions.lead": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same sessions."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッションはそのまま。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ті самі сеанси."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 세션."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话不变。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作階段不變。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Те же сеансы."
+          }
+        }
+      }
+    },
+    "whatsDifferent.adopted.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 quit %@ and took over its terminals on this Mac. Your workspaces and settings came across, and the terminals kept running."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11が%@を終了し、このMac上のターミナルを引き継ぎました。ワークスペースと設定は引き継がれ、ターミナルは動き続けています。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 закрив %@ і перейняв його термінали на цьому Mac. Ваші робочі простори й налаштування перенесено, а термінали продовжили працювати."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11이 %@ 앱을 종료하고 이 Mac의 터미널을 넘겨받았습니다. 작업 공간과 설정은 그대로 옮겨졌고, 터미널은 계속 실행되었습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 已退出 %@，并接管了这台 Mac 上的终端。你的工作区和设置都已迁移过来，终端一直在运行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 已結束 %@，並接手了這台 Mac 上的終端機。你的工作區和設定都已移轉過來，終端機一直在執行。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 закрыл %@ и взял на себя его терминалы на этом Mac. Ваши рабочие пространства и настройки перенесены, а терминалы продолжили работать."
+          }
+        }
+      }
+    },
+    "whatsDifferent.adopted.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is now c11 2.0."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はc11 2.0になりました。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ тепер c11 2.0."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 앱은 이제 c11 2.0입니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 现在是 c11 2.0。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 現在是 c11 2.0。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ теперь c11 2.0."
+          }
+        }
+      }
+    },
+    "whatsDifferent.back": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻る"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Назад"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "뒤로"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Назад"
+          }
+        }
+      }
+    },
+    "whatsDifferent.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じる"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрити"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "닫기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "關閉"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть"
+          }
+        }
+      }
+    },
+    "whatsDifferent.link.core": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open hc Core"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hc コアを開く"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Відкрити ядро hc"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hc 코어 열기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 hc 核心"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開 hc 核心"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть ядро hc"
+          }
+        }
+      }
+    },
+    "whatsDifferent.link.machines": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Herder Topography"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herder トポグラフィーを開く"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Відкрити топографію herder"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "허더 토폴로지 열기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 Herder 拓扑"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開 Herder 拓撲"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Открыть топографию herder"
+          }
+        }
+      }
+    },
+    "whatsDifferent.machines.agents.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "They set their status, raise flags and send mail. Link only machines you trust: linking gives c11 a shell there as you."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ステータスの設定、フラグの送信、メールの送信ができます。信頼できるマシンだけをリンクしてください。リンクすると、c11があなたとしてそのマシンのシェルを使えるようになります。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вони встановлюють свій статус, піднімають прапорці й надсилають пошту. З’єднуйте лише комп’ютери, яким довіряєте: з’єднання дає c11 оболонку там від вашого імені."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상태를 설정하고, 플래그를 올리고, 메일을 보냅니다. 신뢰하는 컴퓨터만 연결하세요. 연결하면 c11이 그 컴퓨터에서 사용자로서 셸을 쓰게 됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它们会设置自己的状态、举旗并发送邮件。只链接你信任的设备：链接后，c11 会以你的身份在那里获得一个 shell。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它們會設定自己的狀態、舉旗並傳送郵件。只連結你信任的機器：連結後，c11 會以你的身分在那裡取得一個 shell。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Они задают свой статус, поднимают флаги и отправляют почту. Связывайте только те компьютеры, которым доверяете: связь даёт c11 оболочку там от вашего имени."
+          }
+        }
+      }
+    },
+    "whatsDifferent.machines.agents.lead": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents there work as local ones."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そこのエージェントも、ローカルのエージェントと同じように動きます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенти там працюють так само, як локальні."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그곳의 에이전트도 로컬 에이전트처럼 일합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "那里的智能体与本地智能体一样工作。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "那裡的代理程式和本機代理程式一樣運作。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенты там работают как локальные."
+          }
+        }
+      }
+    },
+    "whatsDifferent.machines.label.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each terminal's title bar names its machine, in a color you choose. Reconnecting means the link is down; the session itself is fine."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各ターミナルのタイトルバーには、そのマシンの名前が、あなたが選んだ色で表示されます。「再接続中」は接続が切れているという意味で、セッション自体は無事です。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У заголовку кожного термінала вказано його комп’ютер кольором, який ви вибираєте. «Повторне підключення» означає, що зв’язок перервано, але сам сеанс у порядку."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 터미널의 제목 막대에는 해당 컴퓨터 이름이 직접 고른 색으로 표시됩니다. “다시 연결 중”은 연결이 끊어졌다는 뜻이며, 세션 자체는 정상입니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个终端的标题栏会用你选的颜色显示它所在的设备名称。“正在重新连接”表示连接已断开，会话本身没有问题。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個終端機的標題列會用你選的顏色顯示它所在的機器名稱。「正在重新連線」表示連線中斷，工作階段本身沒有問題。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В заголовке каждого терминала указан его компьютер, цветом на ваш выбор. Метка «Переподключение» означает, что связь прервана, но сам сеанс в порядке."
+          }
+        }
+      }
+    },
+    "whatsDifferent.machines.link.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings > Herder Topography > Add Machine…, or `c11 machine link --host <ssh-target>`. c11 installs its own hc there."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定 > Herder トポグラフィー > マシンを追加… を使うか、`c11 machine link --host <ssh-target>` を実行します。c11がそこに専用のhcをインストールします。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Налаштування > Топографія herder > Додати машину… або `c11 machine link --host <ssh-target>`. c11 встановлює там власний hc."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 > 허더 토폴로지 > 머신 추가…를 사용하거나 `c11 machine link --host <ssh-target>`을 실행하세요. c11이 그곳에 자체 hc를 설치합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用“设置 > Herder 拓扑 > 添加机器…”，或运行 `c11 machine link --host <ssh-target>`。c11 会在那里安装它自己的 hc。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用「設定 > Herder 拓撲 > 加入機器…」，或執行 `c11 machine link --host <ssh-target>`。c11 會在那裡安裝它自己的 hc。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Настройки > Топография herder > Добавить машину… или `c11 machine link --host <ssh-target>`. c11 устанавливает там собственный hc."
+          }
+        }
+      }
+    },
+    "whatsDifferent.machines.link.lead": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link one."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まず一台リンクします。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "З’єднайте один."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "하나 연결해 보세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链接一台。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連結一部。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свяжите один."
+          }
+        }
+      }
+    },
+    "whatsDifferent.machines.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Link a Mac or an x86-64 Linux machine you reach over SSH, and its terminals sit in this window beside the ones on this Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSHで接続できるMacまたはx86-64のLinuxマシンをリンクすると、そのターミナルが、このMacのターミナルと並んでこのウインドウに表示されます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "З’єднайте Mac або комп’ютер x86-64 з Linux, до якого ви маєте доступ через SSH, і його термінали з’являться в цьому вікні поруч із терміналами на цьому Mac."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH로 접속할 수 있는 Mac 또는 x86-64 Linux 컴퓨터를 연결하면, 그 터미널이 이 Mac의 터미널과 나란히 이 윈도우에 표시됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "链接一台可通过 SSH 访问的 Mac 或 x86-64 Linux 设备，它的终端就会和这台 Mac 上的终端并排出现在这个窗口中。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連結一部可透過 SSH 連線的 Mac 或 x86-64 Linux 機器，它的終端機就會和這部 Mac 上的終端機並排出現在這個視窗中。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Свяжите Mac или компьютер с Linux x86-64, к которому вы подключаетесь по SSH, и его терминалы появятся в этом окне рядом с терминалами на этом Mac."
+          }
+        }
+      }
+    },
+    "whatsDifferent.machines.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your terminals can run on other machines."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルは、ほかのマシンでも動かせます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ваші термінали можуть працювати на інших комп’ютерах."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널을 다른 컴퓨터에서 실행할 수 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的终端可以在其他设备上运行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的終端機可以在其他機器上執行。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ваши терминалы могут работать на других компьютерах."
+          }
+        }
+      }
+    },
+    "whatsDifferent.machines.where.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Terminal and agent launches ask where to run. From the command line, add `--on <machine>`."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「新規ターミナル」とエージェントの起動では、どこで実行するかを尋ねられます。コマンドラインでは `--on <machine>` を付けます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Новий термінал» і запуск агентів запитують, де виконувати. У командному рядку додайте `--on <machine>`."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“새 터미널”과 에이전트 실행 시 어디서 실행할지 묻습니다. 명령줄에서는 `--on <machine>`을 추가하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“新建终端”和启动智能体时，会询问在哪里运行。在命令行中，加上 `--on <machine>`。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「新增終端機」和啟動代理程式時，會詢問要在哪裡執行。在命令列中，加上 `--on <machine>`。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Новый терминал» и запуск агентов спрашивают, где выполнять. В командной строке добавьте `--on <machine>`."
+          }
+        }
+      }
+    },
+    "whatsDifferent.machines.where.lead": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose where."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所を選べます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оберіть, де."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위치를 고르세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择在哪里。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇在哪裡。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите, где."
+          }
+        }
+      }
+    },
+    "whatsDifferent.mail.address.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 mailbox send --to <address>`, or `--to-parent` for the agent that launched it. Agents on linked machines send the same way."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 mailbox send --to <address>` を使います。起動元のエージェントに送るには `--to-parent` を使います。リンクしたマシン上のエージェントも同じ方法で送れます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 mailbox send --to <address>` або `--to-parent` для агента, який його запустив. Агенти на під’єднаних комп’ютерах надсилають так само."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 mailbox send --to <address>`를 사용하거나, 자신을 실행한 에이전트에게는 `--to-parent`를 사용하세요. 연결된 컴퓨터의 에이전트도 같은 방식으로 보냅니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 `c11 mailbox send --to <address>`，若要发给启动它的智能体，则用 `--to-parent`。已连接设备上的智能体以同样的方式发送。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 `c11 mailbox send --to <address>`，若要寄給啟動它的代理程式，則用 `--to-parent`。已連結機器上的代理程式以同樣的方式傳送。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 mailbox send --to <address>` или `--to-parent` для агента, который его запустил. Агенты на подключённых компьютерах отправляют так же."
+          }
+        }
+      }
+    },
+    "whatsDifferent.mail.address.lead": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Address an agent."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを宛先にします。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Адресуйте агента."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트를 지정하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指定收件的智能体。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指定收件的代理程式。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Адресуйте агента."
+          }
+        }
+      }
+    },
+    "whatsDifferent.mail.cell.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The mailbox cell under each terminal opens its thread."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各ターミナルの下にあるメールボックスのセルを押すと、そのターミナルのスレッドが開きます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Комірка поштової скриньки під кожним терміналом відкриває листування цього термінала."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 터미널 아래의 메일함 셀을 누르면 해당 터미널의 스레드가 열립니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个终端下方的邮箱单元格会打开该终端的对话。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個終端機下方的郵箱格會打開該終端機的對話串。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ячейка почтового ящика под каждым терминалом открывает переписку этого терминала."
+          }
+        }
+      }
+    },
+    "whatsDifferent.mail.cell.lead": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every panel has one."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どのパネルにもあります。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Є в кожної панелі."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 패널에 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个面板都有一个。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個面板都有一個。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Есть у каждой панели."
+          }
+        }
+      }
+    },
+    "whatsDifferent.mail.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every panel has a mailbox. Agents hand off work, report back and ask questions without typing into each other's terminals."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どのパネルにもメールボックスがあります。エージェントは、互いのターミナルに入力することなく、作業を引き継ぎ、報告し、質問できます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У кожної панелі є поштова скринька. Агенти передають роботу, звітують і ставлять запитання, не вводячи нічого в термінали одне одного."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 패널에는 메일함이 있습니다. 에이전트는 서로의 터미널에 입력하지 않고도 작업을 넘기고, 결과를 보고하고, 질문할 수 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个面板都有一个邮箱。智能体无需在彼此的终端里输入，就能交接工作、回报结果和提出问题。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個面板都有一個郵箱。代理程式不必在彼此的終端機中輸入，就能交接工作、回報結果和提出問題。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У каждой панели есть почтовый ящик. Агенты передают работу, отчитываются и задают вопросы, не печатая в терминалах друг друга."
+          }
+        }
+      }
+    },
+    "whatsDifferent.mail.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents send each other mail."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント同士がメールを送り合います。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенти надсилають одне одному пошту."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 서로에게 메일을 보냅니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体之间可以互发邮件。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理程式之間可以互寄郵件。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Агенты отправляют друг другу почту."
+          }
+        }
+      }
+    },
+    "whatsDifferent.mail.wait.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It arrives when the agent is idle, never mid-turn, and survives a relaunch. `c11 mailbox status <id>` says where a message is and why."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールは、エージェントがアイドル状態のときに届き、処理の途中で届くことはなく、再起動しても失われません。`c11 mailbox status <id>` で、メッセージの現在地とその理由がわかります。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Лист надходить, коли агент вільний, ніколи посеред ходу, і переживає перезапуск. `c11 mailbox status <id>` показує, де повідомлення і чому."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메일은 에이전트가 쉬고 있을 때 도착하며, 작업 도중에는 절대 도착하지 않고, 다시 실행해도 사라지지 않습니다. `c11 mailbox status <id>`로 메시지가 어디에 있고 왜 그런지 확인할 수 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮件会在智能体空闲时送达，绝不会在它处理到一半时打断，重启后也不会丢失。`c11 mailbox status <id>` 会告诉你消息在哪里、为什么在那里。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "郵件會在代理程式閒置時送達，絕不會在它處理到一半時打斷，重新啟動後也不會遺失。`c11 mailbox status <id>` 會告訴你訊息在哪裡、為什麼在那裡。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Письмо приходит, когда агент свободен, никогда посреди хода, и переживает перезапуск. `c11 mailbox status <id>` показывает, где сообщение и почему."
+          }
+        }
+      }
+    },
+    "whatsDifferent.mail.wait.lead": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mail waits for a free moment."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールは空き時間まで待ちます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пошта чекає на вільну мить."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메일은 여유가 생길 때까지 기다립니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮件会等到有空的时候。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "郵件會等到有空的時候。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Почта ждёт свободной минуты."
+          }
+        }
+      }
+    },
+    "whatsDifferent.mail.web.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 messages view` draws every conversation as a web."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 messages view` は、すべての会話を網目状の図として描きます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 messages view` малює кожну розмову як мережу."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 messages view`는 모든 대화를 거미줄 모양으로 그려 줍니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 messages view` 会把每一段对话画成一张网。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 messages view` 會把每一段對話畫成一張網。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`c11 messages view` рисует все переписки в виде сети."
+          }
+        }
+      }
+    },
+    "whatsDifferent.mail.web.lead": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "See who talks to whom."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "誰が誰と話しているかが見えます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Бачте, хто з ким спілкується."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "누가 누구와 대화하는지 보세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "看看谁在和谁交流。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "看看誰在和誰交流。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Смотрите, кто с кем общается."
+          }
+        }
+      }
+    },
+    "whatsDifferent.new": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NEW"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "НОВЕ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "신규"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "НОВОЕ"
+          }
+        }
+      }
+    },
+    "whatsDifferent.next": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次へ"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Далі"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一页"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一頁"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Далее"
+          }
+        }
+      }
+    },
+    "whatsDifferent.pageCount": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Page %lld of %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld ページ"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сторінка %lld з %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld 페이지"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %lld 页，共 %lld 页"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %lld 頁，共 %lld 頁"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Страница %lld из %lld"
+          }
+        }
+      }
+    },
+    "whatsDifferent.picture.hcHere": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hc on this Mac"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このMacのhc"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hc на цьому Mac"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Mac의 hc"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 Mac 上的 hc"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台 Mac 上的 hc"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hc на этом Mac"
+          }
+        }
+      }
+    },
+    "whatsDifferent.picture.held": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Busy: held until its turn ends"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理中：ターンが終わるまで保留"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Зайнято: утримується до кінця ходу"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 중: 차례가 끝날 때까지 보류"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忙碌：保留到本轮结束"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忙碌：保留到本輪結束"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Занят: ждёт конца хода"
+          }
+        }
+      }
+    },
+    "whatsDifferent.picture.kept": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shells, agents and jobs"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェル、エージェント、ジョブ"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оболонки, агенти й завдання"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸, 에이전트, 작업"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "shell、智能体和任务"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "shell、代理程式和工作"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оболочки, агенты и задачи"
+          }
+        }
+      }
+    },
+    "whatsDifferent.picture.mailbox": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mailbox"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールボックス"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скринька"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메일함"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮箱"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "郵箱"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Почтовый ящик"
+          }
+        }
+      }
+    },
+    "whatsDifferent.picture.quits": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 quits"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11が終了"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 завершується"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 종료"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 退出"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 結束"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 закрывается"
+          }
+        }
+      }
+    },
+    "whatsDifferent.picture.sameSessions": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same sessions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じセッション"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ті самі сеанси"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 세션"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同一会话"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相同的工作階段"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Те же сеансы"
+          }
+        }
+      }
+    },
+    "whatsDifferent.picture.stillAttached": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Still attached"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続したまま"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Усе ще під’єднано"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계속 연결됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍已连接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍已連結"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Всё ещё подключено"
+          }
+        }
+      }
+    },
+    "whatsDifferent.picture.stillRunning": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Still running"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中のまま"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Усе ще працює"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계속 실행 중"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍在运行"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍在執行"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Всё ещё работает"
+          }
+        }
+      }
+    },
+    "whatsDifferent.point.persist.reboot.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit c11, or let it crash or update, and your terminals and agents carry on. A reboot still ends them; each saved agent conversation then resumes once."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11を終了しても、クラッシュしても、アップデートしても、ターミナルとエージェントは動き続けます。再起動すると終了しますが、保存されたエージェントの会話は、それぞれ一度だけ再開されます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершіть c11 або нехай він аварійно закриється чи оновиться: термінали й агенти продовжать роботу. Перезавантаження все ж завершує їх; після нього кожна збережена розмова з агентом відновлюється один раз."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11을 종료하거나, 충돌하거나, 업데이트해도 터미널과 에이전트는 계속 실행됩니다. 재부팅하면 여전히 종료되지만, 저장된 에이전트 대화는 각각 한 번 다시 이어집니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出 c11，或遇到崩溃、更新时，你的终端和智能体都会继续运行。重启电脑仍会结束它们；之后每个已保存的智能体对话会各恢复一次。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結束 c11，或遇到當機、更新時，你的終端機和代理程式都會繼續執行。重新開機仍會結束它們；之後每個已儲存的代理程式對話會各恢復一次。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершите c11, или пусть он аварийно закроется или обновится: терминалы и агенты продолжат работу. Перезагрузка всё же завершает их; после неё каждый сохранённый диалог с агентом возобновляется один раз."
+          }
+        }
+      }
+    },
+    "whatsDifferent.terminals.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The window shows them. A helper called hc holds them, so they keep running when c11 quits, updates or crashes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウインドウは表示するだけです。hcというヘルパーがターミナルを保持するので、c11が終了、アップデート、クラッシュしても動き続けます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вікно лише показує їх. Помічник hc тримає їх, тож вони продовжують працювати, коли c11 закривається, оновлюється або аварійно завершується."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "윈도우는 터미널을 보여 주기만 합니다. hc라는 도우미가 터미널을 유지하므로, c11이 종료되거나 업데이트되거나 충돌해도 계속 실행됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口只负责显示它们。名为 hc 的助手会保持它们运行，所以 c11 退出、更新或崩溃时，它们都会继续运行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "視窗只負責顯示它們。名為 hc 的輔助程式會保管它們，所以 c11 結束、更新或當機時，它們都會繼續執行。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Окно лишь показывает их. Помощник hc держит их, поэтому они продолжают работать, когда c11 закрывается, обновляется или аварийно завершается."
+          }
+        }
+      }
+    },
+    "whatsDifferent.upgrade.persist.reboot.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit c11, or let it update or crash, and every terminal carries on. A reboot still ends them; each saved agent conversation then resumes once."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11を終了しても、アップデートしても、クラッシュしても、すべてのターミナルは動き続けます。再起動すると終了しますが、保存されたエージェントの会話は、それぞれ一度だけ再開されます。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершіть c11 або нехай він оновиться чи аварійно закриється: кожен термінал продовжить роботу. Перезавантаження все ж завершує їх; після нього кожна збережена розмова з агентом відновлюється один раз."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11을 종료하거나 업데이트하거나 충돌해도 모든 터미널은 계속 실행됩니다. 재부팅하면 여전히 종료되지만, 저장된 에이전트 대화는 각각 한 번 다시 이어집니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出 c11，或遇到更新、崩溃时，每个终端都会继续运行。重启电脑仍会结束它们；之后每个已保存的智能体对话会各恢复一次。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結束 c11，或遇到更新、當機時，每個終端機都會繼續執行。重新開機仍會結束它們；之後每個已儲存的代理程式對話會各恢復一次。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершите c11, или пусть он обновится или аварийно закроется: каждый терминал продолжит работу. Перезагрузка всё же завершает их; после неё каждый сохранённый диалог с агентом возобновляется один раз."
+          }
+        }
+      }
+    },
     "whatsDifferent.done": {
       "extractionState": "manual",
       "localizations": {
@@ -31163,53 +33419,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Понятно"
-          }
-        }
-      }
-    },
-    "whatsDifferent.footer.reopen": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open this again from Help > What's Different in c11."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "もう一度見るには、「ヘルプ」>「c11の違い」を選びます。"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Відкрити це знову можна через Довідка > Чим відрізняється c11."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "다시 보려면 도움말 > c11의 다른 점을 선택하세요."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "要再次查看，请选取“帮助”>“c11 有何不同”。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "若要再次查看，請選擇「說明」>「c11 有何不同」。"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Открыть это снова можно через Справка > Чем отличается c11."
           }
         }
       }
@@ -31684,53 +33893,6 @@
         }
       }
     },
-    "whatsDifferent.point.label.body": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Each terminal's title bar names the machine it runs on. “not kept” means it won't survive a restart. “Reconnecting” means the link is down; the session itself is fine."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "各ターミナルのタイトルバーには、動いているマシンの名前が表示されます。「not kept」は、再起動後は残らないという意味です。「Reconnecting」は接続が切れているという意味で、セッション自体は無事です。"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "У заголовку кожного термінала вказано, на якому комп’ютері він працює. «not kept» означає, що сеанс не переживе перезапуск. «Reconnecting» означає, що зв’язок перервано, але сам сеанс у порядку."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "각 터미널의 제목 막대에는 터미널이 실행되는 컴퓨터 이름이 표시됩니다. “not kept”은 다시 시작하면 사라진다는 뜻입니다. “Reconnecting”은 연결이 끊어졌다는 뜻이며, 세션 자체는 정상입니다."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每个终端的标题栏会显示它所在的设备名称。“not kept”表示重启后不会保留。“Reconnecting”表示连接已断开，会话本身没有问题。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每個終端機的標題列會顯示它所在的機器名稱。「not kept」表示重新啟動後不會保留。「Reconnecting」表示連線中斷，工作階段本身沒有問題。"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "В заголовке каждого терминала указано, на каком компьютере он работает. Метка «not kept» означает, что сеанс не переживёт перезапуск. «Reconnecting» означает, что связь прервана, но сам сеанс в порядке."
-          }
-        }
-      }
-    },
     "whatsDifferent.point.label.lead": {
       "extractionState": "manual",
       "localizations": {
@@ -31778,53 +33940,6 @@
         }
       }
     },
-    "whatsDifferent.point.persist.body": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quit c11, or let it crash or update, and your terminals and agents carry on. Open it again and you are back in the same sessions."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11を終了しても、クラッシュしても、アップデートしても、ターミナルとエージェントは動き続けます。もう一度開けば、同じセッションに戻れます。"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Завершіть c11 або нехай він аварійно закриється чи оновиться: термінали й агенти продовжать роботу. Відкрийте його знову, і ви повернетеся до тих самих сеансів."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11를 종료하거나, 충돌하거나, 업데이트해도 터미널과 에이전트는 계속 실행됩니다. 다시 열면 같은 세션으로 돌아옵니다."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "退出 c11，或遇到崩溃、更新时，你的终端和智能体都会继续运行。再次打开后，你会回到原来的会话。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "結束 c11，或遇到當機、更新時，你的終端機和代理程式都會繼續執行。重新打開後，你會回到原本的工作階段。"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Завершите c11, или пусть он аварийно закроется или обновится: терминалы и агенты продолжат работу. Откройте его снова, и вы вернётесь в те же сеансы."
-          }
-        }
-      }
-    },
     "whatsDifferent.point.persist.lead": {
       "extractionState": "manual",
       "localizations": {
@@ -31868,100 +33983,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Они продолжают работать."
-          }
-        }
-      }
-    },
-    "whatsDifferent.point.remote.body": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A terminal on another computer still sits in this window. Open one from the File menu, or with c11 new-panel --on from the command line."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "別のコンピュータのターミナルも、このウインドウに表示されます。「ファイル」メニューから、またはコマンドラインで c11 new-panel --on を使って開きます。"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Термінал на іншому комп’ютері все одно відображається в цьому вікні. Відкрийте його з меню «Файл» або за допомогою c11 new-panel --on у командному рядку."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "다른 컴퓨터의 터미널도 이 윈도우에 표시됩니다. 파일 메뉴에서 열거나 명령줄에서 c11 new-panel --on을 사용하세요."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "另一台电脑上的终端仍会显示在这个窗口中。可从“文件”菜单打开，或在命令行中使用 c11 new-panel --on。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "另一部電腦上的終端機仍會顯示在這個視窗中。可從「檔案」選單打開，或在命令列中使用 c11 new-panel --on。"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Терминал на другом компьютере всё равно отображается в этом окне. Откройте его из меню «Файл» или с помощью c11 new-panel --on в командной строке."
-          }
-        }
-      }
-    },
-    "whatsDifferent.point.remote.lead": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Some can run on another machine."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "別のマシンで動かすこともできます。"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Деякі можна запускати на іншому комп’ютері."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "일부는 다른 컴퓨터에서 실행할 수 있습니다."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "有些可以在另一台设备上运行。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "有些可以在另一部機器上執行。"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Некоторые можно запускать на другом компьютере."
           }
         }
       }
@@ -32056,53 +34077,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Чтобы выход тоже завершал терминалы, отключите «Сохранять терминалы после выхода» в разделе Настройки > Общие."
-          }
-        }
-      }
-    },
-    "whatsDifferent.subtitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The window shows them. They run somewhere else: on this Mac, or on another machine you linked."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ウインドウは表示しているだけです。実際には別の場所、つまりこのMacか、接続した別のマシンで動いています。"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Вікно лише показує їх. Вони працюють деінде: на цьому Mac або на іншому під’єднаному комп’ютері."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "윈도우는 터미널을 보여 주기만 합니다. 터미널은 이 Mac이나 연결한 다른 컴퓨터 등 다른 곳에서 실행됩니다."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "窗口只负责显示它们。它们在别处运行：在这台 Mac 上，或在你连接的另一台设备上。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "視窗只負責顯示它們。它們在別處執行：在這部 Mac 上，或在你連結的另一部機器上。"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Окно лишь показывает их. Они работают в другом месте: на этом Mac или на другом подключённом компьютере."
           }
         }
       }
@@ -32291,53 +34265,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Теперь их держит фоновый помощник hc. Ваши оболочки, агенты и задачи продолжают работать, когда c11 закрывается, обновляется или аварийно завершается, и ждут вас, когда вы откроете его снова."
-          }
-        }
-      }
-    },
-    "whatsDifferent.upgrade.persist.body": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quit c11, or let it update or crash, and every terminal carries on. Open c11 again and you are back in the same sessions."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11を終了しても、アップデートしても、クラッシュしても、すべてのターミナルは動き続けます。もう一度c11を開けば、同じセッションに戻れます。"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Завершіть c11 або нехай він оновиться чи аварійно закриється: кожен термінал продовжить роботу. Відкрийте c11 знову, і ви повернетеся до тих самих сеансів."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11을 종료하거나 업데이트하거나 충돌해도 모든 터미널은 계속 실행됩니다. c11을 다시 열면 같은 세션으로 돌아옵니다."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "退出 c11，或遇到更新、崩溃时，每个终端都会继续运行。再次打开 c11，你会回到原来的会话。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "結束 c11，或遇到更新、當機時，每個終端機都會繼續執行。重新打開 c11 後，你會回到原本的工作階段。"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Завершите c11, или пусть он обновится или аварийно закроется: каждый терминал продолжит работу. Откройте c11 снова, и вы вернётесь в те же сеансы."
           }
         }
       }
@@ -32667,53 +34594,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ваши терминалы работают не в этом окне."
-          }
-        }
-      }
-    },
-    "whatsDifferent.windowTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "What's Different in c11"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11の違い"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Чим відрізняється c11"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11의 다른 점"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11 有何不同"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "c11 有何不同"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Чем отличается c11"
           }
         }
       }

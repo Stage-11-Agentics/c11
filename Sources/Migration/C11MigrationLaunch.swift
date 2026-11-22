@@ -268,10 +268,20 @@ enum C11MigrationLaunch {
         return .dead
     }
 
+    /// The probe's retry schedule: three passes, 0.2 s apart (0.4 s for a dead world).
+    static let coreProbeRetryInterval: TimeInterval = 0.2
+    /// The whole probe's bound. Five times the schedule, so a loaded launch (a Mac
+    /// still starting its login items after a reboot, when every socket is stale)
+    /// is not cut short and reported unknown, which stops the launch.
+    static let coreProbeBudget: TimeInterval = 2
+
     /// Core and holder probes share one monotonic deadline, including connect waits.
     /// Only an absent socket or a refused connection proves that endpoint is dead.
-    static func coreLiveness(_ layout: C11MigrationLayout, budget: TimeInterval = 0.55) -> Liveness {
-        let deadline = ProcessInfo.processInfo.systemUptime + max(0, budget)
+    /// `now` and `sleep` are the clock (monotonic uptime) and the retry wait.
+    static func coreLiveness(_ layout: C11MigrationLayout, budget: TimeInterval = coreProbeBudget,
+                             now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+                             sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> Liveness {
+        let deadline = now() + max(0, budget)
         let run = layout.home.appendingPathComponent(layout.sourceHCRoot).appendingPathComponent("run", isDirectory: true)
         var info = stat()
         if lstat(run.path, &info) != 0 {
@@ -292,15 +302,15 @@ enum C11MigrationLaunch {
         var uncertainty: Liveness?
         for pass in 0..<3 {
             for path in sockets {
-                guard ProcessInfo.processInfo.systemUptime < deadline else { return .unknown("core probe deadline") }
-                let result = socketLiveness(path, deadline: deadline)
+                guard now() < deadline else { return .unknown("core probe deadline") }
+                let result = socketLiveness(path, deadline: deadline, now: now)
                 if result == .alive { return .alive }
                 if case .unknown = result { uncertainty = result }
             }
             if pass < 2 {
-                let remaining = deadline - ProcessInfo.processInfo.systemUptime
-                guard remaining > 0.2 else { return .unknown("core probe deadline") }
-                Thread.sleep(forTimeInterval: 0.2)
+                let remaining = deadline - now()
+                guard remaining > coreProbeRetryInterval else { return .unknown("core probe deadline") }
+                sleep(coreProbeRetryInterval)
             }
         }
         return uncertainty ?? .dead
@@ -308,7 +318,8 @@ enum C11MigrationLaunch {
 
     static func coresAlive(_ layout: C11MigrationLayout) -> Bool { coreLiveness(layout) != .dead }
 
-    static func socketLiveness(_ path: String, deadline: TimeInterval) -> Liveness {
+    static func socketLiveness(_ path: String, deadline: TimeInterval,
+                               now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) -> Liveness {
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { return .unknown("socket: errno \(errno)") }
         defer { close(descriptor) }
@@ -332,7 +343,7 @@ enum C11MigrationLaunch {
         let code = errno
         if code == ECONNREFUSED || code == ENOENT { return .dead }
         guard code == EINPROGRESS else { return .unknown("connect: errno \(code)") }
-        let remaining = deadline - ProcessInfo.processInfo.systemUptime
+        let remaining = deadline - now()
         guard remaining > 0 else { return .unknown("socket probe deadline") }
         var descriptorPoll = pollfd(fd: descriptor, events: Int16(POLLOUT), revents: 0)
         let ready = poll(&descriptorPoll, 1, Int32(min(remaining, 0.05) * 1000))

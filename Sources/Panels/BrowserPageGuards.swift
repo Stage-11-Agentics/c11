@@ -456,3 +456,56 @@ final class BrowserFocusStateHandler: NSObject, WKScriptMessageHandler {
 
     func forgetFrame() { focusedFrame = nil }
 }
+
+// MARK: - Script message handler lifetime (C11H-390)
+
+/// WebKit's content controller keeps itself alive for as long as it holds a
+/// script message handler: the record `add(_:contentWorld:name:)` keeps
+/// retains the controller it was added to, whatever the handler holds, and
+/// only removing the handler breaks that cycle. So the handlers a browser
+/// configuration's controller carries live on a lease. The configuration
+/// holds it, and so does every web view made from that controller (the
+/// panel's, and each popup WebKit makes from it). When the last holder goes,
+/// the lease removes the controller's handlers and the controller is freed.
+/// Nothing runs on close, so a live web view always keeps its handlers.
+final class BrowserScriptHandlerLease {
+    private final class Link { weak var lease: BrowserScriptHandlerLease? }
+    private static var holderKey: UInt8 = 0
+    private static var linkKey: UInt8 = 0
+
+    private weak var controller: WKUserContentController?
+
+    private init(controller: WKUserContentController) { self.controller = controller }
+
+    /// Starts the lease on a new configuration, which holds it. The
+    /// controller keeps only a weak link to it, for the web views made later.
+    @MainActor
+    static func start(on configuration: WKWebViewConfiguration) {
+        let controller = configuration.userContentController
+        let lease = BrowserScriptHandlerLease(controller: controller)
+        let link = Link()
+        link.lease = lease
+        objc_setAssociatedObject(configuration, &holderKey, lease, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        objc_setAssociatedObject(controller, &linkKey, link, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    /// The web view holds its controller's lease for as long as it lives.
+    /// A web view whose controller has no lease is left alone.
+    @MainActor
+    static func hold(for webView: WKWebView) {
+        let controller = webView.configuration.userContentController
+        guard let link = objc_getAssociatedObject(controller, &linkKey) as? Link, let lease = link.lease else { return }
+        objc_setAssociatedObject(webView, &holderKey, lease, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    deinit {
+        guard let controller else { return }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { controller.removeAllScriptMessageHandlers() }
+        } else {
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { controller.removeAllScriptMessageHandlers() }
+            }
+        }
+    }
+}

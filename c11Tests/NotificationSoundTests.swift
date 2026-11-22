@@ -390,9 +390,11 @@ final class NotificationSoundTests: XCTestCase {
         notifications.scheduleUserNotificationForTesting(routine(.turnEnd))
         notifications.scheduleUserNotificationForTesting(routine(.other))
         notifications.scheduleUserNotificationForTesting(routine(.needsYou, sound: false))
+        // The records hop to main; one later hop has them all. The timeout only
+        // bounds a stuck run: main under the gate's parallel load took past 2 s.
         let drained = expectation(description: "records hop to main")
         DispatchQueue.main.async { drained.fulfill() }
-        wait(for: [drained], timeout: 2)
+        wait(for: [drained], timeout: 15)
 
         XCTAssertEqual(built.count, 4)
         XCTAssertEqual(records.map(\.channel), [.needsYou, .turnEnd, .turnEnd, .needsYou])

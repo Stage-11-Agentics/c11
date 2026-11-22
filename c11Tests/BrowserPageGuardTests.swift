@@ -105,16 +105,35 @@ final class BrowserPageGuardTests: XCTestCase {
     /// queue, so the next start, holding that lock, waited out
     /// `startTimeout` for a callback queued behind it and returned nil. A
     /// port the echo fixture already listens on forces each failed start.
+    ///
+    /// A held start waits out `startTimeout` and then returns nil. A fresh number
+    /// another socket took in between fails at once (C11H-403, 0.02 s under the
+    /// gate's parallel load); only that is retried, as `startedPort` does, and the
+    /// whole follow-up must finish inside one `startTimeout`. A follow-up that has
+    /// used one `startTimeout` has failed: the test stops there, so a held start
+    /// costs about two `startTimeout`s, never one per retry and round.
     func testAStartRightAfterAFailedOneIsNotHeldBehindIt() throws {
         let taken = try EchoFixture()
         defer { taken.close() }
         for round in 0..<5 {
-            let picks = PortPicks([taken.port, ShowGuardProxy.freeLoopbackPort()])
+            // The taken port first, then a number picked at the moment of each later start.
+            let picks = PortPicks([taken.port])
             let proxy = ShowGuardProxy(policy: .init(resolve: { _ in nil }, isForbidden: { _ in true }),
-                                       secret: "s3cret", portSource: { picks.next() })
+                                       secret: "s3cret", portSource: { picks.next() ?? ShowGuardProxy.freeLoopbackPort() })
             defer { proxy.stop() }
             XCTAssertNil(proxy.ensureStarted(), "round \(round): a port already in use cannot be bound")
-            XCTAssertNotNil(proxy.ensureStarted(), "round \(round): the next start is not held behind the failed one")
+            let followUp = DispatchTime.now().uptimeNanoseconds
+            var port: UInt16?
+            var held: TimeInterval = 0
+            for _ in 0..<4 {
+                port = proxy.ensureStarted()
+                held = Double(DispatchTime.now().uptimeNanoseconds - followUp) / 1e9
+                if port != nil || held >= ShowGuardProxy.startTimeout { break }
+            }
+            XCTAssertNotNil(port, "round \(round): the next start starts")
+            XCTAssertLessThan(held, ShowGuardProxy.startTimeout, "round \(round): the next start is not held behind the failed one")
+            guard let port, held < ShowGuardProxy.startTimeout else { return }
+            XCTAssertNotEqual(port, taken.port, "round \(round): the next start listens on a new port, not the failed one")
         }
     }
 

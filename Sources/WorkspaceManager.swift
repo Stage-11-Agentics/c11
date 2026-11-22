@@ -1073,6 +1073,11 @@ class WorkspaceManager: ObservableObject {
         // C11H-101: a workspace created, closed or reordered is a layout change.
         didSet {
             if oldValue.count != workspaces.count || zip(oldValue, workspaces).contains(where: { $0.id != $1.id }) {
+                // C11H-417: a held end's notice waiting for somewhere to show (the
+                // last window closed) appears in the first workspace a window gets.
+                if oldValue.isEmpty, !workspaces.isEmpty {
+                    DispatchQueue.main.async { MainActor.assumeIsolated { HCHeldEndNotices.shared.reassert() } }
+                }
                 AppDelegate.shared?.noteLayoutChanged(source: "workspaces")
                 WorkspaceCaptainCoordinator.shared.invalidate()
                 syncWorkspaceRootOrder(previous: oldValue)
@@ -3220,7 +3225,11 @@ class WorkspaceManager: ObservableObject {
         clearWorkspaceGitProbes(workspaceId: workspace.id)
         sidebarSelectedWorkspaceIds.remove(workspace.id)
 
+        // C11H-417: the clear below reads as the held notice moving, not as the operator dismissing it.
+        HCHeldEndNotices.shared.capture()
         AppDelegate.shared?.notificationStore?.clearNotifications(forWorkspaceId: workspace.id)
+        // C11H-417: a held end's notice moves to a workspace that remains.
+        DispatchQueue.main.async { MainActor.assumeIsolated { HCHeldEndNotices.shared.reassert() } }
         // C11H-24: closing a workspace ends every hc session in it.
         workspace.teardownAllPanels(endingSessions: .workspaceClose)
         PanelAllocationRegistry.shared.releaseWorkspacesClosedForGood(
@@ -3968,6 +3977,8 @@ class WorkspaceManager: ObservableObject {
             closeWorkspace(workspace)
         case .window:
             if let app {
+                // C11H-417: the held notice moves with the read state it has.
+                HCHeldEndNotices.shared.capture()
                 app.notificationStore?.clearNotifications(forWorkspaceId: workspaceId)
                 app.closeMainWindowContainingWorkspaceId(workspaceId)
             } else {

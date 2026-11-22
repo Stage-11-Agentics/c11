@@ -214,7 +214,12 @@ struct cmuxApp: App {
         // reads, mirrors or hands on the environment. A launch from a c11
         // terminal carries that terminal's identity and the launching agent's
         // session markers.
-        HCLaunchEnvironmentScrub.scrubProcessEnvironment()
+        let scrubbed = HCLaunchEnvironmentScrub.scrubProcessEnvironment()
+        // C11H-415: and from the exec-time copy hc reads. hc ends a closed
+        // panel's leftovers by the `HC_SCOPE` token in each process's recorded
+        // environment, so an app `open -a` started from a c11 terminal carried
+        // that terminal's token and was hung up when the panel closed.
+        HCLaunchEnvironmentScrub.blankOwnExecEnvironment(alsoNames: scrubbed)
         UITestLaunchManifest.applyIfPresent()
 
         if SocketControlSettings.shouldBlockUntaggedDebugLaunch() {
@@ -587,10 +592,8 @@ struct cmuxApp: App {
                 Button(String(localized: "menu.help.about", defaultValue: "About c11")) {
                     showAboutPanel()
                 }
-                // C11H-267: a c11 1.x upgrader's profile names the 2.0 note.
-                Button(WhatsDifferent.audience(origin: C11UpgradeOrigin.current()) == .upgradeFrom1x
-                       ? String(localized: "menu.help.whatsNew2", defaultValue: "What's New in c11 2.0")
-                       : String(localized: "menu.help.whatsDifferent", defaultValue: "What's Different in c11")) {
+                // C11H-335: every profile's sheet is What's New in c11 2.0.
+                Button(String(localized: "menu.help.whatsNew2", defaultValue: "What's New in c11 2.0")) {
                     appDelegate.presentWhatsDifferent()
                 }
             }

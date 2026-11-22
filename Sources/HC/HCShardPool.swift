@@ -1563,6 +1563,17 @@ extension HCShardPool: HCCreationSettling {
     }
 }
 
+extension HCShardPool: HCCarrierReleaseReporting {
+    /// C11H-417: every shard's releases.
+    func observeCarrierReleases(on queue: DispatchQueue,
+                                handler: @escaping @Sendable (HCTerminalKey) -> Void) -> HCObservation {
+        let observations = shards.compactMap {
+            ($0.session as? any HCCarrierReleaseReporting)?.observeCarrierReleases(on: queue, handler: handler)
+        }
+        return HCObservation { for observation in observations { observation.cancel() } }
+    }
+}
+
 /// A panel's view of the pool: every call goes to the shard its terminal lives
 /// in (or, before its first creation, the shard its workspace placed it on).
 struct HCShardRoute: HCSession, HCInterestObserving {

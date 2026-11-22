@@ -603,20 +603,37 @@ extension HCTransportTests {
             deadlineUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds + 2_000_000_000))
         XCTAssertEqual(status["pid"].integer, Int64(getpid()))
     }
+    /// Each fault on its own connection. The sever timer starts at connect, so on
+    /// one connection it raced the throttled request: under load the request was
+    /// still being written when the timer cut it (`connectionLost`).
     func testDebugSeverTimerAndWriteThrottle() async throws {
         let peer = try HCWirePeer(.normal); defer { peer.close() }
-        let factory = try HCLiveConnectionFactory(environment: ["C11_HC_FAULTS": "{\"sever_after_ms\":800,\"throttle_bps\":3000}"])
-        let connection = try await factory.connect(request(peer), verify: fixtureVerification)
-        defer { connection.close(reason: .cancelled) }
+        let throttled = try await HCLiveConnectionFactory(environment: ["C11_HC_FAULTS": "{\"throttle_bps\":3000}"])
+            .connect(request(peer), verify: fixtureVerification)
+        defer { throttled.close(reason: .cancelled) }
         let start = DispatchTime.now().uptimeNanoseconds
         // About 650 bytes at 3000 bytes/s: the throttle holds the request past 0.15 s.
-        _ = try await connection.request(HCRPCRequest(method: "terminal.get", params: .object(["padding": .string(String(repeating: "x", count: 600))]),
-            deadlineUptimeNanoseconds: start + 2_000_000_000))
+        // Load only lengthens it; the deadline is a guard, not the claim.
+        _ = try await throttled.request(HCRPCRequest(method: "terminal.get", params: .object(["padding": .string(String(repeating: "x", count: 600))]),
+            deadlineUptimeNanoseconds: start + 10_000_000_000))
         XCTAssertGreaterThan(Double(DispatchTime.now().uptimeNanoseconds - start) / 1e9, 0.15)
-        try await Task.sleep(nanoseconds: 800_000_000)
+
+        // The fixture peer serves one client, so the sever runs against its own.
+        let severPeer = try HCWirePeer(.normal); defer { severPeer.close() }
+        let fired = expectation(description: "sever timer fired")
+        let severing = try HCLiveConnectionFactory(environment: ["C11_HC_FAULTS": "{\"sever_after_ms\":800}"],
+                                                   diagnostics: { event, _, _ in if event == "hc_wire_fault_sever_timer" { fired.fulfill() } })
+        let armedBefore = DispatchTime.now().uptimeNanoseconds
+        let severed = try await severing.connect(request(severPeer), verify: fixtureVerification)
+        defer { severed.close(reason: .cancelled) }
+        await fulfillment(of: [fired], timeout: 10)
+        let armedFor = DispatchTime.now().uptimeNanoseconds - armedBefore
+        XCTAssertGreaterThanOrEqual(armedFor, 800_000_000, "The timer never cuts early")
+        // Loose: six times the delay, so load cannot reach it, while a units slip (10x or more) does.
+        XCTAssertLessThan(armedFor, 5_000_000_000, "sever_after_ms counts milliseconds")
         do {
-            _ = try await connection.request(HCRPCRequest(method: "server.status", params: .object([:]),
-                deadlineUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds + 2_000_000_000))
+            _ = try await severed.request(HCRPCRequest(method: "server.status", params: .object([:]),
+                deadlineUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds + 10_000_000_000))
             XCTFail("Severed connection still available")
         } catch let error as HCRPCFailure { XCTAssertEqual(error.reason, .connectionLost) }
     }

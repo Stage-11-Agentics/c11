@@ -263,6 +263,83 @@ final class HCLaunchPolicyTests: XCTestCase {
         XCTAssertEqual(HCLaunchEnvironmentScrub.scrubProcessEnvironment(["PATH": "/usr/bin"]), [])
     }
 
+    /// C11H-415: `open -a` from a c11 terminal hands the app hc's marks on that
+    /// terminal too. The token is the one hc ends the terminal's leftovers by.
+    func testHcsMarksOnTheHostTerminalAreScrubbedFromALaunch() {
+        let launch = ["HC_SCOPE": "1234-abcd", "HC_TERMINAL_ID": "t9", "HC_TERMINAL_SOCKET": "/run/c11-s1.sock",
+                      "HC_SESSION": "c11-s1", "HC_SOCKET": "/run/c11-s1.sock", "HC_RUNTIME": "1",
+                      "PATH": "/usr/bin", "C11_QA_LAUNCH": "fresh", "CMUX_TAG": "t5"]
+        XCTAssertEqual(scrubbed(launch), ["PATH": "/usr/bin", "C11_QA_LAUNCH": "fresh", "CMUX_TAG": "t5"])
+    }
+
+    /// C11H-415: hc and `ps -E` read the environment the kernel recorded at
+    /// exec, which `unsetenv` leaves in place. The scrubbed names are blanked
+    /// there; every other string keeps its bytes and its place.
+    func testTheExecTimeEnvironmentLosesExactlyTheScrubbedNames() {
+        let block = ExecBlockFixture(arguments: ["/Applications/c11.app/Contents/MacOS/c11"], environment: [
+            "HOME=/Users/a", "HC_SCOPE=1234-abcd", "PATH=/usr/bin", "C11_PANEL_ID=P", "HC_TERMINAL_ID=t9",
+            "C11_QA_LAUNCH=fresh",
+        ])
+        let names = Set(HCLaunchEnvironmentScrub.namesToRemove(from: HCExecEnvironment.variables(block.procargs)))
+        XCTAssertEqual(names, ["HC_SCOPE", "C11_PANEL_ID", "HC_TERMINAL_ID"])
+        // After unsetenv, the live environment points only at what it kept.
+        let outcome = HCLaunchEnvironmentScrub.blankExecEnvironment(
+            names: names, procargs: block.procargs, arguments: block.arguments, live: block.live([0, 2, 5]))
+        XCTAssertEqual(outcome, .init(blanked: ["C11_PANEL_ID", "HC_SCOPE", "HC_TERMINAL_ID"]))
+        let now = block.current
+        XCTAssertEqual(HCExecEnvironment.variables(now),
+                       ["HOME": "/Users/a", "PATH": "/usr/bin", "C11_QA_LAUNCH": "fresh", "ptr_munge": ""])
+        XCTAssertEqual(now.count, block.procargs.count)
+        // hc's test: no NUL-separated entry is `HC_SCOPE=<token>`.
+        XCTAssertFalse(now.split(separator: 0).contains { Array($0) == Array("HC_SCOPE=1234-abcd".utf8) })
+        XCTAssertEqual(HCExecEnvironment.layout(now)?.strings, HCExecEnvironment.layout(block.procargs)?.strings)
+    }
+
+    /// C11H-415: nothing is written unless the kernel's copy locates the block,
+    /// and a string is left alone while a live pointer names it or its bytes
+    /// changed.
+    func testTheExecBlockIsWrittenOnlyWhereTheKernelsCopyLocatesIt() {
+        let environment = ["HOME=/Users/a", "HC_SCOPE=1234-abcd", "PATH=/usr/bin"]
+        func run(_ block: ExecBlockFixture, live: [Int], arguments: [UnsafeMutablePointer<CChar>]? = nil)
+            -> HCLaunchEnvironmentScrub.ExecBlockOutcome {
+            HCLaunchEnvironmentScrub.blankExecEnvironment(names: ["HC_SCOPE"], procargs: block.procargs,
+                arguments: arguments ?? block.arguments, live: block.live(live))
+        }
+
+        let stillLive = ExecBlockFixture(arguments: ["c11"], environment: environment)
+        XCTAssertEqual(run(stillLive, live: [0, 1, 2]), .init(skipped: 1))
+        XCTAssertEqual(stillLive.current, stillLive.procargs)
+
+        let changed = ExecBlockFixture(arguments: ["c11"], environment: environment)
+        changed.poke(environment: 1, at: 9, "X")
+        XCTAssertEqual(run(changed, live: [0, 2]), .init(skipped: 1))
+
+        let unconfirmed = ExecBlockFixture(arguments: ["c11"], environment: environment)
+        XCTAssertEqual(run(unconfirmed, live: []), .init(refused: "unconfirmed"))
+        XCTAssertEqual(unconfirmed.current, unconfirmed.procargs)
+
+        let moved = ExecBlockFixture(arguments: ["c11", "-x"], environment: environment)
+        let elsewhere = strdup("-x")!
+        defer { free(elsewhere) }
+        XCTAssertEqual(run(moved, live: [0, 2], arguments: [moved.arguments[0], elsewhere]), .init(refused: "arguments_moved"))
+        XCTAssertEqual(run(moved, live: [0, 2], arguments: [moved.arguments[0]]), .init(refused: "arguments"))
+        XCTAssertEqual(moved.current, moved.procargs)
+    }
+
+    /// C11H-415: the layout `blankOwnExecEnvironment` relies on holds in a real
+    /// process: this test runner's arguments sit where its kernel copy says,
+    /// and its live environment points into that block. Reads only.
+    func testARealProcesssExecBlockIsLocatedFromItsKernelCopy() throws {
+        let procargs = try XCTUnwrap(HCExecEnvironment.read(pid: getpid()))
+        XCTAssertEqual(HCExecEnvironment.layout(procargs)?.arguments.count, Int(CommandLine.argc))
+        XCTAssertNotNil(HCExecEnvironment.variables(procargs)["PATH"] ?? HCExecEnvironment.variables(procargs)["HOME"])
+        let own = HCLaunchEnvironmentScrub.ownArgumentsAndEnvironment()
+        switch HCLaunchEnvironmentScrub.locateExecBlock(procargs: procargs, arguments: own.arguments, live: own.live) {
+        case .success: break
+        case .failure(let refusal): XCTFail("the runner's exec block was not located: \(refusal)")
+        }
+    }
+
     /// Second line: a core started while the process environment still carried
     /// the markers (an update over a running session) does not pass them on.
     func testTheCoreEnvironmentCarriesNoAgentMarkers() throws {
@@ -685,7 +762,7 @@ final class HCBundledCoreTests: XCTestCase {
     /// C11H-394: a Debug or ad hoc 2.0 (no team, what the guest runs) adopts the
     /// cores of every c11h build Atin may switch from by the shipped list alone.
     /// Each hash is the signed helper of that build's app (h15 was already listed).
-    func testTheHelperOfEveryC11hBuildFromH15ToH20IsAdmittedWithNoTeam() throws {
+    func testTheHelperOfEveryC11hBuildFromH15ToH22IsAdmittedWithNoTeam() throws {
         let builds = [
             ("h15", "3f1b58dca952f6a35272111854f8d455324255fe5d56dccc5420a4b8f040d5bc"),
             ("h16", "03339dce9273efa37f9cbb0402e3220e2cf7b3a0890c408149f46e8693f65030"),
@@ -693,6 +770,8 @@ final class HCBundledCoreTests: XCTestCase {
             ("h18", "d073bd1a241c7b126c2c3ef0184509c844084a48cf573efe44fe9c13c6b99e0d"),
             ("h19", "9351840eacff0fdabdff75e8d9be4c7e26b215293c06b98be02968db30e66896"),
             ("h20", "0df3a843035dd82772880f963d92020c09084e812f58f5a01b918ce58f14f193"),
+            ("h21", "32a9aaeae71878a70a72f94ea3fcf90db935f78b5d30e283aa2e4a981177bb23"),
+            ("h22", "1e294d6c047cc58de008f9fecd9053892d032820ecb674e17f413693c7aac1ff"),
             ("unlisted", String(repeating: "e", count: 64)),
         ]
         let retainedRoot = root.appendingPathComponent(".c11h.app-helpers", isDirectory: true)
@@ -707,7 +786,7 @@ final class HCBundledCoreTests: XCTestCase {
         let admitted = HCCoreBinary.retainedServing(in: retainedRoot, trust: noTeam)
         XCTAssertEqual(admitted.map { $0.executableURL.deletingLastPathComponent().deletingLastPathComponent()
                            .deletingLastPathComponent().lastPathComponent },
-                       ["h15", "h16", "h17", "h18", "h19", "h20"], "every listed c11h helper is serving; an unlisted hash is not")
+                       ["h15", "h16", "h17", "h18", "h19", "h20", "h21", "h22"], "every listed c11h helper is serving; an unlisted hash is not")
         let h18 = retainedRoot.appendingPathComponent("h18", isDirectory: true)
         XCTAssertEqual(HCCoreBinary.servingEntry(bundle: h18, trust: noTeam)?.pin.executableSHA256, builds[3].1,
                        "the c11h app a migration adopts is read the same way")
@@ -1038,4 +1117,52 @@ final class HCBundledCoreTests: XCTestCase {
         XCTAssertEqual(waitForFile(out, "finished"), "done", "it ran to its own end: not signalled")
         XCTAssertTrue(waitUntilGone(pid), "it ended by itself and was reaped")
     }
+}
+
+/// C11H-415: an exec-time block laid out as the kernel returns it
+/// (`KERN_PROCARGS2`: argc, the executable path and its padding, the arguments,
+/// the environment, a kernel string), and the same strings in writable memory
+/// at the same offsets from the first argument, as they sit atop a stack.
+private final class ExecBlockFixture {
+    let procargs: [UInt8]
+    let arguments: [UnsafeMutablePointer<CChar>]
+    private let memory: UnsafeMutableRawPointer
+    private let origin: Int
+    private let length: Int
+    private let environmentOffsets: [Int]
+
+    init(arguments: [String], environment: [String]) {
+        var bytes = withUnsafeBytes(of: Int32(arguments.count)) { Array($0) }
+        bytes += Array("/Applications/c11.app/Contents/MacOS/c11".utf8) + [0, 0, 0, 0]
+        let origin = bytes.count
+        var argumentOffsets: [Int] = []
+        for argument in arguments { argumentOffsets.append(bytes.count); bytes += Array(argument.utf8) + [0] }
+        var environmentOffsets: [Int] = []
+        for entry in environment { environmentOffsets.append(bytes.count); bytes += Array(entry.utf8) + [0] }
+        bytes += Array("ptr_munge=".utf8) + [0]
+        let length = bytes.count - origin
+        let memory = UnsafeMutableRawPointer.allocate(byteCount: length, alignment: 16)
+        bytes[origin...].withUnsafeBytes { memory.copyMemory(from: $0.baseAddress!, byteCount: length) }
+        self.procargs = bytes
+        self.origin = origin
+        self.length = length
+        self.memory = memory
+        self.environmentOffsets = environmentOffsets
+        self.arguments = argumentOffsets.map { (memory + ($0 - origin)).assumingMemoryBound(to: CChar.self) }
+    }
+
+    deinit { memory.deallocate() }
+
+    /// Live environment pointers at these environment entries.
+    func live(_ indices: [Int]) -> [UnsafeMutablePointer<CChar>] {
+        indices.map { (memory + (environmentOffsets[$0] - origin)).assumingMemoryBound(to: CChar.self) }
+    }
+
+    /// Changes one byte of an environment entry in memory, as a write since exec would.
+    func poke(environment index: Int, at offset: Int, _ character: Character) {
+        memory.storeBytes(of: character.asciiValue!, toByteOffset: environmentOffsets[index] - origin + offset, as: UInt8.self)
+    }
+
+    /// What the kernel would return now: the copy's head, then memory as it is.
+    var current: [UInt8] { Array(procargs[..<origin]) + Array(UnsafeRawBufferPointer(start: memory, count: length)) }
 }

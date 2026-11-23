@@ -6,9 +6,7 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
-- c11 installs only its own skills (`c11`, `c11-browser`, `c11-markdown`, `c11-debug-windows`, `c11-computer-use`, `c11-fanout`). Stage 11's workflow skills (Tone, Chord, Sounding, Resonance, distribution, venture-partner, lattice-orchestrator) no longer ship in the app; copies already installed stay where they are.
-
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-11-22
 
 Headline: **c11 2.0. Your terminals keep running when c11 quits, crashes or updates, they can run on other Macs you link, agents can show you what they made, and the window stays responsive under a large fleet.**
 
@@ -75,12 +73,17 @@ c11 2.0 is the line Stage 11 developed as c11h, a separate app built on c11 1.8.
 ### Removed
 
 - **Settings no longer offers Workspace Color Indicator, the workspace color palette editor or the sidebar tint controls.** Saved values still apply, and an agent can still change them. Saved per-appearance tints are ignored, and a Ghostty `sidebar-background = light:X,dark:Y` applies one color. (`51cc9154`)
+- **c11 installs only its own skills** (`c11`, `c11-browser`, `c11-markdown`, `c11-debug-windows`, `c11-computer-use`, `c11-fanout`). Stage 11's workflow skills (Tone, Chord, Sounding, Resonance, distribution, venture-partner, lattice-orchestrator) no longer ship in the app; copies already installed stay where they are.
 
 ### Known limits
 
 - **Link only machines you trust.** On a linked machine, any process running as your user can type into, read and end the terminals hc holds there. (C11H-71, C11H-176)
 - **A panel's input can pause** if a write is cut off mid-send; `c11 retry-input --panel <ref>` resumes it and never resends. (C11H-124)
 - **On another machine**, an agent cannot capture its runtime for conversation resume yet. (C11H-74)
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [1.8.1] - 2026-11-04
 

@@ -167,7 +167,9 @@ python_steps = jobs.fetch("python").fetch("steps").map { |step| step["name"] }
 abort "Python job must run CLI and shell checks" unless
   python_steps.include?("Locate CLI binary from exact-head build") &&
   python_steps.include?("CLI tests against the built binary") &&
-    python_steps.include?("Shell helper lifetime and git reporting")
+    python_steps.include?("Shell prompt resets a dead agent's keyboard modes")
+abort "Every python job step needs timeout-minutes" unless
+  jobs.fetch("python").fetch("steps").all? { |step| step.key?("timeout-minutes") }
 
 record = jobs.fetch("record-green")
 record_needs = record.fetch("needs")

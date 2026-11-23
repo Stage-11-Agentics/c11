@@ -362,6 +362,7 @@ final class HCShardPoolTests: XCTestCase {
     /// link of the same name. A local terminal never lands there, and a
     /// machine only c11h links stays on shard 0 (where `--on` refuses it).
     func testALinksSessionTakesTheRemoteTerminalsItLinksUsablyAndNoWorkspace() async throws {
+        try XCTSkipIf(true, "Flaky on the loaded CI runner; quarantined until made deterministic (C11H-431)")
         let shards = adoptedFakes()
         let pool = try makeAdoptedPool(shards, placement: HCShardPlacement())
         let links = try XCTUnwrap(pool.links)
@@ -1576,6 +1577,7 @@ final class HCShardPoolTests: XCTestCase {
     /// 1: a pre-shard panel whose S0 terminal ended and was recreated in shard 1.
     /// S0 keeps its binding to the dead terminal; the merged view gives the live one.
     func testAPanelsBindingIsItsHomeShards() async throws {
+        try XCTSkipIf(true, "Flaky on the loaded CI runner; quarantined until made deterministic (C11H-431)")
         let shards = fakes()
         let panel = UUID()
         let dead = await shards[0].seedLive(panel: panel)

@@ -374,6 +374,31 @@ class ShortcutRoutingTestSupport: XCTestCase {
         return true
     }
 
+    /// Waits on a condition that only main-thread work can make true (main
+    /// queue hops, MainActor tasks, run-loop blocks), with no I/O, timer or
+    /// other process in the chain. It gives up only once both `floor` seconds
+    /// and `passes` run-loop passes have gone by, so a condition that never
+    /// comes true still fails in about `floor` seconds. A pass the runner
+    /// stalls counts once however long it ran, so a starved CI runner cannot
+    /// spend the budget before that work gets its turn. `ceiling` is a
+    /// wall-clock backstop well inside XCTest's 60 s allowance.
+    fileprivate func waitForMainThreadWork(
+        floor: TimeInterval = 2.0,
+        passes: Int = 100,
+        ceiling: TimeInterval = 20.0,
+        _ condition: () -> Bool
+    ) -> Bool {
+        let start = Date()
+        var passesLeft = passes
+        while !condition() {
+            let elapsed = Date().timeIntervalSince(start)
+            if elapsed >= ceiling || (passesLeft <= 0 && elapsed >= floor) { return false }
+            passesLeft -= 1
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        return true
+    }
+
 
     /// Registers a main-window context whose NSWindow is already deallocated.
     fileprivate func registerOrphanedMainWindowContext(
@@ -2592,13 +2617,23 @@ final class WindowCloseShortcutTests: ShortcutRoutingTestSupport {
         XCTFail("debugHandleCustomShortcut is only available in DEBUG")
 #endif
 
+        // Both chains below run on the main thread only: Cmd+W hops to the main
+        // queue, then a MainActor task presents the card, and the host reports
+        // it from a run-loop block; accepting resumes that task, which closes
+        // the tab and creates the replacement in the same turn. On the free
+        // macos-15 runner a single stalled pass once took 4.9 s of a 2 s
+        // wall-clock cap before the task ran, so wait in run-loop passes.
         XCTAssertTrue(
-            waitUntil { workspace.paneInteractionRuntime.isConfirmCardVisible(panelId: initialPanelId) },
+            waitForMainThreadWork { workspace.paneInteractionRuntime.hasActiveConfirm(panelId: initialPanelId) },
+            "Cmd+W on an hc terminal should ask through its End Session card"
+        )
+        XCTAssertTrue(
+            waitForMainThreadWork { workspace.paneInteractionRuntime.isConfirmCardVisible(panelId: initialPanelId) },
             "Cmd+W on an hc terminal should show its End Session card"
         )
         XCTAssertTrue(workspace.paneInteractionRuntime.acceptActive(panelId: initialPanelId))
         XCTAssertTrue(
-            waitUntil { workspace.panels[initialPanelId] == nil && workspace.panels.count == 1 },
+            waitForMainThreadWork { workspace.panels[initialPanelId] == nil && workspace.panels.count == 1 },
             "Accepting the card should close the panel and leave a replacement terminal"
         )
         _ = host

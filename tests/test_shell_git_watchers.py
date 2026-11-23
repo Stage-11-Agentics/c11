@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import socket_guard
 
 socket_guard.install()
-import os
+import faulthandler
 from pathlib import Path
 import select
 import shutil
@@ -35,7 +35,7 @@ MODES = ("production", "fallback")
 
 def alive(pid):
     result = subprocess.run(["/bin/ps", "-o", "stat=", "-p", str(pid)],
-                            capture_output=True, text=True, check=False)
+                            capture_output=True, text=True, check=False, timeout=10)
     return bool(result.stdout.strip()) and not result.stdout.strip().startswith("Z")
 
 
@@ -202,6 +202,15 @@ wait_git_job() {
 
 
 class ShellGitWatcherTests(unittest.TestCase):
+    # The slowest case takes about 40 s on a laptop and twice that on a CI
+    # runner. A case past this bound is a hang: print every thread's stack and
+    # exit nonzero, so the log names the stuck line within minutes.
+    CASE_LIMIT_SECONDS = 180
+
+    def setUp(self):
+        faulthandler.dump_traceback_later(self.CASE_LIMIT_SECONDS, exit=True)
+        self.addCleanup(faulthandler.cancel_dump_traceback_later)  # Runs last, after fixture cleanup.
+
     def fixture(self, shell, body, mode="fallback", pre_source=":"):
         item = ShellFixture(shell, body, mode, pre_source)
         self.addCleanup(item.close)
@@ -492,7 +501,8 @@ wait 2>/dev/null || true
                 repo = item.path / "repo"
                 repo.mkdir()
                 def git(*args):
-                    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True)
+                    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
+                                          check=True, timeout=30)
                 git("init", "-q", "-b", "fixture-main")
                 git("config", "user.name", "Synthetic Fixture")
                 git("config", "user.email", "fixture@example.invalid")

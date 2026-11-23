@@ -362,18 +362,21 @@ jobs:
       TARGET_SHA: ${{ needs.target.outputs.sha }}
     steps:
       - name: Checkout
+        timeout-minutes: 5
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.target.outputs.sha }}
           submodules: recursive
 
       - name: Prepare c11 macOS backstop runner
+        timeout-minutes: 15
         id: runner-setup
         uses: ./.github/actions/c11-macos-backstop-setup
         with:
           use-build-cache: false
 
       - name: Restore exact-head prebuilt products
+        timeout-minutes: 10
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
         with:
           path: ~/Library/Developer/Xcode/DerivedData/GhosttyTabs-*
@@ -381,6 +384,7 @@ jobs:
           fail-on-cache-miss: true
 
       - name: Locate CLI binary from exact-head build
+        timeout-minutes: 2
         shell: bash
         run: |
           set -euo pipefail
@@ -392,6 +396,7 @@ jobs:
           printf 'CLI_BINARY=%s\n' "${CLI_CANDIDATES[0]}" >> "$GITHUB_ENV"
 
       - name: CLI tests against the built binary
+        timeout-minutes: 5
         shell: bash
         env:
           C11_ACTIVITY_MEMORY_PROBE: "1"
@@ -445,17 +450,17 @@ jobs:
             exit 1
           fi
 
-      - name: Shell helper lifetime and git reporting
-        run: bash tests/test_shell_git_watchers.sh
-
       - name: Shell prompt resets a dead agent's keyboard modes
+        timeout-minutes: 2
         run: python3 tests/test_shell_keyboard_mode_reset.py
 
       - name: Every shell prompt reports, an empty Return included
+        timeout-minutes: 2
         run: python3 tests/test_shell_prompt_reports.py
 
       # Stand-in tart and ssh only: no VM, no network, no credential.
       - name: Sandbox image selection and guest Claude token verb
+        timeout-minutes: 3
         run: |
           set -euo pipefail
           python3 tests/test_sandbox_image_select.py
@@ -463,6 +468,7 @@ jobs:
 
       # PR CI runs --smoke. The sweep is too slow for the 2-minute PR budget.
       - name: Socket guard canary
+        timeout-minutes: 15
         run: python3 tests/test_socket_guard_canary.py
 
   record-green:

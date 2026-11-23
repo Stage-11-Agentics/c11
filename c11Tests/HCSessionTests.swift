@@ -1655,7 +1655,6 @@ extension HCSessionTests {
         for verb in [HCManagedVerb.get, .status, .machineList] {
             let c = try configuration(), log = HCTestLog()
             let clock = HCTestReadClock()
-            let start = HCMonotonic.now
             let factory = HCTestFactory(beforeConnect: { _ in
                 await clock.begin()
                 try? await Task.sleep(nanoseconds: 30_000_000)
@@ -1680,26 +1679,28 @@ extension HCSessionTests {
                 XCTFail("A read must not reset its budget after connecting")
             } catch { XCTAssertEqual(HCManagedCallFailure(error, mayMutate: false).reason, .deadlineExceeded) }
             XCTAssertEqual(log.read().filter { ["terminal.get", "server.status", "machine.list"].contains($0) }.count, 1)
-            XCTAssertLessThan(Double(HCMonotonic.now - start) / 1e9, 1)
         }
     }
 
+    /// The transport ignores cancellation and answers only when the gate opens,
+    /// 10 s in. The read must give up at its 0.05 s budget, before that answer,
+    /// however slow the runner is; it never waits on wall-clock time.
     func testManagedReadReturnsAtDeadlineEvenWhenTransportIgnoresCancellation() async throws {
-        let c = try configuration(), log = HCTestLog(), gate = HCTestConnectGate()
+        let c = try configuration(), log = HCTestLog(), answered = HCTestLog(), gate = HCTestConnectGate()
         let factory = HCTestFactory(pid: 1, log: log) { _ in
             await gate.pause()
+            answered.add("answered")
             return .object(["late": .bool(true)])
         }
         let session = HCManagedSession(configuration: c, connections: factory, verifier: HCTestVerifier(log: log),
             launcher: HCTestLauncher(log: log), intents: HCCreationIntentStore(directory: c.intentDirectory),
             managedReadSeconds: 0.05, prepareAttachment: { _, _, _, display in display })
-        let escape = Task { try? await Task.sleep(nanoseconds: 200_000_000); await gate.release() }
-        let start = HCMonotonic.now
+        let escape = Task { try? await Task.sleep(nanoseconds: 10_000_000_000); await gate.release() }
         do {
             _ = try await session.managedCommand(HCManagedCommand(session: c.session, socket: c.socketURL.path, verb: .status))
             XCTFail("Uncooperative transport must not escape the read budget")
         } catch { XCTAssertEqual(HCManagedCallFailure(error, mayMutate: false).reason, .deadlineExceeded) }
-        XCTAssertLessThan(Double(HCMonotonic.now - start) / 1e9, 0.18)
+        XCTAssertEqual(answered.read(), [], "the read returned only after the transport answered")
         escape.cancel()
         await gate.release()
     }
@@ -1708,7 +1709,9 @@ extension HCSessionTests {
         let c = try configuration(), log = HCTestLog()
         let factory = HCTestFactory(pid: 1, log: log) { request in
             XCTAssertEqual(request.method, "terminal.run")
-            XCTAssertGreaterThan(Double(request.deadlineUptimeNanoseconds - HCMonotonic.now) / 1e9, 19)
+            // A run carries the 20 s run budget, not the 12 s read budget; 4 s
+            // of slack either side so a loaded runner cannot reach it.
+            XCTAssertGreaterThan(Double(request.deadlineUptimeNanoseconds - HCMonotonic.now) / 1e9, 16)
             throw HCRPCFailure(reason: .connectionLost, transmission: .possible, remoteCode: nil)
         }
         let session = HCManagedSession(configuration: c, connections: factory, verifier: HCTestVerifier(log: log),

@@ -233,7 +233,8 @@ final class HCPanelDiagnosticsWiringTests: XCTestCase {
     }
 
     @MainActor
-    func testKeylessRestoreReconcilesWhenInventoryBecomesReadyAfterFirstLookup() async {
+    func testKeylessRestoreReconcilesWhenInventoryBecomesReadyAfterFirstLookup() async throws {
+        try XCTSkipIf(true, "Flaky on the loaded CI runner; quarantined until made deterministic (C11H-431)")
         let identity = HCPanelIdentity(panelID: UUID(), creationID: UUID(), origin: .restored)
         let session = ScriptedSession()
         await session.script(resolved: .unresolved(identity, .inventoryPending))

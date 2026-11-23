@@ -113,13 +113,43 @@ class InteractiveShell:
         time.sleep(0.2)
         return self.sent(prefix)
 
+    def exited_within(self, seconds):
+        """Read the pty while waiting, so a shell writing or flushing to its
+        terminal is never blocked on a reader that has stopped reading."""
+        deadline = time.monotonic() + seconds
+        while self.process.poll() is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            ready, _, _ = select.select([self.master], [], [], min(remaining, 0.05))
+            if ready:
+                try:
+                    os.read(self.master, 65536)
+                except OSError:
+                    time.sleep(min(remaining, 0.05))
+        return True
+
     def close(self):
+        """Stop the one shell this fixture started, by its PID and nothing else:
+        SIGHUP (an interactive shell ignores SIGTERM), then SIGKILL, each with a
+        bounded wait. The pty closes before the last wait. A shell that outlives
+        all of it is reported, never hidden."""
         try:
-            if self.process.poll() is None:
-                self.process.send_signal(signal.SIGKILL)  # Only the PID this fixture started.
-            self.process.wait(timeout=3)
+            for sig, grace in ((signal.SIGHUP, 2), (signal.SIGKILL, 5)):
+                if self.exited_within(0):
+                    break
+                self.process.send_signal(sig)
+                if self.exited_within(grace):
+                    break
         finally:
             os.close(self.master)
-            if self.listener:
-                self.listener.close()
-            self.temp.cleanup()
+            try:
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    raise AssertionError(
+                        f"shell {self.process.pid} survived SIGHUP, SIGKILL and its pty's close") from None
+            finally:
+                if self.listener:
+                    self.listener.close()
+                self.temp.cleanup()

@@ -23,6 +23,9 @@ MUTANTS = (
     ("backstop-rerun-bundle", "c11-main-backstop.py", "        if result is not None and run > 1:\n", "        if False:\n", "test_quick_link_failure_in_the_logic_stage_reruns_with_a_new_bundle"),
     ("backstop-error-reason", "c11-main-backstop.py", "                return stage[\"description\"][:140]\n", "                pass\n", "test_unreadable_result_retries_once_then_errors_never_failure"),
     ("backstop-summary-retry", "c11-main-backstop.py", "time.sleep, tries=2)", "time.sleep, tries=1)", "test_unreadable_result_retries_once_then_errors_never_failure"),
+    ("backstop-sweep-removed", "c11-main-backstop.py", "            last_sweep = sweep_results(root, last_sweep)\n", "", "test_supervise_loop_sweeps_old_results_hourly_with_the_poller_rule"),
+    ("backstop-sweep-running", "c11-main-backstop.py", 'return {(poller.read_running(root) or {}).get("attempt_id")}', "return set()", "test_supervise_loop_sweeps_old_results_hourly_with_the_poller_rule"),
+    ("backstop-sweep-record", "c11-main-backstop.py", ', "attempt_id": attempt.name}', "}", "test_running_record_names_the_attempt_the_sweep_must_keep"),
 )
 # C11-561 guards in the PR poller, run against its own suite.
 POLLER_MUTANTS = (
@@ -40,6 +43,21 @@ POLLER_MUTANTS = (
     ("poller-revoke-silent", '            self.delivered = False\n            self.log(decision="revoked"', '            self.delivered = self._post(sha, "failure", "revoked", pr=record.get("pr"))\n            self.log(decision="revoked"', "test_pr_merged_or_closed_mid_build_posts_nothing"),
     ("poller-superseded-error", 'self._post(sha, "error", "superseded"', 'self._post(sha, "failure", "superseded"', "test_new_push_mid_build_posts_error_superseded_never_failure"),
     ("poller-lookup-unknown", 'elif reason == "revoked" and (str(_detail).startswith("lookup_failed") or _detail == "ls_remote"):', "elif False:", "test_failed_pr_lookup_mid_build_keeps_the_build"),
+    ("poller-sweep-removed", "        self._sweep_results()\n        if self.world.time() < self.not_before:\n", "        if self.world.time() < self.not_before:\n", "ResultSweepTests.test_cycle_sweeps_at_most_hourly"),
+    ("poller-sweep-every-cycle", "    if last is not None and 0 <= now - last < SWEEP_INTERVAL_S:\n", "    if False:\n", "ResultSweepTests.test_cycle_sweeps_at_most_hourly"),
+    ("poller-sweep-removed-real-supervise", "        self._sweep_results()\n        if self.world.time() < self.not_before:\n", "        if self.world.time() < self.not_before:\n", "RuntimeIntegrationTests.test_real_supervise_sweeps_old_results_and_still_posts_the_build"),
+    ("poller-sweep-before-recover", '            return "disarmed"\n        if recover(self.root', '            return "disarmed"\n        self._sweep_results()\n        if recover(self.root', "ResultSweepTests.test_a_stuck_recovery_sweeps_nothing"),
+    ("poller-sweep-in-build", '        command = slot_command(self.root, argv)\n', '        self.last_sweep = None\n        self._sweep_results()\n        command = slot_command(self.root, argv)\n', "ResultSweepTests.test_a_build_in_progress_is_never_swept_under_itself"),
+    ("poller-sweep-live-attempts", 'return {recorded.get("attempt_id")} | {item.get("attempt_id") for item in self.queue}', "return set()", "ResultSweepTests.test_old_entries_go_recent_and_queued_or_running_attempts_stay"),
+    ("poller-sweep-age", ".st_mtime >= cutoff or names_attempt", ".st_mtime >= cutoff + 1e12 or names_attempt", "ResultSweepTests.test_old_entries_go_recent_and_queued_or_running_attempts_stay"),
+    ("poller-sweep-follows-links", "entry.stat(follow_symlinks=False).st_mtime", "entry.stat().st_mtime", "ResultSweepTests.test_symlinks_go_as_links_and_nothing_outside_is_touched"),
+    ("poller-sweep-link-as-dir", "elif entry.is_dir(follow_symlinks=False):", "elif entry.is_dir():", "ResultSweepTests.test_symlinks_go_as_links_and_nothing_outside_is_touched"),
+    ("poller-sweep-root-link", "        if os.path.islink(results):\n", "        if False:\n", "ResultSweepTests.test_a_symlinked_results_root_is_refused"),
+    ("poller-sweep-entry-failure", "        except Exception as error:\n            failed(entry.name, error)\n", "        except ZeroDivisionError as error:\n            failed(entry.name, error)\n", "ResultSweepTests.test_a_permission_error_is_one_line_and_the_build_still_posts"),
+    ("poller-sweep-scan-failure", "    except OSError as error:\n        failed(os.path.basename(results), error)\n        return outcome\n", "", "ResultSweepTests.test_an_unreadable_results_directory_is_one_line_and_the_cycle_continues"),
+    ("poller-sweep-log-failure", "    try:\n        log(**outcome)\n    except Exception:\n        pass\n", "    log(**outcome)\n", "ResultSweepTests.test_a_failed_attempt_read_or_log_write_never_raises"),
+    ("poller-sweep-attempt-failure", "    try:\n        outcome = sweep_results(results, now, attempts())\n    except Exception as error:\n        outcome = {\"removed\": 0, \"kept\": 0, \"failed\": 1, \"error\": \"sweep: %s\" % type(error).__name__}\n", "    outcome = sweep_results(results, now, attempts())\n", "ResultSweepTests.test_a_failed_attempt_read_or_log_write_never_raises"),
+    ("poller-sweep-prefix", 'name.startswith((attempt + "-", attempt + "."))', "name.startswith(attempt)", "ResultSweepTests.test_an_attempt_prefix_protects_only_that_attempt"),
     ("poller-pull-404", '        if status != 200:\n            raise LookupUnavailable', '        if status != 200:\n            return None\n            raise LookupUnavailable', "test_production_pull_treats_only_404_as_missing"),
 )
 COPIED = ("c11-main-backstop.py", "c11-main-backstop-test.py", "c11-main-backstop-service.py",
@@ -74,14 +92,14 @@ def main():
         mutate(output, name, filename, old, new, "c11-main-backstop-test.py", "Acceptance." + test)
     for name, old, new, test in POLLER_MUTANTS:
         mutate(output, name, "c11-pr-swift-poller.py", old, new, "c11-pr-swift-poller-test.py",
-               "CacheResultGuestRevokeTests." + test)
+               test if "." in test else "CacheResultGuestRevokeTests." + test)
     with (output / "restored-green.log").open("w") as log:
         result = subprocess.run([sys.executable, str(HERE / "c11-main-backstop-test.py")],
                                 stdout=log, stderr=log, timeout=90)
     if result.returncode:
         raise RuntimeError("restored suite failed")
     with (output / "restored-poller-green.log").open("w") as log:
-        result = subprocess.run([sys.executable, str(HERE / "c11-pr-swift-poller-test.py"), "CacheResultGuestRevokeTests"],
+        result = subprocess.run([sys.executable, str(HERE / "c11-pr-swift-poller-test.py"), "CacheResultGuestRevokeTests", "ResultSweepTests"],
                                 stdout=log, stderr=log, timeout=90)
     if result.returncode:
         raise RuntimeError("restored poller guards failed")

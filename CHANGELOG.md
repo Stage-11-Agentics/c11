@@ -6,9 +6,26 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
-- The default theme's sidebar is plain again in Dark mode: c11's material and tint, as in c11 1.8, not the purple Sunset Mall gradient 2.0.0 drew behind it. A theme without its own backdrop now shows the plain sidebar in both modes. Sunset Mall and Outrun Horizon stay as choices under Settings ▸ Appearance ▸ Sidebar Background, and the `c11` theme still draws Sunset Mall as its own backdrop. (C11H-438)
-- The `c11-debug-windows` skill is retired. c11 no longer ships it, and installing c11's skills (or running `scripts/sync-installed-skills.sh`) removes a copy c11 stamped that nobody has edited; an edited or unstamped copy stays. The Debug menu windows themselves are unchanged. (C11H-437)
-- A plain click on an OSC 8 (titled) `c11:` link in a terminal now navigates in a plain shell too, not only while a program holds the mouse. Double-click, triple-click, drag and Shift-click still select, and links of other schemes still need Cmd-click. (C11H-427)
+## [2.0.1] - 2026-11-27
+
+Headline: **c11 2.0.1. A panel whose session ended says so and keeps its last screen, a plain click opens c11 links, and the default theme's sidebar is plain again.**
+
+### Changed
+
+- **A plain click opens a c11 link in a terminal.** A plain click on an OSC 8 (titled) `c11:` link now navigates in a plain shell too, not only while a program holds the mouse. The open waits one click interval (0.5 s by default), so double-click, triple-click, drag and Shift-click still select. Links of other schemes and bare URL text still need Cmd-click. A link's label is whatever the program printed: Cmd-hover shows where it really goes, and a link only ever moves you to a panel. (C11H-427)
+- **The default theme's sidebar is plain again.** In Dark mode the default theme draws c11's own material and tint, as in c11 1.8, not the purple Sunset Mall gradient 2.0.0 drew behind it. A theme without its own backdrop shows the plain sidebar in both modes. Sunset Mall and Outrun Horizon stay as choices under Settings ▸ Appearance ▸ Sidebar Background, and the `c11` theme still draws Sunset Mall as its own backdrop. (C11H-438)
+
+### Fixed
+
+- **A panel whose session ended says so and keeps its last screen.** After End All Sessions, a panel that stayed open went black with only a cursor, and what you typed there showed nothing. It now keeps its last screen, dimmed, under a banner that says how and when the session ended (for example "Session ended (End All Sessions) at 13:51.") and that nothing typed there is sent, with **Start a new shell** and **Close**. On a panel from a linked machine, Start a new shell starts it on that machine. `c11 hc-diagnostics` reports the ended panel (`session_ended:<reason>`). (C11H-434)
+
+### Removed
+
+- **The `c11-debug-windows` skill.** c11 no longer ships it, and installing c11's skills removes a copy c11 installed that nobody has edited; an edited or unstamped copy stays. The Debug menu windows are unchanged. (C11H-437)
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [2.0.0] - 2026-11-22
 

@@ -1343,7 +1343,13 @@ final class HCHostEndRecoveryTests: XCTestCase {
         runtime.diagnosticSink = { _ in }
         runtime.installReconnectPolicy()
         HCRestoreLifecycleStore.shared.observe(runtime)
-        var launch = HCPanelLaunchSpec(argv: ["/bin/sh"], cwd: nil, environment: [:], initialInput: nil, workspaceID: workspace.id)
+        // A remote panel's launch is the one its own start makes: that machine's login shell, in its folder, with
+        // only the portable environment, and the agent command typed into it.
+        var launch = panel.surface.hcRemoteTarget.map { remote in
+            HCPanelLaunchSpec.placed(argv: ["/bin/sh"], localCwd: "/Users/tester",
+                environment: ["COLORTERM": "truecolor", "PATH": "/this/mac/only"],
+                initialInput: .creation(from: "claude\r"), workspaceID: workspace.id, remote: remote)
+        } ?? HCPanelLaunchSpec(argv: ["/bin/sh"], cwd: nil, environment: [:], initialInput: nil, workspaceID: workspace.id)
         launch.shard = target.id
         let headless = HCNativeBridge.headless(panelID: id, report: { _ in })
         let display = HCDisplayState(revision: HCDisplayRevision(attachmentGeneration: 0, displayGeneration: 0),
@@ -1372,6 +1378,294 @@ final class HCHostEndRecoveryTests: XCTestCase {
         HCHostEndResumeQueue.shared.cancel(panelID: rig.panel.id)
         HCPanelRestoreState.shared.remove(panelID: rig.panel.id)
         withExtendedLifetime(rig.workspace) {}
+    }
+
+    /// C11H-434: End All keeps its panels. Each one says it ended, why and when, keeps its
+    /// screen, and Start a new shell gives it a live terminal of its own.
+    func testAPanelKeptAfterEndAllSaysItEndedAndStartsANewShell() async throws {
+        let rig = try await rig(onDisk: false)
+        defer { Task { @MainActor in await cleanUp(rig) } }
+        rig.panel.installHCSessionForTesting(rig.runtime)
+        XCTAssertNil(rig.panel.hcEndedNotice, "a live terminal shows no ended notice")
+        XCTAssertFalse(rig.panel.surface.hcKeepsScreenAfterEnd)
+        rig.workspace.prepareForEndAllSessions([rig.panel.id])
+        XCTAssertTrue(rig.panel.surface.hcKeepsScreenAfterEnd, "its surface keeps the last screen when hc closes the stream")
+        XCTAssertNil(rig.panel.hcEndedNotice, "nothing ended yet")
+        let endedMs: Int64 = 1_764_100_260_000
+        rig.fakes[1].finish(rig.first, reason: "killed", exitCode: 1, at: endedMs)
+        let shown = await waitUntil { rig.panel.hcEndedNotice != nil }
+        XCTAssertTrue(shown, "\(rig.runtime.lifecycle)")
+        let notice = try XCTUnwrap(rig.panel.hcEndedNotice)
+        XCTAssertEqual(notice.reason, .endAll)
+        XCTAssertEqual(notice.endedAt, Date(timeIntervalSince1970: TimeInterval(endedMs) / 1000), "hc's own end time")
+        XCTAssertEqual(notice.headline, "Session ended (End All Sessions) at \(HCHostEndStatus.displayTime(notice.endedAt)).")
+        XCTAssertNotNil(rig.workspace.panels[rig.panel.id], "End All keeps the panel")
+        for _ in 0..<10 { rig.fakes[1].republish() }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(rig.panel.hcEndedNotice, notice, "a republished end changes nothing")
+        XCTAssertEqual(rig.fakes[1].creates, 1, "an ended panel starts nothing by itself")
+        // A key pressed while it was ended is refused; its notice stays hidden behind the banner.
+        let policy = try XCTUnwrap(rig.runtime.disconnectedInput)
+        policy.record(.refused(.unavailable))
+        XCTAssertEqual(policy.notice, .refused(.unavailable))
+
+        rig.panel.startNewShellAfterEnd()
+        let live = await waitUntil {
+            if case .live(let record) = rig.runtime.lifecycle, rig.runtime.attachment != nil, rig.panel.hcEndedNotice == nil {
+                return record.key != rig.first
+            }
+            return false
+        }
+        XCTAssertTrue(live, "Start a new shell gives a live terminal: \(rig.runtime.lifecycle)")
+        XCTAssertEqual(rig.fakes[1].creates, 2, "one new terminal, in the panel's own shard")
+        XCTAssertNil(rig.panel.hcEndedNotice, "a live terminal says nothing ended")
+        XCTAssertNil(policy.notice, "the new shell does not inherit the ended panel's refused-input strip")
+        XCTAssertFalse(rig.panel.retainsAfterEndAllSessions, "its next exit closes it like any panel")
+        XCTAssertNil(rig.panel.hcRequestedEnd)
+        XCTAssertFalse(rig.panel.surface.hcKeepsScreenAfterEnd)
+        let attached = await waitUntil { rig.runtime.attachment != nil }
+        XCTAssertTrue(attached)
+        let attachment = try XCTUnwrap(rig.runtime.attachment)
+        let outcome = await attachment.submit(HCInputRequest(operationID: UUID(), panelID: rig.panel.id, key: attachment.key,
+            attachmentGeneration: attachment.generation, source: .socket, payload: Data("pwd".utf8), submitReturn: true))
+        guard case .written = outcome else { return XCTFail("the new shell refused input: \(outcome)") }
+    }
+
+    /// C11H-434: the reason a kept panel names, from what the operator asked for and what hc reported.
+    func testTheEndedNoticeNamesTheEndAndLeavesHostEndsToTheirRecovery() throws {
+        let key = HCTerminalKey(owningCoreID: "c", localAddress: "t1")
+        let observed = Date(timeIntervalSince1970: 1_764_000_000)
+        func ended(_ reason: String?, signal: Int32? = nil, at: Int64? = nil) -> HCLifecycle {
+            .ended(HCEndEvidence(id: UUID(), key: key, revision: HCRevision(connectionGeneration: 1, sequence: 1),
+                                 kind: .finished, hcReason: reason, exitSignal: signal, endedAtMilliseconds: at))
+        }
+        func reason(_ lifecycle: HCLifecycle, _ origin: HCEndOrigin?) -> HCEndedPanelNotice.Reason? {
+            HCEndedPanelNotice.make(lifecycle: lifecycle, requestedEnd: origin, observedAt: observed)?.reason
+        }
+        XCTAssertEqual(reason(ended("killed"), .endAll), .endAll)
+        XCTAssertEqual(reason(ended("killed"), .panelClose), .endSession)
+        XCTAssertEqual(reason(ended("killed"), .workspaceClose), .endSession)
+        XCTAssertEqual(reason(ended("exited", signal: SIGTERM), nil), .outsideSignal(SIGTERM))
+        XCTAssertEqual(reason(ended("exited"), nil), .exited)
+        XCTAssertEqual(reason(ended("killed"), nil), .stopped)
+        for host in HCRestoreLifecycleProjection.hostEndReasons {
+            XCTAssertNil(reason(ended(host), .endAll), "\(host): the host-end recovery owns the panel")
+        }
+        let live = HCLifecycle.live(HCTerminalRecord(key: key, state: .running, pid: 7))
+        XCTAssertNil(HCEndedPanelNotice.make(lifecycle: live, requestedEnd: .endAll, observedAt: observed))
+        XCTAssertNil(HCEndedPanelNotice.make(lifecycle: nil, requestedEnd: .endAll, observedAt: observed))
+        let untimed = try XCTUnwrap(HCEndedPanelNotice.make(lifecycle: ended("killed"), requestedEnd: .endAll, observedAt: observed))
+        XCTAssertEqual(untimed.endedAt, observed, "an end hc did not time shows when c11 saw it")
+        let signalled = try XCTUnwrap(HCEndedPanelNotice.make(lifecycle: ended("exited", signal: SIGKILL), requestedEnd: nil,
+                                                             observedAt: observed))
+        XCTAssertTrue(signalled.headline.contains("SIGKILL from outside c11"), signalled.headline)
+    }
+
+    /// Ends the rig's terminal by End All, as hc reports it, and waits for the panel to say so.
+    private func endByEndAll(_ rig: Rig) async throws -> HCEndedPanelNotice {
+        rig.workspace.prepareForEndAllSessions([rig.panel.id])
+        rig.fakes[1].finish(rig.first, reason: "killed", exitCode: 1, at: 1_764_100_260_000)
+        let shown = await waitUntil { rig.panel.hcEndedNotice != nil }
+        XCTAssertTrue(shown, "\(rig.runtime.lifecycle)")
+        return try XCTUnwrap(rig.panel.hcEndedNotice)
+    }
+
+    /// Types into the panel's terminal through its attachment, as a key press or a send does.
+    private func typesInto(_ rig: Rig, _ text: String) async throws -> HCInputOutcome {
+        let attachment = try XCTUnwrap(rig.runtime.attachment)
+        return await attachment.submit(HCInputRequest(operationID: UUID(), panelID: rig.panel.id, key: attachment.key,
+            attachmentGeneration: attachment.generation, source: .socket, payload: Data(text.utf8), submitReturn: true))
+    }
+
+    /// C11H-434 (Astra B1 on #416): Start a new shell on a panel that ran on another machine starts that machine's
+    /// login shell there, in its remote folder and the panel's own shard, without the old launch's typed command.
+    func testStartANewShellOnARemotePanelStaysOnItsMachine() async throws {
+        let remote = HCRemoteTarget(machine: "studio", cwd: "/srv/remote-only")
+        let rig = try await rig(onDisk: false, machine: .restored(remote))
+        defer { Task { @MainActor in await cleanUp(rig) } }
+        rig.panel.installHCSessionForTesting(rig.runtime)
+        let original = try XCTUnwrap(rig.fakes[1].createRequests.first)
+        XCTAssertEqual(original.machine, "studio", "the rig's terminal runs on studio")
+        _ = try await endByEndAll(rig)
+
+        rig.panel.startNewShellAfterEnd()
+        let started = await waitUntil { rig.panel.hcEndedNotice == nil && rig.runtime.attachment != nil }
+        XCTAssertTrue(started, "Start a new shell gives a live terminal: \(rig.runtime.lifecycle)")
+        XCTAssertEqual(rig.fakes[1].creates, 2, "one new terminal, in the panel's own shard")
+        XCTAssertEqual(rig.fakes[0].creates, 0)
+        let replacement = try XCTUnwrap(rig.fakes[1].createRequests.last)
+        XCTAssertEqual(replacement.machine, "studio", "it stays on its machine: hc gets `on: studio`")
+        XCTAssertEqual(replacement.argv, ["/bin/sh", "-c", HCMachineTarget.remoteLaunchLine], "that machine's login shell")
+        XCTAssertEqual(replacement.cwd, "/srv/remote-only", "in its remote folder")
+        XCTAssertEqual(replacement.shard, original.shard)
+        XCTAssertNil(replacement.initialInput, "the old launch's typed command is not replayed")
+        XCTAssertEqual(replacement.environment["COLORTERM"], "truecolor", "the portable environment goes with it")
+        XCTAssertNotEqual(replacement.environment["PATH"], "/this/mac/only", "this Mac's paths do not")
+        let typed = try await typesInto(rig, "pwd")
+        guard case .written = typed else { return XCTFail("the new shell refused input: \(typed)") }
+    }
+
+    /// C11H-434 (Astra B2 on #416): a Start a new shell that does not give a shell keeps the panel's ended notice,
+    /// says so and keeps its retry; the retry starts exactly one terminal, which takes input.
+    func testAFailedNewShellKeepsItsNoticeAndItsRetry() async throws {
+        let rig = try await rig(onDisk: false)
+        defer { Task { @MainActor in await cleanUp(rig) } }
+        rig.panel.installHCSessionForTesting(rig.runtime)
+        let notice = try await endByEndAll(rig)
+
+        rig.fakes[1].refusesCreations = .coreUnreachable
+        rig.panel.startNewShellAfterEnd()
+        let failed = await waitUntil { rig.panel.hcNewShellFailure != nil }
+        XCTAssertTrue(failed, "the panel says the new shell did not start: \(rig.runtime.lifecycle)")
+        XCTAssertFalse(rig.panel.hcStartingNewShell, "its button is back")
+        XCTAssertEqual(rig.panel.hcEndedNotice, notice, "it still says it ended, at the same time")
+        XCTAssertEqual(rig.fakes[1].createRequests.count, 2, "one creation was asked for")
+        XCTAssertEqual(rig.fakes[1].creates, 1, "and none was made")
+        XCTAssertTrue(rig.panel.retainsAfterEndAllSessions, "the panel is still the kept, ended one")
+
+        rig.fakes[1].refusesCreations = nil
+        rig.panel.startNewShellAfterEnd()
+        let started = await waitUntil { rig.panel.hcEndedNotice == nil && rig.runtime.attachment != nil }
+        XCTAssertTrue(started, "the retry gives a live terminal: \(rig.runtime.lifecycle)")
+        XCTAssertNil(rig.panel.hcNewShellFailure)
+        XCTAssertEqual(rig.fakes[1].creates, 2, "the retry made exactly one terminal")
+        XCTAssertFalse(rig.panel.retainsAfterEndAllSessions)
+        let typed = try await typesInto(rig, "pwd")
+        guard case .written = typed else { return XCTFail("the new shell refused input: \(typed)") }
+    }
+
+    /// C11H-434 (Astra B2 on #416): a start whose creation hc had not listed when it gave up fails, and the retry
+    /// adopts that terminal once hc lists it: never a second creation.
+    func testARetryAdoptsANewShellThatHCListedLate() async throws {
+        let rig = try await rig(onDisk: false)
+        let savedWait = HCPanelSession.creationListingWaitNanoseconds
+        HCPanelSession.creationListingWaitNanoseconds = 400_000_000
+        defer {
+            HCPanelSession.creationListingWaitNanoseconds = savedWait
+            Task { @MainActor in await cleanUp(rig) }
+        }
+        rig.panel.installHCSessionForTesting(rig.runtime)
+        let notice = try await endByEndAll(rig)
+
+        rig.fakes[1].listCreatesAfter = 1_000
+        rig.panel.startNewShellAfterEnd()
+        let failed = await waitUntil({ rig.panel.hcNewShellFailure != nil }, 5)
+        XCTAssertTrue(failed, "an unlisted creation is not a shell yet: \(rig.runtime.lifecycle)")
+        XCTAssertEqual(rig.panel.hcEndedNotice, notice)
+        XCTAssertEqual(rig.fakes[1].creates, 2, "the creation went out")
+        let failedText = rig.panel.hcNewShellFailure
+
+        // hc still has not listed it: the retry starts nothing and says it cannot tell.
+        rig.panel.startNewShellAfterEnd()
+        let unconfirmed = await waitUntil { !rig.panel.hcStartingNewShell && rig.panel.hcNewShellFailure != failedText }
+        XCTAssertTrue(unconfirmed, "\(rig.panel.hcNewShellFailure ?? "-")")
+        XCTAssertTrue(rig.panel.hcNewShellFailure?.contains("has not confirmed the new shell") == true,
+                      "\(rig.panel.hcNewShellFailure ?? "-")")
+        XCTAssertEqual(rig.fakes[1].creates, 2, "no second creation over one hc may still run")
+        XCTAssertEqual(rig.panel.hcEndedNotice, notice)
+
+        rig.fakes[1].listPendingCreations()
+        rig.panel.startNewShellAfterEnd()
+        let started = await waitUntil { rig.panel.hcEndedNotice == nil && rig.runtime.attachment != nil }
+        XCTAssertTrue(started, "the retry adopts it: \(rig.runtime.lifecycle)")
+        XCTAssertEqual(rig.fakes[1].creates, 2, "never a second terminal")
+        XCTAssertEqual(rig.runtime.attachment?.key, HCTerminalKey(owningCoreID: rig.fakes[1].coreID, localAddress: "t2"))
+        let typed = try await typesInto(rig, "pwd")
+        guard case .written = typed else { return XCTFail("the adopted shell refused input: \(typed)") }
+    }
+
+    /// C11H-434 (Astra B3 on #416): a live terminal's record and status changes publish nothing on the ended notice
+    /// or its failure; the end publishes the notice once, and the new shell clears it once.
+    func testOnlyAnEndAndANewShellPublishTheEndedNotice() async throws {
+        let rig = try await rig(onDisk: false)
+        defer { Task { @MainActor in await cleanUp(rig) } }
+        rig.panel.installHCSessionForTesting(rig.runtime)
+        let published = Published434()
+        let watching = [rig.panel.$hcEndedNotice.dropFirst().sink { published.notice($0) },
+                        rig.panel.$hcNewShellFailure.dropFirst().sink { _ in published.failure() }]
+        defer { watching.forEach { $0.cancel() } }
+        func liveChanges(_ key: HCTerminalKey) async -> Bool {
+            for status in ["working", "idle", "working", nil] as [String?] { rig.fakes[1].setAgent(key, status: status) }
+            rig.fakes[1].setForeground(key, foreground: HCForeground(name: "vim", argv: ["vim"]))
+            for _ in 0..<5 { rig.fakes[1].republish() }
+            return await waitUntil { rig.runtime.lastLiveRecord?.foreground?.name == "vim" }
+        }
+
+        let delivered = await liveChanges(rig.first)
+        XCTAssertTrue(delivered, "the panel saw the live changes")
+        XCTAssertEqual(published.notices.count, 0, "a live terminal's changes publish no ended notice")
+        _ = try await endByEndAll(rig)
+        for _ in 0..<5 { rig.fakes[1].republish() }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(published.notices.count, 1, "the end publishes it once")
+
+        rig.panel.startNewShellAfterEnd()
+        let started = await waitUntil { rig.panel.hcEndedNotice == nil && rig.runtime.attachment != nil }
+        XCTAssertTrue(started, "\(rig.runtime.lifecycle)")
+        guard case .live(let replacement) = rig.runtime.lifecycle else { return XCTFail("\(rig.runtime.lifecycle)") }
+        let deliveredAgain = await liveChanges(replacement.key)
+        XCTAssertTrue(deliveredAgain)
+        XCTAssertEqual(published.notices.count, 2, "the new shell clears it once, and its live changes publish nothing")
+        XCTAssertNil(published.notices.last ?? nil)
+        XCTAssertEqual(published.failures, 0, "no failure was set or cleared")
+    }
+
+    /// C11H-434 (Opus nb 2 on #416): the owner's side of the keep, through production's keep decision. When a
+    /// stream ends, only the panel's current surface is kept, and only while its end was asked for or its terminal
+    /// has ended; the owner's release frees a kept surface exactly once.
+    func testOnlyTheCurrentSurfaceOfAnEndedPanelKeepsItsScreen() async throws {
+        let rig = try await rig(onDisk: false)
+        defer { Task { @MainActor in await cleanUp(rig) } }
+        rig.panel.installHCSessionForTesting(rig.runtime)
+        let surface = rig.panel.surface
+        defer { surface.installFakeNativeSurfaceForTesting(nil) }
+        let freed = Freed434()
+        func show(_ address: Int) throws -> HCNativeBridge {
+            let bridge = HCNativeBridge(panelID: rig.panel.id, rendering: HCUnavailableRenderingAdapter(),
+                                        encoder: HCUnavailableInputEncoder(), report: { _ in })
+            let pointer = try XCTUnwrap(UnsafeMutableRawPointer(bitPattern: address))
+            surface.installNativeBackedBridgeForTesting(bridge, pointer: pointer, destroy: { freed.add(address) })
+            XCTAssertTrue(bridge.prepare(generation: 1))
+            return bridge
+        }
+        func streamEnds(_ bridge: HCNativeBridge) async {
+            await withCheckedContinuation { continuation in bridge.retire { continuation.resume() } }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
+        func shows(_ address: Int) -> Bool { surface.surface == UnsafeMutableRawPointer(bitPattern: address) }
+
+        await streamEnds(try show(0x100))
+        XCTAssertEqual(freed.addresses, [0x100], "a live panel nobody ended frees its surface, as before")
+        XCTAssertNil(surface.surface)
+
+        rig.workspace.prepareForEndAllSessions([rig.panel.id])
+        let replaced = try show(0x200)
+        let current = try show(0x300)
+        await streamEnds(replaced)
+        XCTAssertEqual(freed.addresses, [0x100, 0x200], "a surface the panel replaced is freed, even with End All asked")
+        await streamEnds(current)
+        XCTAssertEqual(freed.addresses, [0x100, 0x200], "the panel's current surface keeps its last screen")
+        XCTAssertTrue(shows(0x300))
+
+        _ = try await endByEndAll(rig)
+        rig.panel.startNewShellAfterEnd()
+        let started = await waitUntil { rig.panel.hcEndedNotice == nil && rig.runtime.attachment != nil }
+        XCTAssertTrue(started, "\(rig.runtime.lifecycle)")
+        XCTAssertEqual(freed.addresses, [0x100, 0x200, 0x300], "the new shell's start released the kept surface")
+        guard case .live(let replacement) = rig.runtime.lifecycle else { return XCTFail("\(rig.runtime.lifecycle)") }
+
+        await streamEnds(try show(0x400))
+        XCTAssertEqual(freed.addresses, [0x100, 0x200, 0x300, 0x400], "after the new shell, nothing is kept")
+
+        rig.fakes[1].finish(replacement.key, reason: "exited", exitCode: 0)
+        let ended = await waitUntil { if case .ended = rig.runtime.lifecycle { return true }; return false }
+        XCTAssertTrue(ended)
+        await streamEnds(try show(0x500))
+        XCTAssertEqual(freed.addresses, [0x100, 0x200, 0x300, 0x400], "a terminal that ended keeps its screen too")
+        XCTAssertTrue(shows(0x500))
+        surface.releaseSurfaceForTesting()
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(freed.addresses, [0x100, 0x200, 0x300, 0x400, 0x500], "the owner's release frees it, once")
     }
 
     func testAHiddenPanelEndedByTheHostResumesOnceHeadlessAndIsDecidedOnce() async throws {
@@ -2778,6 +3072,25 @@ final class HCRestoreNoticeTests: XCTestCase {
 
 /// One pool shard in memory: creations bind new terminals of this shard's core, `finish` ends one with hc's reason
 /// and publishes it on the shard's feed, as hc's event stream does.
+/// C11H-434: what the panel published on its ended notice and its failure.
+private final class Published434: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen: [HCEndedPanelNotice?] = []
+    private var failed = 0
+    var notices: [HCEndedPanelNotice?] { lock.lock(); defer { lock.unlock() }; return seen }
+    var failures: Int { lock.lock(); defer { lock.unlock() }; return failed }
+    func notice(_ value: HCEndedPanelNotice?) { lock.lock(); seen.append(value); lock.unlock() }
+    func failure() { lock.lock(); failed += 1; lock.unlock() }
+}
+
+/// C11H-434: the fake native surfaces freed, in order.
+private final class Freed434: @unchecked Sendable {
+    private let lock = NSLock()
+    private var freed: [Int] = []
+    var addresses: [Int] { lock.lock(); defer { lock.unlock() }; return freed }
+    func add(_ address: Int) { lock.lock(); freed.append(address); lock.unlock() }
+}
+
 private final class PoolShardFake: HCShardSession, @unchecked Sendable {
     let index: Int
     private let feed = HCSessionFeed()
@@ -2832,8 +3145,22 @@ private final class PoolShardFake: HCShardSession, @unchecked Sendable {
         }
         return .live(record)
     }
+    /// C11H-434: every creation asked of this shard, in order, whatever it answered.
+    private var received: [HCCreateRequest] = []
+    var createRequests: [HCCreateRequest] { lock.lock(); defer { lock.unlock() }; return received }
+    /// C11H-434: while set, a creation is refused before it reaches hc (an unreachable core).
+    var refusesCreations: HCUnavailableReason?
+    /// C11H-434: a creation that was still unlisted shows up in the inventory now.
+    func listPendingCreations() {
+        lock.lock(); defer { lock.unlock() }
+        for (_, pending) in unlisted { records[pending.record.key] = pending.record }
+        unlisted.removeAll()
+        publishLocked()
+    }
     func create(_ request: HCCreateRequest) async -> HCCreateResult {
         lock.lock(); defer { lock.unlock() }
+        received.append(request)
+        if let refusal = refusesCreations { return .rejectedBeforeTransmission(refusal) }
         made += 1
         let key = HCTerminalKey(owningCoreID: coreID, localAddress: "t\(made)")
         let record = HCTerminalRecord(key: key, state: .running, labels: ["c11.panel": request.identity.panelID.uuidString,

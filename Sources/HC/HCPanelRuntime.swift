@@ -582,12 +582,15 @@ struct HCPanelLaunchSpec: Sendable {
     /// C11H-67: the pool shard a creation targets; nil for a single session.
     var shard: HCShardID? = nil
 
-    /// A local ended panel keeps its selected terminal environment and shard,
-    /// but starts a fresh shell without replaying the original launch input.
+    /// An ended panel keeps its selected terminal environment and shard, but
+    /// starts a fresh shell without replaying the original launch input.
+    /// C11H-434: a remote panel stays on its machine. Its own argv is already
+    /// that machine's login shell (`placed`), so it keeps it, with its remote
+    /// folder and portable environment; `localShell` is only for this Mac.
     /// Wire normalization belongs to HCManagedSession, not this replacement.
-    func replacingEndedWithShell(argv: [String]) -> HCPanelLaunchSpec {
-        HCPanelLaunchSpec(argv: argv, cwd: cwd, environment: environment,
-                          initialInput: nil, workspaceID: workspaceID, shard: shard)
+    func replacingEndedWithShell(argv localShell: [String]) -> HCPanelLaunchSpec {
+        HCPanelLaunchSpec(argv: machine == nil ? localShell : argv, cwd: cwd, environment: environment,
+                          initialInput: nil, workspaceID: workspaceID, machine: machine, shard: shard)
     }
 }
 

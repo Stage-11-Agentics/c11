@@ -84,6 +84,12 @@ class CapturedProof(native.Proof):
         assert len(windows) == 1 and windows[0]['key'], windows
         self.window = windows[0]['id']
         self.source_workspace = self.focused()['workspace_id']
+        # Terminals outlive a quit in c11 2.0, so a relaunch in the same guest
+        # brings an earlier run's terminals back as other workspaces. This
+        # guest is disposable: end them, so the proof starts from one.
+        for workspace in self.call('workspace.list', window_id=self.window)['workspaces']:
+            if workspace['id'].lower() != self.source_workspace.lower():
+                self.call('workspace.close', workspace_id=workspace['id'])
         assert len(self.call('workspace.list', window_id=self.window)['workspaces']) == 1, 'fresh QA guest required'
         self.call('workspace.rename', workspace_id=self.source_workspace, title=native.SOURCE_TITLE + ' Workspace')
         self.source = self.focused()['panel_id']

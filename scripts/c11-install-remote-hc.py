@@ -22,7 +22,10 @@ import uuid
 # derive a trust anchor from the input manifest, a signature's display text,
 # PATH, or an environment override. A release adds its signed helper hash here
 # and to HCCoreBinary.shippedHelperSHA256 for subsequent releases.
-SHIPPED_HELPER_SHA256 = frozenset()
+SHIPPED_HELPER_SHA256 = frozenset({
+    # c11 2.0.0 (build 200, 284b8ae22), from the published release's hc-pin.json.
+    "2744b886409c742b5b1bb2d36730dcfef805860f83d742c20dc1691d52338311",
+})
 RELEASE_TEAM = "UKQ4QALWD4"
 APP_IDENTIFIER = "com.stage11.c11"
 HELPER_IDENTIFIER = "com.stage11.c11.herdr-core"

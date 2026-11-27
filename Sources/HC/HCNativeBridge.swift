@@ -91,6 +91,14 @@ final class HCNativeBridge: HCOutputSink, @unchecked Sendable {
     private var process: HCOutputLease.Process?
     private var destroy: (@MainActor @Sendable () -> Void)?
     private var removeFromUse: (@MainActor @Sendable () -> Void)?
+    /// C11H-434: asked on main when the stream retires the bridge (hc ended the
+    /// terminal and closed its channel, or its attachment detached). True keeps
+    /// the native surface on screen with its last frame; nil or false frees it.
+    private var keepsSurface: (@MainActor @Sendable () -> Bool)?
+    /// C11H-434: true once a retire kept the surface; `release` frees it.
+    private var keepingSurface = false
+    /// The kept surface's free, handed over by the lease once output has drained.
+    private var keptFree: (@MainActor @Sendable () -> Void)?
     private let retirement = DispatchGroup()
     private var pending: [(HCOutputChunk, CheckedContinuation<HCOutputConsumption, Never>)] = []
     private var pendingBytes = 0
@@ -112,6 +120,7 @@ final class HCNativeBridge: HCOutputSink, @unchecked Sendable {
     @MainActor
     func installSurface(_ surface: ghostty_surface_t,
                         removeFromUse: @escaping @MainActor @Sendable () -> Void,
+                        keepsSurface: (@MainActor @Sendable () -> Bool)? = nil,
                         releaseCallbackContext: @escaping @MainActor @Sendable () -> Void) {
         let context = context
         installProcessor(process: { chunk in
@@ -119,7 +128,7 @@ final class HCNativeBridge: HCOutputSink, @unchecked Sendable {
                 guard let ptr = bytes.baseAddress else { return }
                 ghostty_surface_process_output(surface, ptr.assumingMemoryBound(to: CChar.self), UInt(bytes.count))
             }
-        }, removeFromUse: removeFromUse, destroy: {
+        }, removeFromUse: removeFromUse, keepsSurface: keepsSurface, destroy: {
             ghostty_surface_free(surface)
             withExtendedLifetime(context) { releaseCallbackContext() }
         })
@@ -130,10 +139,12 @@ final class HCNativeBridge: HCOutputSink, @unchecked Sendable {
     @MainActor
     func installProcessor(process: @escaping HCOutputLease.Process,
                           removeFromUse: @escaping @MainActor @Sendable () -> Void,
+                          keepsSurface: (@MainActor @Sendable () -> Bool)? = nil,
                           destroy: @escaping @MainActor @Sendable () -> Void) {
         let rendering = rendering
         lock.lock()
         self.removeFromUse = removeFromUse
+        self.keepsSurface = keepsSurface
         self.process = { chunk in
             rendering.noteOutput(chunk)
             process(chunk)
@@ -148,7 +159,23 @@ final class HCNativeBridge: HCOutputSink, @unchecked Sendable {
         defer { lock.unlock() }
         guard !retired, lease == nil, let process, let destroy else { return false }
         attachmentGeneration = generation
-        lease = HCOutputLease(generation: generation, process: process, destroy: destroy)
+        // The lease frees through the bridge, so a surface kept on screen
+        // (C11H-434) passes its free to `release` instead of running it.
+        lease = HCOutputLease(generation: generation, process: process, destroy: { [weak self] in
+            if let self, self.holdFree(destroy) { return }
+            destroy()
+        })
+        return true
+    }
+
+    /// On main, from the lease once output has drained: a kept surface's free
+    /// waits for `release`. False runs it now.
+    @MainActor
+    private func holdFree(_ free: @escaping @MainActor @Sendable () -> Void) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard keepingSurface else { return false }
+        keptFree = free
         return true
     }
 
@@ -212,11 +239,30 @@ final class HCNativeBridge: HCOutputSink, @unchecked Sendable {
         }
     }
 
+    /// The stream's retire: hc ended the terminal and closed its channel, the
+    /// attachment detached, or the connection failed. Output and input stop.
+    /// C11H-434: when the owner's `keepsSurface` answers true (the terminal
+    /// ended on purpose, or has ended), the surface stays on screen with its
+    /// last frame until the owner's `release`; otherwise it is freed.
     func retire(completion: @escaping @Sendable () -> Void) {
+        retire(.stream, completion: completion)
+    }
+
+    /// The owner's retire (replacement, reattach, teardown): always frees the
+    /// surface, a kept one included.
+    func release(completion: @escaping @Sendable () -> Void) {
+        retire(.owner, completion: completion)
+    }
+
+    private enum Retirer { case stream, owner, deinitializer }
+
+    private func retire(_ retirer: Retirer, completion: @escaping @Sendable () -> Void) {
         context.invalidate()
         lock.lock()
         guard !retired else {
             lock.unlock()
+            // deinit frees a kept surface itself, without reaching self.
+            if retirer == .owner { freeKeptSurface() }
             retirement.notify(queue: .global(qos: .userInitiated), execute: completion)
             return
         }
@@ -227,6 +273,7 @@ final class HCNativeBridge: HCOutputSink, @unchecked Sendable {
         let lease = lease
         let destroy = lease == nil ? self.destroy : nil
         let removeFromUse = self.removeFromUse
+        let keepsSurface = retirer == .stream && lease != nil ? self.keepsSurface : nil
         self.destroy = nil
         lock.unlock()
         for (_, continuation) in waiting { continuation.resume(returning: .stale) }
@@ -234,14 +281,71 @@ final class HCNativeBridge: HCOutputSink, @unchecked Sendable {
         // An attachment may detach off-main while a view still exists. Remove
         // the pointer from UI use on main BEFORE output retirement can free it.
         let retirement = retirement
-        DispatchQueue.main.async {
+        guard let keepsSurface, let lease else {
+            DispatchQueue.main.async {
+                removeFromUse?()
+                if let lease { lease.retire { retirement.leave() } }
+                else { destroy?(); retirement.leave() }
+            }
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            // Decided here, before the lease can reach its free on main.
+            if keepsSurface(), let self, self.startKeeping() {
+                lease.retire { retirement.leave() }
+                return
+            }
             removeFromUse?()
-            if let lease { lease.retire { retirement.leave() } }
-            else { destroy?(); retirement.leave() }
+            lease.retire { retirement.leave() }
         }
     }
 
-    deinit { retire {} }
+    @MainActor
+    private func startKeeping() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        // A release that arrived first wins: nothing is kept.
+        guard !releaseRequested else { return false }
+        keepingSurface = true
+        return true
+    }
+
+    private var releaseRequested = false
+
+    /// Frees a kept surface: out of UI use first, then the free the lease
+    /// handed over. A release before the lease has drained frees it there.
+    private func freeKeptSurface() {
+        let work: @MainActor @Sendable () -> Void = { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            self.releaseRequested = true
+            let wasKeeping = self.keepingSurface
+            self.keepingSurface = false
+            let free = self.keptFree
+            self.keptFree = nil
+            let removeFromUse = self.removeFromUse
+            self.lock.unlock()
+            guard wasKeeping else { return }
+            removeFromUse?()
+            free?()
+        }
+        if Thread.isMainThread { MainActor.assumeIsolated { work() } }
+        else { DispatchQueue.main.async { MainActor.assumeIsolated { work() } } }
+    }
+
+    deinit {
+        // Kept or not, nothing outlives the bridge: free a kept surface on main.
+        lock.lock()
+        let free = keepingSurface ? keptFree : nil
+        let removeFromUse = keepingSurface ? self.removeFromUse : nil
+        keptFree = nil
+        keepingSurface = false
+        lock.unlock()
+        if let free {
+            DispatchQueue.main.async { MainActor.assumeIsolated { removeFromUse?(); free() } }
+        }
+        retire(.deinitializer) {}
+    }
 }
 
 

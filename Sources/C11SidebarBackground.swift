@@ -4,24 +4,24 @@ import SwiftUI
 /// c11's own look (C11H-32): what the workspace sidebar draws behind its cards.
 ///
 /// The default, From theme, draws the active theme's `[backdrop]`
-/// (docs/c11-theme-schema-2.md). In the Dark theme slot a theme without one
-/// shows Sunset Mall, so every install that keeps `stage11` looks as it did; in
-/// the Light theme slot it leaves c11's material and Light Mode Tint. Sunset Mall
-/// and Outrun Horizon override the theme in the Dark theme slot; None always
-/// leaves the material. Plain c11 grey is `stage11` with None.
+/// (docs/c11-theme-schema-2.md). A theme without one, the default `stage11`
+/// among them, leaves c11's material and tint in both theme slots: the plain
+/// sidebar of c11 1.8. Sunset Mall and Outrun Horizon override the theme in the
+/// Dark theme slot only; None always leaves the material. The bundled `c11`
+/// theme draws Sunset Mall as its own `[backdrop]`.
 ///
 /// The choice lives under a c11-only key, read from c11's own defaults domain.
 /// c11 never writes it, and the first-install settings import refuses every `c11.`
 /// key (`scripts/c11-install.sh`), so the default holds whatever c11 theme and
 /// sidebar settings were imported. Nothing here reads or writes c11's domain.
-/// Settings > Workspace & Sidebar > Sidebar Background picks it.
+/// Settings > Appearance > Sidebar Background picks it.
 ///
 /// The background is drawn by `SidebarBackdrop` (the sidebar container), never by
 /// `WorkspaceRowView`: cards keep their opaque fills, so card text contrast is
 /// unchanged (measured in `notes/ux-wave-1/C11H-32-vaporwave-sidebar.html`).
 enum C11SidebarBackground: String, CaseIterable, Identifiable {
-    /// The active theme's `[backdrop]`; without one, Sunset Mall in the Dark
-    /// theme slot and c11's material in the Light theme slot.
+    /// The active theme's `[backdrop]`; without one, c11's material in both
+    /// theme slots.
     case fromTheme
     case sunsetMall
     case outrunHorizon
@@ -49,14 +49,12 @@ enum C11SidebarBackground: String, CaseIterable, Identifiable {
         }
     }
 
-    /// What the sidebar draws over its material: an override, the theme's
-    /// backdrop, Sunset Mall for a Dark-slot theme without one, or nothing
-    /// (None, or a Light-slot theme without a backdrop).
+    /// What the sidebar draws over its material: a Dark-slot override, else the
+    /// theme's backdrop, else nothing (None, or a theme without a backdrop).
     static func backdrop(raw: String?, colorScheme: ColorScheme, theme: SidebarBackdropStyle?) -> SidebarBackdropStyle? {
         if resolve(raw) == .off { return nil }
         if let override = shown(raw: raw, colorScheme: colorScheme) { return override.backdropStyle }
-        if let theme { return theme }
-        return colorScheme == .dark ? sunsetMall.backdropStyle : nil
+        return theme
     }
 
     var label: String {
@@ -156,9 +154,9 @@ struct SidebarBackdropStyle: Equatable {
     static let defaultGridColor = C11SidebarBackground.nsColor(0x2DE2E6, opacity: 0.45)
 
     /// A theme's `[backdrop]` values. nil when the theme sets no backdrop (no
-    /// section, or a kind whose colour is missing), which lets the Dark slot fall
-    /// back to Sunset Mall. `kind = "material"` is an explicit choice: a style with
-    /// no fill (c11's material shows, under the grid if there is one).
+    /// section, or a kind whose colour is missing), which leaves c11's material
+    /// and tint. `kind = "material"` is an explicit choice: a style with no fill
+    /// (c11's material shows, under the grid if there is one).
     static func fromTheme(
         kind: String?,
         color: NSColor?,

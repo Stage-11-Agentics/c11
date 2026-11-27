@@ -843,6 +843,8 @@ struct HCCoreBinary: Equatable, Sendable {
         "32a9aaeae71878a70a72f94ea3fcf90db935f78b5d30e283aa2e4a981177bb23",
         // c11h 1.8.1-h22 (build 150.22, 2132cb34b).  // c11-2.0:legacy
         "1e294d6c047cc58de008f9fecd9053892d032820ecb674e17f413693c7aac1ff",
+        // c11 2.0.0 (build 200, 284b8ae22), from the published release's hc-pin.json.
+        "2744b886409c742b5b1bb2d36730dcfef805860f83d742c20dc1691d52338311",
     ]
 
     static func decodeManifest(at url: URL) throws -> Manifest {

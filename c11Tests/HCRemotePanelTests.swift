@@ -975,6 +975,84 @@ final class HCRemoteLinkTests: XCTestCase {
             }
         }
     }
+
+    /// C11H-434 (Astra B1 on #416), over the wire: after End All, Start a new shell on a studio panel sends hc a
+    /// second `terminal.run` with `on: studio`, that machine's login shell and its remote folder, and the new
+    /// terminal takes input. Only the RPC peer, its byte sink and the hidden panel's renderer are substitutes.
+    @MainActor
+    func testStartANewShellOnARemotePanelRunsOnItsMachine() async throws {
+        _ = NSApplication.shared
+        let resetGhostty = GhosttyApp.installConfigFreeFixtureForTesting()
+        defer { resetGhostty() }
+        func until(_ seconds: Double = 5, _ condition: @MainActor () -> Bool) async -> Bool {
+            let deadline = Date().addingTimeInterval(seconds)
+            while Date() < deadline { if condition() { return true }; try? await Task.sleep(nanoseconds: 20_000_000) }
+            return condition()
+        }
+        let c = try configuration(), log = RemoteLog(), peer = NewShellPeer(), wire = ChurnWire()
+        let session = HCManagedSession(configuration: c,
+            connections: RemoteFactory(pid: 1, log: log, channel: { ChurnChannel(wire) }) { try await peer.request($0) },
+            verifier: RemoteVerifier(), launcher: RemoteLauncher(), processes: RemoteProcesses(),
+            intents: HCCreationIntentStore(directory: c.intentDirectory),
+            prepareAttachment: { key, generation, sink, display in
+                try await HCBackendComposition.prepareAttachment(key: key, generation: generation, sink: sink,
+                                                                 proposedDisplay: display)
+            },
+            makeInventory: { connection, build in HCLiveInventorySource(connection: connection, buildIdentity: build) },
+            makeAttachment: { key, generation, channel, sink, display in
+                try await HCBackendComposition.makeAttachment(key: key, generation: generation, channel: channel,
+                                                              sink: sink, display: display)
+            },
+            placements: { _ in .machine("studio") })
+        let remote = HCRemoteTarget(machine: "studio", cwd: "/srv/remote-only")
+        let workspace = Workspace()
+        defer { workspace.retireForSessionRestore() }
+        let pane = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
+        let panel = try XCTUnwrap(workspace.newTerminalSurface(inPane: pane, focus: false, machine: .restored(remote)))
+        defer { HCPanelRestoreState.shared.remove(panelID: panel.id) }
+        let runtime = HCPanelSession(identity: HCPanelIdentity(panelID: panel.id, origin: .fresh), session: session,
+                                     registrar: { _, _ in })
+        runtime.diagnosticSink = { _ in }
+        runtime.installReconnectPolicy()
+        let launch = HCPanelLaunchSpec.placed(argv: ["/bin/zsh", "-l"], localCwd: "/Users/test",
+            environment: ["COLORTERM": "truecolor"], initialInput: .creation(from: "claude\r"),
+            workspaceID: workspace.id, remote: remote)
+        let headless = HCNativeBridge.headless(panelID: panel.id, report: { _ in })
+        _ = try await runtime.attachSurface(launch: launch, bridge: headless, display: HCDisplayState(
+            revision: HCDisplayRevision(attachmentGeneration: 0, displayGeneration: 0), grid: HCHeadless.grid,
+            facts: HCDisplayFacts(), focused: false))
+        panel.surface.setHeadlessBridgeForTesting(headless)
+        panel.surface.setLaunchSpecForTesting(launch)
+        panel.surface.replacementLaunchSnapshotForTesting = HCNativeLaunchSnapshot(
+            command: .direct(["/bin/zsh"]), environment: [:], overrides: [:], workingDirectory: nil)
+        panel.installHCSessionForTesting(runtime)
+        guard case .live(let first) = runtime.lifecycle else { return XCTFail("no live terminal: \(runtime.lifecycle)") }
+        XCTAssertEqual(log.params("terminal.run").first?["on"], .string("studio"), "the panel's terminal runs on studio")
+
+        workspace.prepareForEndAllSessions([panel.id])
+        await peer.finish("studio/t3")
+        _ = await session.refresh()
+        let ended = await until { panel.hcEndedNotice != nil }
+        XCTAssertTrue(ended, "the kept panel says it ended: \(runtime.lifecycle)")
+
+        panel.startNewShellAfterEnd()
+        let started = await until { panel.hcEndedNotice == nil && runtime.attachment != nil }
+        XCTAssertTrue(started, "Start a new shell: \(runtime.lifecycle), \(panel.hcNewShellFailure ?? "no failure")")
+        let runs = log.params("terminal.run")
+        XCTAssertEqual(runs.count, 2, "one new terminal")
+        let run = try XCTUnwrap(runs.last)
+        XCTAssertEqual(run["on"], .string("studio"), "hc runs it on studio")
+        XCTAssertEqual(run["cwd"], .string("/srv/remote-only"), "in its remote folder")
+        XCTAssertEqual(run["argv"]?.array?.suffix(3).compactMap(\.string), ["/bin/sh", "-c", HCMachineTarget.remoteLaunchLine],
+                       "that machine's login shell")
+        let attachment = try XCTUnwrap(runtime.attachment)
+        XCTAssertNotEqual(attachment.key, first.key)
+        let before = wire.bytes.count
+        let typed = await attachment.submit(HCInputRequest(operationID: UUID(), panelID: panel.id, key: attachment.key,
+            attachmentGeneration: attachment.generation, source: .socket, payload: Data("pwd".utf8), submitReturn: true))
+        guard case .written = typed else { return XCTFail("the new shell refused input: \(typed)") }
+        XCTAssertEqual(wire.bytes.suffix(from: before), Data("pwd\r".utf8), "the keys reach the studio terminal")
+    }
 }
 
 private final class HCLinkState: @unchecked Sendable {
@@ -2913,6 +2991,46 @@ final class HCLiveAgentResumeTests: XCTestCase {
                                      idleShellRequired: true, launchScoped: true, gate: LaunchResumeGate())
         XCTAssertEqual(workspace.launchResumeOutcomes[panel], .skipped(
             code: .panelInUse, reason: "The ended session does not have a fresh shell ready for resume."))
+    }
+}
+
+/// C11H-434: hc for one studio panel over the wire. Each `terminal.run` makes the next studio terminal with the
+/// labels it was sent; a terminal can be finished as hc reports an end.
+private actor NewShellPeer {
+    private struct Terminal { let address: String; let labels: HCJSONValue; var finished = false }
+    private var terminals: [Terminal] = []
+    private var sequence: Int64 = 1
+    func finish(_ address: String) {
+        guard let index = terminals.firstIndex(where: { $0.address == address }) else { return }
+        terminals[index].finished = true
+        sequence += 1
+    }
+    func request(_ request: HCRPCRequest) async throws -> HCJSONValue {
+        switch request.method {
+        case "machine.list": return machineList("connected")
+        case "terminal.attach": return .object(["channel": .integer(3)])
+        case "terminal.run":
+            let address = "studio/t\(terminals.count + 3)"
+            terminals.append(Terminal(address: address, labels: request.params["labels"]))
+            sequence += 1
+            return .object(["terminal": .string(address)])
+        case "events.subscribe":
+            return .object(["channel": .integer(7), "seq": .integer(sequence),
+                            "terminals": .array(terminals.map(Self.record))])
+        default: return .object([:])
+        }
+    }
+    private static func record(_ terminal: Terminal) -> HCJSONValue {
+        var fields: [String: HCJSONValue] = ["address": .string(terminal.address), "labels": terminal.labels,
+                                             "state": .string(terminal.finished ? "finished" : "live"),
+                                             "cols": .integer(80), "rows": .integer(24)]
+        if terminal.finished {
+            fields["reason"] = .string("killed"); fields["exit_code"] = .integer(1)
+            fields["finished_ms"] = .integer(1_764_100_260_000)
+        } else {
+            fields["pid"] = .integer(4242)
+        }
+        return .object(fields)
     }
 }
 

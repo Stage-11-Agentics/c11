@@ -44,10 +44,10 @@ agent waiting, are in `shots/`.
 
 | Key | Prototype | Bundled theme | Shot |
 |---|---|---|---|
-| 1 | c11 | `stage11` (schema 1; with Sidebar Background None for plain grey) | `shots/stage11.png` |
+| 1 | c11 | `stage11` (schema 1; plain grey, no backdrop) | `shots/stage11.png` |
 | 2 | Datasheet Mono | `datasheet-mono` | `shots/datasheet-mono.png` |
 | 3 | Terminal Grid | `terminal-grid` | `shots/terminal-grid.png` |
-| 4 | c11h today | `c11h` (and `stage11`, whose Dark slot falls back to Sunset Mall) | `shots/c11h.png` |
+| 4 | c11h today | `c11` (the theme that draws Sunset Mall behind the sidebar) | `shots/c11h.png` |
 | 5 | Outrun Horizon | `outrun-horizon` | `shots/outrun-horizon.png` |
 | 6 | Nocturne | `nocturne` | `shots/nocturne.png` |
 | 7 | Big Board | `bigboard` | `shots/bigboard.png` |

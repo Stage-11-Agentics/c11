@@ -202,10 +202,12 @@ enum SkillInstaller {
     static let manifestFilename = ".c11-skill.json"
 
     /// Packages a bundle no longer ships, mapped to the package that replaced them. The
-    /// retired line's sidecar skill folded into `c11` (C11H-269): asking for it means `c11`,
-    /// and installing or removing c11's skills also removes a copy c11 stamped under the old
-    /// name, so no agent keeps loading it. An unstamped folder of that name is never touched.
-    static let retiredPackages: [String: String] = ["c11h": "c11"] // c11-2.0:legacy
+    /// retired line's sidecar skill folded into `c11` (C11H-269), and `c11-debug-windows`
+    /// retired with nothing in its place (C11H-437; the Debug menu windows stay). Asking for
+    /// one means `c11`, and installing or removing c11's skills also removes a copy c11
+    /// stamped under the old name, so no agent keeps loading it. An unstamped folder of that
+    /// name is never touched. `scripts/sync-installed-skills.sh` keeps the same list.
+    static let retiredPackages: [String: String] = ["c11h": "c11", "c11-debug-windows": "c11"] // c11-2.0:legacy
 
     // MARK: Source discovery
 
@@ -921,8 +923,9 @@ enum SkillInstaller {
 
     /// Removes each named `retiredPackages` copy whose `.c11-skill.json` stamp names that
     /// package under the current schema. A local copy (edited since it was stamped, written
-    /// from a checkout, or a symlink) is kept unless `force`, by the rule `status` applies to
-    /// bundled packages. A folder without a valid stamp is never touched.
+    /// from a checkout, a symlink, or holding local structure) is kept unless `force`, by the
+    /// rule `status` applies to bundled packages. A folder without a valid stamp is never
+    /// touched. `scripts/sync-installed-skills.sh` retires by the same rule.
     static func retireStaleCopies(
         target: SkillInstallerTarget, home: URL, names: Set<String>, force: Bool,
         fileManager: FileManager = .default
@@ -940,7 +943,8 @@ enum SkillInstaller {
             if !force {
                 let isLink = (try? fileManager.destinationOfSymbolicLink(atPath: dest.path)) != nil
                 let destHash = try? contentHash(of: dest, skipInstallerManifest: true, fileManager: fileManager)
-                if isLink || record.isFromCheckout || destHash != record.sourceContentHash {
+                if isLink || record.isFromCheckout || holdsLocalStructure(dest, fileManager: fileManager)
+                    || destHash != record.sourceContentHash {
                     keptLocal.append(name)
                     continue
                 }
@@ -957,6 +961,19 @@ enum SkillInstaller {
             retired.append(name)
         }
         return (retired, keptLocal)
+    }
+
+    /// Whether a copy holds anything an installer never writes: a symlink (the stamp
+    /// included) or a FIFO, socket or device. The content hash reads only regular files, so a
+    /// copy carrying one of these was changed by hand even when its hash still matches.
+    static func holdsLocalStructure(_ dir: URL, fileManager: FileManager = .default) -> Bool {
+        guard let entries = fileManager.enumerator(atPath: dir.path) else { return true }
+        for case let rel as String in entries {
+            let path = dir.appendingPathComponent(rel).path
+            guard let type = (try? fileManager.attributesOfItem(atPath: path))?[.type] as? FileAttributeType,
+                  type == .typeRegular || type == .typeDirectory else { return true }
+        }
+        return false
     }
 
     // MARK: - Plugin install/remove (OpenCode)

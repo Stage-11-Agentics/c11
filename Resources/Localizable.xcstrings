@@ -34767,13 +34767,13 @@
     "settings.sidebarBackground.subtitleOneTheme": {
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "From Theme draws the theme's own background, or Sunset Mall for a theme without one. Sunset Mall and Outrun Horizon replace the theme's background. None always uses the tint."}},
-        "ja": {"stringUnit": {"state": "translated", "value": "「テーマから」を選ぶと、テーマ自身の背景が表示されます。背景を持たないテーマでは Sunset Mall が表示されます。Sunset Mall と Outrun Horizon は、テーマの背景を置き換えます。「なし」は常にティントを使います。"}},
-        "uk": {"stringUnit": {"state": "translated", "value": "«З теми» показує власний фон теми, а для теми без фону — Sunset Mall. Sunset Mall і Outrun Horizon замінюють фон теми. «Немає» завжди використовує відтінок."}},
-        "ko": {"stringUnit": {"state": "translated", "value": "'테마에서'는 테마 자체의 배경을 표시하며, 배경이 없는 테마는 Sunset Mall을 표시합니다. Sunset Mall과 Outrun Horizon은 테마의 배경을 대체합니다. '없음'은 항상 색조를 사용합니다."}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "“来自主题”会绘制主题自带的背景；没有背景的主题则显示 Sunset Mall。Sunset Mall 和 Outrun Horizon 会取代主题的背景。“无”始终使用色调。"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "「來自主題」會繪製主題自帶的背景；沒有背景的主題則顯示 Sunset Mall。Sunset Mall 和 Outrun Horizon 會取代主題的背景。「無」一律使用色調。"}},
-        "ru": {"stringUnit": {"state": "translated", "value": "«Из темы» рисует собственный фон темы, а для темы без фона — Sunset Mall. Sunset Mall и Outrun Horizon заменяют фон темы. «Нет» всегда использует оттенок."}}
+        "en": {"stringUnit": {"state": "translated", "value": "From Theme draws the theme's own background, or the tint for a theme without one. Sunset Mall and Outrun Horizon replace the theme's background. None always uses the tint."}},
+        "ja": {"stringUnit": {"state": "translated", "value": "「テーマから」を選ぶと、テーマ自身の背景が表示されます。背景を持たないテーマではティントが使われます。Sunset Mall と Outrun Horizon は、テーマの背景を置き換えます。「なし」は常にティントを使います。"}},
+        "uk": {"stringUnit": {"state": "translated", "value": "«З теми» показує власний фон теми, а для теми без фону — відтінок. Sunset Mall і Outrun Horizon замінюють фон теми. «Немає» завжди використовує відтінок."}},
+        "ko": {"stringUnit": {"state": "translated", "value": "'테마에서'는 테마 자체의 배경을 표시하며, 배경이 없는 테마는 색조를 표시합니다. Sunset Mall과 Outrun Horizon은 테마의 배경을 대체합니다. '없음'은 항상 색조를 사용합니다."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "“来自主题”会绘制主题自带的背景；没有背景的主题则显示色调。Sunset Mall 和 Outrun Horizon 会取代主题的背景。“无”始终使用色调。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "「來自主題」會繪製主題自帶的背景；沒有背景的主題則顯示色調。Sunset Mall 和 Outrun Horizon 會取代主題的背景。「無」一律使用色調。"}},
+        "ru": {"stringUnit": {"state": "translated", "value": "«Из темы» рисует собственный фон темы, а для темы без фона — оттенок. Sunset Mall и Outrun Horizon заменяют фон темы. «Нет» всегда использует оттенок."}}
       }
     },
     "sidebar.workspacePulse.stateTag.live": {
@@ -127328,6 +127328,523 @@
           "stringUnit": {
             "state": "translated",
             "value": "Для этой панели не известно ни одного сохранённого диалога."
+          }
+        }
+      }
+    },
+    "terminal.ended.reason.endAll": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "End All Sessions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのセッションを終了"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершити всі сеанси"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 세션 종료"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束所有会话"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結束所有工作階段"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершить все сеансы"
+          }
+        }
+      }
+    },
+    "terminal.ended.reason.endSession": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "End Session"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッションを終了"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершити сеанс"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 종료"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束会话"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結束工作階段"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершить сеанс"
+          }
+        }
+      }
+    },
+    "terminal.ended.reason.outsideSignal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ from outside c11"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 の外部からの %@"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ззовні c11"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "c11 외부에서 보낸 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自 c11 外部的 %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "來自 c11 外部的 %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ извне c11"
+          }
+        }
+      }
+    },
+    "terminal.ended.reason.exited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "its shell exited"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェルが終了"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "його оболонка завершилася"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셸이 종료됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其 shell 已退出"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其 shell 已結束"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "оболочка завершила работу"
+          }
+        }
+      }
+    },
+    "terminal.ended.reason.stopped": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "stopped by the terminal host"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルホストにより停止"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "зупинено хостом термінала"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널 호스트가 중지함"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已被终端主机停止"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已被終端機主機停止"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "остановлен хостом терминала"
+          }
+        }
+      }
+    },
+    "terminal.ended.headline": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session ended (%1$@) at %2$@."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@にセッションが終了しました（%1$@）。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сеанс завершено (%1$@) о %2$@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@에 세션이 종료되었습니다(%1$@)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话已于 %2$@ 结束（%1$@）。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作階段已結束（%1$@），時間：%2$@。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сеанс завершён (%1$@) в %2$@."
+          }
+        }
+      }
+    },
+    "terminal.ended.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing you type here is sent."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここで入力した内容は送信されません。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Усе, що ви тут введете, не буде надіслано."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여기에 입력한 내용은 전송되지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此输入的任何内容都不会被发送。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您在此輸入的內容不會被傳送。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Всё, что вы здесь вводите, не отправляется."
+          }
+        }
+      }
+    },
+    "terminal.ended.startShell": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a new shell"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいシェルを開始"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустити нову оболонку"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 셸 시작"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动新 shell"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "啟動新的 shell"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустить новую оболочку"
+          }
+        }
+      }
+    },
+    "terminal.ended.startUnconfirmed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The terminal host has not confirmed the new shell, so c11 won't start a second one. Try again to check, or close the panel."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルホストが新しいシェルを確認できていないため、c11 は 2 つ目のシェルを開始しません。もう一度試して確認するか、パネルを閉じてください。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Хост термінала не підтвердив нову оболонку, тому c11 не запускатиме другу. Спробуйте ще раз, щоб перевірити, або закрийте панель."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널 호스트가 새 셸을 확인하지 않아 c11이 두 번째 셸을 시작하지 않습니다. 다시 시도해 확인하거나 패널을 닫으세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端主机尚未确认新 shell 已启动，因此 c11 不会再启动第二个。请重试以确认，或关闭此面板。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終端機主機尚未確認新的 shell，因此 c11 不會再啟動第二個。請再試一次以確認，或關閉此面板。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Хост терминала не подтвердил запуск новой оболочки, поэтому c11 не станет запускать вторую. Повторите попытку, чтобы проверить, или закройте панель."
+          }
+        }
+      }
+    },
+    "terminal.ended.close": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じる"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрити"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "닫기"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "關閉"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Закрыть"
+          }
+        }
+      }
+    },
+    "terminal.ended.startFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A new shell could not be started. Try again, or close the panel."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいシェルを開始できませんでした。もう一度試すか、パネルを閉じてください。"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вдалося запустити нову оболонку. Спробуйте ще раз або закрийте панель."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 셸을 시작할 수 없습니다. 다시 시도하거나 패널을 닫으세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法启动新的 shell。请重试，或关闭此面板。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法啟動新的 shell。請再試一次，或關閉此面板。"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось запустить новую оболочку. Повторите попытку или закройте панель."
           }
         }
       }

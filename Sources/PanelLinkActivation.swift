@@ -349,8 +349,9 @@ final class PanelLinkNoticePresenter: NSObject {
 }
 
 struct TerminalPanelLinkPolicy {
-    /// A real mouse-up: Cmd-click through Ghostty, or a click c11 took on a
-    /// c11 link while the program held the mouse. Never synthesized input.
+    /// A real mouse-up: Cmd-click through Ghostty, a click c11 took on a c11
+    /// link while the program held the mouse, or a plain click c11 held on
+    /// one while it did not. Never synthesized input.
     var isNativeClick: Bool
     var isSocketCommand: Bool
     var isKeyWindow: Bool
@@ -372,8 +373,9 @@ struct TerminalPanelLinkPolicy {
 /// same link, it navigates; dragged past the threshold, or released off the
 /// link, the press is replayed to the program, so a selection still starts
 /// where the operator pressed. Every other click, an https link included,
-/// goes to the program untouched; without capture, Ghostty's own Cmd-click
-/// path handles links.
+/// goes to the program untouched. Without capture, Ghostty's own Cmd-click
+/// path handles links, and c11 holds a plain click the same way (C11H-427).
+/// `PanelLinkPress.begin` decides which applies.
 struct CapturedPanelLinkClick: Equatable {
     let href: String
     /// The press, in view coordinates, for the replay.
@@ -393,17 +395,6 @@ struct CapturedPanelLinkClick: Equatable {
         modifiers.intersection([.command, .control, .option, .shift]) == .command
     }
 
-    /// At mouse-down. The closures run only when the cheaper checks before
-    /// them pass, so an Option or Control click never reads the cell.
-    static func begin(modifiers: NSEvent.ModifierFlags,
-                      at origin: CGPoint,
-                      mouseCaptured: () -> Bool,
-                      hrefAtPointer: () -> String?) -> CapturedPanelLinkClick? {
-        guard takesModifiers(modifiers), mouseCaptured(),
-              let href = hrefAtPointer(), PanelLinkTarget.usesScheme(href) else { return nil }
-        return CapturedPanelLinkClick(href: href, origin: origin)
-    }
-
     /// During a drag: true once the pointer is far enough from the press that
     /// the program should have it (replay the press, then follow the drag).
     func becomesDrag(at point: CGPoint) -> Bool {
@@ -414,6 +405,134 @@ struct CapturedPanelLinkClick: Equatable {
     /// the release left the link (the held click then goes to the program).
     func finish(hrefAtPointer: () -> String?) -> String? {
         hrefAtPointer() == href ? href : nil
+    }
+}
+
+/// What c11 does with a left press in a terminal: hold it on a c11 link while
+/// the program has the mouse (C11H-325), hold a plain click on one while it
+/// does not (C11H-427), or leave it to Ghostty (nil), as every other press is.
+///
+/// A held plain click never reaches Ghostty while it is a navigation, so it
+/// neither moves the shell's cursor (cursor-click-to-move) nor touches the
+/// selection. Released on its link, it opens after Ghostty's repeat interval.
+/// A drag of the threshold or more, a release off the link, or the next press
+/// in the view within that interval replays it to Ghostty where it happened,
+/// so drag, double-click and triple-click selection still start there.
+enum PanelLinkPress: Equatable {
+    case held(CapturedPanelLinkClick)
+    case heldPlain(CapturedPanelLinkClick)
+
+    /// The first press of a click sequence, by Ghostty's own count
+    /// (TerminalClickSequence), with no Cmd (Ghostty's own link rule), no
+    /// Shift (extend selection), no Option or Control. Caps Lock and Fn are
+    /// ignored. AppKit's clickCount plays no part: Ghostty decides what is a
+    /// double click, with its own interval.
+    static func holdsPlain(modifiers: NSEvent.ModifierFlags, startsClickSequence: Bool) -> Bool {
+        startsClickSequence && modifiers.intersection([.command, .control, .option, .shift]).isEmpty
+    }
+
+    /// The closures run only once the cheaper checks before them pass, so a
+    /// press that neither case could take never reads the cell. (The view
+    /// reads the capture once per press for the click mirror and passes it in.)
+    static func begin(modifiers: NSEvent.ModifierFlags,
+                      startsClickSequence: Bool,
+                      at origin: CGPoint,
+                      mouseCaptured: () -> Bool,
+                      hrefAtPointer: () -> String?) -> PanelLinkPress? {
+        let mayHold = CapturedPanelLinkClick.takesModifiers(modifiers)
+        let mayHoldPlain = holdsPlain(modifiers: modifiers, startsClickSequence: startsClickSequence)
+        guard mayHold || mayHoldPlain else { return nil }
+        let captured = mouseCaptured()
+        guard captured ? mayHold : mayHoldPlain,
+              let href = hrefAtPointer(), PanelLinkTarget.usesScheme(href) else { return nil }
+        let click = CapturedPanelLinkClick(href: href, origin: origin)
+        return captured ? .held(click) : .heldPlain(click)
+    }
+}
+
+/// Ghostty's left-click count as c11 mirrors it (C11H-427), so c11 knows
+/// whether a press starts a click or continues a double or triple click.
+/// Ghostty's own rule (Surface.zig, mouseButtonCallback): a press more than
+/// one cell from the previous press, or later than the repeat interval after
+/// it, restarts the count; a fourth press wraps to one. Times are when the
+/// press is handled, as Ghostty times its callbacks; points are view points.
+///
+/// Where c11 can't see how Ghostty counts a press, it fails safe. A Shift
+/// press (mouse-shift-capture, a program's XTSHIFTESCAPE, selection
+/// extension) or a press while the mouse is captured (mouse-reporting) makes
+/// the sequence uncertain: the next press within that press's interval and
+/// distance never starts a held click, so it goes to Ghostty unchanged.
+/// Outside that window the mirror starts fresh. The one cost: a plain click
+/// on a link right after such a press needs Cmd-click or a fresh click.
+struct TerminalClickSequence: Equatable {
+    private(set) var lastPress: (time: TimeInterval, point: CGPoint)?
+    private(set) var count = 0
+    private(set) var isUncertain = false
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.count == rhs.count && lhs.isUncertain == rhs.isUncertain
+            && lhs.lastPress?.time == rhs.lastPress?.time && lhs.lastPress?.point == rhs.lastPress?.point
+    }
+
+    /// Ghostty's effective `click-repeat-interval`: the configured value, or
+    /// the system interval when it is unset (0), as Ghostty itself resolves it.
+    static func repeatInterval(configuredMilliseconds: UInt32?, systemInterval: TimeInterval) -> TimeInterval {
+        guard let configuredMilliseconds, configuredMilliseconds > 0 else { return systemInterval }
+        return TimeInterval(configuredMilliseconds) / 1000
+    }
+
+    /// The count a press here would make, without recording it.
+    func countAfterPress(at time: TimeInterval, point: CGPoint, interval: TimeInterval, cellWidth: CGFloat) -> Int {
+        var count = self.count
+        if count > 0, let last = lastPress {
+            if hypot(point.x - last.point.x, point.y - last.point.y) > cellWidth { count = 0 }
+            if time - last.time > interval { count = 0 }
+        }
+        count += 1
+        return count > 3 ? 1 : count
+    }
+
+    /// Record a press; true when it starts a click sequence (count one) that
+    /// c11 is sure of. A Shift or captured press, and any press within the
+    /// window of an uncertain one, returns false and keeps the sequence
+    /// uncertain.
+    mutating func press(at time: TimeInterval, point: CGPoint, interval: TimeInterval, cellWidth: CGFloat,
+                        shift: Bool = false, mouseCaptured: Bool = false) -> Bool {
+        if isUncertain, let last = lastPress,
+           time - last.time > interval || hypot(point.x - last.point.x, point.y - last.point.y) > cellWidth {
+            isUncertain = false
+            count = 0
+        }
+        if shift || mouseCaptured || isUncertain {
+            isUncertain = true
+            count = 0
+            lastPress = (time, point)
+            return false
+        }
+        count = countAfterPress(at: time, point: point, interval: interval, cellWidth: cellWidth)
+        lastPress = (time, point)
+        return count == 1
+    }
+
+    /// When a press arrives while a held plain click waits to open: replay
+    /// that click to Ghostty first only if this press continues its sequence
+    /// (Ghostty then counts the double or triple click) and no key came after
+    /// its release. Otherwise it is dropped: Ghostty never sees it.
+    static func replaysHeldClick(keyAfterRelease: Bool, pressContinuesIt: Bool) -> Bool {
+        !keyAfterRelease && pressContinuesIt
+    }
+}
+
+/// Whether a plain-click open that waited out the repeat interval is still
+/// the operator's latest intent (C11H-427). Typing, or focus moving to
+/// anything else, after the release cancels it.
+struct PendingPanelLinkOpenIntent: Equatable {
+    let releasedAt: Date
+
+    func isCurrent(viewIsFirstResponder: Bool, lastKeyAt: Date?) -> Bool {
+        guard viewIsFirstResponder else { return false }
+        guard let lastKeyAt else { return true }
+        return lastKeyAt <= releasedAt
     }
 }
 

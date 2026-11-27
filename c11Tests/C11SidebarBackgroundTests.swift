@@ -8,9 +8,10 @@ import XCTest
 @testable import c11
 #endif
 
-/// C11H-32, C11H-146: what c11 draws behind the sidebar. From Theme (the
-/// default) draws the theme's `[backdrop]`, else Sunset Mall in the Dark theme
-/// slot; Sunset Mall and Outrun Horizon override it there; None leaves the material.
+/// C11H-32, C11H-146, C11H-438: what c11 draws behind the sidebar. From Theme
+/// (the default) draws the theme's `[backdrop]`, else c11's material in both
+/// theme slots; Sunset Mall and Outrun Horizon override it in the Dark theme
+/// slot; None leaves the material.
 final class C11SidebarBackgroundTests: XCTestCase {
     private let dark = ThemeContext(workspaceColor: nil, colorScheme: .dark, ghosttyBackgroundGeneration: 0)
 
@@ -47,7 +48,8 @@ final class C11SidebarBackgroundTests: XCTestCase {
         // Dark slot.
         XCTAssertEqual(C11SidebarBackground.backdrop(raw: nil, colorScheme: .dark, theme: theme), theme)
         XCTAssertEqual(C11SidebarBackground.backdrop(raw: "fromTheme", colorScheme: .dark, theme: theme), theme)
-        XCTAssertEqual(C11SidebarBackground.backdrop(raw: "fromTheme", colorScheme: .dark, theme: nil), sunset)
+        XCTAssertNil(C11SidebarBackground.backdrop(raw: nil, colorScheme: .dark, theme: nil))
+        XCTAssertNil(C11SidebarBackground.backdrop(raw: "fromTheme", colorScheme: .dark, theme: nil))
         XCTAssertEqual(C11SidebarBackground.backdrop(raw: "sunsetMall", colorScheme: .dark, theme: theme), sunset)
         XCTAssertEqual(C11SidebarBackground.backdrop(raw: "sunsetMall", colorScheme: .dark, theme: nil), sunset)
         XCTAssertNil(C11SidebarBackground.backdrop(raw: "off", colorScheme: .dark, theme: theme))
@@ -60,14 +62,20 @@ final class C11SidebarBackgroundTests: XCTestCase {
         XCTAssertNil(C11SidebarBackground.backdrop(raw: "off", colorScheme: .light, theme: theme))
     }
 
-    /// Every install keeps its look: stage11 (the default slot theme, and any
-    /// explicit choice of it) has no backdrop, so From Theme shows Sunset Mall in
-    /// the Dark slot. The bundled `c11` theme draws exactly the same gradient.
-    func testStage11AndTheC11hThemeBothShowSunsetMall() throws {
+    /// C11H-438: the default theme, stage11, has no backdrop, so the default
+    /// From Theme leaves its Dark-slot sidebar plain (c11's material and tint, as
+    /// in c11 1.8), not Sunset Mall. Picking Sunset Mall still draws it.
+    func testStage11DarkSlotIsPlainUnlessSunsetMallIsPicked() throws {
         let sunsetStyle = try XCTUnwrap(C11SidebarBackground.sunsetMall.backdropStyle)
         let stage11 = Self.themeBackdrop(try Self.bundledTheme("stage11"), context: dark)
-        XCTAssertEqual(C11SidebarBackground.backdrop(raw: nil, colorScheme: .dark, theme: stage11), sunsetStyle)
+        XCTAssertNil(C11SidebarBackground.backdrop(raw: nil, colorScheme: .dark, theme: stage11))
+        XCTAssertNil(C11SidebarBackground.backdrop(raw: "fromTheme", colorScheme: .dark, theme: stage11))
+        XCTAssertEqual(C11SidebarBackground.backdrop(raw: "sunsetMall", colorScheme: .dark, theme: stage11), sunsetStyle)
+    }
 
+    /// The bundled `c11` theme keeps Sunset Mall as its own backdrop: From Theme
+    /// draws exactly that gradient.
+    func testTheC11ThemeDrawsItsOwnSunsetMallBackdrop() throws {
         let c11 = try Self.bundledTheme("c11")
         XCTAssertEqual(c11.identity.schema, 2)
         let backdrop = try XCTUnwrap(Self.themeBackdrop(c11, context: dark))

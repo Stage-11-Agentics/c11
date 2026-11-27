@@ -20,6 +20,156 @@ final class TerminalPanel: Panel, ObservableObject {
     /// C11H-46: set when an explicit close asked hc to end this panel's
     /// terminal, so the end backstop does not count this panel as a holder.
     var hcClosingForEnd = false
+    /// C11H-434: the end the operator asked for on this panel (End All, End
+    /// Session), so a kept panel names it. Cleared when a new shell starts.
+    var hcRequestedEnd: HCEndOrigin? {
+        didSet {
+            guard hcRequestedEnd != oldValue else { return }
+            // The surface keeps its last screen when hc closes the ended stream.
+            surface.hcKeepsScreenAfterEnd = hcRequestedEnd != nil
+            refreshHCEndedNotice()
+        }
+    }
+    /// C11H-434: shown while this panel is kept after its terminal ended.
+    @Published private(set) var hcEndedNotice: HCEndedPanelNotice? {
+        didSet { if hcEndedNotice != oldValue { reportRecoveryDiagnostics() } }
+    }
+    /// C11H-434: Start a new shell is under way; its button waits.
+    @Published private(set) var hcStartingNewShell = false
+    /// C11H-434: why the last Start a new shell did not give a shell.
+    @Published private(set) var hcNewShellFailure: String?
+
+    /// Recomputes the ended notice from the lifecycle the runtime is about to
+    /// publish (a `@Published` sink sees the value before it is stored). Each
+    /// write is guarded, so a live terminal's record and status updates
+    /// publish nothing to the panel's view.
+    func refreshHCEndedNotice(lifecycle: HCLifecycle? = nil) {
+        let current = lifecycle ?? hcSession?.lifecycle
+        let shown = hcEndedNotice
+        let next: HCEndedPanelNotice?
+        if let made = HCEndedPanelNotice.make(lifecycle: current, requestedEnd: hcRequestedEnd, observedAt: Date()) {
+            // The same end keeps its first time: hc republishes an end, and an
+            // untimed one would otherwise move to each republish's time.
+            if let shown, shown.endedKey == made.endedKey, shown.reason == made.reason { next = shown } else { next = made }
+        } else if shown != nil, keepsHCEndedNotice(through: current) {
+            next = shown
+        } else {
+            next = nil
+        }
+        guard next != shown else { return }
+        hcEndedNotice = next
+        if hcNewShellFailure != nil { hcNewShellFailure = nil }
+        // Keys pressed while it was ended were refused and their notice
+        // hidden; a new shell must not inherit that stale "reconnects" strip.
+        if next == nil { hcSession?.disconnectedInput?.dismissRefusal() }
+    }
+
+    /// C11H-434: once shown, the notice stays until a new shell is usable in
+    /// this panel. A start under way, or one that did not give a shell, keeps
+    /// it with its retry; so does a lost line (`.unresolved`), since an ended
+    /// terminal never comes back. A live terminal, or no runtime, clears it.
+    private func keepsHCEndedNotice(through lifecycle: HCLifecycle?) -> Bool {
+        if hcStartingNewShell || hcNewShellFailure != nil { return true }
+        if case .unresolved? = lifecycle { return true }
+        return false
+    }
+
+    private var hcEndedNoticeSubscription: AnyCancellable?
+
+    /// C11H-434: the ended notice follows the runtime's lifecycle. It changes
+    /// only at an end or a new shell, so a live terminal's status updates
+    /// publish nothing to the panel's view.
+    private func followHCEndedNotice(_ runtime: HCPanelSession) {
+        hcEndedNoticeSubscription = runtime.$lifecycle.sink { [weak self] lifecycle in
+            self?.refreshHCEndedNotice(lifecycle: lifecycle)
+        }
+    }
+
+    #if DEBUG
+    /// Test seam: installs a runtime on this panel's surface and follows it, as
+    /// a production panel follows the runtime its surface starts with.
+    func installHCSessionForTesting(_ runtime: HCPanelSession) {
+        surface.installHCSessionForTesting(runtime)
+        followHCEndedNotice(runtime)
+    }
+    #endif
+
+    /// How long Start a new shell waits for a creation it began to be live and
+    /// attached before it says the shell did not start. A test seam.
+    static var hcNewShellUsableTimeout: TimeInterval = 15
+
+    /// C11H-434: Start a new shell on an ended panel: a fresh login shell in
+    /// this panel (on its own machine), through the same start a host end's
+    /// recovery uses. The notice stays through the start; a start that does
+    /// not give a usable shell keeps it, says so, and offers the retry.
+    func startNewShellAfterEnd() {
+        guard hcEndedNotice != nil, !hcStartingNewShell, let runtime = hcSession else { return }
+        hcStartingNewShell = true
+        if hcNewShellFailure != nil { hcNewShellFailure = nil }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let outcome = await self.startNewShell(on: runtime)
+            guard outcome == .usable, self.hcSession === runtime else {
+                self.hcNewShellFailure = outcome == .unconfirmed
+                    ? String(localized: "terminal.ended.startUnconfirmed",
+                        defaultValue: "The terminal host has not confirmed the new shell, so c11 won't start a second one. Try again to check, or close the panel.")
+                    : String(localized: "terminal.ended.startFailed",
+                        defaultValue: "A new shell could not be started. Try again, or close the panel.")
+                self.hcStartingNewShell = false
+                return
+            }
+            self.hcStartingNewShell = false
+            // The panel is an ordinary terminal again: its next exit closes it.
+            self.retainsAfterEndAllSessions = false
+            self.hcClosingForEnd = false
+            self.hcRequestedEnd = nil
+            self.refreshHCEndedNotice()
+        }
+    }
+
+    /// How a Start a new shell ended: a shell in the panel, none, or a creation
+    /// hc has not confirmed either way (c11 never starts a second over it).
+    enum HCNewShellOutcome: Equatable { case usable, failed, unconfirmed }
+
+    /// One new shell, never two. After a start that did not give a shell, the
+    /// panel's own creation is looked up first: one that ran after all is
+    /// adopted, one hc has not settled is reported unconfirmed, and only a
+    /// panel whose terminal is still the ended one starts a new terminal.
+    private func startNewShell(on runtime: HCPanelSession) async -> HCNewShellOutcome {
+        // An end the coordinator still owes names the old terminal's key, never the new one's.
+        if let coordinator = HCSessionEnd.coordinator, coordinator.isEndPending(panelID: id) {
+            _ = await coordinator.outcomes(for: [id], timeout: 5)
+        }
+        do {
+            if case .ended = runtime.lifecycle {} else {
+                switch await runtime.resolveIdentity() {
+                case .ended: break
+                case .live(let record):
+                    if runtime.attachment == nil { _ = try await surface.recreateHCAttachment(record) }
+                    return await hcNewShellIsUsable(runtime) ? .usable : .failed
+                case .unresolved(_, .creationPending), .unresolved(_, .creationUncertain): return .unconfirmed
+                case .new, .unresolved: return .failed
+                }
+            }
+            try await surface.startHostEndReplacement()
+            return await hcNewShellIsUsable(runtime) ? .usable : .failed
+        } catch {
+            return .failed
+        }
+    }
+
+    /// A start that returns once its creation is under way (a panel never
+    /// started this launch) attaches later: wait, bounded, for a bound terminal.
+    private func hcNewShellIsUsable(_ runtime: HCPanelSession) async -> Bool {
+        let deadline = Date().addingTimeInterval(Self.hcNewShellUsableTimeout)
+        while hcSession === runtime {
+            if case .live = runtime.lifecycle, runtime.attachment != nil { return true }
+            guard Date() < deadline else { return false }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return false
+    }
+
     /// Ended terminals whose conversation recovery was already planned. A
     /// retained replacement record must not plan the same end twice.
     var plannedHCEndedKeys: Set<HCTerminalKey> = []
@@ -39,7 +189,11 @@ final class TerminalPanel: Panel, ObservableObject {
     /// The operator closed the host-end banner for this ended key.
     @Published private(set) var hcHostEndDismissedKey: HCTerminalKey?
 
-    func dismissHCHostEnd() { hcHostEndDismissedKey = hcHostEnd?.endedKey }
+    func dismissHCHostEnd() {
+        hcHostEndDismissedKey = hcHostEnd?.endedKey
+        // The banner under it (an ended panel's) now shows: diagnostics follow.
+        reportRecoveryDiagnostics()
+    }
     func resetHCHostEndDismissal() { hcHostEndDismissedKey = nil }
 
     /// C11H-209: ends the previous session found on this panel and never
@@ -97,11 +251,16 @@ final class TerminalPanel: Panel, ObservableObject {
     /// C11H-196: `hc-diagnostics --json` reports what the banner shows.
     private func reportRecoveryDiagnostics() {
         let notice: String?
-        switch hcRestoreNotice {
-        case .holderLost: notice = "holder_lost"
-        case .resourceExhausted: notice = "resource_exhausted"
-        case .previousSessionEnded: notice = "previous_session_ended"
-        case nil: notice = nil
+        // C11H-434: whenever the ended banner is the one showing, say why it ended.
+        if let ended = hcEndedNotice, visibleHCHostEnd == nil {
+            notice = "session_ended:" + ended.reasonToken
+        } else {
+            switch hcRestoreNotice {
+            case .holderLost: notice = "holder_lost"
+            case .resourceExhausted: notice = "resource_exhausted"
+            case .previousSessionEnded: notice = "previous_session_ended"
+            case nil: notice = nil
+            }
         }
         var hostEnd: [String: Any]?
         if let status = hcHostEnd {
@@ -450,6 +609,7 @@ final class TerminalPanel: Panel, ObservableObject {
                     DispatchQueue.main.async { AppDelegate.shared?.hcPanelClaimsChanged() }
                 }
             }.store(in: &cancellables)
+            followHCEndedNotice(hcSession)
             // Gap 6: the chip for a local terminal (remote terminals are fed
             // by HCRemoteStatusBinding).
             LocalSessionPlacementFeed.follow(

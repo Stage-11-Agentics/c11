@@ -16,6 +16,7 @@ extension TerminalPanel {
         guard let identity = hcEndIdentity, let coordinator = HCSessionEnd.coordinator else { return false }
         let endsLiveSession = hcEndsLiveSession
         hcClosingForEnd = true
+        hcRequestedEnd = origin
         coordinator.requestEnd([identity], origin: origin)
         // C11H-415: the tip and any hold notice follow the end's outcome, not the request.
         HCCloseOutcomeReport.observe(panelIDs: [identity.panelID], live: endsLiveSession ? [identity.panelID] : [],
@@ -71,6 +72,7 @@ extension Workspace {
             guard let panel = terminalPanel(for: panelId), let identity = panel.hcEndIdentity else { return nil }
             if panel.hcEndsLiveSession { live.insert(identity.panelID) }
             panel.hcClosingForEnd = true
+            panel.hcRequestedEnd = origin
             return identity
         }
         coordinator.requestEnd(identities, origin: origin)
@@ -270,5 +272,94 @@ extension Workspace {
             message: String(localized: "dialog.closeTab.message", defaultValue: "This closes the panel."),
             confirmLabel: nil
         )
+    }
+}
+
+/// C11H-434: what a panel kept after its terminal ended says on its face: why
+/// and when (local time) it ended, with Start a new shell and Close. Before
+/// it, End All left each panel a blank screen with a cursor and nothing else.
+/// A host end (a reboot, a lost holder) keeps its own recovery notice; this
+/// covers every other end a kept panel shows: End All, End Session, an exit,
+/// an outside signal once its host-end banner is closed.
+struct HCEndedPanelNotice: Equatable {
+    enum Reason: Equatable {
+        case endAll
+        case endSession
+        case outsideSignal(Int32)
+        case exited
+        /// hc ended it for a reason c11 did not ask for and does not name.
+        case stopped
+    }
+
+    let reason: Reason
+    let endedAt: Date
+    let endedKey: HCTerminalKey?
+
+    /// The notice for this lifecycle, or nil when the panel's terminal has not
+    /// ended or a host end's recovery owns the panel. `requestedEnd` is what
+    /// the operator asked for on this panel; `observedAt` stands in for an end
+    /// hc did not time.
+    static func make(lifecycle: HCLifecycle?, requestedEnd: HCEndOrigin?,
+                     observedAt: Date) -> HCEndedPanelNotice? {
+        guard case .ended(let evidence)? = lifecycle,
+              !HCRestoreLifecycleProjection.isHostEnd(evidence.hcReason) else { return nil }
+        let reason: Reason
+        switch requestedEnd {
+        case .endAll?: reason = .endAll
+        case .panelClose?, .areaClose?, .workspaceClose?, .windowClose?: reason = .endSession
+        case nil:
+            if let signal = HCRestoreLifecycleProjection.outsideSignal(evidence) { reason = .outsideSignal(signal) }
+            else if evidence.hcReason == "exited" { reason = .exited }
+            else { reason = .stopped }
+        }
+        return HCEndedPanelNotice(reason: reason, endedAt: evidence.endedAt ?? observedAt, endedKey: evidence.key)
+    }
+
+    /// Stable token for `hc-diagnostics --json`.
+    var reasonToken: String {
+        switch reason {
+        case .endAll: return "end_all"
+        case .endSession: return "end_session"
+        case .outsideSignal: return "outside_signal"
+        case .exited: return "exited"
+        case .stopped: return "stopped"
+        }
+    }
+
+    /// The reason in the headline's parentheses.
+    var reasonText: String {
+        switch reason {
+        case .endAll:
+            return String(localized: "terminal.ended.reason.endAll", defaultValue: "End All Sessions")
+        case .endSession:
+            return String(localized: "terminal.ended.reason.endSession", defaultValue: "End Session")
+        case .outsideSignal(let signal):
+            return String(format: String(localized: "terminal.ended.reason.outsideSignal",
+                defaultValue: "%@ from outside c11"), HCHostEndStatus.signalName(signal))
+        case .exited:
+            return String(localized: "terminal.ended.reason.exited", defaultValue: "its shell exited")
+        case .stopped:
+            return String(localized: "terminal.ended.reason.stopped", defaultValue: "stopped by the terminal host")
+        }
+    }
+
+    /// "Session ended (End All Sessions) at 13:51." Local time, with the date
+    /// when it is not today.
+    var headline: String {
+        String(format: String(localized: "terminal.ended.headline",
+            defaultValue: "Session ended (%1$@) at %2$@."), reasonText, HCHostEndStatus.displayTime(endedAt))
+    }
+
+    var detail: String {
+        String(localized: "terminal.ended.detail",
+            defaultValue: "Nothing you type here is sent.")
+    }
+
+    static var startShellTitle: String {
+        String(localized: "terminal.ended.startShell", defaultValue: "Start a new shell")
+    }
+
+    static var closeTitle: String {
+        String(localized: "terminal.ended.close", defaultValue: "Close")
     }
 }

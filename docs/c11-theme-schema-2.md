@@ -50,9 +50,12 @@ when its flag is on *or* the active theme is schema 2. The flags stay as debug o
 `[states]` themes the colours only. Which state a panel is in, and the attention rules, stay c11's.
 Named flag kinds keep their registry colours; `flag` is the generic violet.
 
-**Backdrop.** `C11SidebarBackground`'s two gradients become `[backdrop]` values, and the bundled
-`c11` theme (c11 plus Sunset Mall) becomes c11's default dark theme, so friends see no change.
-The Sidebar Background setting gains "From theme", its new default; its other choices still override.
+**Backdrop.** `C11SidebarBackground`'s two gradients are also `[backdrop]` values: the bundled
+`c11` theme draws Sunset Mall and `outrun-horizon` draws Outrun Horizon. The Sidebar Background
+setting defaults to "From theme", which draws the active theme's `[backdrop]`. A theme without one,
+the default `stage11` among them, shows c11's material and tint in both slots, the plain sidebar of
+c11 1.8 (C11H-438). Sunset Mall and Outrun Horizon override the theme in the Dark slot; None always
+shows the material.
 Cards keep opaque fills, so text contrast never depends on the backdrop (C11H-32).
 
 ## Token or feature

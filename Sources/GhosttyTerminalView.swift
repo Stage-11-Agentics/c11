@@ -1951,6 +1951,16 @@ class GhosttyApp {
         return found && enabled
     }
 
+    /// Ghostty's effective multi-click interval (C11H-427). Finalize resolves
+    /// an unset value to the system interval; the fallback mirrors that.
+    func clickRepeatInterval() -> TimeInterval {
+        var milliseconds: UInt32 = 0
+        let key = "click-repeat-interval"
+        let found = config.map { ghostty_config_get($0, &milliseconds, key, UInt(key.lengthOfBytes(using: .utf8))) } ?? false
+        return TerminalClickSequence.repeatInterval(configuredMilliseconds: found ? milliseconds : nil,
+                                                    systemInterval: NSEvent.doubleClickInterval)
+    }
+
     func appleScriptAutomationEnabled() -> Bool {
         guard let config else { return false }
         var enabled = false
@@ -2951,6 +2961,27 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private var teardownRequestReason: String?
     @MainActor private(set) var hcSession: HCPanelSession?
     @MainActor private var hcCompositionChecked = false
+    /// C11H-434: the operator ended this panel's terminal and its panel stays
+    /// (End All), so the surface keeps its last screen when hc closes the stream.
+    @MainActor var hcKeepsScreenAfterEnd = false
+
+    /// C11H-434: whether a surface whose hc stream just ended stays on screen
+    /// with its last frame, rather than being freed and replaced by a blank
+    /// one. Only this panel's current surface, in a live view, whose terminal
+    /// was ended on purpose or has ended. The next owner release frees it.
+    @MainActor
+    func keepsEndedScreen(_ candidate: ghostty_surface_t) -> Bool {
+        guard portalLifecycleState == .live, surface == candidate else { return false }
+        if hcKeepsScreenAfterEnd { return true }
+        if case .ended? = hcSession?.lifecycle { return true }
+        return false
+    }
+
+    /// The keep decision a native bridge asks for its surface when its stream ends.
+    @MainActor
+    func hcKeepsSurface(_ candidate: ghostty_surface_t) -> @MainActor @Sendable () -> Bool {
+        { [weak self] in self?.keepsEndedScreen(candidate) ?? false }
+    }
 
     @MainActor
     func configureHCSessionIfNeeded() {
@@ -3047,11 +3078,14 @@ final class TerminalSurface: Identifiable, ObservableObject {
     }
     /// A native-backed bridge as createSurface installs it, with the production removal (generation moves, the
     /// pointer and bridge clear) and no Ghostty calls: output and destruction are no-ops on the fake pointer.
-    @MainActor func installNativeBackedBridgeForTesting(_ bridge: HCNativeBridge, pointer: ghostty_surface_t) {
+    /// Installs `bridge` as owning a fake native `pointer`, with production's removal and keep decision.
+    /// `destroy` stands in for the free.
+    @MainActor func installNativeBackedBridgeForTesting(_ bridge: HCNativeBridge, pointer: ghostty_surface_t,
+                                                        destroy: @escaping @MainActor @Sendable () -> Void = {}) {
         nativeInputGeneration &+= 1; hcHeadlessBridge = nil; hcNativeBridge = bridge; surface = pointer
         bridge.installProcessor(process: { _ in }, removeFromUse: { [weak self, weak bridge] in
             self?.nativeSurfaceRemovedFromUse(pointer, bridge: bridge)
-        }, destroy: {})
+        }, keepsSurface: hcKeepsSurface(pointer), destroy: destroy)
     }
     @MainActor var nativeBridgeForTesting: HCNativeBridge? { hcNativeBridge }
     @MainActor var nativeInputGenerationForTesting: UInt64 { nativeInputGeneration }
@@ -3497,7 +3531,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private func retireHCNativeSurface() async {
         guard let bridge = hcNativeBridge ?? hcRetiringBridge else { return }
         hcRetiringBridge = bridge
-        await withCheckedContinuation { continuation in bridge.retire { continuation.resume() } }
+        await withCheckedContinuation { continuation in bridge.release { continuation.resume() } }
         if hcRetiringBridge === bridge { hcRetiringBridge = nil }
     }
 
@@ -3628,7 +3662,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         guard let argv = snapshot.argv(override: nil) else {
             throw HCUnavailableReason.invalidLaunchTuple
         }
-        // Same shard as the environment it reuses (C11H-67).
+        // Same shard as the environment it reuses (C11H-67), and the same machine (C11H-434).
         let launch = previous.replacingEndedWithShell(argv: argv)
         hcPendingInput.failAll(.cancelled, runtime: runtime)
         // Retires the dead terminal's reconnect owner along with its attachment.
@@ -4268,7 +4302,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         if let nativeBridge {
             // Bridge owns both callback contexts and native free. Main never
             // waits for the output queue that may be waiting for main events.
-            nativeBridge.retire {}
+            nativeBridge.release {}
             return
         }
 
@@ -4834,7 +4868,8 @@ final class TerminalSurface: Identifiable, ObservableObject {
             MainActor.assumeIsolated {
                 nativeBridge.installSurface(createdSurface, removeFromUse: { [weak self, weak nativeBridge] in
                     self?.nativeSurfaceRemovedFromUse(createdSurface, bridge: nativeBridge)
-                }, releaseCallbackContext: { callbackContext.release() })
+                }, keepsSurface: hcKeepsSurface(createdSurface),
+                releaseCallbackContext: { callbackContext.release() })
             }
         }
         EventEmitter.shared.noteWorkspaceRuntimeSurfaceCreated(workspaceId)
@@ -6007,7 +6042,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         }
 
         surface = nil
-        if let nativeBridge { nativeBridge.retire {}; return }
+        if let nativeBridge { nativeBridge.release {}; return }
         ghostty_surface_free(surfaceToFree)
         callbackContext?.release()
     }
@@ -6032,7 +6067,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
         surface = nil
 
         if let nativeBridge {
-            nativeBridge.retire {}
+            nativeBridge.release {}
             return
         }
 
@@ -6120,10 +6155,32 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private var keyboardCopyModeConsumedKeyUps: Set<UInt16> = []
     private var keyboardCopyModeInputState = TerminalKeyboardCopyModeInputState()
     private var dispatchingPanelLinkClick = false
-    /// A click on a c11 link held back from a program that holds the mouse,
-    /// and the press's modifiers for its replay.
+    /// A click on a c11 link held back from a program that holds the mouse
+    /// (C11H-325), or held back from Ghostty as a plain click with the mouse
+    /// uncaptured (C11H-427, `capturedPanelLinkClickIsPlain`), and the
+    /// press's modifiers for its replay.
     private var capturedPanelLinkClick: CapturedPanelLinkClick?
+    private var capturedPanelLinkClickIsPlain = false
     private var capturedPanelLinkPressMods = GHOSTTY_MODS_NONE
+    /// A held plain click's navigation, waiting out Ghostty's repeat interval,
+    /// with the click for its replay. A press in the view that continues the
+    /// click's sequence replays it to Ghostty first (a double or triple click
+    /// selects); any other press, a key after the release, focus leaving the
+    /// view, another button, a window move or teardown drops it unseen.
+    private var pendingPanelLinkOpen: PendingPanelLinkOpen?
+    private struct PendingPanelLinkOpen {
+        let item: DispatchWorkItem
+        let href: String
+        let click: CapturedPanelLinkClick
+        let mods: ghostty_input_mods_e
+        let intent: PendingPanelLinkOpenIntent
+        /// The mirrored count before the held press, for when Ghostty never sees it.
+        let sequenceBefore: TerminalClickSequence
+    }
+    /// Ghostty's click count as c11 mirrors it, for every left press here.
+    private var panelLinkClickSequence = TerminalClickSequence()
+    /// The mirrored count before the held press now in `capturedPanelLinkClick`.
+    private var panelLinkSequenceBeforeHeld = TerminalClickSequence()
     /// The captured Cmd-hover's last read; nil when it is not running.
     private var capturedPanelLinkHover: CapturedPanelLinkHover?
     private let panelLinkNotice = PanelLinkNoticePresenter()
@@ -6382,6 +6439,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         panelLinkPreview.clear()
+        cancelPendingPanelLinkOpen()
         if let windowObserver {
             NotificationCenter.default.removeObserver(windowObserver)
             self.windowObserver = nil
@@ -7168,6 +7226,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     override func resignFirstResponder() -> Bool {
         let result = super.resignFirstResponder()
         if result {
+            cancelPendingPanelLinkOpen() // C11H-427: focus went elsewhere
             desiredFocus = false
             // Drop the modifier snapshot so we don't diff a future flagsChanged
             // against stale state. While focus lives elsewhere, modifier
@@ -8270,21 +8329,64 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 surfaceId: terminalSurface.id
             )
         }
-        guard let surface = surface else { return }
+        // C11H-427: a new press stops the last held plain link click from
+        // navigating. If this press continues its click sequence, Ghostty gets
+        // the held click now, before this press, so it counts the double or
+        // triple click and selects. Otherwise Ghostty never sees it.
+        let superseded = cancelPendingPanelLinkOpen(restoringSequence: false)
+        guard let surface = surface else {
+            if let superseded { panelLinkClickSequence = superseded.sequenceBefore }
+            return
+        }
         let point = convert(event.locationInWindow, from: nil)
+        let now = CACurrentMediaTime()
+        let interval = GhosttyApp.shared.clickRepeatInterval()
+        let cellWidth = panelLinkCellWidth(surface)
+        if let superseded {
+            let continues = panelLinkClickSequence.countAfterPress(
+                at: now, point: point, interval: interval, cellWidth: cellWidth) > 1
+            let keyAfterRelease = !superseded.intent.isCurrent(
+                viewIsFirstResponder: true, lastKeyAt: terminalSurface?.lastOperatorKeyAt)
+            if TerminalClickSequence.replaysHeldClick(keyAfterRelease: keyAfterRelease, pressContinuesIt: continues) {
+                replayPanelLinkPress(at: superseded.click.origin, mods: superseded.mods, surface: surface)
+                _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, superseded.mods)
+            } else {
+                panelLinkClickSequence = superseded.sequenceBefore
+            }
+        }
+        let sequenceBefore = panelLinkClickSequence
+        // The capture is read once per press, for the mirror and the decision.
+        let mouseCaptured = ghostty_surface_mouse_captured(surface)
+        let startsClickSequence = panelLinkClickSequence.press(
+            at: now, point: point, interval: interval, cellWidth: cellWidth,
+            shift: event.modifierFlags.contains(.shift), mouseCaptured: mouseCaptured)
         // C11H-325: while the program holds the mouse, Ghostty sees no links,
         // so a plain or Cmd click on a c11 link is held back here; mouseUp
-        // navigates, or a drag replays the press. Every other click goes to
+        // navigates, or a drag replays the press. C11H-427: with the mouse
+        // uncaptured, a plain click that starts a click sequence on a c11 link
+        // is held back from Ghostty the same way. Every other click goes to
         // Ghostty as before.
-        capturedPanelLinkClick = CapturedPanelLinkClick.begin(
+        capturedPanelLinkClick = nil
+        switch PanelLinkPress.begin(
             modifiers: event.modifierFlags,
+            startsClickSequence: startsClickSequence,
             at: point,
-            mouseCaptured: { ghostty_surface_mouse_captured(surface) },
+            mouseCaptured: { mouseCaptured },
             hrefAtPointer: { hyperlinkHref(at: point, surface: surface) }
-        )
-        if capturedPanelLinkClick != nil {
+        ) {
+        case .held(let click):
+            capturedPanelLinkClick = click
+            capturedPanelLinkClickIsPlain = false
             capturedPanelLinkPressMods = modsFromEvent(event)
             return
+        case .heldPlain(let click):
+            capturedPanelLinkClick = click
+            capturedPanelLinkClickIsPlain = true
+            panelLinkSequenceBeforeHeld = sequenceBefore
+            capturedPanelLinkPressMods = modsFromEvent(event)
+            return
+        case nil:
+            break
         }
         ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, modsFromEvent(event))
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, modsFromEvent(event))
@@ -8301,10 +8403,19 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             if let href = click.finish(hrefAtPointer: { hyperlinkHref(at: point, surface: surface) }) {
                 dispatchingPanelLinkClick = event.type == .leftMouseUp && !isSynthesizingKey
                 defer { dispatchingPanelLinkClick = false }
-                activatePanelLink(href, activation: "captured_click")
+                if capturedPanelLinkClickIsPlain {
+                    // C11H-427: the policy is decided on this real mouse-up;
+                    // only the opening waits, for a second press.
+                    activatePanelLink(href, activation: "plain_click",
+                                      openAfter: GhosttyApp.shared.clickRepeatInterval(),
+                                      intent: PendingPanelLinkOpenIntent(releasedAt: Date()),
+                                      heldClick: (click, capturedPanelLinkPressMods, panelLinkSequenceBeforeHeld))
+                } else {
+                    activatePanelLink(href, activation: "captured_click")
+                }
                 return
             }
-            // Released off the link: the program gets the whole click.
+            // Released off the link: the program (or Ghostty) gets the whole click.
             replayCapturedPanelLinkPress(click, surface: surface)
             ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, modsFromEvent(event))
         }
@@ -8316,8 +8427,21 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     /// Hand a held press to the program where and as it happened.
     private func replayCapturedPanelLinkPress(_ click: CapturedPanelLinkClick, surface: ghostty_surface_t) {
-        ghostty_surface_mouse_pos(surface, click.origin.x, bounds.height - click.origin.y, capturedPanelLinkPressMods)
-        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, capturedPanelLinkPressMods)
+        replayPanelLinkPress(at: click.origin, mods: capturedPanelLinkPressMods, surface: surface)
+    }
+
+    /// One cell's width in view points, the distance past which Ghostty
+    /// restarts its click count (it compares pixels against the cell width
+    /// in pixels; this is the same ratio from the surface's own size).
+    private func panelLinkCellWidth(_ surface: ghostty_surface_t) -> CGFloat {
+        let size = ghostty_surface_size(surface)
+        guard size.width_px > 0, bounds.width > 0 else { return 0 }
+        return CGFloat(size.cell_width_px) * bounds.width / CGFloat(size.width_px)
+    }
+
+    private func replayPanelLinkPress(at origin: CGPoint, mods: ghostty_input_mods_e, surface: ghostty_surface_t) {
+        ghostty_surface_mouse_pos(surface, origin.x, bounds.height - origin.y, mods)
+        _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
     }
 
     /// The OSC 8 target of the cell under a view point, read without
@@ -8335,7 +8459,23 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         }
     }
 
-    func activatePanelLink(_ href: String, activation: String = "native_command_click") {
+    /// Drop a waiting plain-click open, and log that it was dropped. Ghostty
+    /// never saw its click, so the mirrored count goes back to before it,
+    /// unless a newer press decides first (it may replay the click).
+    @discardableResult
+    private func cancelPendingPanelLinkOpen(restoringSequence: Bool = true) -> PendingPanelLinkOpen? {
+        guard let pending = pendingPanelLinkOpen else { return nil }
+        pendingPanelLinkOpen = nil
+        pending.item.cancel()
+        if restoringSequence { panelLinkClickSequence = pending.sequenceBefore }
+        PanelLinkActivation.log(target: pending.href, origin: "terminal", activation: "plain_click", result: "cancelled")
+        return pending
+    }
+
+    func activatePanelLink(_ href: String, activation: String = "native_command_click",
+                           openAfter delay: TimeInterval = 0, intent: PendingPanelLinkOpenIntent? = nil,
+                           heldClick: (click: CapturedPanelLinkClick, mods: ghostty_input_mods_e,
+                                       sequenceBefore: TerminalClickSequence)? = nil) {
         let policy = TerminalPanelLinkPolicy(
             isNativeClick: dispatchingPanelLinkClick,
             isSocketCommand: SocketCommandContext.current != nil,
@@ -8346,7 +8486,19 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         let sourceID = terminalSurface?.id
         // Leave Ghostty's event/renderer stack before touching overlays or focus.
         // The capability is this closure, never a timestamp reusable by RPC.
-        DispatchQueue.main.async { [weak self] in
+        let open = DispatchWorkItem { [weak self] in
+            if let intent {
+                // A delayed open stands down if the operator has moved on.
+                // Either way Ghostty never saw its click: the mirrored count
+                // goes back to before it.
+                if let pending = self?.pendingPanelLinkOpen { self?.panelLinkClickSequence = pending.sequenceBefore }
+                self?.pendingPanelLinkOpen = nil
+                guard let self, intent.isCurrent(viewIsFirstResponder: self.window?.firstResponder === self,
+                                                 lastKeyAt: self.terminalSurface?.lastOperatorKeyAt) else {
+                    PanelLinkActivation.log(target: href, origin: "terminal", activation: activation, result: "cancelled")
+                    return
+                }
+            }
             if let reason = policy.refusalReason {
                 if let self {
                     self.panelLinkPreview.clear()
@@ -8373,6 +8525,14 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             if !opened { self.panelLinkNotice.show(.unavailable, in: self.terminalSurface?.hostedView ?? self) }
             PanelLinkActivation.log(target: href, origin: "terminal", activation: activation, result: opened ? "opened" : "unavailable")
         }
+        guard delay > 0, let heldClick, let intent else {
+            DispatchQueue.main.async(execute: open)
+            return
+        }
+        cancelPendingPanelLinkOpen()
+        pendingPanelLinkOpen = PendingPanelLinkOpen(item: open, href: href, click: heldClick.click, mods: heldClick.mods,
+                                                    intent: intent, sequenceBefore: heldClick.sequenceBefore)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: open)
     }
 
     func updatePanelLinkPreview(_ href: String) {
@@ -8388,6 +8548,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        cancelPendingPanelLinkOpen()
         guard let surface = surface else { return }
         if !ghostty_surface_mouse_captured(surface) {
             requestPointerFocusRecovery()
@@ -8413,6 +8574,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     }
 
     override func otherMouseDown(with event: NSEvent) {
+        cancelPendingPanelLinkOpen()
         guard event.buttonNumber == 2 else {
             super.otherMouseDown(with: event)
             return
@@ -8611,8 +8773,10 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         guard let surface = surface else { return }
         let point = convert(event.locationInWindow, from: nil)
         if let click = capturedPanelLinkClick {
-            // Held on a c11 link (C11H-325): the program has not seen the
-            // press. Past the threshold it is a drag, so the program gets it.
+            // Held on a c11 link (C11H-325, C11H-427): the program, or
+            // Ghostty, has not seen the press. Past the threshold it is a
+            // drag, so it gets the press where it happened and the selection
+            // starts there.
             guard click.becomesDrag(at: point) else { return }
             capturedPanelLinkClick = nil
             replayCapturedPanelLinkPress(click, surface: surface)
@@ -8671,6 +8835,14 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 
     deinit {
         // Surface lifecycle is managed by TerminalSurface, not the view
+        // C11H-427: teardown drops a waiting open. Ghostty never saw its click.
+        if let pending = pendingPanelLinkOpen {
+            pending.item.cancel()
+            let href = pending.href
+            Task { @MainActor in
+                PanelLinkActivation.log(target: href, origin: "terminal", activation: "plain_click", result: "cancelled")
+            }
+        }
 #if DEBUG
         dlog(
             "surface.view.deinit view=\(Unmanaged.passUnretained(self).toOpaque()) " +

@@ -13,7 +13,7 @@
 # installed stays stale, in every harness.
 #
 # Run this after editing any installable skill so every installed copy matches
-# source. Idempotent. Only touches skills that are (a) marked installable in
+# source. Idempotent. Only syncs skills that are (a) marked installable in
 # skills/MANIFEST.json AND (b) already installed in that harness's folder. It
 # never installs a skill a harness doesn't already have; first installs go
 # through c11 Settings → Agent Skills.
@@ -23,6 +23,14 @@
 # still matches that hash as checkout-managed and never offers to replace it with
 # its (possibly older) bundled copy; Settings → Agent Skills replaces it only on
 # an explicit Replace Local Copies.
+#
+# A package c11 no longer ships (RETIRED below) is retired when its replacement
+# is among the names synced: a copy whose stamp names it and whose files still
+# hash to that stamp is removed, whether the app or a sync stamped it. The app
+# keeps a sync-stamped copy as one from a checkout, so this script is what
+# removes those. An edited copy (one holding a symlink, a linked stamp or a
+# FIFO counts), a symlink, or a folder without a c11 stamp is left alone and
+# reported. SkillInstaller.retireStaleCopies applies the same rule.
 #
 # Usage:
 #   scripts/sync-installed-skills.sh           # sync all installed installable skills
@@ -39,31 +47,73 @@ if [ -n "$COMMIT" ] && [ -n "$(git -C "$REPO_ROOT" status --porcelain -- skills 
   COMMIT="${COMMIT}-dirty"
 fi
 
-# Writes the sync stamp into an installed copy. The hash matches
+# Packages c11 no longer ships, each as <retired>:<replacement>. Keep in step
+# with SkillInstaller.retiredPackages in Sources/SkillInstaller.swift.
+RETIRED=("c11h:c11" "c11-debug-windows:c11")  # c11-2.0:legacy
+
+# `skill_py stamp <dest> <name>` writes the sync stamp into an installed copy.
+# `skill_py retire <dest> <name>` removes a retired package's copy when its stamp
+# names that package, it holds only regular files and folders, and its files
+# still hash to the stamp, and prints what it did: retired, edited, symlink or
+# unstamped. The hash matches
 # SkillInstaller.contentHash(of:skipInstallerManifest: true) in
 # Sources/SkillInstaller.swift; keep the two in step.
-write_stamp() {
-  python3 - "$1" "$2" "$COMMIT" <<'PY'
-import datetime, hashlib, json, os, struct, sys
+skill_py() {
+  python3 - "$@" "$COMMIT" <<'PY'
+import datetime, hashlib, json, os, shutil, stat, struct, sys
 
-dest, name, commit = sys.argv[1:4]
-entries = []
-for root, _, files in os.walk(dest):
-    for filename in files:
-        path = os.path.join(root, filename)
-        rel = os.path.relpath(path, dest)
-        if rel == ".c11-skill.json" or filename == ".DS_Store":
-            continue
-        if os.path.islink(path) or not os.path.isfile(path):
-            continue
-        entries.append((rel, path))
-digest = hashlib.sha256()
-for rel, path in sorted(entries):
-    rel_bytes = rel.encode()
-    with open(path, "rb") as handle:
-        data = handle.read()
-    digest.update(struct.pack(">Q", len(rel_bytes)) + rel_bytes)
-    digest.update(struct.pack(">Q", len(data)) + data)
+mode, dest, name, commit = sys.argv[1:5]
+
+
+def content_hash(root):
+    entries = []
+    for parent, _, files in os.walk(root):
+        for filename in files:
+            path = os.path.join(parent, filename)
+            rel = os.path.relpath(path, root)
+            if rel == ".c11-skill.json" or filename == ".DS_Store":
+                continue
+            if os.path.islink(path) or not os.path.isfile(path):
+                continue
+            entries.append((rel, path))
+    digest = hashlib.sha256()
+    for rel, path in sorted(entries):
+        rel_bytes = rel.encode()
+        with open(path, "rb") as handle:
+            data = handle.read()
+        digest.update(struct.pack(">Q", len(rel_bytes)) + rel_bytes)
+        digest.update(struct.pack(">Q", len(data)) + data)
+    return "sha256:" + digest.hexdigest()
+
+
+def holds_local_structure(root):
+    """A symlink, FIFO, socket or device anywhere in the copy: the hash reads only
+    regular files, so such a copy was changed by hand even when its hash matches."""
+    for parent, dirs, files in os.walk(root):
+        for entry in dirs + files:
+            mode = os.lstat(os.path.join(parent, entry)).st_mode
+            if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                return True
+    return False
+
+
+if mode == "retire":
+    if os.path.islink(dest):
+        print("symlink")
+        sys.exit(0)
+    try:
+        with open(os.path.join(dest, ".c11-skill.json"), encoding="utf-8") as handle:
+            stamp = json.load(handle)
+    except (OSError, ValueError):
+        stamp = None
+    if not isinstance(stamp, dict) or stamp.get("c11_skill_schema") != 1 or stamp.get("package") != name:
+        print("unstamped")
+    elif holds_local_structure(dest) or content_hash(dest) != stamp.get("source_sha256"):
+        print("edited")
+    else:
+        shutil.rmtree(dest)
+        print("retired")
+    sys.exit(0)
 
 version = None
 with open(os.path.join(dest, "SKILL.md"), encoding="utf-8") as handle:
@@ -86,7 +136,7 @@ stamp = {
     "app_version": "",
     "app_build": "",
     "commit": commit,
-    "source_sha256": "sha256:" + digest.hexdigest(),
+    "source_sha256": content_hash(dest),
 }
 if version is None:
     del stamp["skill_version"]
@@ -154,7 +204,7 @@ for name in "${INSTALLABLE[@]}"; do
     # Mirror source → installed copy. --delete keeps removed files from lingering.
     # The stamp is excluded from the mirror and rewritten as a sync stamp.
     rsync -a --delete --exclude='.c11-skill.json' "${src}/" "${dest}/"
-    write_stamp "$dest" "$name"
+    skill_py stamp "$dest" "$name"
     echo "sync  ${name} → ${dest}"
     synced=$((synced+1))
   done
@@ -164,4 +214,26 @@ for name in "${INSTALLABLE[@]}"; do
   fi
 done
 
-echo "done: ${synced} synced, ${skipped} skipped"
+# Retire what c11 no longer ships, when its replacement is among the names synced.
+retired=0
+for pair in "${RETIRED[@]}"; do
+  old="${pair%%:*}" replacement="${pair#*:}"
+  selected=0
+  for name in "${INSTALLABLE[@]}"; do
+    if [ "$name" = "$replacement" ]; then selected=1; fi
+  done
+  [ "$selected" -eq 1 ] || continue
+  for root in "${ROOTS[@]}"; do
+    dest="${root}/${old}"
+    [ -e "$dest" ] || [ -L "$dest" ] || continue
+    outcome="$(skill_py retire "$dest" "$old")"
+    case "$outcome" in
+      retired)   echo "retire ${old} → ${dest}"; retired=$((retired+1)) ;;
+      edited)    echo "keep  ${old} → ${dest}: changed since it was stamped; remove it by hand if it is not yours" ;;
+      symlink)   echo "keep  ${old} → ${dest}: a symlink" ;;
+      *)         echo "keep  ${old} → ${dest}: no c11 stamp" ;;
+    esac
+  done
+done
+
+echo "done: ${synced} synced, ${skipped} skipped, ${retired} retired"

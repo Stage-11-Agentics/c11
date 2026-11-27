@@ -101,41 +101,221 @@ final class PanelLinkPolicyTests: XCTestCase {
         let origin = CGPoint(x: 40, y: 12)
         for href in ["c11://panel/\(id)", "c11h://workspace/\(id)"] { // c11-2.0:keep (hidden alias)
             for modifiers: NSEvent.ModifierFlags in [[], .command, .capsLock, [.command, .capsLock]] {
-                let click = CapturedPanelLinkClick.begin(
-                    modifiers: modifiers, at: origin, mouseCaptured: { true }, hrefAtPointer: { href })
-                XCTAssertEqual(click, CapturedPanelLinkClick(href: href, origin: origin), "\(href) \(modifiers)")
-                XCTAssertEqual(click?.finish(hrefAtPointer: { href }), href)
+                for startsClickSequence in [true, false] {
+                    let press = PanelLinkPress.begin(modifiers: modifiers, startsClickSequence: startsClickSequence, at: origin,
+                                                     mouseCaptured: { true }, hrefAtPointer: { href })
+                    XCTAssertEqual(press, .held(CapturedPanelLinkClick(href: href, origin: origin)),
+                                   "\(href) \(modifiers) \(startsClickSequence)")
+                }
             }
         }
         // A malformed c11 target is still ours, so it reaches the invalid
         // notice instead of the program.
         let malformed = "c11:" + String(repeating: "x", count: 508)
-        XCTAssertNotNil(CapturedPanelLinkClick.begin(
-            modifiers: [], at: origin, mouseCaptured: { true }, hrefAtPointer: { malformed }))
+        XCTAssertEqual(PanelLinkPress.begin(modifiers: [], startsClickSequence: true, at: origin,
+                                            mouseCaptured: { true }, hrefAtPointer: { malformed }),
+                       .held(CapturedPanelLinkClick(href: malformed, origin: origin)))
     }
 
-    func testCapturedClickLeavesEveryOtherClickToTheProgramOrGhostty() {
+    func testCapturedClickLeavesEveryOtherClickToTheProgram() {
         let link = "c11://panel/\(id)"
         var reads = 0
-        // Not captured: Ghostty's own link path handles it; the cell is never read.
-        XCTAssertNil(CapturedPanelLinkClick.begin(
-            modifiers: [], at: .zero, mouseCaptured: { false }, hrefAtPointer: { reads += 1; return link }))
         // Shift is Ghostty's grab release; Option and Control chords are the
         // program's. Neither the capture nor the cell is read.
         for modifiers: NSEvent.ModifierFlags in [.shift, .option, .control, [.command, .shift],
                                                  [.command, .option], [.command, .control]] {
-            XCTAssertNil(CapturedPanelLinkClick.begin(
-                modifiers: modifiers, at: .zero,
+            XCTAssertNil(PanelLinkPress.begin(
+                modifiers: modifiers, startsClickSequence: true, at: .zero,
                 mouseCaptured: { reads += 1; return true }, hrefAtPointer: { reads += 1; return link }),
                 "\(modifiers)")
         }
         XCTAssertEqual(reads, 0)
         // Another scheme, a bare cell or a lookalike scheme stays the program's.
         for href in ["https://example.com", "file:///tmp/x", "c110://panel/\(id)", "", nil] as [String?] {
-            XCTAssertNil(CapturedPanelLinkClick.begin(
-                modifiers: [], at: .zero, mouseCaptured: { true }, hrefAtPointer: { href }),
-                "\(String(describing: href))")
+            XCTAssertNil(PanelLinkPress.begin(modifiers: [], startsClickSequence: true, at: .zero,
+                                              mouseCaptured: { true }, hrefAtPointer: { href }),
+                         "\(String(describing: href))")
         }
+    }
+
+    // C11H-427: with the mouse uncaptured (a plain shell), Ghostty opens an
+    // OSC 8 link only on Cmd-click, so c11 holds a plain click that starts a
+    // click sequence on its own links, as it does under capture.
+    func testUncapturedPlainClickOnAC11LinkIsHeld() {
+        let origin = CGPoint(x: 40, y: 12)
+        let malformed = "c11:" + String(repeating: "x", count: 508)
+        for href in ["c11://panel/\(id)", "c11h://workspace/\(id)", malformed] { // c11-2.0:keep (hidden alias)
+            for modifiers: NSEvent.ModifierFlags in [[], .capsLock, .function] {
+                let press = PanelLinkPress.begin(modifiers: modifiers, startsClickSequence: true, at: origin,
+                                                 mouseCaptured: { false }, hrefAtPointer: { href })
+                XCTAssertEqual(press, .heldPlain(CapturedPanelLinkClick(href: href, origin: origin)),
+                               "\(href) \(modifiers)")
+            }
+        }
+    }
+
+    func testUncapturedClickLeavesEveryOtherClickToGhostty() {
+        let link = "c11://panel/\(id)"
+        var cellReads = 0
+        var captureReads = 0
+        // Cmd stays Ghostty's own link rule: the capture is read (a captured
+        // Cmd-click would be held), the cell never is.
+        XCTAssertNil(PanelLinkPress.begin(modifiers: .command, startsClickSequence: true, at: .zero,
+                                          mouseCaptured: { captureReads += 1; return false },
+                                          hrefAtPointer: { cellReads += 1; return link }))
+        XCTAssertEqual(captureReads, 1)
+        XCTAssertEqual(cellReads, 0)
+        // Shift extends a selection; Option and Control are Ghostty's.
+        for modifiers: NSEvent.ModifierFlags in [.shift, .option, .control, [.shift, .capsLock]] {
+            XCTAssertNil(PanelLinkPress.begin(modifiers: modifiers, startsClickSequence: true, at: .zero,
+                                              mouseCaptured: { captureReads += 1; return false },
+                                              hrefAtPointer: { cellReads += 1; return link }),
+                         "\(modifiers)")
+        }
+        // A press that continues Ghostty's click sequence (the second or
+        // third press of a double or triple click) selects.
+        XCTAssertNil(PanelLinkPress.begin(modifiers: [], startsClickSequence: false, at: .zero,
+                                          mouseCaptured: { false },
+                                          hrefAtPointer: { cellReads += 1; return link }))
+        XCTAssertEqual(cellReads, 0)
+        XCTAssertEqual(captureReads, 1, "Shift, Option and Control never read the capture")
+        // https and every other scheme keep Cmd-click; bare text has no target.
+        for href in ["https://example.com", "http://c11.app", "file:///tmp/x", "c110://panel/\(id)", "", nil] as [String?] {
+            XCTAssertNil(PanelLinkPress.begin(modifiers: [], startsClickSequence: true, at: .zero,
+                                              mouseCaptured: { false }, hrefAtPointer: { href }),
+                         "\(String(describing: href))")
+        }
+    }
+
+    // C11H-427: the wait, and what counts as a double click, follow Ghostty's
+    // own click-repeat-interval, not AppKit's.
+    func testClickSequenceFollowsGhosttysRepeatInterval() {
+        XCTAssertEqual(TerminalClickSequence.repeatInterval(configuredMilliseconds: 1000, systemInterval: 0.5), 1.0)
+        XCTAssertEqual(TerminalClickSequence.repeatInterval(configuredMilliseconds: 200, systemInterval: 0.5), 0.2)
+        XCTAssertEqual(TerminalClickSequence.repeatInterval(configuredMilliseconds: 0, systemInterval: 0.5), 0.5,
+                       "unset resolves to the system interval, as Ghostty does")
+        XCTAssertEqual(TerminalClickSequence.repeatInterval(configuredMilliseconds: nil, systemInterval: 0.42), 0.42)
+
+        let here = CGPoint(x: 100, y: 100)
+        var slow = TerminalClickSequence()
+        XCTAssertTrue(slow.press(at: 10.0, point: here, interval: 1.0, cellWidth: 8))
+        XCTAssertFalse(slow.press(at: 10.7, point: here, interval: 1.0, cellWidth: 8),
+                       "a 700 ms second press is Ghostty's double click at 1000 ms")
+        XCTAssertFalse(slow.press(at: 11.4, point: here, interval: 1.0, cellWidth: 8), "and a triple")
+        XCTAssertTrue(slow.press(at: 12.5, point: here, interval: 1.0, cellWidth: 8))
+
+        var quick = TerminalClickSequence()
+        XCTAssertTrue(quick.press(at: 20.0, point: here, interval: 0.2, cellWidth: 8))
+        XCTAssertTrue(quick.press(at: 20.3, point: here, interval: 0.2, cellWidth: 8),
+                      "past a 200 ms interval Ghostty counts a new click")
+
+        // A fourth press within the interval wraps to a new click, as Ghostty's does.
+        var run = TerminalClickSequence()
+        XCTAssertEqual((0..<4).map { run.press(at: 30 + Double($0) * 0.1, point: here, interval: 0.5, cellWidth: 8) },
+                       [true, false, false, true])
+    }
+
+    // C11H-427: Ghostty restarts its count for a press more than one cell
+    // from the previous one, so a quick click elsewhere and then on a link
+    // makes the link click a single click.
+    func testClickSequenceRestartsMoreThanACellAway() {
+        var sequence = TerminalClickSequence()
+        XCTAssertTrue(sequence.press(at: 1.0, point: CGPoint(x: 100, y: 100), interval: 1.0, cellWidth: 8))
+        XCTAssertTrue(sequence.press(at: 1.3, point: CGPoint(x: 100, y: 140), interval: 1.0, cellWidth: 8),
+                      "a press five rows down is a new click")
+        XCTAssertFalse(sequence.press(at: 1.5, point: CGPoint(x: 105, y: 146), interval: 1.0, cellWidth: 8),
+                       "within one cell (7.8 pt) it continues")
+        XCTAssertEqual(sequence.countAfterPress(at: 1.6, point: CGPoint(x: 114, y: 146), interval: 1.0, cellWidth: 8), 1,
+                       "nine points across an 8 pt cell restarts")
+    }
+
+    // C11H-427: c11 can't see how Ghostty counts a Shift press (selection
+    // extension, mouse-shift-capture, a program's XTSHIFTESCAPE) or a press
+    // while the mouse is captured (mouse-reporting). It fails safe: the next
+    // press within that press's window is never held; outside it, it is.
+    func testShiftPressMakesTheNextPressInItsWindowGoToGhostty() {
+        let link = CGPoint(x: 120, y: 60)
+        // The mirror reads no selection and no shift-capture setting, so one
+        // rule covers Shift with a selection, without one, and with Shift
+        // capture on.
+        for shiftAt in [2.5, 0.5] {
+            var sequence = TerminalClickSequence()
+            XCTAssertTrue(sequence.press(at: 0, point: CGPoint(x: 40, y: 12), interval: 1.0, cellWidth: 8))
+            XCTAssertFalse(sequence.press(at: shiftAt, point: link, interval: 1.0, cellWidth: 8, shift: true))
+            XCTAssertTrue(sequence.isUncertain)
+            XCTAssertEqual(sequence.lastPress?.time, shiftAt)
+            XCTAssertFalse(sequence.press(at: shiftAt + 0.3, point: link, interval: 1.0, cellWidth: 8),
+                           "a plain press on the link within the window is not held")
+            XCTAssertTrue(sequence.isUncertain, "and the press after it is in its window too")
+            XCTAssertEqual(sequence.lastPress?.time, shiftAt + 0.3)
+            XCTAssertTrue(sequence.press(at: shiftAt + 1.5, point: link, interval: 1.0, cellWidth: 8),
+                          "outside the window the mirror starts fresh")
+            XCTAssertFalse(sequence.isUncertain)
+            XCTAssertEqual(sequence.count, 1)
+        }
+        // A press more than a cell away is outside the window as well.
+        var away = TerminalClickSequence()
+        XCTAssertFalse(away.press(at: 1.0, point: link, interval: 1.0, cellWidth: 8, shift: true))
+        XCTAssertTrue(away.press(at: 1.2, point: CGPoint(x: 120, y: 80), interval: 1.0, cellWidth: 8))
+        XCTAssertEqual(away.count, 1)
+
+        // The v4 review's gesture: drag-select, wait, Shift-extend onto the
+        // link, then a triple click there. None of the three presses is held,
+        // so Ghostty selects the line.
+        var gesture = TerminalClickSequence()
+        XCTAssertTrue(gesture.press(at: 1.0, point: CGPoint(x: 40, y: 12), interval: 1.0, cellWidth: 8))
+        XCTAssertFalse(gesture.press(at: 2.5, point: link, interval: 1.0, cellWidth: 8, shift: true))
+        XCTAssertEqual([2.8, 2.95, 3.1].map { gesture.press(at: $0, point: link, interval: 1.0, cellWidth: 8) },
+                       [false, false, false])
+    }
+
+    func testCapturedPressMakesTheNextUncapturedPressInItsWindowGoToGhostty() {
+        let here = CGPoint(x: 40, y: 12)
+        var sequence = TerminalClickSequence()
+        XCTAssertFalse(sequence.press(at: 1.0, point: here, interval: 1.0, cellWidth: 8, mouseCaptured: true))
+        XCTAssertTrue(sequence.isUncertain)
+        XCTAssertEqual(sequence.lastPress?.time, 1.0)
+        XCTAssertFalse(sequence.press(at: 1.4, point: here, interval: 1.0, cellWidth: 8),
+                       "capture just ended: the next press in the window goes to Ghostty")
+        XCTAssertTrue(sequence.press(at: 2.6, point: here, interval: 1.0, cellWidth: 8),
+                      "outside the window it starts a click")
+        XCTAssertEqual(sequence.count, 1)
+        XCTAssertFalse(sequence.isUncertain)
+    }
+
+    // C11H-427: a press while a held plain click waits replays that click to
+    // Ghostty only when the press continues its sequence and no key came after
+    // its release; otherwise Ghostty never sees it.
+    func testHeldClickIsReplayedOnlyIntoItsOwnSequence() {
+        XCTAssertTrue(TerminalClickSequence.replaysHeldClick(keyAfterRelease: false, pressContinuesIt: true))
+        XCTAssertFalse(TerminalClickSequence.replaysHeldClick(keyAfterRelease: true, pressContinuesIt: true),
+                       "a key typed after the release: replaying would move the shell's cursor after it")
+        XCTAssertFalse(TerminalClickSequence.replaysHeldClick(keyAfterRelease: false, pressContinuesIt: false))
+
+        // Held 1.2 s, released, then a Shift-click on the same cell 0.3 s
+        // later, at 1000 ms: 1.5 s after the held press it continues nothing,
+        // so the held click is dropped and the Shift-click stays a single click.
+        var sequence = TerminalClickSequence()
+        let link = CGPoint(x: 40, y: 12)
+        XCTAssertTrue(sequence.press(at: 5.0, point: link, interval: 1.0, cellWidth: 8))
+        XCTAssertEqual(sequence.countAfterPress(at: 6.5, point: link, interval: 1.0, cellWidth: 8), 1)
+        XCTAssertFalse(TerminalClickSequence.replaysHeldClick(
+            keyAfterRelease: false,
+            pressContinuesIt: sequence.countAfterPress(at: 6.5, point: link, interval: 1.0, cellWidth: 8) > 1))
+    }
+
+    // C11H-427: an open that waited out the interval runs only if it is still
+    // the operator's latest intent.
+    func testPendingOpenStandsDownForANewerKeyOrFocusElsewhere() {
+        let released = Date(timeIntervalSinceReferenceDate: 1000)
+        let intent = PendingPanelLinkOpenIntent(releasedAt: released)
+        XCTAssertTrue(intent.isCurrent(viewIsFirstResponder: true, lastKeyAt: nil))
+        XCTAssertTrue(intent.isCurrent(viewIsFirstResponder: true, lastKeyAt: released.addingTimeInterval(-5)),
+                      "typing before the click doesn't cancel it")
+        XCTAssertFalse(intent.isCurrent(viewIsFirstResponder: true, lastKeyAt: released.addingTimeInterval(0.01)),
+                       "a key after the release cancels it")
+        XCTAssertFalse(intent.isCurrent(viewIsFirstResponder: false, lastKeyAt: nil),
+                       "focus elsewhere cancels it")
     }
 
     func testHeldPressBecomesTheProgramsDragPastTheThreshold() {

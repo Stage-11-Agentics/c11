@@ -111,6 +111,12 @@ struct TerminalPanelView: View {
                 HCHostEndBanner(status: hostEnd,
                     resume: { owningWorkspace?.resumeHostEndedConversation(panelId: panel.id) },
                     dismiss: { panel.dismissHCHostEnd() })
+            } else if let ended = panel.hcEndedNotice {
+                HCEndedPanelBanner(notice: ended, starting: panel.hcStartingNewShell,
+                    failure: panel.hcNewShellFailure,
+                    startShell: { panel.startNewShellAfterEnd() },
+                    // Its session is already over: Close needs no second question.
+                    close: { _ = owningWorkspace?.closePanel(panel.id, force: true) })
             } else if let notice = panel.hcRestoreNotice {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
@@ -134,7 +140,9 @@ struct TerminalPanelView: View {
                     }
                 }())
             }
-            if let runtime = panel.hcSession {
+            // C11H-434: an ended panel's banner already says nothing typed is
+            // sent; "reconnects" would promise a terminal that is not coming.
+            if let runtime = panel.hcSession, panel.hcEndedNotice == nil {
                 HCTerminalInputNotice(runtime: runtime)
             }
             GhosttyTerminalView(
@@ -143,10 +151,14 @@ struct TerminalPanelView: View {
                 isActive: isFocused,
                 isVisibleInUI: isVisibleInUI,
                 portalZPriority: portalPriority,
-                showsInactiveOverlay: isSplit && !isFocused,
+                // C11H-434: an ended panel keeps its last screen, dimmed, so it
+                // never reads as a live terminal.
+                showsInactiveOverlay: (isSplit && !isFocused) || panel.hcEndedNotice != nil,
                 showsUnreadNotificationRing: hasUnreadNotification && notificationPaneRingEnabled,
                 inactiveOverlayColor: appearance.unfocusedOverlayNSColor,
-                inactiveOverlayOpacity: appearance.unfocusedOverlayOpacity,
+                inactiveOverlayOpacity: panel.hcEndedNotice != nil
+                    ? max(appearance.unfocusedOverlayOpacity, HCEndedPanelBanner.screenDimOpacity)
+                    : appearance.unfocusedOverlayOpacity,
                 searchState: panel.searchState,
                 reattachToken: panel.viewReattachToken,
                 workspaceFrameStyle: portalWorkspaceFrameStyle,
@@ -254,5 +266,48 @@ struct HCHostEndBanner: View {
         .background(.thinMaterial)
         .accessibilityIdentifier("hc-host-end-notice")
         .onChange(of: status) { _ in refusal = nil }
+    }
+}
+
+/// C11H-434: a panel kept after its terminal ended. The host-end banner's
+/// layout: why and when it ended, what that means, and the two ways out.
+/// Fixed layout, so starting a shell or a failure never changes its height.
+struct HCEndedPanelBanner: View {
+    /// How far the kept screen fades toward the terminal's background.
+    static let screenDimOpacity = 0.5
+
+    let notice: HCEndedPanelNotice
+    let starting: Bool
+    let failure: String?
+    let startShell: () -> Void
+    let close: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "stop.circle")
+            VStack(alignment: .leading, spacing: 2) {
+                // Wraps rather than truncates: the time is the part that matters.
+                Text(notice.headline).fontWeight(.semibold)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("hc-session-ended-headline")
+                // A failure says what to do next: it gets room to say it in a narrow panel.
+                Text(failure ?? notice.detail)
+                    .lineLimit(failure == nil ? 2 : 4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("hc-session-ended-detail")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button(HCEndedPanelNotice.startShellTitle) { startShell() }
+                .disabled(starting)
+                .accessibilityIdentifier("hc-session-ended-start-shell")
+            Button(HCEndedPanelNotice.closeTitle) { close() }
+                .accessibilityIdentifier("hc-session-ended-close")
+        }
+        .font(.callout)
+        .padding(10)
+        .background(.thinMaterial)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("hc-session-ended-notice")
     }
 }

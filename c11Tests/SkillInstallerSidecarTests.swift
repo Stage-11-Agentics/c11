@@ -8,9 +8,11 @@ import XCTest
 
 // c11-2.0:begin-keep (`c11h` is the retired sidecar's name, on purpose)
 /// C11H-269: c11 installs the bundled skills its `MANIFEST.json` lists, as c11 1.x did. The
-/// retired line's sidecar, `c11h`, folded into `c11`: a copy c11 stamped under that name is
-/// removed when c11's skills are installed or removed, and a folder c11 did not stamp is never
-/// touched. A temporary HOME stands in for the operator's.
+/// retired line's sidecar, `c11h`, folded into `c11`, and `c11-debug-windows` retired
+/// (C11H-437): a copy c11 stamped under either name is removed when c11's skills are installed
+/// or removed, an edited one is kept, and a folder c11 did not stamp is never touched. A copy a
+/// checkout synced is kept by the app and retired by `scripts/sync-installed-skills.sh`. A
+/// temporary HOME stands in for the operator's.
 final class SkillInstallerSidecarTests: XCTestCase {
     private var sandbox: URL!
     private var home: URL!
@@ -54,16 +56,19 @@ final class SkillInstallerSidecarTests: XCTestCase {
         return try fm.contentsOfDirectory(atPath: skills.path).sorted()
     }
 
-    /// A copy of the retired sidecar as c11h's installer left it: stamped under the current
+    /// A copy of a retired skill as an earlier installer left it: stamped under the current
     /// schema with the hash of what it wrote (`installedBy` says who wrote it).
     @discardableResult
-    private func plantStampedC11hCopy(installedBy: String = SkillInstallerRecord.installedByApp) throws -> URL {
-        let dir = skills.appendingPathComponent("c11h")
+    private func plantStampedCopy(
+        _ name: String = "c11h", in target: SkillInstallerTarget = .claude,
+        installedBy: String = SkillInstallerRecord.installedByApp
+    ) throws -> URL {
+        let dir = target.skillsDir(home: home).appendingPathComponent(name)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        try Data("---\nname: c11h\nversion: 1\n---\nthe retired sidecar\n".utf8).write(to: dir.appendingPathComponent("SKILL.md"))
+        try Data("---\nname: \(name)\nversion: 1\n---\na retired skill\n".utf8).write(to: dir.appendingPathComponent("SKILL.md"))
         let hash = try SkillInstaller.contentHash(of: dir, skipInstallerManifest: true)
         let record = SkillInstallerRecord(
-            schema: SkillInstallerRecord.schemaVersion, packageName: "c11h", skillVersion: "1",
+            schema: SkillInstallerRecord.schemaVersion, packageName: name, skillVersion: "1",
             installedAt: "2026-11-01T00:00:00Z", appVersion: "1.8.1", appBuild: "150",
             commitShort: "old", sourceContentHash: hash, installedBy: installedBy)
         try JSONEncoder().encode(record).write(to: dir.appendingPathComponent(SkillInstaller.manifestFilename))
@@ -107,27 +112,128 @@ final class SkillInstallerSidecarTests: XCTestCase {
 
     // MARK: the retired sidecar
 
-    func testInstallRetiresAStampedC11hCopy() throws {
-        _ = try plantStampedC11hCopy()
+    func testInstallRetiresStampedCopiesOfTheRetiredSkills() throws {
+        try plantStampedCopy("c11h")
+        try plantStampedCopy("c11-debug-windows")
         let result = try install(packages: ["c11"])
-        XCTAssertEqual(result.retired, ["c11h"])
+        XCTAssertEqual(result.retired, ["c11-debug-windows", "c11h"])
         XCTAssertEqual(try installedNames(), ["c11"])
         XCTAssertEqual(try install(packages: ["c11"]).retired, [], "twice is harmless")
     }
 
-    func testAnEditedStampedC11hCopyIsKeptUnlessForced() throws {
-        let dir = try plantStampedC11hCopy()
-        try Data("the operator's own instructions\n".utf8).write(to: dir.appendingPathComponent("SKILL.md"))
+    func testEditedStampedCopiesOfTheRetiredSkillsAreKeptUnlessForced() throws {
+        let dirs = try ["c11h", "c11-debug-windows"].map { try plantStampedCopy($0) }
+        for dir in dirs {
+            try Data("the operator's own instructions\n".utf8).write(to: dir.appendingPathComponent("SKILL.md"))
+        }
         let kept = try install(packages: ["c11"])
         XCTAssertEqual(kept.retired, [])
-        XCTAssertEqual(kept.keptLocal, ["c11h"])
-        XCTAssertEqual(try String(contentsOf: dir.appendingPathComponent("SKILL.md")), "the operator's own instructions\n")
-        XCTAssertEqual(try install(force: true, packages: ["c11"]).retired, ["c11h"])
-        XCTAssertFalse(fm.fileExists(atPath: dir.path))
+        XCTAssertEqual(kept.keptLocal, ["c11-debug-windows", "c11h"])
+        for dir in dirs {
+            XCTAssertEqual(try String(contentsOf: dir.appendingPathComponent("SKILL.md")), "the operator's own instructions\n")
+        }
+        XCTAssertEqual(try install(force: true, packages: ["c11"]).retired, ["c11-debug-windows", "c11h"])
+        for dir in dirs { XCTAssertFalse(fm.fileExists(atPath: dir.path)) }
+    }
+
+    /// The copies on a maintainer's Mac were written by `scripts/sync-installed-skills.sh`.
+    /// The app keeps those as copies from a checkout; the script, run with no names as after
+    /// a pull, retires an unedited one in every harness and keeps an edited one.
+    func testTheSyncScriptRetiresASyncedDebugWindowsCopyTheAppKeeps() throws {
+        let sync = SkillInstallerRecord.installedBySync
+        let synced = try plantStampedCopy("c11-debug-windows", installedBy: sync)
+        let syncedPi = try plantStampedCopy("c11-debug-windows", in: .pi, installedBy: sync)
+        let edited = try plantStampedCopy("c11-debug-windows", in: .codex, installedBy: sync)
+        try Data("the operator's own notes\n".utf8).write(to: edited.appendingPathComponent("SKILL.md"))
+
+        let app = try install(packages: ["c11"])
+        XCTAssertEqual(app.retired, [])
+        XCTAssertEqual(app.keptLocal, ["c11-debug-windows"], "the app keeps a copy a checkout synced")
+        XCTAssertTrue(fm.fileExists(atPath: synced.path))
+
+        let log = try runSyncScript()
+        XCTAssertFalse(fm.fileExists(atPath: synced.path), log)
+        XCTAssertFalse(fm.fileExists(atPath: syncedPi.path), log)
+        XCTAssertEqual(try String(contentsOf: edited.appendingPathComponent("SKILL.md")), "the operator's own notes\n", log)
+        XCTAssertTrue(log.contains("2 retired"), log)
+    }
+
+    /// What an installer never writes, added to a stamped copy by hand. The content hash reads
+    /// only regular files, so none of these changes it.
+    private enum LocalStructure: CaseIterable { case fileSymlink, directorySymlink, linkedStamp, fifo }
+
+    private func add(_ structure: LocalStructure, to dir: URL) throws {
+        switch structure {
+        case .fileSymlink:
+            let notes = sandbox.appendingPathComponent("notes-\(UUID().uuidString).md")
+            try Data("my notes\n".utf8).write(to: notes)
+            try fm.createSymbolicLink(at: dir.appendingPathComponent("my-notes.md"), withDestinationURL: notes)
+        case .directorySymlink:
+            let folder = sandbox.appendingPathComponent("folder-\(UUID().uuidString)", isDirectory: true)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data("my file\n".utf8).write(to: folder.appendingPathComponent("mine.txt"))
+            try fm.createSymbolicLink(at: dir.appendingPathComponent("my-folder"), withDestinationURL: folder)
+        case .linkedStamp:
+            let stamp = dir.appendingPathComponent(SkillInstaller.manifestFilename)
+            let elsewhere = sandbox.appendingPathComponent("stamp-\(UUID().uuidString).json")
+            try fm.moveItem(at: stamp, to: elsewhere)
+            try fm.createSymbolicLink(at: stamp, withDestinationURL: elsewhere)
+        case .fifo:
+            XCTAssertEqual(mkfifo(dir.appendingPathComponent("my-pipe").path, 0o644), 0)
+        }
+    }
+
+    /// One stamped `c11-debug-windows` copy per case, each in its own harness, plus an untouched
+    /// copy in `.copilot` that is retired.
+    private let structureTargets: [SkillInstallerTarget] = [.claude, .codex, .pi, .omp]
+
+    private func plantCopiesHoldingLocalStructure(installedBy: String) throws -> (kept: [URL], control: URL) {
+        var kept: [URL] = []
+        for (target, structure) in zip(structureTargets, LocalStructure.allCases) {
+            let dir = try plantStampedCopy("c11-debug-windows", in: target, installedBy: installedBy)
+            try add(structure, to: dir)
+            kept.append(dir)
+        }
+        return (kept, try plantStampedCopy("c11-debug-windows", in: .copilot, installedBy: installedBy))
+    }
+
+    func testInstallKeepsARetiredCopyHoldingLocalStructure() throws {
+        let copies = try plantCopiesHoldingLocalStructure(installedBy: SkillInstallerRecord.installedByApp)
+        for (target, dir) in zip(structureTargets, copies.kept) {
+            let result = try SkillInstaller.c11Install(target: target, home: home, sourceDir: source, force: false,
+                                                       packages: ["c11"], appIdentity: identity)
+            XCTAssertEqual(result.retired, [], "\(target)")
+            XCTAssertEqual(result.keptLocal, ["c11-debug-windows"], "\(target)")
+            XCTAssertTrue(fm.fileExists(atPath: dir.path), "\(target)")
+        }
+        let control = try SkillInstaller.c11Install(target: .copilot, home: home, sourceDir: source, force: false,
+                                                    packages: ["c11"], appIdentity: identity)
+        XCTAssertEqual(control.retired, ["c11-debug-windows"])
+        XCTAssertFalse(fm.fileExists(atPath: copies.control.path))
+    }
+
+    func testTheSyncScriptKeepsARetiredCopyHoldingLocalStructure() throws {
+        let copies = try plantCopiesHoldingLocalStructure(installedBy: SkillInstallerRecord.installedBySync)
+        let log = try runSyncScript()
+        for (target, dir) in zip(structureTargets, copies.kept) {
+            XCTAssertTrue(fm.fileExists(atPath: dir.path), "\(target): \(log)")
+        }
+        XCTAssertFalse(fm.fileExists(atPath: copies.control.path), log)
+        XCTAssertTrue(log.contains("1 retired"), log)
+    }
+
+    /// One argument that holds the replacement's name among other words names no package, so
+    /// it retires nothing.
+    func testTheSyncScriptMatchesTheReplacementByWholeArgument() throws {
+        let sync = SkillInstallerRecord.installedBySync
+        let copies = try ["c11h", "c11-debug-windows"].map { try plantStampedCopy($0, installedBy: sync) }
+        let log = try runSyncScript(arguments: ["not c11 package"])
+        for dir in copies { XCTAssertTrue(fm.fileExists(atPath: dir.path), log) }
+        XCTAssertTrue(log.contains("0 retired"), log)
     }
 
     func testACheckoutSyncedC11hCopyIsKeptByAnUnforcedRemove() throws {
-        let dir = try plantStampedC11hCopy(installedBy: SkillInstallerRecord.installedBySync)
+        let dir = try plantStampedCopy(installedBy: SkillInstallerRecord.installedBySync)
         let removed = try SkillInstaller.c11Remove(target: .claude, home: home, sourceDir: source)
         XCTAssertEqual(removed.retired, [])
         XCTAssertEqual(removed.keptLocal, ["c11h"])
@@ -135,14 +241,14 @@ final class SkillInstallerSidecarTests: XCTestCase {
     }
 
     func testInstallingAnotherPackageLeavesTheSidecarAlone() throws {
-        let dir = try plantStampedC11hCopy()
+        let dir = try plantStampedCopy()
         XCTAssertEqual(try install(packages: ["c11-browser"]).retired, [])
         XCTAssertTrue(fm.fileExists(atPath: dir.path))
     }
 
     func testANamedRemoveRemovesOnlyThatPackage() throws {
         _ = try install()
-        try plantStampedC11hCopy()
+        try plantStampedCopy()
         let removed = try SkillInstaller.c11Remove(target: .claude, home: home, sourceDir: source, packages: ["c11"], retiring: [])
         XCTAssertEqual(removed.removed, ["c11"])
         XCTAssertEqual(removed.retired, [])
@@ -184,7 +290,7 @@ final class SkillInstallerSidecarTests: XCTestCase {
 
     func testRemoveDeletesOnlyManagedCopiesAndRetiresTheSidecar() throws {
         _ = try install()
-        _ = try plantStampedC11hCopy()
+        _ = try plantStampedCopy()
         let other = skills.appendingPathComponent("user-owned")
         try fm.createDirectory(at: other, withIntermediateDirectories: true)
         try Data("the operator's own skill\n".utf8).write(to: other.appendingPathComponent("SKILL.md"))
@@ -229,13 +335,37 @@ final class SkillInstallerSidecarTests: XCTestCase {
         XCTAssertEqual(listed.rows.first(where: { $0.target == .claude })?.packages.map(\.package.name).sorted(),
                        ["c11", "c11-browser"])
 
-        _ = try plantStampedC11hCopy()
+        _ = try plantStampedCopy()
         let model = AgentSkillsModel(home: home, sourceOverride: source)
         model.install(target: .claude, force: false)
         XCTAssertEqual(try installedNames(), ["c11", "c11-browser"])
 
         model.remove(target: .claude)
         XCTAssertEqual(try installedNames(), [])
+    }
+
+    /// Runs this checkout's `scripts/sync-installed-skills.sh` (with no names unless given), with
+    /// the fixture HOME as the only harness home it can see.
+    private func runSyncScript(arguments: [String] = []) throws -> String {
+        let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("scripts/sync-installed-skills.sh")
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [script.path] + arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment["HOME"] = home.path
+        environment.removeValue(forKey: "C11_SKILL_ROOTS")
+        environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin:" + (environment["PATH"] ?? "")
+        process.environment = environment
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let log = String(decoding: data, as: UTF8.self)
+        XCTAssertEqual(process.terminationStatus, 0, log)
+        return log
     }
 
     private func snapshot(_ dir: URL) throws -> [String: Data] {

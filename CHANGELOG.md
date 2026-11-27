@@ -6,6 +6,10 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+- The default theme's sidebar is plain again in Dark mode: c11's material and tint, as in c11 1.8, not the purple Sunset Mall gradient 2.0.0 drew behind it. A theme without its own backdrop now shows the plain sidebar in both modes. Sunset Mall and Outrun Horizon stay as choices under Settings ▸ Appearance ▸ Sidebar Background, and the `c11` theme still draws Sunset Mall as its own backdrop. (C11H-438)
+- The `c11-debug-windows` skill is retired. c11 no longer ships it, and installing c11's skills (or running `scripts/sync-installed-skills.sh`) removes a copy c11 stamped that nobody has edited; an edited or unstamped copy stays. The Debug menu windows themselves are unchanged. (C11H-437)
+- A plain click on an OSC 8 (titled) `c11:` link in a terminal now navigates in a plain shell too, not only while a program holds the mouse. Double-click, triple-click, drag and Shift-click still select, and links of other schemes still need Cmd-click. (C11H-427)
+
 ## [2.0.0] - 2026-11-22
 
 Headline: **c11 2.0. Your terminals keep running when c11 quits, crashes or updates, they can run on other Macs you link, agents can show you what they made, and the window stays responsive under a large fleet.**

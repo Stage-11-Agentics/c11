@@ -100,6 +100,82 @@ final class HCOutputLeaseTests: XCTestCase {
     }
 }
 
+/// C11H-434: when hc ends a terminal it closes the stream, and the bridge used
+/// to free the surface; the panel then made a blank one. A surface its owner
+/// keeps stays on screen with its last frame until the owner releases it.
+final class HCNativeBridgeKeptSurfaceTests: XCTestCase {
+    @MainActor
+    private func preparedBridge(_ state: HCLeaseTestState, keeps: @escaping @MainActor @Sendable () -> Bool) -> HCNativeBridge {
+        let bridge = HCNativeBridge(panelID: UUID(), rendering: HCBridgeTestRendering(state: state),
+                                    encoder: HCUnavailableInputEncoder(), report: { _ in })
+        bridge.installProcessor(process: { _ in }, removeFromUse: { state.append("remove") },
+                                keepsSurface: keeps, destroy: { state.append("free") })
+        XCTAssertTrue(bridge.prepare(generation: 1))
+        return bridge
+    }
+
+    private func settle() async { try? await Task.sleep(nanoseconds: 150_000_000) }
+
+    @MainActor
+    func testAnEndedStreamKeepsTheSurfaceUntilTheOwnerReleasesIt() async {
+        let state = HCLeaseTestState()
+        let bridge = preparedBridge(state, keeps: { true })
+        let retired = expectation(description: "the stream retired the bridge")
+        bridge.retire { retired.fulfill() }
+        await fulfillment(of: [retired], timeout: 2)
+        await settle()
+        XCTAssertEqual(state.values, [], "the last screen stays: the surface is neither removed nor freed")
+        guard case .stale = await bridge.consume(HCOutputChunk(attachmentGeneration: 1, watermark: 1,
+            bytes: Data("late".utf8))) else { return XCTFail("a kept surface took output") }
+        bridge.retire {}
+        await settle()
+        XCTAssertEqual(state.values, [], "another stream retire frees nothing")
+        let released = expectation(description: "the owner released it")
+        bridge.release { released.fulfill() }
+        await fulfillment(of: [released], timeout: 2)
+        await settle()
+        XCTAssertEqual(state.values, ["remove", "free"], "out of use first, then freed")
+        bridge.release {}
+        await settle()
+        XCTAssertEqual(state.values, ["remove", "free"], "freed exactly once")
+    }
+
+    @MainActor
+    func testWithoutTheOwnersWordAnEndedStreamFreesTheSurface() async {
+        let state = HCLeaseTestState()
+        let bridge = preparedBridge(state, keeps: { false })
+        let retired = expectation(description: "the stream retired the bridge")
+        bridge.retire { retired.fulfill() }
+        await fulfillment(of: [retired], timeout: 2)
+        await settle()
+        XCTAssertEqual(state.values, ["remove", "free"])
+    }
+
+    @MainActor
+    func testAReleaseBeforeTheKeepDecisionFreesTheSurface() async {
+        let state = HCLeaseTestState()
+        let bridge = preparedBridge(state, keeps: { true })
+        // Both on main before the stream retire's main hop decides to keep.
+        bridge.retire {}
+        let released = expectation(description: "the owner released it")
+        bridge.release { released.fulfill() }
+        await fulfillment(of: [released], timeout: 2)
+        await settle()
+        XCTAssertEqual(state.values, ["remove", "free"], "the owner's release wins; nothing is kept")
+    }
+
+    @MainActor
+    func testTheOwnersOwnRetireNeverKeepsTheSurface() async {
+        let state = HCLeaseTestState()
+        let bridge = preparedBridge(state, keeps: { true })
+        let released = expectation(description: "the owner released it")
+        bridge.release { released.fulfill() }
+        await fulfillment(of: [released], timeout: 2)
+        await settle()
+        XCTAssertEqual(state.values, ["remove", "free"], "teardown and replacement free the surface")
+    }
+}
+
 private final class HCLeaseTestState: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [String] = []

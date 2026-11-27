@@ -31,8 +31,12 @@ UUID case does not matter; surrounding whitespace is trimmed. Query strings, fra
 and extra path segments are refused. Text such as `c11: notes` is not a panel link and
 follows ordinary browser search handling.
 
-In terminals, **Cmd-click** either the bare URL or an OSC 8 titled link. A plain
-click does not navigate, except under mouse capture (below). Cmd-hover shows the true destination's live panel title
+In terminals, **click** an OSC 8 titled `c11:` link, or **Cmd-click** it or a bare URL.
+With mouse reporting off, a plain click navigates one double-click interval
+(Ghostty's `click-repeat-interval`) after release, so a double or triple click
+still selects instead; a drag or Shift-click selects as usual, and typing or
+clicking elsewhere before it lands cancels it. Links of other schemes and bare
+URL text keep Cmd-click. Cmd-hover shows the true destination's live panel title
 and workspace name, even when a program's OSC 8 label says something else. Claude
 Code renders the Markdown form as OSC 8; Codex currently displays the title followed
 by the URL in parentheses, which is also clickable. A closed or malformed `c11:`

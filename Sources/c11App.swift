@@ -5462,7 +5462,7 @@ struct SettingsView: View {
             // c11's Dark-slot sidebar background (C11H-32), stored under a c11-only key.
             SettingsCardRow(
                 String(localized: "settings.sidebarBackground", defaultValue: "Sidebar Background"),
-                subtitle: String(localized: "settings.sidebarBackground.subtitleOneTheme", defaultValue: "From Theme draws the theme's own background, or Sunset Mall for a theme without one. Sunset Mall and Outrun Horizon replace the theme's background. None always uses the tint."),
+                subtitle: String(localized: "settings.sidebarBackground.subtitleOneTheme", defaultValue: "From Theme draws the theme's own background, or the tint for a theme without one. Sunset Mall and Outrun Horizon replace the theme's background. None always uses the tint."),
                 controlWidth: pickerColumnWidth
             ) {
                 Picker("", selection: Binding(

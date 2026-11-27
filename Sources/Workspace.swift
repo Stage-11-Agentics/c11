@@ -7051,6 +7051,8 @@ final class Workspace: Identifiable, ObservableObject {
                terminal.hcIdentity?.persistence == .persistent {
                 terminal.pendingHCConversationRecovery = nil
                 terminal.retainsAfterEndAllSessions = true
+                // C11H-434: the kept panel says End All ended it.
+                terminal.hcRequestedEnd = .endAll
                 // C11H-196: the operator ended it on purpose; no restore record.
                 terminal.hcHostEnd = nil
             }

@@ -197,7 +197,10 @@ extension HCCoreUtility {
         guard verified.isPinnedBuild else {
             link.close()
             let served = verified.identity
-            return refuse(.notC11hPin, "pin", "peer pid \(peerPID) runs \(served.executablePath) (sha \(short(served.pin.executableSHA256)), hc \(served.pin.version)), want \(configuration.executableURL.path) (sha \(short(configuration.pin.executableSHA256)))")
+            // C11H-441: an update replaced the helper this core runs; c11 hands it over itself.
+            let runs = served.executablePath.isEmpty ? "a helper an update replaced (its file is gone; c11 restarts it into this build's when it connects)"
+                : "\(served.executablePath) (sha \(short(served.pin.executableSHA256)), hc \(served.pin.version))"
+            return refuse(.notC11hPin, "pin", "peer pid \(peerPID) runs \(runs), want \(configuration.executableURL.path) (sha \(short(configuration.pin.executableSHA256)))")
         }
         checks.append(HCCoreCheck(check: "pin", ok: true, detail: "hc \(version), sha \(short(configuration.pin.executableSHA256))"))
         return .verified(HCCoreConnection(configuration: configuration, link: link, status: status,

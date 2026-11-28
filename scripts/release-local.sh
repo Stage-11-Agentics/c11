@@ -14,6 +14,7 @@
 #
 #   scripts/release-local.sh vX.Y.Z              # real release
 #   scripts/release-local.sh --dry-run vX.Y.Z    # stops before notarization; publishes nothing
+#   scripts/release-local.sh --stage vX.Y.Z      # signs, notarizes and signs the appcast; publishes nothing
 #
 # See --help. Every step is logged to build-release-local/<tag>/release-local.log.
 set -euo pipefail
@@ -70,6 +71,19 @@ Options:
                          throwaway key so the c11mux key is never read).
                          Notarize, staple, Sentry and every publish step only
                          print what they would do. Publishes nothing.
+  --stage                Run every step of a real release up to, not
+                         including, publishing: signed with the release
+                         identity, app and DMG notarized and stapled, the
+                         appcast signed with the c11mux key and verified. No
+                         tag is needed and nothing is published: no GitHub
+                         release, upload, Homebrew dispatch or Sentry
+                         upload. The signed app, DMG, appcast and every
+                         release asset are kept in
+                         build-release-local/<tag>/stage/ with stage.json
+                         (their hashes), so a guest can install the update
+                         through Sparkle before anything is tagged. The
+                         later real run (--reuse-build) signs and notarizes
+                         the same build again and publishes that.
   --skip-notarize-check  Skip the preflight that proves the notarytool
                          keychain profile works before the long build.
   --skip-sentry          Skip the Sentry dSYM upload (it is also skipped when
@@ -94,6 +108,10 @@ Environment overrides: C11_SIGNING_IDENTITY, C11_NOTARY_PROFILE,
 C11_SPARKLE_ACCOUNT, C11_RELEASE_DTXCODE (toolchain pin, see the constant),
 SENTRY_AUTH_TOKEN.
 
+Guards (stage run): the real run's, except that the tag need not exist; if it
+exists locally or on origin it must name HEAD, and no GitHub release may exist
+for it.
+
 Guards (real run): HEAD must equal the tag's commit locally and on origin, the
 tree must be clean, MARKETING_VERSION must equal the tag, and the release must
 not already hold any of the immutable assets (scripts/release_asset_guard.js).
@@ -104,6 +122,7 @@ EOF
 }
 
 DRY_RUN=0
+STAGE=0
 SKIP_NOTARIZE_CHECK=0
 SKIP_SENTRY=0
 REUSE_BUILD=0
@@ -113,6 +132,7 @@ REMOTE_ARTIFACTS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --stage) STAGE=1; shift ;;
     --skip-notarize-check) SKIP_NOTARIZE_CHECK=1; shift ;;
     --skip-sentry) SKIP_SENTRY=1; shift ;;
     --reuse-build) REUSE_BUILD=1; shift ;;
@@ -129,6 +149,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$TAG" ]] || { usage >&2; exit 2; }
+if [[ "$STAGE" -eq 1 ]]; then
+  [[ "$DRY_RUN" -eq 0 ]] || { echo "error: --stage and --dry-run exclude each other" >&2; exit 2; }
+  # A stage run publishes nothing, so it has nothing to upload to Sentry.
+  SKIP_SENTRY=1
+fi
 if [[ -z "$HOST" ]]; then
   # shellcheck source=dev-hosts.sh
   source "$ROOT/scripts/dev-hosts.sh"
@@ -149,6 +174,7 @@ exec > >(tee -a "$LOG") 2>&1
 
 MODE_LABEL="REAL RUN"
 [[ "$DRY_RUN" -eq 1 ]] && MODE_LABEL="DRY RUN"
+[[ "$STAGE" -eq 1 ]] && MODE_LABEL="STAGE RUN"
 STEP=0
 TIMINGS="$OUT/timings.tsv"
 : >"$TIMINGS"
@@ -224,6 +250,12 @@ check_tag() {
   if [[ "$tag_sha" != "$HEAD_SHA" || "$origin_sha" != "$HEAD_SHA" ]]; then
     if [[ "$DRY_RUN" -eq 1 ]]; then
       note "WARNING: HEAD is not the commit of $TAG locally and on origin; allowed only because --dry-run."
+    elif [[ "$STAGE" -eq 1 ]]; then
+      # The tag need not exist yet, but a tag that names another commit means the
+      # real run would publish a different build than the one staged here.
+      [[ -z "$tag_sha" || "$tag_sha" == "$HEAD_SHA" ]] || die "$TAG exists locally at $tag_sha, not HEAD $HEAD_SHA"
+      [[ -z "$origin_sha" || "$origin_sha" == "$HEAD_SHA" ]] || die "$TAG exists on origin at $origin_sha, not HEAD $HEAD_SHA"
+      note "stage run: $TAG is not required to exist; the staged artifacts are of HEAD $HEAD_SHA."
     else
       die "HEAD ($HEAD_SHA) must equal $TAG's commit locally (${tag_sha:-absent}) and on origin (${origin_sha:-absent})."
     fi
@@ -408,7 +440,15 @@ check_active_runs() {
   fi
 }
 step "Guard immutable release assets"
-check_guard preflight
+if [[ "$STAGE" -eq 1 ]]; then
+  # A stage is only for a version with no release yet (draft or not). A plain
+  # assignment, so a failing lookup (find_release dies in the subshell) stops the run.
+  STAGE_EXISTING_RELEASE="$(find_release)"
+  [[ -z "$STAGE_EXISTING_RELEASE" ]] || die "a GitHub release for $TAG already exists; --stage is for an unpublished version"
+  note "no GitHub release for $TAG; staging"
+else
+  check_guard preflight
+fi
 check_active_runs
 
 # ------------------------------------------------------- build-host build --
@@ -456,7 +496,7 @@ verify_pristine() {
   if /usr/libexec/PlistBuddy -c 'Print :LSEnvironment' "$plist" >/dev/null 2>&1; then
     die "pristine Info.plist carries LSEnvironment (a staging/dev build)"
   fi
-  if [[ "$SENTRY_WANTED" -eq 1 && "$DRY_RUN" -ne 1 ]]; then
+  if [[ ( "$SENTRY_WANTED" -eq 1 || "$STAGE" -eq 1 ) && "$DRY_RUN" -ne 1 ]]; then
     compgen -G "$OUT/pristine/dsyms/*.dSYM" >/dev/null || die "no dSYMs fetched with the pristine build; rebuild without --reuse-build"
   fi
   note "pristine identity ok: head $HEAD_SHA, C11Commit $built_commit, $bundle_id, unsigned exec $exec_sha"
@@ -503,7 +543,8 @@ else
   note "fetching dSYMs with the pristine build"
   mkdir -p "$OUT/pristine/dsyms"
   if ! host_rsync -a $(host_path "$REMOTE_PRODUCTS")/*.dSYM "$OUT/pristine/dsyms/"; then
-    if [[ "$SENTRY_WANTED" -eq 1 && "$DRY_RUN" -ne 1 ]]; then
+    # A stage needs them too: the real run that follows reuses this build and may upload them.
+    if [[ ( "$SENTRY_WANTED" -eq 1 || "$STAGE" -eq 1 ) && "$DRY_RUN" -ne 1 ]]; then
       die "could not fetch dSYMs from $HOST"
     fi
     note "WARNING: could not fetch dSYMs from $HOST; a later --reuse-build with Sentry will refuse this build"
@@ -804,6 +845,47 @@ EXPECTED_NAMES="$(node -e 'console.log(require(process.argv[1]).releaseAssetName
 ACTUAL_NAMES="$(for a in "${ASSETS[@]}"; do basename "$a"; done | sort)"
 [[ "$EXPECTED_NAMES" == "$ACTUAL_NAMES" ]] || die "upload list differs from IMMUTABLE_RELEASE_ASSETS"
 
+if [[ "$STAGE" -eq 1 ]]; then
+  # ---------------------------------------------------------------- stage --
+  # The signed, notarized artifacts stay here, under names a later real run never
+  # writes, with their hashes. Nothing is tagged, uploaded or dispatched.
+  step "Stage: keep the signed artifacts (nothing published)"
+  STAGE_DIR="$OUT/stage"
+  rm -rf "$STAGE_DIR"
+  mkdir -p "$STAGE_DIR"
+  for asset in "${ASSETS[@]}"; do cp -p "$asset" "$STAGE_DIR/"; done
+  ditto "$APP_PATH" "$STAGE_DIR/c11.app"
+  xcrun stapler validate "$STAGE_DIR/$DMG_NAME" || die "staged DMG is not stapled"
+  xcrun stapler validate "$STAGE_DIR/c11.app" || die "staged app is not stapled"
+  /usr/bin/codesign --verify --deep --strict "$STAGE_DIR/c11.app" || die "staged app fails codesign --verify --deep --strict"
+  spctl -a -vv --type execute "$STAGE_DIR/c11.app" || die "staged app is not accepted by Gatekeeper"
+  STAGE_PIN=""
+  [[ -f "$STAGE_DIR/c11.app/Contents/Resources/hc-pin.json" ]] \
+    && STAGE_PIN="$(jq -r .executableSHA256 "$STAGE_DIR/c11.app/Contents/Resources/hc-pin.json")"
+  python3 - "$STAGE_DIR" "$TAG" "$APP_VERSION" "$APP_BUILD" "$HEAD_SHA" "$STAGE_PIN" "$VERIFY_JSON" "${ASSETS[@]}" \
+    >"$STAGE_DIR/stage.json" <<'PY_STAGE' || die "could not write stage.json"
+import hashlib, json, os, sys, time
+stage, tag, version, build, head, pin, verify, *assets = sys.argv[1:]
+def sha(path):
+    d = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            d.update(chunk)
+    return d.hexdigest()
+files = []
+for a in assets:
+    p = os.path.join(stage, os.path.basename(a))
+    files.append({"name": os.path.basename(a), "size": os.path.getsize(p), "sha256": sha(p)})
+print(json.dumps({"tag": tag, "version": version, "build": build, "head": head,
+                  "staged_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                  "hc_pin_executable_sha256": pin or None,
+                  "appcast_verify": json.loads(verify), "assets": files}, indent=2))
+PY_STAGE
+  note "staged in $STAGE_DIR: c11.app, ${#ASSETS[@]} release assets, stage.json"
+  note "hc-pin.json executableSHA256: ${STAGE_PIN:-none}"
+  note "nothing was published: no tag, release, upload, Homebrew dispatch or Sentry upload"
+else
+# ---------------------------------------------------- publish (not --stage) --
 step "Publish GitHub release"
 note "re-checking tag, active runs, and the immutable asset guard right before upload"
 check_tag
@@ -910,6 +992,7 @@ else
     sentry-cli debug-files upload --include-sources "$OUT/pristine/dsyms/" \
     || note "WARNING: Sentry dSYM upload failed (tolerated, as continue-on-error in release.yml)"
 fi
+fi # end of publish (not --stage)
 
 step "Summary"
 note "app:     $APP_PATH ($APP_VERSION, build $APP_BUILD, $ARCHS)"

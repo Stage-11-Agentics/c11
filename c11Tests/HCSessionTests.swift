@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 
 #if canImport(c11_DEV)
@@ -31,6 +32,32 @@ private struct HCTestVerifier: HCPeerVerifying {
     func validateOwnedState(_ configuration: HCLaunchConfiguration, coreID: String) async throws {
         guard coreID == "core" else { throw HCUnavailableReason.foreignSession }
         log.add("owned-state")
+    }
+}
+
+/// C11H-441: the real HCBuildVerifier behind the fakes' pids. Each fake core is
+/// judged with this test process as the peer (real uid, start time, socket,
+/// core.lock and core.json) and that core's kernel path answer (nil: the
+/// kernel names none). The verdict keeps the fake pid, so a restart's
+/// replacement reads as a new process.
+private struct HCKernelVerifier: HCPeerVerifying {
+    let log: HCTestLog
+    let paths: [Int32: String?]
+    func verify(_ peer: HCPeerEvidence, configuration: HCLaunchConfiguration) async throws -> HCVerifiedPeer {
+        log.add("verify:\(peer.pid)")
+        let path = paths[peer.pid] ?? nil
+        let real = HCPeerEvidence(uid: getuid(), pid: getpid(), statusPID: getpid(), coreID: peer.coreID, version: peer.version,
+            protocolGeneration: peer.protocolGeneration,
+            methods: ["server.restart", "terminal.run", "terminal.attach", "events.subscribe"], features: ["framed"])
+        let verified = try await HCBuildVerifier(executablePath: { _ in path }).verify(real, configuration: configuration)
+        let found = verified.identity
+        return HCVerifiedPeer(identity: HCBuildIdentity(pin: found.pin, executablePath: found.executablePath,
+            fileIdentity: found.fileIdentity,
+            process: HCProcessIdentity(pid: peer.pid, startTimeMicroseconds: found.process.startTimeMicroseconds + UInt64(peer.pid)),
+            coreID: found.coreID, protocolGeneration: found.protocolGeneration), isPinnedBuild: verified.isPinnedBuild)
+    }
+    func validateOwnedState(_ configuration: HCLaunchConfiguration, coreID: String) async throws {
+        try HCBuildVerifier.verifyStateEndpoint(configuration, expectedCoreID: coreID)
     }
 }
 
@@ -1000,6 +1027,78 @@ final class HCSessionTests: XCTestCase {
                 XCTAssertEqual(log.read().filter { $0 == "server.restart" }.count, 2)
             }
             XCTAssertFalse(log.read().contains("terminal.run"))
+        }
+    }
+
+    /// C11H-441: an update replaces the app in place (Sparkle swaps the bundle,
+    /// then deletes the old one), so the previous release's core keeps running
+    /// from a file that no longer exists and the kernel names no path for it.
+    /// The real verifier judges that core: this test process stands in for it
+    /// (real uid and start time, a real socket, core.lock and core.json), and
+    /// only the kernel's path answer is given. Whether the old helper's hash is
+    /// known makes no difference: 2.0.0's (#414) in the tuple, and 2.0.1's in
+    /// none (path C: 2.0.1 installed fresh, as main stood before its hash was
+    /// listed; any later release likewise). Nothing is left to hash. Hello from
+    /// the new build must hand that core over by one planned restart to this
+    /// build's pinned core, whose terminals the holder kept, never refuse it on
+    /// every retry.
+    func testACoreWhoseHelperAnUpdateDeletedHandsOverToThisBuildsCore() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hc\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let helper = root.appendingPathComponent("c11.app/Contents/Helpers/herdr-core")
+        try FileManager.default.createDirectory(at: helper.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let newHelper = Data("the new release's signed helper".utf8)
+        try newHelper.write(to: helper)
+        let pin = HCPin(version: "0.1.16", archiveSHA256: "",
+                        executableSHA256: SHA256.hash(data: newHelper).map { String(format: "%02x", $0) }.joined(), protocolGeneration: 1)
+        let state = root.appendingPathComponent("state", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let socket = root.appendingPathComponent("s.sock")
+        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        var address = sockaddr_un(); address.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: socket.path.utf8); $0[socket.path.utf8.count] = 0 }
+        XCTAssertEqual(withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }, 0)
+        Darwin.close(fd)
+        try PrivateFileWriter.write(Data(socket.path.utf8), to: state.appendingPathComponent("core.lock"))
+        try PrivateFileWriter.write(Data(#"{"id":"core"}"#.utf8), to: state.appendingPathComponent("core.json"))
+        let previousHelpers: [(name: String, sha256: String?)] = [
+            ("2.0.0, its hash in the tuple", "2744b886409c742b5b1bb2d36730dcfef805860f83d742c20dc1691d52338311"),
+            ("2.0.1 or a later release, in no list", nil),
+        ]
+        for (index, previous) in previousHelpers.enumerated() {
+            var c = HCLaunchConfiguration(executableURL: helper, session: "c11", socketURL: socket, stateDirectory: state,
+                intentDirectory: root.appendingPathComponent("intents-\(index)"), environment: [:], pin: pin)
+            c.acceptedServing = [HCServingBinary(executableURL: helper, pin: pin)] + (previous.sha256.map {
+                [HCServingBinary(executableURL: helper, pin: HCPin(version: "0.1.16", archiveSHA256: "", executableSHA256: $0, protocolGeneration: 1))]
+            } ?? [])
+
+            let log = HCTestLog(), inventory = HCTestInventory(), processes = HCTestProcesses(log: log)
+            // Fake pid 1 is the previous release's core (its file deleted); pid 2 is
+            // the core this build starts after the restart, served from its helper.
+            let verifier = HCKernelVerifier(log: log, paths: [1: nil, 2: helper.path])
+            let factory = HCTestFactory(processes: processes, pid: 1, log: log) { request in
+                XCTAssertEqual(request.method, "server.restart")
+                await processes.markExited(await processes.currentPID())
+                return .object([:])
+            }
+            let session = HCManagedSession(configuration: c, connections: factory, verifier: verifier,
+                launcher: HCTestLauncher(log: log), processes: processes, intents: HCCreationIntentStore(directory: c.intentDirectory),
+                prepareAttachment: { _, _, _, display in display },
+                makeInventory: { connection, build in await inventory.bind(generation: connection.generation, build: build); return inventory },
+                checkFolders: { _, _ in true })
+            let first = await session.resolve(HCPanelIdentity(panelID: UUID(), origin: .fresh))
+            guard case .new = first else {
+                XCTFail("\(previous.name): the previous release's core must hand over to this build's core, got \(first); log \(log.read())")
+                continue
+            }
+            XCTAssertEqual(log.read().filter { $0 == "server.restart" }.count, 1, "\(previous.name): one planned restart: \(log.read())")
+            XCTAssertEqual(log.read().filter { $0 == "start" }.count, 1, "\(previous.name): this build's pinned core starts once")
+            let diagnostics = await session.diagnostics()
+            XCTAssertEqual(diagnostics.servingBuild?.process.pid, 2, previous.name)
+            XCTAssertEqual(diagnostics.servingBuild?.pin.executableSHA256, pin.executableSHA256, previous.name)
+            XCTAssertEqual(diagnostics.servingBuild?.executablePath, helper.path, previous.name)
         }
     }
 

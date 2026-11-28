@@ -167,6 +167,7 @@ This is a checklist trigger, not a CI gate.
 - `gh pr checks --watch`
 - Fix failing checks, push, and wait for green.
 - A conflicting PR gets no `pull_request` CI. If the release PR conflicts with `main` before tagging, merge `origin/main` into the branch, push, and repeat 6.5 through 8 on the new head.
+- **Update proof before the tag (when the release changes how an update lands).** `scripts/release-local.sh --stage vX.Y.Z` on the signing host, at the tested head, runs the real run's signing, notarization and c11mux-signed appcast and stops before publishing, keeping the app, DMG, appcast and `stage.json` in `build-release-local/vX.Y.Z/stage/`. A dry run's appcast is signed with a throwaway key, which shipped apps reject. A guest that serves the staged appcast and DMG at the feed's URLs can then take the update through Sparkle's own Install and Relaunch. The real run afterwards (`--reuse-build`) signs the same build again and publishes that.
 
 The tag goes on the tested release-branch head, never on a merge into `main`. `main` keeps moving while a release is in flight: a commit that lands after the cut ships in the next release, and nothing forces a re-cut or a merge hold.
 

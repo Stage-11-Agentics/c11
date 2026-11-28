@@ -297,7 +297,7 @@ selected workspace, so it is gated on native operator input:
   `operator_activation_required`.
 - Terminals act only on a native Cmd-click on a bare `c11://` URL (Ghostty's
   `link-url` matcher, pinned in the Ghostty fork) or an OSC 8 link, or the
-  captured-mouse click below, in a key, visible window. The OSC 8 label is untrusted: the Cmd-hover preview shows
+  plain click on an OSC 8 link below, in a key, visible window. The OSC 8 label is untrusted: the Cmd-hover preview shows
   the destination's live panel title and workspace, never the label. A
   malformed `c11:` string is consumed so it never reaches Ghostty's external
   opener. Since 1.7.9 (C11-533), a Cmd-click refused only because its window
@@ -307,9 +307,30 @@ selected workspace, so it is gated on native operator input:
   Ghostty resolves no links, so c11 reads the cell's OSC 8 target itself: a
   native plain or Cmd click on an OSC 8 `c11:` link navigates through the same
   policy and log (`captured_click`) and never reaches the program (C11H-325).
-  Before a plain click the operator sees only the untrusted OSC 8 label; the
-  Cmd-hover preview still shows the true destination. A drag, or a release
-  off the link, hands the press to the program; other schemes are untouched.
+  A drag, or a release off the link, hands the press to the program; other
+  schemes are untouched.
+- Since 2.0.1 (C11H-427) a plain click on an OSC 8 `c11:` or `c11h:` link
+  also navigates with the mouse uncaptured, in a plain shell. The press is
+  held back from Ghostty as under capture, and the open is decided at the
+  real mouse-up by the same policy (native event, key window, visible view)
+  and logged (`plain_click`). It waits Ghostty's `click-repeat-interval`
+  (0.5 s by default) and is dropped, logged `plain_click`/`cancelled`, when a
+  key comes after the release, focus leaves the view, another button is
+  pressed, the window moves or the view is torn down. A drag of 3 pt or more,
+  a release off the link, or a press that continues Ghostty's click sequence
+  replays the press to Ghostty, so selection is unchanged. After a Shift press
+  or a captured press, the next press inside its interval and cell distance
+  is never held, because c11 cannot see how Ghostty counts it. Bare URL text
+  and other schemes keep Ghostty's Cmd-click.
+- **Posture moved in 2.0.1:** before a plain click, captured or not, the
+  operator sees only the untrusted OSC 8 label, which a program prints as it
+  likes; the Cmd-hover preview still shows the true destination. Before
+  2.0.1 that held only while a program held the mouse; now any program's
+  output can offer a plain-click link. The click still grants navigation
+  only (next bullets): the worst case is moving the operator's view to
+  another existing panel under a misleading label, where text typed next
+  lands in that panel. The target must resolve in live inventory, and every
+  activation is logged.
 - The parser accepts only the exact canonical spelling (at most 128 bytes,
   a UUID path, no user, port, query or fragment). Unknown, stale or malformed
   targets resolve nothing and show a non-modal notice. Each activation logs
@@ -522,6 +543,8 @@ Sources/Panels/BrowserPanel.swift:17-38                (openC11WebLink, shared t
 Sources/Panels/BrowserPanel.swift:1757-1771            (panel links never handed to macOS; c11:/c11h: navigations cancelled)
 Sources/PanelLinkActivation.swift                      (c11:// parser, origin and native-intent policy, isolated-world listener, terminal policy and preview)
 Sources/PanelLinkActivation.swift:275                  (isolated-world listener pattern; c11h:// not matched, fail-closed)
+Sources/PanelLinkActivation.swift                      (PanelLinkPress: held press, held plain click, click sequence)
+Sources/GhosttyTerminalView.swift                      (terminal link press, hold and replay; plain_click open and cancel)
 Sources/Panels/BrowserPageGuards.swift:13-31           (operator activation windows)
 Sources/Panels/BrowserPageGuards.swift:43-112          (download policy; downloads cancelled and removed on close)
 Sources/Panels/BrowserPageGuards.swift:116-129         (popup policy)

@@ -6,11 +6,31 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
-- Updating c11 from inside the app no longer strands your terminals. After 2.0.0 updated to 2.0.1, the new app could not reach the terminals the old one left running: every panel stayed on Reconnecting and new panels ended at once. c11 now hands the old version's terminal engine over to its own, and your programs keep running. (C11H-441)
+## [2.0.2] - 2026-11-27
+
+Headline: **c11 2.0.2. Updating from inside the app keeps your terminals again.**
+
+2.0.2 is 2.0.1 with one fix. 2.0.1 was pulled the evening it shipped, because updating to it from 2.0.0 stranded every terminal. What 2.0.1 brought is listed under 2.0.1 below, and all of it is in 2.0.2.
+
+### If your terminals say Reconnecting after updating to 2.0.1
+
+- **Update to 2.0.2** (c11 ▸ Check for Updates). Your programs kept running, and 2.0.2 reconnects to them.
+- **If you can't update yet**, open Terminal.app and run `kill $(pgrep -f 'c11.app/Contents/Helpers/herdr-core serve')`. c11 reconnects within a few seconds, with your programs and screens intact.
+- **Don't restart your Mac or choose End All Sessions to clear it:** both end the programs running in your terminals.
+
+### Fixed
+
+- **Updating c11 from inside the app no longer strands your terminals.** After 2.0.0 updated to 2.0.1, the new app could not reach the terminals the old one left running: every panel stayed on Reconnecting and new panels ended at once. c11 now hands the old version's terminal engine over to its own, and your programs keep running. (C11H-441)
+
+### Thanks to 1 contributor!
+
+[@BenevolentFutures](https://github.com/BenevolentFutures)
 
 ## [2.0.1] - 2026-11-27
 
 Headline: **c11 2.0.1. A panel whose session ended says so and keeps its last screen, a plain click opens c11 links, and the default theme's sidebar is plain again.**
+
+**Pulled on 2026-11-27.** Updating from 2.0.0 to 2.0.1 stranded every terminal on Reconnecting. 2.0.2 replaces it, with everything below and the fix.
 
 ### Changed
 

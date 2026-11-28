@@ -58,7 +58,7 @@ def main():
 
     def inspect(target):
         return json.loads(guest('''import json,pathlib,sys
-r=pathlib.Path.home()/'Library/Application Support/c11/workspaces'/sys.argv[1].upper()/'mailboxes'
+r=next((d for d in [pathlib.Path.home()/'Library/Application Support/c11/workspaces',*sorted(pathlib.Path.home().glob('Library/Application Support/c11-dev/*/workspaces'))] if (d/sys.argv[1].upper()).is_dir()),pathlib.Path.home()/'Library/Application Support/c11/workspaces')/sys.argv[1].upper()/'mailboxes'
 def rows(p):
  if not p.exists(): return []
  return [json.loads(x) for x in p.read_text().splitlines() if x]

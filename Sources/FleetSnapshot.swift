@@ -229,6 +229,9 @@ struct FleetSnapshot {
                 detectedTerminalType: panel.detectedKind,
                 declaredTerminalType: values[MetadataKey.terminalType] as? String
             )
+            // C11H-445: delivery follows the agent in the terminal now, not a
+            // restore's remembered kind.
+            let liveKind = kind
             // PR 3: a seat whose agent has not come back after a host end keeps
             // its row (its terminal reads as a shell), so its restore shows.
             if !AreaSizePolicy.isAgentKind(kind), let restore = panel.restore, restore.holdsAgentRow,
@@ -315,6 +318,7 @@ struct FleetSnapshot {
                 } as Any? ?? NSNull(),
                 "prompt_cache": cacheFields as Any? ?? NSNull(),
                 "mailbox_address": values[MetadataKey.mailboxAddress] as? String as Any? ?? NSNull(),
+                "mailbox_delivery": MailboxDeliveryPolicy.effective(metadata: values, agentKind: liveKind).jsonObject,
                 "mailbox_unread_count": panel.unreadMail as Any? ?? NSNull(),
                 "mailbox_unread": FleetSnapshot.unreadField(
                     count: panel.unreadMail, oldestAt: panel.oldestUnreadMailAt, now: capturedAt, formatter: formatter,

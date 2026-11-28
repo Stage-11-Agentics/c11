@@ -81,6 +81,11 @@ enum MailboxReceiptStatus {
         /// `working_edge`, `waiting_for_idle`, a hold reason, ...) and since when.
         var waitReason: String?
         var waitSince: Date?
+        /// C11H-445: the recipient's delivery when the copy landed and its
+        /// source (`explicit`, `default`, `doorbell_off`, `none`). Nil on rows
+        /// from before the copy row carried it.
+        var deliverySetting: String?
+        var deliverySettingSource: String?
     }
 
     enum State: String {
@@ -266,12 +271,19 @@ enum MailboxReceiptStatus {
                 if let panel, let workspace = (row["recipient_workspace"] as? String).flatMap(UUID.init(uuidString:)) {
                     inboxWorkspaces[panel] = workspace
                 }
+                let found: Int
                 if let existing = index(name: name, panel: panel) {
                     recipients[existing].sentAt = recipients[existing].sentAt ?? at
+                    found = existing
                 } else {
                     var recipient = Recipient(name: name, panelId: panel, sentAt: at)
                     recipient.usageLimit = row["recipient_usage_limit"] as? String
                     recipients.append(recipient)
+                    found = recipients.count - 1
+                }
+                if let setting = row["delivery"] as? String, let source = row["delivery_source"] as? String {
+                    recipients[found].deliverySetting = setting
+                    recipients[found].deliverySettingSource = source
                 }
             case "rejected":
                 report.state = .rejected
@@ -670,6 +682,9 @@ extension MailboxReceiptStatus.Report {
                     "read_at": time(recipient.readAt),
                     "claimed_by_panel_id": recipient.claimedBy?.uuidString as Any? ?? NSNull(),
                     "usage_limit": value(recipient.usageLimit),
+                    "delivery_setting": recipient.deliverySetting.flatMap { setting in
+                        recipient.deliverySettingSource.map { ["value": setting, "source": $0] }
+                    } as Any? ?? NSNull(),
                 ].merging(waitFields(recipient, timeZone: timeZone, now: now)) { $1 }
             },
         ]
@@ -731,6 +746,7 @@ extension MailboxReceiptStatus.Report {
             let panel = recipient.panelId.map { " (\($0.uuidString.lowercased()))" } ?? ""
             lines.append("\(recipient.name)\(panel)")
             lines.append("  " + sentLine(recipient, clock))
+            if let push = pushLine(recipient) { lines.append("  " + push) }
             lines.append("  " + deliveredLine(recipient, clock))
             lines.append("  " + readLine(recipient, clock))
         }
@@ -751,6 +767,23 @@ extension MailboxReceiptStatus.Report {
         }
         let at = clock.text(recipient.sentAt)
         return String(localized: "mailbox.status.sent.at", defaultValue: "sent       \(at)")
+    }
+
+    /// C11H-445: whether the panel set its delivery or c11 chose it. The
+    /// sources are `MailboxDeliveryPolicy.Source` raw values, spelled here
+    /// because this file also builds into the CLI, which has no resolver.
+    private func pushLine(_ recipient: MailboxReceiptStatus.Recipient) -> String? {
+        guard let setting = recipient.deliverySetting, let source = recipient.deliverySettingSource else { return nil }
+        switch source {
+        case "default":
+            return String(localized: "mailbox.status.push.default", defaultValue: "push       \(setting), on by default")
+        case "doorbell_off":
+            return String(localized: "mailbox.status.push.doorbellOff", defaultValue: "push       off, the panel set mailbox.doorbell=off")
+        case "none":
+            return String(localized: "mailbox.status.push.none", defaultValue: "push       off, no agent with a doorbell in this panel")
+        default:
+            return String(localized: "mailbox.status.push.explicit", defaultValue: "push       \(setting), set by the panel")
+        }
     }
 
     private func deliveredLine(_ recipient: MailboxReceiptStatus.Recipient, _ clock: MailboxReceiptStatus.Clock) -> String {

@@ -851,3 +851,50 @@ final class MailboxReceiptStatusTests: XCTestCase {
         XCTAssertTrue(FleetSnapshot.unreadField(count: nil, oldestAt: nil, now: now, formatter: formatter) is NSNull)
     }
 }
+
+// MARK: - C11H-445: status names whether delivery was set or defaulted
+
+extension MailboxReceiptStatusTests {
+    private func copiedWith(_ id: String, delivery: String, source: String, at: Date) -> [String] {
+        [
+            line(.received(id: id, from: "owner", to: "lead", topic: "plan"), at),
+            line(.resolved(id: id, recipients: ["lead"]), at),
+            line(.copied(id: id, recipient: "lead", recipientPanel: recipient, delivery: delivery,
+                         deliverySource: source), at),
+        ]
+    }
+
+    func testStatusSaysDeliveryIsOnByDefaultOrSetByThePanel() throws {
+        let zone = TimeZone(identifier: "America/Los_Angeles")!
+        let now = Date()
+        let cases: [(String, String, String)] = [
+            ("stdin", "default", "push       stdin, on by default"),
+            ("silent", "explicit", "push       silent, set by the panel"),
+            ("off", "explicit", "push       off, set by the panel"),
+            ("off", "doorbell_off", "push       off, the panel set mailbox.doorbell=off"),
+            ("off", "none", "push       off, no agent with a doorbell in this panel"),
+        ]
+        for (offset, (value, source, expected)) in cases.enumerated() {
+            let sent = now.addingTimeInterval(-Double(60 + offset))
+            let id = newId(sent)
+            try writeLog(copiedWith(id, delivery: value, source: source, at: sent))
+            try deliverFile(id, to: recipient, read: false)
+            let report = try status(id)
+            XCTAssertTrue(report.humanText(now: now, timeZone: zone).contains(expected), expected)
+            let json = try XCTUnwrap((report.jsonObject(timeZone: zone, now: now)["recipients"] as? [[String: Any]])?.first)
+            let setting = try XCTUnwrap(json["delivery_setting"] as? [String: String])
+            XCTAssertEqual(setting, ["value": value, "source": source])
+        }
+    }
+
+    func testARowFromBeforeTheSettingPrintsNoPushLine() throws {
+        let now = Date()
+        let id = newId(now.addingTimeInterval(-30))
+        try writeLog(dispatched(id, at: now.addingTimeInterval(-30)))
+        try deliverFile(id, to: recipient, read: false)
+        let report = try status(id)
+        XCTAssertFalse(report.humanText(now: now).contains("push "))
+        let json = try XCTUnwrap((report.jsonObject(now: now)["recipients"] as? [[String: Any]])?.first)
+        XCTAssertTrue(json["delivery_setting"] is NSNull)
+    }
+}

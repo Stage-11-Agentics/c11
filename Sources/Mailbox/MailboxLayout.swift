@@ -75,9 +75,9 @@ enum MailboxLayout {
 
     // MARK: - State root
 
-    /// Resolves the c11 state root (default:
-    /// `~/Library/Application Support/c11`). Tests that need isolation
-    /// override HOME on the c11 process rather than overriding this function.
+    /// Resolves this process's mailbox state root (`MailboxStateRoot`): the
+    /// release app's `~/Library/Application Support/c11`, a debug or tagged
+    /// build's own folder, or a test process's temporary folder.
     static func defaultStateURL(fileManager: FileManager = .default) throws -> URL {
         StateDirectoryMigration.ensureMigrated(fileManager: fileManager)
         guard let appSupport = fileManager.urls(
@@ -86,7 +86,17 @@ enum MailboxLayout {
         ).first else {
             throw Error.stateDirectoryUnavailable
         }
-        return appSupport.appendingPathComponent(stateDirectoryName, isDirectory: true)
+        let root = MailboxStateRoot.forProcess(
+            main: Bundle.main.bundleIdentifier,
+            executablePath: Bundle.main.executableURL?.path,
+            environment: ProcessInfo.processInfo.environment,
+            appSupport: appSupport,
+            hostsXCTest: NSClassFromString("XCTestCase") != nil,
+            temporaryDirectory: fileManager.temporaryDirectory,
+            processIdentifier: getpid()
+        )
+        if case .test = root.kind { MailboxStateRoot.removeAtExit(root.url) }
+        return root.url
     }
 
     // MARK: - Path builders
@@ -399,6 +409,237 @@ enum MailboxHoldCopy {
 
     static func drawerBanner(heldBehindDraft: Int) -> String? {
         MailboxHoldNotice.panelLine(count: heldBehindDraft)
+    }
+}
+
+/// Which mailbox tree a process uses (C11H-439). Only the release app keeps
+/// its mail in `~/Library/Application Support/c11`, with the untagged staging
+/// and nightly channels, whose users keep their mail across an update. A
+/// debug or tagged build uses its own `~/Library/Application Support/c11-dev/<bundle id>/`,
+/// and a test process a temporary folder removed when it exits, so neither
+/// leaves workspace folders in the release app's. A migration QA launch
+/// (`C11Identity.isMigrationQALaunch`) stands in for the release app and keeps
+/// its folder, which is where the migration puts the mail; a CLI given the
+/// same two variables does too.
+///
+/// The app decides from its own bundle id and stamps the folder on every
+/// terminal (`C11_MAILBOX_STATE_DIR`). The CLI follows that stamp; without
+/// one (a terminal an older build made, a bare shell) it follows the
+/// migration variables, then the terminal's `CMUX_BUNDLE_ID`, then the app it
+/// ships inside. A test that
+/// relocates the home with `CFFIXED_USER_HOME` (the CLI tests do, for the c11
+/// they run) already has a disposable Application Support and resolves there.
+enum MailboxStateRoot {
+    enum Kind: Equatable {
+        case release
+        case build(String)
+        case test
+        /// The folder the app stamped on the terminal this CLI runs in.
+        case stamped
+    }
+
+    struct Resolved: Equatable {
+        let kind: Kind
+        let url: URL
+    }
+
+    static let buildsDirectoryName = "c11-dev"
+    static let stampEnvironmentKey = "C11_MAILBOX_STATE_DIR"
+    static let testDirectoryPrefix = "c11-test-mailboxes-"
+
+    /// The bundle ids that share the release folder.
+    static let sharedBundleIdentifiers: Set<String> = [
+        C11Identity.releaseBundleIdentifier,
+        C11Identity.stagingBundleIdentifier,
+        C11Identity.nightlyBundleIdentifier,
+    ]
+
+    /// The root for a process described by its facts: `defaultStateURL` passes
+    /// this process's own, and tests pass a CLI's or an app's.
+    static func forProcess(
+        main: String?,
+        executablePath: String?,
+        environment: [String: String],
+        appSupport: URL,
+        hostsXCTest: Bool,
+        temporaryDirectory: URL,
+        processIdentifier: Int32
+    ) -> Resolved {
+        resolve(
+            appSupport: appSupport,
+            environment: environment,
+            bundleIdentifier: bundleIdentifier(main: main, environment: environment, executablePath: executablePath),
+            isApp: main.map(C11Identity.isFamilyBundleIdentifier) ?? false,
+            hostsXCTest: hostsXCTest,
+            temporaryDirectory: temporaryDirectory,
+            processIdentifier: processIdentifier
+        )
+    }
+
+    static func resolve(
+        appSupport: URL,
+        environment: [String: String],
+        bundleIdentifier: String?,
+        isApp: Bool,
+        hostsXCTest: Bool = false,
+        temporaryDirectory: URL,
+        processIdentifier: Int32,
+        isDirectory: (String) -> Bool = { path in
+            var isDir: ObjCBool = false
+            return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+        }
+    ) -> Resolved {
+        // Only the CLI follows a stamp: an app opened from another build's
+        // terminal decides for itself, and a test runner started from a c11
+        // terminal (XCTest loaded in this process, not inherited variables,
+        // which a test's child CLI carries too) keeps to its own folder.
+        if !isApp, !hostsXCTest, let stamp = environment[stampEnvironmentKey], stamp.hasPrefix("/"), isDirectory(stamp) {
+            return Resolved(kind: .stamped, url: URL(fileURLWithPath: stamp, isDirectory: true))
+        }
+        if hostsXCTest || isRunningUnderXCTest(environment), environment["CFFIXED_USER_HOME"] == nil {
+            return Resolved(
+                kind: .test,
+                url: temporaryDirectory.appendingPathComponent(
+                    "\(testDirectoryPrefix)\(processIdentifier)", isDirectory: true)
+            )
+        }
+        let migrationQA = C11Identity.isMigrationQALaunch(environment: environment)
+        if !migrationQA, let id = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+           C11Identity.isFamilyBundleIdentifier(id),
+           !sharedBundleIdentifiers.contains(id) {
+            return Resolved(kind: .build(id), url: buildFolder(appSupport: appSupport, bundleIdentifier: id))
+        }
+        return Resolved(
+            kind: .release,
+            url: appSupport.appendingPathComponent(C11Identity.stateDirectoryName, isDirectory: true)
+        )
+    }
+
+    static func buildFolder(appSupport: URL, bundleIdentifier id: String) -> URL {
+        let component = id.replacingOccurrences(of: "[^A-Za-z0-9.-]", with: "_", options: .regularExpression)
+        return appSupport
+            .appendingPathComponent(buildsDirectoryName, isDirectory: true)
+            .appendingPathComponent(component, isDirectory: true)
+    }
+
+    /// The app's own id. For the CLI (no bundle of its own) or a test runner:
+    /// the id of the app whose terminal it runs in, else the app it ships inside.
+    static func bundleIdentifier(main: String?, environment: [String: String], executablePath: String?) -> String? {
+        if let main, C11Identity.isFamilyBundleIdentifier(main) { return main }
+        if let terminal = environment["CMUX_BUNDLE_ID"], !terminal.isEmpty { return terminal }
+        return enclosingAppBundleIdentifier(executablePath: executablePath)
+    }
+
+    static func enclosingAppBundleIdentifier(executablePath: String?) -> String? {
+        guard let executablePath, !executablePath.isEmpty else { return nil }
+        var url = URL(fileURLWithPath: executablePath).resolvingSymlinksInPath()
+        while url.path != "/" {
+            if url.pathExtension == "app" { return Bundle(url: url)?.bundleIdentifier }
+            url.deleteLastPathComponent()
+        }
+        return nil
+    }
+
+    static func isRunningUnderXCTest(_ environment: [String: String]) -> Bool {
+        environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil
+            || environment["XCTestSessionIdentifier"] != nil
+            || environment["XCInjectBundle"] != nil
+            || environment["XCInjectBundleInto"] != nil
+            || environment["DYLD_INSERT_LIBRARIES"]?.contains("libXCTest") == true
+    }
+
+    private static let exitLock = NSLock()
+    private static var exitRemovalPath: String?
+
+    /// A test process's folder goes when the process exits normally.
+    static func removeAtExit(_ url: URL) {
+        exitLock.lock()
+        defer { exitLock.unlock() }
+        guard exitRemovalPath == nil, url.lastPathComponent.hasPrefix(testDirectoryPrefix) else { return }
+        exitRemovalPath = url.path
+        atexit { MailboxStateRoot.removeTestFolder() }
+    }
+
+    private static func removeTestFolder() {
+        exitLock.lock()
+        let path = exitRemovalPath
+        exitLock.unlock()
+        guard let path, URL(fileURLWithPath: path).lastPathComponent.hasPrefix(testDirectoryPrefix) else { return }
+        try? FileManager.default.removeItem(atPath: path)
+    }
+}
+
+/// A closed workspace's folder under `<state>/workspaces/` (C11H-439). The
+/// dispatcher makes the folder when the workspace opens; when the workspace
+/// closes holding no file at all (no unread, read or rejected envelope, no
+/// dispatch log or receipt), the folder goes with it. Only empty directories
+/// are removed (`rmdir`), so a file that lands meanwhile keeps its folder,
+/// and a folder whose workspace is open again is left alone.
+enum MailboxWorkspaceFolder {
+    enum Outcome: Equatable {
+        case removed
+        /// Some file is in it; nothing was removed.
+        case kept
+        /// A dispatcher for the workspace is running again.
+        case live
+        case absent
+    }
+
+    private static let lock = NSLock()
+    private static var liveCounts: [String: Int] = [:]
+
+    private static func key(state: URL, workspaceId: UUID) -> String {
+        MailboxLayout.mailboxesRoot(state: state, workspaceId: workspaceId).standardizedFileURL.path
+    }
+
+    /// A dispatcher for the workspace starts. Called before it makes the tree.
+    static func noteStarted(state: URL, workspaceId: UUID) {
+        lock.withLock { liveCounts[key(state: state, workspaceId: workspaceId), default: 0] += 1 }
+    }
+
+    static func noteStopped(state: URL, workspaceId: UUID) {
+        lock.withLock {
+            let key = key(state: state, workspaceId: workspaceId)
+            let count = (liveCounts[key] ?? 0) - 1
+            liveCounts[key] = count > 0 ? count : nil
+        }
+    }
+
+    static func folderURL(state: URL, workspaceId: UUID) -> URL {
+        state
+            .appendingPathComponent(MailboxLayout.workspacesDirectoryName, isDirectory: true)
+            .appendingPathComponent(workspaceId.uuidString, isDirectory: true)
+    }
+
+    /// Removes the workspace's folder when no file is anywhere in it.
+    @discardableResult
+    static func removeIfEmpty(state: URL, workspaceId: UUID, fileManager: FileManager = .default) -> Outcome {
+        let key = key(state: state, workspaceId: workspaceId)
+        if lock.withLock({ liveCounts[key] != nil }) { return .live }
+        let folder = folderURL(state: state, workspaceId: workspaceId)
+        guard isPlainDirectory(folder.path) else { return .absent }
+        // The walk runs unlocked; a dispatcher that starts meanwhile is seen below.
+        var directories = [folder.path]
+        guard let enumerator = fileManager.enumerator(atPath: folder.path) else { return .kept }
+        while let relative = enumerator.nextObject() as? String {
+            let path = folder.appendingPathComponent(relative).path
+            guard isPlainDirectory(path) else { return .kept }
+            directories.append(path)
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        guard liveCounts[key] == nil else { return .live }
+        // Deepest first; a directory that is no longer empty stops the removal.
+        for path in directories.sorted(by: { $0.count > $1.count }) {
+            guard rmdir(path) == 0 else { return .kept }
+        }
+        return .removed
+    }
+
+    private static func isPlainDirectory(_ path: String) -> Bool {
+        var st = stat()
+        return lstat(path, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR
     }
 }
 

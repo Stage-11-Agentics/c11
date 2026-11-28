@@ -193,9 +193,11 @@ final class MailboxDispatcherTests: XCTestCase {
         XCTAssertEqual(try dispatchRelayRouting(to: "builder-360", local: [localOSC], linked: [:]), [localOSC])
     }
 
-    private func makeDispatcher(surfaces: [UUID]) -> MailboxDispatcher {
+    private func makeDispatcher(surfaces: [UUID],
+                                detectedKinds: @escaping () -> [UUID: String] = { [:] }) -> MailboxDispatcher {
         let resolver = MailboxPanelResolver(
             workspaceId: workspaceId,
+            detectedKinds: detectedKinds,
             livePanels: { surfaces }
         )
         let dispatcher = MailboxDispatcher(
@@ -1110,6 +1112,8 @@ final class MailboxDispatcherTests: XCTestCase {
         var focused = false
         var textBox = ""
         var screen: PromptInputState = .empty
+        /// C11H-445: the panel's live agent kind, as Workspace reads it.
+        var agentKind: String?
         private(set) var rings: [String] = []
         private(set) var idleFlushes = 0
         private var ledger = MailboxDoorbell.Ledger()
@@ -1140,6 +1144,16 @@ final class MailboxDispatcherTests: XCTestCase {
         func noteWrapperIdle(surfaceId: UUID, at: Date) {
             ownsTerminal = true
             noteReported(surfaceId: surfaceId, activity: .idle, at: at, agentPid: 1, processStartTime: 1)
+        }
+
+        /// C11H-445: Workspace's inbox rescan, through the production helper.
+        func rescanInbox(surfaceId: UUID, recipient: String) -> [String] {
+            let found = MailboxStdinDelivery.inboxEntriesToQueue(
+                inbox: inbox(surfaceId), inboxWorkspaceId: workspaceId, panelId: surfaceId, recipientName: recipient,
+                skipping: Set(state.buffer.queuedEntries(surfaceId: surfaceId).map(\.id)).union(ledger.coveredIds),
+                since: MailboxStdinDelivery.processStartedAt)
+            for entry in found { _ = state.buffer.enqueue(surfaceId: surfaceId, entry: entry) }
+            return found.map(\.id)
         }
 
         func admit(
@@ -1237,6 +1251,12 @@ final class MailboxDispatcherTests: XCTestCase {
                 MailboxDoorbell.promptEpoch(since: $0.since, atPrompt: $0.atPrompt)
             } ?? "none"
             var input = MailboxDoorbell.Input()
+            // The delivery Workspace reads for the ring: the same policy the
+            // dispatcher's handlers came from (C11H-445).
+            input.stdinDelivery = MailboxDeliveryPolicy.effective(
+                metadata: PanelMetadataStore.shared.getMetadata(workspaceId: workspaceId, surfaceId: surfaceId).metadata,
+                agentKind: agentKind
+            ).includesStdin
             input.prompt = screen
             input.rungThisEpoch = ledger.rung(in: epoch)
             input.recentAttempts = ledger.rings(at: now)
@@ -1268,10 +1288,20 @@ final class MailboxDispatcherTests: XCTestCase {
         Date(timeIntervalSince1970: 1_700_000_000 + seconds)
     }
 
-    private func makeStdinSeat() -> (UUID, StdinSeat) {
-        let surface = seedSurface(name: "grok-seat", delivery: "stdin")
-        let dispatcher = makeDispatcher(surfaces: [surface])
+    private func makeStdinSeat(delivery: String? = "stdin", terminalType: String? = nil,
+                               doorbell: String? = nil,
+                               detectedKinds: @escaping () -> [UUID: String] = { [:] }) -> (UUID, StdinSeat) {
+        let surface = seedSurface(name: "grok-seat", delivery: delivery)
+        var identity: [String: Any] = [:]
+        if let terminalType { identity[MetadataKey.terminalType] = terminalType }
+        if let doorbell { identity["mailbox.doorbell"] = doorbell }
+        if !identity.isEmpty {
+            _ = try? PanelMetadataStore.shared.setMetadata(workspaceId: workspaceId, surfaceId: surface,
+                                                           partial: identity, mode: .merge, source: .explicit)
+        }
+        let dispatcher = makeDispatcher(surfaces: [surface], detectedKinds: detectedKinds)
         let seat = StdinSeat(dispatcher: dispatcher, stateURL: tempState, workspaceId: workspaceId)
+        seat.agentKind = terminalType
         dispatcher.registerHandler(name: "stdin") { envelope, surfaceId, name in
             let block = StdinMailboxHandler.formatFramedBlock(envelope: envelope)
             return seat.admit(surfaceId: surfaceId, envelopeId: envelope.id, recipient: name, block: block)
@@ -1441,5 +1471,225 @@ extension MailboxDispatcherTests {
         XCTAssertNil(MailboxDrain.claim(entry), "the same envelope is claimed exactly once")
         XCTAssertTrue(MailboxDrain.pendingEntries(inbox: inbox).isEmpty)
         XCTAssertEqual(MailboxDrain.pendingEntries(inbox: MailboxDrain.readURL(inbox: inbox)).count, 1)
+    }
+}
+
+// MARK: - C11H-445: mail on by default for agents with a doorbell
+
+extension MailboxDispatcherTests {
+    private func copiedDelivery() throws -> (value: String?, source: String?) {
+        let copied = try XCTUnwrap(readLog().first { $0["event"] as? String == "copied" })
+        return (copied["delivery"] as? String, copied["delivery_source"] as? String)
+    }
+
+    /// A seat launch-agent stamped (or a wrapper declared) with no mailbox
+    /// metadata gets the doorbell at its next idle with an empty composer.
+    func testWrapperLaunchedAgentWithNoMetadataIsRung() throws {
+        let (surface, seat) = makeStdinSeat(delivery: nil, terminalType: "claude-code")
+        let id = "01K3A2B7X8PQRTVWYZ0123445A"
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: id, body: "reply to your mail")
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertTrue(seat.rings.isEmpty, "a running turn is not rung")
+        let delivery = try copiedDelivery()
+        XCTAssertEqual(delivery.value, "stdin")
+        XCTAssertEqual(delivery.source, "default")
+
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
+        XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id), "the ring invites; recv --ack claims")
+    }
+
+    /// The operator's own seat with no metadata: the default never types over
+    /// a draft, and rings at the next real idle with an empty composer.
+    func testDefaultDeliveryNeverTypesOverADraft() throws {
+        let (surface, seat) = makeStdinSeat(delivery: nil, terminalType: "codex")
+        let id = "01K3A2B7X8PQRTVWYZ0123445B"
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: id, body: "behind the operator's draft")
+        seat.screen = .draft
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        XCTAssertTrue(seat.rings.isEmpty, "a draft is never typed over")
+        seat.screen = .empty
+        seat.textBox = "half a thought"
+        seat.beginTurn(surfaceId: surface, at: t381(30))
+        seat.noteIdle(surfaceId: surface, at: t381(40))
+        XCTAssertTrue(seat.rings.isEmpty, "unsent text-box input is a draft too")
+        seat.textBox = ""
+        seat.beginTurn(surfaceId: surface, at: t381(50))
+        seat.noteIdle(surfaceId: surface, at: t381(60))
+        XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
+        XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
+    }
+
+    /// `mailbox.delivery=off` runs no handler (and logs no unknown handler),
+    /// so nothing is queued or rung; the mail waits in the inbox.
+    func testDeliveryOffIsNotRung() throws {
+        let (surface, seat) = makeStdinSeat(delivery: "off", terminalType: "claude-code")
+        let id = "01K3A2B7X8PQRTVWYZ0123445C"
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: id, body: "not for a bell")
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        XCTAssertEqual(try handlerOutcomes(), [])
+        XCTAssertTrue(seat.buffer.queuedEntries(surfaceId: surface).isEmpty)
+        XCTAssertTrue(seat.rings.isEmpty)
+        XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
+        let delivery = try copiedDelivery()
+        XCTAssertEqual(delivery.value, "off")
+        XCTAssertEqual(delivery.source, "explicit")
+    }
+
+    /// `mailbox.doorbell=off` with no delivery set withholds the default.
+    func testDoorbellOffWithholdsTheDefault() throws {
+        let (surface, seat) = makeStdinSeat(delivery: nil, terminalType: "grok", doorbell: "off")
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: "01K3A2B7X8PQRTVWYZ0123445D", body: "quiet seat")
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        XCTAssertEqual(try handlerOutcomes(), [])
+        XCTAssertTrue(seat.rings.isEmpty)
+        XCTAssertEqual(try copiedDelivery().source, "doorbell_off")
+    }
+
+    /// A plain shell has no agent kind, so nothing is queued for it.
+    func testPlainShellIsNotRung() throws {
+        let (shell, shellSeat) = makeStdinSeat(delivery: nil, terminalType: nil)
+        shellSeat.beginTurn(surfaceId: shell, at: t381(0))
+        try dispatchToSeat(id: "01K3A2B7X8PQRTVWYZ0123445E", body: "to a shell")
+        shellSeat.noteIdle(surfaceId: shell, at: t381(20))
+        XCTAssertEqual(try handlerOutcomes(), [])
+        XCTAssertTrue(shellSeat.rings.isEmpty)
+        XCTAssertEqual(try copiedDelivery().source, "none")
+    }
+
+    /// A one-shot run declares its kind, but no interactive PID owns the
+    /// terminal, so its queued mail is never rung.
+    func testOneShotRunIsNotRung() throws {
+        let (surface, seat) = makeStdinSeat(delivery: nil, terminalType: "claude-code")
+        seat.ownsTerminal = false
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: "01K3A2B7X8PQRTVWYZ0123445F", body: "to claude -p")
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"])
+        XCTAssertTrue(seat.rings.isEmpty, "no interactive agent owns the terminal")
+    }
+
+    /// A panel's own value wins over the default: `silent` stays silent.
+    func testExplicitDeliveryWinsOverTheDefault() throws {
+        let (surface, seat) = makeStdinSeat(delivery: "silent", terminalType: "claude-code")
+        var silent = 0
+        dispatcher?.registerHandler(name: "silent") { _, _, _ in
+            silent += 1
+            return .init(outcome: .ok, bytes: 0)
+        }
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: "01K3A2B7X8PQRTVWYZ0123445G", body: "silent please")
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        XCTAssertEqual(silent, 1)
+        XCTAssertEqual(try handlerOutcomes(), ["ok"])
+        XCTAssertTrue(seat.buffer.queuedEntries(surfaceId: surface).isEmpty)
+        XCTAssertTrue(seat.rings.isEmpty)
+        let delivery = try copiedDelivery()
+        XCTAssertEqual(delivery.value, "silent")
+        XCTAssertEqual(delivery.source, "explicit")
+    }
+}
+
+// MARK: - C11H-445: mail that came during a startup shell rings once the agent appears
+
+extension MailboxDispatcherTests {
+    private func writeInbox(panel: UUID, id: String) throws {
+        let inbox = MailboxLayout.inboxURL(state: tempState, workspaceId: workspaceId, panelId: panel)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let envelope = try MailboxEnvelope.build(from: "orch", to: "grok-seat", body: "mail \(id)", id: id)
+        try MailboxIO.atomicWrite(data: try envelope.encode(),
+                                  to: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id)))
+    }
+
+    /// The rescan queues unread mail this process accepted that the queue
+    /// does not hold: not mail already queued or rung, not read mail, not mail
+    /// from before `since`.
+    func testInboxRescanQueuesOnlyFreshUnqueuedUnreadMail() throws {
+        let panel = UUID()
+        let now = Date()
+        let old = MailboxULID.make(now: now.addingTimeInterval(-3600))
+        let queued = MailboxULID.make(now: now.addingTimeInterval(-2))
+        let fresh = MailboxULID.make(now: now.addingTimeInterval(-1))
+        let read = MailboxULID.make(now: now)
+        for id in [old, queued, fresh, read] { try writeInbox(panel: panel, id: id) }
+        let inbox = MailboxLayout.inboxURL(state: tempState, workspaceId: workspaceId, panelId: panel)
+        XCTAssertNotNil(try MailboxIO.claim(id: read, inbox: inbox))
+        let found = MailboxStdinDelivery.inboxEntriesToQueue(
+            inbox: inbox, inboxWorkspaceId: workspaceId, panelId: panel, recipientName: "seat",
+            skipping: [queued], since: now.addingTimeInterval(-60))
+        XCTAssertEqual(found.map(\.id), [fresh])
+        XCTAssertEqual(found.first?.recipientPanelId, panel)
+        XCTAssertEqual(found.first?.inboxWorkspaceId, workspaceId)
+    }
+
+    /// A launched seat whose terminal still reads as a shell (a remote prompt
+    /// transfer, a slow start) gets no default, so its first mail is copied
+    /// but not queued. Once detection sees the agent, the rescan queues it
+    /// and the agent's first idle rings it, with no second send.
+    func testMailDuringAStartupShellRingsOnceTheAgentAppears() throws {
+        var detected = "shell"
+        var surfaceId = UUID()
+        let (surface, seat) = makeStdinSeat(delivery: nil, terminalType: "codex",
+                                            detectedKinds: { [surfaceId: detected] })
+        surfaceId = surface
+        seat.agentKind = "shell"
+        let id = MailboxULID.make()
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: id, body: "first mail while launching")
+        XCTAssertEqual(try handlerOutcomes(), [], "a startup shell gets no default")
+        XCTAssertEqual(try copiedDelivery().source, "none")
+        XCTAssertTrue(envelopeIsInInboxRoot(surface: surface, id: id))
+
+        detected = "codex"
+        seat.agentKind = "codex"
+        XCTAssertEqual(seat.rescanInbox(surfaceId: surface, recipient: "grok-seat"), [id])
+        XCTAssertEqual(seat.rescanInbox(surfaceId: surface, recipient: "grok-seat"), [], "queued once")
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
+        XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id), "the ring invites; recv --ack claims")
+    }
+}
+
+// MARK: - C11H-445: a dispatch resolved as a shell, with the agent appearing before its copy lands
+
+extension MailboxDispatcherTests {
+    /// The interleaving the rescan alone misses: the dispatch resolves the
+    /// panel while it still reads as a shell; before the copy lands, the agent
+    /// appears and its inbox rescan runs and finds nothing; then the copy
+    /// lands with no handler from the shell resolution. The post-copy recheck
+    /// reads the panel again and queues it, and it rings with no second send.
+    func testADispatchResolvedAsAShellRingsWhenTheAgentAppearedBeforeTheCopy() throws {
+        var detected = "shell"
+        var surfaceId = UUID()
+        var seatRef: StdinSeat?
+        var scanned: [String]?
+        let (surface, seat) = makeStdinSeat(delivery: nil, terminalType: "codex", detectedKinds: {
+            let now = [surfaceId: detected]
+            if detected == "shell", let seat = seatRef {
+                // The pause after shell resolution: the agent appears, and
+                // its rescan runs before the copy is in the inbox.
+                detected = "codex"
+                seat.agentKind = "codex"
+                scanned = seat.rescanInbox(surfaceId: surfaceId, recipient: "grok-seat")
+            }
+            return now
+        })
+        surfaceId = surface
+        seatRef = seat
+        seat.agentKind = "shell"
+        let id = MailboxULID.make()
+        seat.beginTurn(surfaceId: surface, at: t381(0))
+        try dispatchToSeat(id: id, body: "first mail, racing the launch")
+
+        XCTAssertEqual(scanned, [], "the transition's rescan ran before the copy and found nothing")
+        XCTAssertEqual(try copiedDelivery().source, "none", "the dispatch resolved the panel as a shell")
+        XCTAssertEqual(try handlerOutcomes(), ["buffered"], "the post-copy recheck queued it")
+        seat.noteIdle(surfaceId: surface, at: t381(20))
+        XCTAssertEqual(seat.rings, [MailboxDoorbell.text])
+        XCTAssertFalse(envelopeIsClaimed(surface: surface, id: id))
     }
 }

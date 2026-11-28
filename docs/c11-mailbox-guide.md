@@ -12,7 +12,7 @@ This is the practical guide. For the agent-facing reference see `skills/c11/refe
 
 ## What it is
 
-A per-workspace tree under `~/Library/Application Support/c11/workspaces/<workspace-uuid>/mailboxes/` that holds the outbox, per-recipient inboxes, an append-only dispatch log, and quarantine/processing scratch areas. The c11 process running the workspace owns one `MailboxDispatcher` that watches the outbox and routes whatever shows up.
+A per-workspace tree under `~/Library/Application Support/c11/workspaces/<workspace-uuid>/mailboxes/` that holds the outbox, per-recipient inboxes, an append-only dispatch log, and quarantine/processing scratch areas. The c11 process running the workspace owns one `MailboxDispatcher` that watches the outbox and routes whatever shows up. A debug or tagged build keeps its tree under `~/Library/Application Support/c11-dev/<bundle-id>/workspaces/`, and a test process in a temporary folder removed when it exits, so neither writes the release app's folder; the CLI follows the folder its app stamps on each terminal (`C11_MAILBOX_STATE_DIR`), else the migration QA variables, else the terminal's `CMUX_BUNDLE_ID`, else the app it ships in. A QA launch that runs the c11h migration (`C11_MIGRATION_QA=1` with a `C11_QA_LAUNCH` mode) keeps the release folder, where the migration puts the mail; a CLI given the same two variables follows it (the migration guest driver passes them). A workspace closed for good takes its folder with it when no file is in it (no unread, read or rejected envelope, dispatch log or receipt). Launch reads only the trees of the workspaces it opens: the receipt sweep of every folder first runs ten minutes in, and the messages page reads every tree the first time someone looks at it.
 
 Recipients can live in **any** workspace, not just the sender's. `c11 mailbox send` resolves the recipient name across every live workspace in the instance and writes the envelope into the recipient workspace's own outbox, so that workspace's dispatcher delivers it locally (see [Cross-workspace routing](#cross-workspace-routing)).
 
@@ -46,11 +46,14 @@ Choose the channel by whether the communication needs a record:
 
 Declare `mailbox.address` once during orientation, before peers need to reach the panel. The address is stable across title changes, so it is the right value to use with `--to`; a title is display text and can change.
 
-If the panel is an interactive agent and should receive pushed mail, opt in during orientation:
+Pushed mail is on by default for an interactive agent a c11 wrapper launched. A panel with no `mailbox.delivery` whose live agent kind has a typed composer reader or a native route (Claude Code, Codex, Grok, OpenCode, Pi, omp) is treated as `stdin`; the kind comes from `launch-agent`'s stamp or the wrapper's `set-agent`, overridden by detection (a shell once the agent exits, a remote agent hc names). c11 decides this in the app and writes nothing to the panel. A `mailbox.delivery` the panel set wins exactly as set. To opt out:
 
 ```bash
-c11 set-metadata --panel "$C11_PANEL_ID" --key mailbox.delivery --value stdin --type string
+c11 set-metadata --panel "$C11_PANEL_ID" --key mailbox.delivery --value off --type string   # or mailbox.doorbell=off
+c11 clear-metadata --panel "$C11_PANEL_ID" --key mailbox.delivery                            # back to the default
 ```
+
+`get-metadata`'s `mailbox_delivery`, `fleet --json`'s `mailbox_delivery` and `mailbox status` (`push` line, JSON `delivery_setting`) report the value c11 uses and its source: `default`, `explicit`, `doorbell_off`, or `none` (no agent with a doorbell in the panel). Mail that lands while a panel reads as a shell (a launch still at its startup shell, a remote launch transferring its prompt, a shell where `claude` was typed a second earlier) is copied but not queued. When the panel's kind becomes an agent with a doorbell, or an agent attaches, c11 rescans that panel's inbox off main and queues its unread mail that this app process accepted (trace `buffered` reason `inbox_rescan`), so it rings at the agent's first idle with every ring check. A dispatch that resolved the panel as a shell reads the panel again after its copy is published and, if an agent with a doorbell is there now, queues the envelope through the same path; this closes the window where the agent appears, and its rescan runs, between that resolution and the copy. Mail from before this c11 started stays in the inbox. Coverage (a submitted ring's set of envelopes not to ring again) lasts one agent session: after the agent exits and a new session starts in the panel, mail still unread rings once more, since the new session has not seen it.
 
 c11 pushes only to an interactive agent that owns its terminal: the panel must pass the foreground-process and raw-mode checks. Plain shells, one-shot commands, and other programs never have mail typed into them; the mail still lands in the inbox. A waiting agent gets a new turn; a busy agent gets the mail at its turn boundary. Mail that cannot be pushed stays in the inbox. Claude's Stop hook (`Resources/bin/claude`) drains at turn end; no other wrapper installs a drain hook, so every other seat reads mail with `c11 mailbox recv --ack` after the doorbell line. `c11 mailbox recv --drain` is the explicit inbox floor.
 
@@ -86,7 +89,7 @@ c11 mailbox send --to watcher --body "build green sha=abc"   # same body
 
 # In panel "watcher":
 c11 set-title "watcher"
-c11 set-metadata --key mailbox.delivery --value stdin --type string   # opt in to the doorbell
+# Push is on by default for an agent a c11 wrapper launched; nothing to set.
 # The ring starts a turn when the agent is idle. Claude Code's native route
 # (opt-in per launch with C11_CLAUDE_NATIVE_MAIL=1) carries the envelopes in that turn; every other route carries an invitation
 # without the body. Pi, omp, Claude Code, OpenCode and Grok use their native
@@ -97,7 +100,7 @@ c11 mailbox recv --drain                   # pull now, when stdout is a terminal
 c11 mailbox recv --drain --ack             # a tool call or any other pipe: pass --ack
 ```
 
-If `mailbox.delivery` is not set on the recipient, the envelope still lands in the recipient's inbox; the recipient drains it explicitly with `c11 mailbox recv`. With `stdin` set, push delivers to a waiting agent and to one whose turn ends; draining at turn boundaries stays the floor for everything push cannot reach.
+If push is off for the recipient (`mailbox.delivery=off`, `mailbox.doorbell=off`, or no agent with a doorbell in the panel), the envelope still lands in the recipient's inbox; the recipient drains it explicitly with `c11 mailbox recv`. With push on (by default or with `stdin` set), push delivers to a waiting agent and to one whose turn ends; draining at turn boundaries stays the floor for everything push cannot reach.
 
 ## A panel's mailbox on its subtitle bar
 
@@ -260,7 +263,7 @@ If the c11 socket is unreachable, `send` falls back to writing into your own wor
 
 ## Receive flow
 
-There are two receive modes. Which one fires depends on the recipient's `mailbox.delivery` metadata.
+There are two receive modes. Which one fires depends on the recipient's effective delivery: its own `mailbox.delivery`, or `stdin` by default for an agent with a doorbell.
 
 ```mermaid
 sequenceDiagram
@@ -272,12 +275,12 @@ sequenceDiagram
     participant Agent as Recipient agent
 
     D->>Inbox: atomic write ULID.msg
-    alt mailbox.delivery contains "stdin" and a native route is registered (Pi, omp, opted-in Claude, OpenCode, Grok)
+    alt delivery includes "stdin" and a native route is registered (Pi, omp, opted-in Claude, OpenCode, Grok)
         D->>Agent: invitation over the native stream at idle, composer never read
         Note over Inbox: file stays in the inbox root, draft untouched
         Agent->>Inbox: c11 mailbox recv --ack
         Note over D: rejection, closed stream or no confirmation: typed branch below (omp has none)
-    else mailbox.delivery contains "stdin" and the composer is recognized
+    else delivery includes "stdin" and the composer is recognized
         D->>SH: deliver(envelope, surfaceId)
         alt interactive agent at its prompt, owning its terminal
             SH->>PTY: type the doorbell line and submit (log "doorbell")
@@ -288,7 +291,7 @@ sequenceDiagram
             Note over PTY: next real idle, if the composer is empty
             SH->>PTY: type the doorbell line and submit
         end
-    else delivery unset, or typed route with an unreadable composer
+    else delivery off, or typed route with an unreadable composer
         Note over Agent: Inbox file sits until recv or a hook drain
     end
 ```
@@ -298,13 +301,13 @@ The first branch is the native route, which never inspects the composer. The two
 ### Pi native delivery
 
 Interactive Pi launched through c11's bundled wrapper registers an event-driven
-`mailbox.native.subscribe` stream. When opted into `mailbox.delivery=stdin`, it
+`mailbox.native.subscribe` stream. With push on (the default), it
 receives the same invitation through Pi's `sendUserMessage` API. It waits for the
 idle edge; Pi 0.81.1's queued API returns no acceptance receipt while busy. The
 extension confirms acceptance only when Pi emits the invitation's user
 `message_start` event. It never reads, clears or types into the composer, so an
 operator draft and the typing quiet window do not hold a native invitation.
-Unread mail, opt-in, self-raised flags, `mailbox.doorbell=off`, covered envelope
+Unread mail, push being on, self-raised flags, `mailbox.doorbell=off`, covered envelope
 IDs and the 20-attempt cap still apply. Native delivery never claims mail.
 
 An absent extension uses the existing typed route. A rejected request, broken
@@ -428,7 +431,7 @@ against OpenRouter's `openai/gpt-4o-mini`.
 
 This route is off by default. Claude Code wraps every inbox turn in its own peer-message permission notice, which fills an agent's context, so Claude mail uses the typed doorbell and the Stop drain unless a launch sets `C11_CLAUDE_NATIVE_MAIL=1` (`C11_CLAUDE_NATIVE_MAIL_DISABLED=1` still wins). When opted in, the interactive c11 wrapper adds an async SessionStart hook to its existing per-launch settings file. When Claude exports a messaging socket and session token, the bundled bridge registers `claude_inbox` on `mailbox.native.subscribe`. At idle it sends the waiting envelopes themselves, and confirms a matching record in that same session's transcript within two seconds. It never types into or reads the composer, so an operator draft stays intact. The token and the mail text stay in memory; no MCP configuration, channel flag, consent prompt, or tenant settings write is involved.
 
-The native route keeps the unread, push opt-in, doorbell-off, self-raised flag, process ownership, coverage, and rate checks. It skips checks that protect typed input, including composer state and the operator quiet window. A busy arrival still waits for the turn boundary, where the Stop hook may drain it first.
+The native route keeps the unread, push-on, doorbell-off, self-raised flag, process ownership, coverage, and rate checks. It skips checks that protect typed input, including composer state and the operator quiet window. A busy arrival still waits for the turn boundary, where the Stop hook may drain it first.
 
 **The message is the turn.** One peer turn is one delivery: c11's header, then every waiting envelope as a short `<c11-msg>` block, oldest first, up to 32 KiB, and nothing else:
 
@@ -564,7 +567,7 @@ real model calls made. Focused transport/acceptance guards run with
 
 ### When the doorbell line arrives
 
-If your `mailbox.delivery` includes `stdin` and c11 recognizes your composer, you will see one submitted line:
+If push is on for your panel (the default for an agent a c11 wrapper launched) and c11 recognizes your composer, you will see one submitted line:
 
 `c11 mail waiting: run c11 mailbox recv --ack`
 
@@ -653,7 +656,7 @@ Each decision is recorded in `_dispatch.log`, so `c11 mailbox trace <id>` shows 
 
 ### Doorbell
 
-Every `mailbox.delivery=stdin` panel whose composer c11 recognizes gets one invitation instead of a pasted `<c11-msg>` block. Claude Code, OpenCode, Grok, Codex, and Pi get the line, and only from the reader for that panel's own type. A panel with no known type, or a type with no reader, is not rung. That includes omp and GitHub Copilot. Those seats get no typed doorbell; omp is rung only through its native route (above). `c11 send` still refuses a Claude-style draft or dialog on that panel. An empty prompt there stays unknown. The mail waits in the inbox for `c11 mailbox recv --ack`. c11 types:
+Every panel with push on whose composer c11 recognizes gets one invitation instead of a pasted `<c11-msg>` block. Claude Code, OpenCode, Grok, Codex, and Pi get the line, and only from the reader for that panel's own type. A panel with no known type, or a type with no reader, is not rung. That includes omp and GitHub Copilot. Those seats get no typed doorbell; omp is rung only through its native route (above). `c11 send` still refuses a Claude-style draft or dialog on that panel. An empty prompt there stays unknown. The mail waits in the inbox for `c11 mailbox recv --ack`. c11 types:
 
 `c11 mail waiting: run c11 mailbox recv --ack`
 
@@ -777,7 +780,7 @@ Stage 2 fan-out happens two ways. **Topic-driven fan-out is not one of them.**
 c11 set-metadata --key mailbox.delivery --value stdin,silent --type string
 ```
 
-`stdin` injects the framed block into the PTY; `silent` is a no-op that just records `ok` in the dispatch log. The handler set registered in production is exactly `{stdin, silent}`. Anything else logged as `eio` with reason "unknown handler".
+`stdin` injects the framed block into the PTY; `silent` is a no-op that just records `ok` in the dispatch log. The handler set registered in production is exactly `{stdin, silent}`. `off` and `none` run no handler. Anything else logged as `eio` with reason "unknown handler".
 
 ### 2. Multiple panels sharing the same name
 
@@ -885,7 +888,7 @@ The query is bounded. It stats each workspace's `_dispatch.log` and skips any no
 
 Mail not yet delivered says how long it has waited and why: `delivered  no, pending 18m: the agent's journal shows a turn open since 21:43`. The reason comes from the latest stdin row (`hold` on a `gate_closed` skip, a recheck reason, or `waiting_for_idle`); `--json` adds `pending_since`, `pending_seconds`, `wait_reason`, `wait_since` and `wait_reason_text`.
 
-`c11 fleet --json` carries `mailbox_unread` (`count`, `oldest_at`, `oldest_age_seconds`, `reason`, `reason_since`, `reason_text`) per agent, from the mailbox cell's cached count and the app's last hold for that panel, for a sweep of who is sitting on mail and why.
+`c11 fleet --json` carries `mailbox_delivery` (`{value, source}`, the delivery c11 uses and whether the panel set it) and `mailbox_unread` (`count`, `oldest_at`, `oldest_age_seconds`, `reason`, `reason_since`, `reason_text`) per agent, from the mailbox cell's cached count and the app's last hold for that panel, for a sweep of who is sitting on mail and why.
 
 A draft hold prints a plain line under the JSON: `held: recipient has a draft`. A question prints `held: recipient is answering a question`. An unreadable prompt prints `held: recipient prompt is unreadable`. A doorbell line still sitting in the composer prints `held: doorbell line still in the composer`. Those last three are not a draft. The log file itself stays JSON. Human `trace` and `tail` add the sentence when they print. `c11 --json mailbox trace` and `c11 --json mailbox tail` print only the log records, one JSON object per line.
 
@@ -940,7 +943,7 @@ The dispatcher stores `body_ref` on the envelope and leaves `body` empty. `c11 m
 - **Putting huge payloads inline.** Anything past 4096 UTF-8 bytes is rejected at the CLI (and would be rejected by the validator). Use `body_ref`. Recv and the hook drain show the first 4096 bytes and name the path for the rest.
 - **Sending topic-only envelopes via raw file.** They will be accepted by the validator and silently resolve to zero recipients. The CLI rejects this for you; the raw path does not.
 - **Editing files in `_processing/` or `_rejected/`.** The dispatcher owns those directories. `_processing/` is mid-flight scratch; `_rejected/` is forensic state plus a `.err` sidecar.
-- **Treating absent `mailbox.delivery` as "no message".** If the recipient never set `mailbox.delivery`, envelopes still land in their inbox. They just do not get pushed into the PTY. Drain explicitly or set `mailbox.delivery=stdin`.
+- **Treating push off as "no message".** When push is off for a recipient (it set `mailbox.delivery=off` or `mailbox.doorbell=off`, or no agent with a doorbell is in the panel), envelopes still land in its inbox. They just do not ring. Drain explicitly.
 
 ---
 
@@ -975,7 +978,7 @@ What does not work yet (and how the system fails when you try):
 | Per-panel inbox caps                  | None. A slow drainer can accumulate envelopes without limit.             |
 | `body_ref` read-through                 | Recv and the hook drain inline up to 4096 bytes and name the path.       |
 | Real PTY write-error propagation        | `stdin` handler returns `ok` whenever `sendText` returns. EIO not surfaced.|
-| `c11 mailbox configure` convenience     | Use `c11 set-metadata --key mailbox.delivery --value stdin --type string` directly. |
+| `c11 mailbox configure` convenience     | Push is on by default; opt out with `c11 set-metadata --key mailbox.delivery --value off --type string`. |
 
 What is steady-state durable today:
 

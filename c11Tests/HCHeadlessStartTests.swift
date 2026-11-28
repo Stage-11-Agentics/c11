@@ -3613,7 +3613,7 @@ final class HCHeadlessDoorbellWireTests: XCTestCase {
 
     /// A headless hc terminal (no surface, a headless bridge, a real coordinator) whose Codex has been idle since
     /// c11 started: hc's restore seed is the only report it has.
-    private func rig(leftover: String = "") async throws -> Rig {
+    private func rig(leftover: String = "", delivery: String? = "stdin") async throws -> Rig {
         let session = LifecycleSession(key: key)
         let workspace = Workspace()
         let pane = try XCTUnwrap(workspace.bonsplitController.allPaneIds.first)
@@ -3629,8 +3629,10 @@ final class HCHeadlessDoorbellWireTests: XCTestCase {
         panel.surface.setHeadlessBridgeForTesting(bridge)
         let rig = Rig(session: session, workspace: workspace, panel: panel, group: agentPID)
         rig.leftover = leftover
-        _ = try PanelMetadataStore.shared.setMetadata(workspaceId: workspace.id, surfaceId: panel.id,
-            partial: ["mailbox.delivery": "stdin"], mode: .merge, source: .explicit)
+        if let delivery {
+            _ = try PanelMetadataStore.shared.setMetadata(workspaceId: workspace.id, surfaceId: panel.id,
+                partial: ["mailbox.delivery": delivery], mode: .merge, source: .explicit)
+        }
         let kind = try XCTUnwrap(HCRemoteStatus.classification(HCForeground(name: "codex", argv: ["codex"])))
         workspace.setDetectedTerminalType(kind, forSurface: panel.id)
         let pid = agentPID, device = device, born = born
@@ -3774,6 +3776,56 @@ final class HCHeadlessDoorbellWireTests: XCTestCase {
         XCTAssertEqual(rig.writer.received, line + Data([13]))
         XCTAssertFalse(rig.ledger.coveredIds.isEmpty, "delivered on the agent's turn")
         XCTAssertFalse(rig.ledger.strandedPending)
+    }
+
+    /// C11H-445: Workspace's own ring check reads the delivery default. An idle Codex with no `mailbox.delivery`
+    /// is rung, and the panel's own `off` holds the mail.
+    func testAnIdleAgentWithNoDeliverySetIsRungByDefault() async throws {
+        let rig = try await rig(delivery: nil)
+        defer { withExtendedLifetime(rig.workspace) {} }
+        XCTAssertEqual(rig.workspace.mailboxDeliveryEffective(surfaceId: rig.panel.id),
+                       .init(handlers: ["stdin"], source: .default))
+        XCTAssertNil(rig.workspace.mailboxDoorbellUnavailableReason(surfaceId: rig.panel.id))
+        mail(rig, "01M7WIREDEFAULT00000000001")
+        await until("rung with no delivery set") { rig.rings == 1 }
+    }
+
+    func testDeliveryOffHoldsAnIdleAgentsMail() async throws {
+        let rig = try await rig(delivery: "off")
+        defer { withExtendedLifetime(rig.workspace) {} }
+        XCTAssertEqual(rig.workspace.mailboxDoorbellUnavailableReason(surfaceId: rig.panel.id), "stdin_delivery_disabled")
+        mail(rig, "01M7WIREOFF000000000000001")
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(rig.rings, 0)
+        XCTAssertTrue(rig.writer.received.isEmpty, "zero bytes")
+    }
+
+    /// C11H-445: mail copied while the panel read as a shell was never queued. When detection sees the agent,
+    /// Workspace rescans the inbox, queues it and rings, with no second send.
+    func testMailCopiedWhileTheTerminalReadAsAShellRingsWhenTheAgentAppears() async throws {
+        let rig = try await rig(delivery: nil)
+        defer { withExtendedLifetime(rig.workspace) {} }
+        let state = FileManager.default.temporaryDirectory.appendingPathComponent("c11-445-rescan-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: state) }
+        rig.workspace.mailboxStateURLForTesting = state
+        rig.workspace.mailboxQueueLiveWithoutDispatcherForTesting = true
+        final class Rescans { var counts: [Int] = [] }
+        let rescans = Rescans(), panelId = rig.panel.id
+        rig.workspace.onMailboxInboxRescanForTesting = { [rescans] in if $0 == panelId { rescans.counts.append($1) } }
+        let codex = try XCTUnwrap(rig.workspace.surfaceActivityTerminalKind(panelId: rig.panel.id))
+        rig.workspace.setDetectedTerminalType("shell", forSurface: rig.panel.id)
+        XCTAssertEqual(rig.workspace.mailboxDeliveryEffective(surfaceId: rig.panel.id).source, .none)
+
+        let id = MailboxULID.make()
+        let inbox = MailboxLayout.inboxURL(state: state, workspaceId: rig.workspace.id, panelId: rig.panel.id)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let envelope = try MailboxEnvelope.build(from: "c11-captain", to: "seat", body: "while launching", id: id)
+        try MailboxIO.atomicWrite(data: try envelope.encode(),
+                                  to: inbox.appendingPathComponent(MailboxLayout.envelopeFilename(id: id)))
+
+        rig.workspace.setDetectedTerminalType(codex, forSurface: rig.panel.id)
+        await until("the rescan queued the copied mail") { rescans.counts == [1] }
+        await until("rung once the agent appeared") { rig.rings == 1 }
     }
 
     /// A hold the buffered look decides is logged through the dispatcher a test workspace lacks; the next arrival

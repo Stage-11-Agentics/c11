@@ -99,7 +99,7 @@ final class HCPendingInput {
 
     private func refuse(_ item: Item, _ reason: HCInputRefusal, _ runtime: HCPanelSession?) {
         let outcome = HCInputOutcome.refused(reason)
-        runtime?.recordInputOutcome(outcome)
+        runtime?.recordInputOutcome(outcome, from: HCInputAttribution(item.source))
         item.completion?(outcome)
     }
 }

@@ -95,6 +95,26 @@ enum HCPausedInputGate {
     }
 }
 
+/// Who made an input whose outcome reaches the policy (C11H-443).
+enum HCInputAttribution: String, Sendable {
+    /// The operator's paste or drop.
+    case operatorInput = "operator"
+    /// A program: a socket send, the text box, the feed, the mailbox, a launch line, resume or
+    /// initial input.
+    case program
+    /// An outcome from Ghostty's native write callback, not classified. That callback carries
+    /// the operator's keys and Ghostty's own replies and reports alike.
+    case native
+    /// A native write shaped like a keystroke (`HCRawInputClass`): the operator's keys, a key
+    /// binding, Dictation, an accessibility client or `send-key`.
+    case keystroke
+    /// A native write made only of report shapes: a query reply or a size, colour or focus
+    /// report. Ghostty sends these by itself, but a key binding can send them too.
+    case terminal
+
+    init(_ source: HCInputSource) { self = source.isOperatorPaste ? .operatorInput : .program }
+}
+
 /// Presentation and retry policy above 2C's input coordinator. It retains no
 /// payload, queue or Return; transport outcomes are returned without rewriting.
 /// Native callbacks stay off-main and publish only their fault/outcome here.
@@ -134,19 +154,45 @@ final class HCDisconnectedInput: ObservableObject {
     private let setAdmission: SetAdmission
     private let reattach: @MainActor () -> Void
     private let changed: @MainActor (HCDisconnectedInput) -> Void
+    /// When the operator last pressed a key in this panel (C11H-443). Read only when a native
+    /// write was refused, or when a write went through while the operator's notice is up; the
+    /// keystroke path itself never calls it.
+    private let lastOperatorKey: @MainActor () -> Date?
+    private let clock: @MainActor () -> Date
+    /// When this panel last stopped taking input: creation, a disconnect, or a replacement
+    /// staged behind an old write. A refused native write is the operator's only when the
+    /// operator pressed a key after this.
+    private var closedAt: Date
+    /// Who raised the reconnect notice on show (`unavailable`, `staleIdentity`), nil for any
+    /// other notice. A program's clears when input works again: on bind, or on the next write
+    /// that goes through. The operator's outlives a bind, because those keys really were
+    /// dropped, and clears only when their own input goes through: a keystroke-shaped native
+    /// write, or their paste or drop.
+    private enum ReconnectNotice { case program, operatorInput }
+    private var reconnectNotice: ReconnectNotice?
+    /// Turns the bound port's attribution of successful raw writes on or off. The policy turns
+    /// it on only while the operator's notice is up, so a write it clears on says who made it.
+    private let attributeWrites: @MainActor (any HCAttachment, Bool) -> Void
 
     init(panelID: UUID,
          setAdmission: @escaping SetAdmission,
          clearFault: @escaping ClearFault,
          currentDisplay: @escaping @MainActor () -> HCDisplayState? = { nil },
          reattach: @escaping @MainActor () -> Void = {},
+         lastOperatorKey: @escaping @MainActor () -> Date? = { nil },
+         clock: @escaping @MainActor () -> Date = { Date() },
+         attributeWrites: @escaping @MainActor (any HCAttachment, Bool) -> Void = { _, _ in },
          changed: @escaping @MainActor (HCDisconnectedInput) -> Void = { _ in }) {
         self.panelID = panelID
+        self.attributeWrites = attributeWrites
         self.clearFault = clearFault
         self.currentDisplay = currentDisplay
         self.setAdmission = setAdmission
         self.reattach = reattach
+        self.lastOperatorKey = lastOperatorKey
+        self.clock = clock
         self.changed = changed
+        closedAt = clock()
     }
 
     /// A reset hook that answers only yes or no; a no is reported as the owner's refusal.
@@ -154,10 +200,20 @@ final class HCDisconnectedInput: ObservableObject {
                      setAdmission: @escaping SetAdmission,
                      resetFault: @escaping ResetFault,
                      reattach: @escaping @MainActor () -> Void = {},
+                     lastOperatorKey: @escaping @MainActor () -> Date? = { nil },
+                     clock: @escaping @MainActor () -> Date = { Date() },
+                     attributeWrites: @escaping @MainActor (any HCAttachment, Bool) -> Void = { _, _ in },
                      changed: @escaping @MainActor (HCDisconnectedInput) -> Void = { _ in }) {
         self.init(panelID: panelID, setAdmission: setAdmission, clearFault: { attachment, receipt in
             await resetFault(attachment, receipt) ? nil : HCRetryRefusal(.stateMismatch, "owner.resetRefused")
-        }, reattach: reattach, changed: changed)
+        }, reattach: reattach, lastOperatorKey: lastOperatorKey, clock: clock,
+           attributeWrites: attributeWrites, changed: changed)
+    }
+
+    /// True while the reconnect notice is the operator's own and so outlives a bind.
+    var noticeIsOperators: Bool {
+        if case .operatorInput? = reconnectNotice { return true }
+        return false
     }
 
     func bind(_ attachment: any HCAttachment, display: HCDisplayState) {
@@ -170,6 +226,7 @@ final class HCDisconnectedInput: ObservableObject {
             self.attachment = nil
             self.display = nil
             staged = (attachment, display)
+            closedAt = clock()
             changed(self)
             return
         }
@@ -179,8 +236,18 @@ final class HCDisconnectedInput: ObservableObject {
             attachment.input.invalidate(generation: attachment.generation, reason: .inputFault)
         } else {
             setAdmission(attachment, true)
+            // C11H-443: input works again. A reconnect notice no operator input raised (a
+            // program's send, which its caller already heard refused) has nothing left to say.
+            if case .program? = reconnectNotice { clearNotice(cause: "bind") }
         }
+        syncWriteAttribution()
         changed(self)
+    }
+
+    /// The bound port classifies its successful raw writes only while the operator's notice
+    /// is up (C11H-443). Runs on a bind, a refusal and a clear, never per write.
+    private func syncWriteAttribution() {
+        if let attachment { attributeWrites(attachment, noticeIsOperators) }
     }
 
     func updateDisplay(_ display: HCDisplayState) {
@@ -213,7 +280,12 @@ final class HCDisconnectedInput: ObservableObject {
     }
 
     func disconnect() {
-        if let attachment { setAdmission(attachment, false) }
+        if let attachment {
+            setAdmission(attachment, false)
+            // Input stopped now. A second disconnect for the same loss, or one after a
+            // replacement was staged, keeps the first time.
+            closedAt = clock()
+        }
         // A staged port was never opened; discard it so a late completion
         // cannot resurrect an attachment the owner has already retired.
         staged = nil
@@ -224,17 +296,18 @@ final class HCDisconnectedInput: ObservableObject {
     }
 
     func submit(_ request: HCInputRequest) async -> HCInputOutcome {
-        guard request.panelID == panelID else { return refuse(.staleIdentity) }
-        guard let attachment else { return refuse(.unavailable) }
+        let from = HCInputAttribution(request.source)
+        guard request.panelID == panelID else { return refuse(.staleIdentity, from: from) }
+        guard let attachment else { return refuse(.unavailable, from: from) }
         guard request.key == attachment.key, request.attachmentGeneration == attachment.generation else {
-            return refuse(.staleIdentity)
+            return refuse(.staleIdentity, from: from)
         }
-        guard !isFaulted else { return refuse(.inputFault) }
+        guard !isFaulted else { return refuse(.inputFault, from: from) }
         pendingSubmits += 1
         let outcome = await attachment.submit(request)
         // An old in-flight write may complete after reattach. Its uncertainty
         // still belongs to this panel and must latch the new input port too.
-        record(outcome)
+        record(outcome, from: from)
         pendingSubmits -= 1
         if pendingSubmits == 0, let staged {
             self.staged = nil
@@ -244,23 +317,98 @@ final class HCDisconnectedInput: ObservableObject {
     }
 
     /// 2C calls this for raw keys/paste/query failure as well as programmatic
-    /// outcomes. The caller already owns exact operation/generation attribution.
-    func record(_ outcome: HCInputOutcome) {
+    /// outcomes. The caller already owns exact operation/generation attribution;
+    /// `from` says who made the input (C11H-443).
+    func record(_ outcome: HCInputOutcome, from attribution: HCInputAttribution = .program) {
         switch outcome {
         case .refused(let reason):
-            Self.logRefusal(panelID: panelID, reason)
             if reason == .inputFault {
+                Self.logRefusal(panelID: panelID, reason, from: attribution, bar: "paused")
                 if !isFaulted { latchFault(receipt: nil) }
-            } else if !isFaulted {
-                notice = .refused(reason)
-                changed(self)
+            } else {
+                show(reason, from: attribution)
             }
         case .uncertain(let receipt):
             Self.logger.notice("input uncertain panel=\(self.panelID.uuidString, privacy: .public) body_bytes=\(receipt.bodyBytesWritten) return_written=\(receipt.returnWritten)")
             latchFault(receipt: receipt)
         case .written:
-            break
+            // C11H-443: one test on the hop every outcome already makes to main. With a notice
+            // up, the write's own attribution decides; no timestamp is read on success.
+            if reconnectNotice != nil { clearReconnectNotice(afterWriteFrom: attribution) }
         }
+    }
+
+    /// A write went through while a reconnect notice is up. A program's clears: input works.
+    /// The operator's clears only on their own input: a keystroke-shaped native write (the
+    /// port classifies its writes while this notice is up) or their paste or drop. A report,
+    /// a program's send or an unclassified write leaves it.
+    private func clearReconnectNotice(afterWriteFrom attribution: HCInputAttribution) {
+        switch reconnectNotice {
+        case nil:
+            return
+        case .program?:
+            clearNotice(cause: "written")
+        case .operatorInput?:
+            switch attribution {
+            case .keystroke: clearNotice(cause: "typed")
+            case .operatorInput: clearNotice(cause: "pasted")
+            case .program, .native, .terminal: return
+            }
+        }
+    }
+
+    private func clearNotice(cause: String) {
+        reconnectNotice = nil
+        notice = nil
+        Self.logCleared(panelID: panelID, cause: cause)
+        syncWriteAttribution()
+        changed(self)
+    }
+
+    /// Logs every refusal and raises its notice only for input someone made (C11H-443).
+    /// A refused native write is the operator's whenever they pressed a key since this panel
+    /// stopped taking input, whatever its shape: a key binding can send report-shaped bytes.
+    /// With no such key, a write made only of reports (Ghostty's own replies and size, colour
+    /// and focus reports) raises no bar, and any other is a program's.
+    private func show(_ reason: HCInputRefusal, from attribution: HCInputAttribution) {
+        let byOperator: Bool
+        switch attribution {
+        case .operatorInput: byOperator = true
+        case .program: byOperator = false
+        case .native, .keystroke, .terminal:
+            // The refused path is the only place this closure runs.
+            if let key = lastOperatorKey(), key >= closedAt {
+                byOperator = true
+            } else if attribution == .terminal {
+                Self.logRefusal(panelID: panelID, reason, from: attribution, bar: "none")
+                return
+            } else {
+                byOperator = false
+            }
+        }
+        // A repeated attempted send while faulted cannot overwrite the original
+        // uncertain receipt or pretend that operation was refused before write.
+        guard !isFaulted else {
+            Self.logRefusal(panelID: panelID, reason, from: attribution, bar: "paused")
+            return
+        }
+        if !Self.isReconnect(reason) {
+            reconnectNotice = nil
+        } else if byOperator {
+            reconnectNotice = .operatorInput
+        } else if reconnectNotice == nil {
+            // A program's refusal keeps an operator's reconnect notice theirs.
+            reconnectNotice = .program
+        }
+        Self.logRefusal(panelID: panelID, reason, from: attribution, bar: noticeIsOperators ? "held" : "shown")
+        notice = .refused(reason)
+        syncWriteAttribution()
+        changed(self)
+    }
+
+    /// The refusals that mean only "this terminal is reconnecting".
+    private static func isReconnect(_ reason: HCInputRefusal) -> Bool {
+        reason == .unavailable || reason == .staleIdentity
     }
 
     /// Explicit Retry input enables future input only. It never resubmits the
@@ -383,6 +531,9 @@ final class HCDisconnectedInput: ObservableObject {
 
     func dismissRefusal() {
         guard !isFaulted else { return }
+        reconnectNotice = nil
+        syncWriteAttribution()
+        if notice != nil { Self.logCleared(panelID: panelID, cause: "dismissed") }
         notice = nil
         changed(self)
     }
@@ -391,17 +542,26 @@ final class HCDisconnectedInput: ObservableObject {
 
     /// Every refused input, programmatic or raw, reaches this policy once
     /// (through `submit` or `record`); its code is the socket's error code.
-    static func logRefusal(panelID: UUID, _ reason: HCInputRefusal) {
-        logger.notice("input refused panel=\(panelID.uuidString, privacy: .public) code=hc_input_\(reason.rawValue, privacy: .public)")
+    /// `from` is who made it and `bar` what the panel shows for it: `shown`,
+    /// `held` (the operator's, outliving a bind), `paused`, or `none`.
+    static func logRefusal(panelID: UUID, _ reason: HCInputRefusal,
+                           from attribution: HCInputAttribution = .program, bar: String = "shown") {
+        logger.notice("input refused panel=\(panelID.uuidString, privacy: .public) code=hc_input_\(reason.rawValue, privacy: .public) from=\(attribution.rawValue, privacy: .public) bar=\(bar, privacy: .public)")
     }
 
-    private func refuse(_ reason: HCInputRefusal) -> HCInputOutcome {
-        Self.logRefusal(panelID: panelID, reason)
-        // A repeated attempted send while faulted cannot overwrite the original
-        // uncertain receipt or pretend that operation was refused before write.
-        if !isFaulted {
-            notice = .refused(reason)
-            changed(self)
+    /// C11H-443: a refused-input notice left the panel: `bind` or `written` (a program's
+    /// reconnect notice once input works), `typed` or `pasted` (the operator's, once their own
+    /// input went through) or `dismissed`.
+    static func logCleared(panelID: UUID, cause: String) {
+        logger.notice("input notice cleared panel=\(panelID.uuidString, privacy: .public) cause=\(cause, privacy: .public)")
+    }
+
+    private func refuse(_ reason: HCInputRefusal, from attribution: HCInputAttribution) -> HCInputOutcome {
+        if reason == .inputFault {
+            // Faulted already: the pause stays as it is.
+            Self.logRefusal(panelID: panelID, reason, from: attribution, bar: "paused")
+        } else {
+            show(reason, from: attribution)
         }
         return .refused(reason)
     }
@@ -409,6 +569,8 @@ final class HCDisconnectedInput: ObservableObject {
     private func latchFault(receipt: HCWriteReceipt?) {
         faultRevision &+= 1
         retryFailure = nil
+        reconnectNotice = nil
+        syncWriteAttribution()
         let interruptedGeneration = receipt?.attachmentGeneration ?? attachment?.generation
         if let interruptedGeneration {
             // HCManagedSession generations strictly increase across reattach.

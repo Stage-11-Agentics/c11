@@ -1,23 +1,35 @@
 import Foundation
+import os
 
 /// This context is retained independently of the panel and survives native free.
 /// The C callback never accesses an NSView or waits for a task/queue to finish.
 final class HCNativeInputContext: @unchecked Sendable {
     let rendering: any HCRenderingAdapter
     let report: @Sendable (HCInputOutcome) -> Void
+    /// A refusal with who made the refused bytes, judged by their shape (C11H-443); nil sends
+    /// refusals to `report`.
+    let reportRawAttributed: (@Sendable (HCInputOutcome, HCInputAttribution) -> Void)?
+    let panelID: UUID
     private let lock = NSLock()
     private var input: (any HCInputPort)?
     private var generation: UInt64 = 0
+    /// C11H-443: the first refused writes before a port is bound are logged by byte class.
+    private var refusalsLogged = 0
 
-    init(rendering: any HCRenderingAdapter, report: @escaping @Sendable (HCInputOutcome) -> Void) {
+    init(panelID: UUID = UUID(), rendering: any HCRenderingAdapter,
+         report: @escaping @Sendable (HCInputOutcome) -> Void,
+         reportRawAttributed: (@Sendable (HCInputOutcome, HCInputAttribution) -> Void)? = nil) {
+        self.panelID = panelID
         self.rendering = rendering
         self.report = report
+        self.reportRawAttributed = reportRawAttributed
     }
 
     func bind(input: any HCInputPort, generation: UInt64) {
         lock.lock()
         self.input = input
         self.generation = generation
+        refusalsLogged = 0
         lock.unlock()
     }
 
@@ -34,7 +46,17 @@ final class HCNativeInputContext: @unchecked Sendable {
         lock.lock()
         let port = input, current = generation
         lock.unlock()
-        guard let port else { report(.refused(.unavailable)); return }
+        guard let port else {
+            // Refusal path only: a bound port never comes here.
+            let bytes = UnsafeRawBufferPointer(start: UnsafeRawPointer(ptr), count: count)
+            if shouldLogRefusal() { HCRawInputClass.log(panelID: panelID, port: "none", bytes) }
+            if let reportRawAttributed {
+                reportRawAttributed(.refused(.unavailable), HCRawInputClass.attribution(bytes))
+            } else {
+                report(.refused(.unavailable))
+            }
+            return
+        }
         guard count <= HCLimits.transactionBytes else {
             port.invalidate(generation: current, reason: .inputFault)
             report(.refused(.tooLarge))
@@ -46,9 +68,162 @@ final class HCNativeInputContext: @unchecked Sendable {
         port.receiveRaw(Data(bytes: ptr, count: count), kind: .key, generation: current)
     }
 
+    private func shouldLogRefusal() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard refusalsLogged < HCRawInputClass.logLimit else { return false }
+        refusalsLogged += 1
+        return true
+    }
+
     static let write: ghostty_io_write_cb = { userdata, ptr, count in
         guard let userdata, let ptr, count > 0 else { return }
         Unmanaged<HCNativeInputContext>.fromOpaque(userdata).takeUnretainedValue().receive(ptr, count: Int(count))
+    }
+}
+
+/// C11H-443: what a refused native write was, logged without its text. Ghostty writes its own
+/// query replies and reports through the callback that carries the operator's keys, and the
+/// class tells them apart in the log: `csi?c` a device-attributes reply, `osc11` a colour
+/// reply, `csi48t` an in-band size report, `text` typed characters (counted, never shown).
+enum HCRawInputClass {
+    /// Refused writes logged per port: enough to show a launch burst, never a flood.
+    static let logLimit = 8
+    private static let logger = Logger(subsystem: "com.stage11.c11", category: "hc.input")
+
+    /// The length is logged for a terminal report only: a run of typed keys keeps even its count.
+    static func log(panelID: UUID, port: String, _ bytes: UnsafeRawBufferPointer) {
+        let kind = describe(bytes)
+        let size = isTerminalReport(bytes) ? String(bytes.count) : "-"
+        logger.notice("native input refused panel=\(panelID.uuidString, privacy: .public) port=\(port, privacy: .public) class=\(kind, privacy: .public) bytes=\(size, privacy: .public)")
+    }
+
+    /// Who made native bytes, by their shape: `.terminal` for a write made only of sequences
+    /// Ghostty sends by itself (query replies, size, colour and focus reports), `.keystroke`
+    /// for anything a key could send. A key binding can send report-shaped bytes, so the
+    /// policy lets this lower a bar only when the operator pressed no key (C11H-443).
+    static func attribution(_ bytes: UnsafeRawBufferPointer) -> HCInputAttribution {
+        isTerminalReport(bytes) ? .terminal : .keystroke
+    }
+
+    /// True when every byte belongs to a complete report: an OSC, DCS or APC string ended by
+    /// ST or BEL; a CSI with a `?` or `>` marker (device attributes, mode and colour-scheme
+    /// reports, keyboard flags); a CSI ending in `t` (window and in-band size reports), `n`
+    /// (status reports), `c` (device attributes), `$y` (mode reports) or `R` (cursor
+    /// position, unless it is `CSI 1;<mods> R`, a modified F3); or a bare focus report. Any
+    /// other byte, text after a report included, makes the write a keystroke.
+    static func isTerminalReport(_ bytes: UnsafeRawBufferPointer) -> Bool {
+        var index = 0
+        while index < bytes.count {
+            guard let next = reportEnd(bytes, from: index) else { return false }
+            index = next
+        }
+        return index > 0
+    }
+
+    /// The index after the report starting at `start`, or nil when none starts there.
+    private static func reportEnd(_ bytes: UnsafeRawBufferPointer, from start: Int) -> Int? {
+        guard start + 2 < bytes.count, bytes[start] == 0x1b else { return nil }
+        switch bytes[start + 1] {
+        case 0x5d, 0x50, 0x5f:
+            // A string runs to ST (ESC \) or BEL. Alt with `]`, `P` or `_` sends no terminator.
+            var index = start + 2
+            while index < bytes.count {
+                if bytes[index] == 0x07 { return index + 1 }
+                if bytes[index] == 0x1b { return index + 1 < bytes.count && bytes[index + 1] == 0x5c ? index + 2 : nil }
+                index += 1
+            }
+            return nil
+        case 0x5b:
+            break
+        default:
+            return nil
+        }
+        var index = start + 2
+        var marker: UInt8 = 0
+        if index < bytes.count, (0x3c...0x3f).contains(bytes[index]) { marker = bytes[index]; index += 1 }
+        let parametersStart = index
+        var separators = 0
+        while index < bytes.count, (0x30...0x3b).contains(bytes[index]) {
+            if bytes[index] == 0x3b { separators += 1 }
+            index += 1
+        }
+        let parameters = index - parametersStart
+        var intermediates = 0, dollar = false
+        while index < bytes.count, (0x20...0x2f).contains(bytes[index]) {
+            intermediates += 1
+            if bytes[index] == 0x24 { dollar = true }
+            index += 1
+        }
+        guard index < bytes.count, isFinal(bytes[index]) else { return nil }
+        let end = index + 1
+        if marker == 0x3f || marker == 0x3e { return end }
+        guard marker == 0 else { return nil }
+        switch bytes[index] {
+        case 0x74, 0x6e, 0x63: return end // t, n, c
+        case 0x79: return dollar && intermediates == 1 ? end : nil // $y
+        case 0x49, 0x4f: return parameters == 0 && intermediates == 0 ? end : nil // focus in, out
+        case 0x52: // R: a cursor-position report, unless it is CSI 1;<mods> R
+            guard separators == 1, parameters >= 3, bytes[parametersStart] == 0x31,
+                  bytes[parametersStart + 1] == 0x3b else { return end }
+            var modifiers = 0, digit = parametersStart + 2
+            while digit < index, (0x30...0x39).contains(bytes[digit]), modifiers <= 16 {
+                modifiers = modifiers * 10 + Int(bytes[digit] - 0x30)
+                digit += 1
+            }
+            return (2...16).contains(modifiers) ? nil : end
+        default: return nil
+        }
+    }
+
+    /// The first sequence's shape: its introducer, private marker, intermediates and final
+    /// byte. Parameters and text are left out (a kitty-encoded key names its character in
+    /// them); only a window report (`t`) keeps its first parameter, which names the report.
+    static func describe(_ bytes: UnsafeRawBufferPointer) -> String {
+        guard let first = bytes.first else { return "empty" }
+        guard first == 0x1b else {
+            if bytes.allSatisfy({ $0 >= 0x20 && $0 != 0x7f }) { return "text" }
+            return bytes.count == 1 ? "ctl" : "mixed"
+        }
+        guard bytes.count > 1 else { return "esc" }
+        switch bytes[1] {
+        case 0x5b: return "csi" + shape(bytes, from: 2, keepsWindowReport: true)
+        case 0x50: return "dcs" + shape(bytes, from: 2, keepsWindowReport: false)
+        case 0x5d:
+            var number = ""
+            for byte in bytes.dropFirst(2).prefix(4) {
+                guard (0x30...0x39).contains(byte) else { break }
+                number.append(Character(UnicodeScalar(byte)))
+            }
+            return "osc" + number
+        case 0x5f: return "apc" + (bytes.count > 2 && isFinal(bytes[2]) ? String(UnicodeScalar(bytes[2])) : "")
+        case 0x4f: return "ss3" + (bytes.count > 2 && isFinal(bytes[2]) ? String(UnicodeScalar(bytes[2])) : "")
+        default: return "esc+" // Alt with a key: the key is not logged.
+        }
+    }
+
+    private static func isFinal(_ byte: UInt8) -> Bool { (0x40...0x7e).contains(byte) }
+
+    private static func shape(_ bytes: UnsafeRawBufferPointer, from start: Int, keepsWindowReport: Bool) -> String {
+        var index = start
+        var marker = "", firstParameter = "", intermediates = ""
+        var firstEnded = false
+        if index < bytes.count, (0x3c...0x3f).contains(bytes[index]) {
+            marker = String(UnicodeScalar(bytes[index])); index += 1
+        }
+        while index < bytes.count, (0x30...0x3b).contains(bytes[index]) {
+            let byte = bytes[index]
+            if byte > 0x39 { firstEnded = true }
+            else if !firstEnded, firstParameter.count < 4 { firstParameter.append(Character(UnicodeScalar(byte))) }
+            index += 1
+        }
+        while index < bytes.count, (0x20...0x2f).contains(bytes[index]) {
+            intermediates.append(Character(UnicodeScalar(bytes[index]))); index += 1
+        }
+        guard index < bytes.count, isFinal(bytes[index]) else { return marker + intermediates + "~partial" }
+        let final = String(UnicodeScalar(bytes[index]))
+        if keepsWindowReport, final == "t" { return marker + firstParameter + intermediates + final }
+        return marker + intermediates + final
     }
 }
 
@@ -82,7 +257,12 @@ final class HCNativeBridge: HCOutputSink, @unchecked Sendable {
     let rendering: any HCRenderingAdapter
     let encoder: any HCInputEncoder
     let displayChanged: @Sendable (HCDisplayState) -> Void
+    /// Raw input outcomes: the native write callback and the port's raw writes.
     let report: @Sendable (HCInputOutcome) -> Void
+    /// Outcomes of input submitted with a source (initial input); nil sends them to `report`.
+    let reportSubmitted: (@Sendable (HCInputOutcome) -> Void)?
+    /// Refused raw bytes with who made them, by their shape; nil sends them to `report`.
+    let reportRawAttributed: (@Sendable (HCInputOutcome, HCInputAttribution) -> Void)?
     private let lock = NSLock()
     private var lease: HCOutputLease?
     private var retired = false
@@ -106,13 +286,18 @@ final class HCNativeBridge: HCOutputSink, @unchecked Sendable {
 
     init(panelID: UUID, rendering: any HCRenderingAdapter, encoder: any HCInputEncoder,
          report: @escaping @Sendable (HCInputOutcome) -> Void,
+         reportSubmitted: (@Sendable (HCInputOutcome) -> Void)? = nil,
+         reportRawAttributed: (@Sendable (HCInputOutcome, HCInputAttribution) -> Void)? = nil,
          displayChanged: @escaping @Sendable (HCDisplayState) -> Void = { _ in }) {
         self.panelID = panelID
         self.rendering = rendering
         self.encoder = encoder
         self.displayChanged = displayChanged
         self.report = report
-        context = HCNativeInputContext(rendering: rendering, report: report)
+        self.reportSubmitted = reportSubmitted
+        self.reportRawAttributed = reportRawAttributed
+        context = HCNativeInputContext(panelID: panelID, rendering: rendering, report: report,
+                                       reportRawAttributed: reportRawAttributed)
         retirement.enter()
     }
 

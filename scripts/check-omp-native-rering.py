@@ -145,7 +145,7 @@ def main():
 
     def inspect():
         return json.loads(guest('''import json,pathlib,sys
-root=pathlib.Path.home()/"Library/Application Support/c11/workspaces"/sys.argv[1].upper()/"mailboxes"
+root=next((d for d in [pathlib.Path.home()/"Library/Application Support/c11/workspaces",*sorted(pathlib.Path.home().glob("Library/Application Support/c11-dev/*/workspaces"))] if (d/sys.argv[1].upper()).is_dir()),pathlib.Path.home()/"Library/Application Support/c11/workspaces")/sys.argv[1].upper()/"mailboxes"
 def lines(path):
  if not path.exists(): return []
  result=[]

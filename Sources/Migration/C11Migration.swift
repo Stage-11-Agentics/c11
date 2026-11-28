@@ -156,7 +156,7 @@ enum C11MigrationPlanner {
     static func allowed(bundleIdentifier: String, destBundleIdentifier: String,
                         environment: [String: String]) -> Bool {
         if bundleIdentifier == destBundleIdentifier { return true }
-        return environment["C11_MIGRATION_QA"] == "1" && !(environment["C11_QA_LAUNCH"] ?? "").isEmpty
+        return C11Identity.isMigrationQALaunch(environment: environment)
     }
 
     /// `record` is the one durable record (nil when none). A running c11h always  c11-2.0:legacy

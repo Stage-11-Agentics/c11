@@ -10,10 +10,12 @@ import Foundation
 ///
 /// - **Live spools:** each workspace's dispatcher registers its spool; a
 ///   `MailboxOutboxWatcher` (FSEvents + periodic sweep) triggers a sweep of it.
-/// - **Every spool, once per launch:** the first registration also sweeps the
-///   spool of every workspace directory on disk, so receipts left by a run
-///   that quit or crashed are recorded even when their workspace is never
-///   restored under the same id.
+/// - **Every spool, never at launch:** every `everyWorkspaceSweepInterval`
+///   after the first registration, the spool of every workspace directory on
+///   disk is swept, so receipts left by a run that quit or crashed are
+///   recorded even when their workspace is never restored under the same id.
+///   Launch reads only the spools of the workspaces it opens (C11H-439: a
+///   folder of 229k workspace directories held launch in disk wait).
 /// - **Exactly once:** within a run, the in-memory set skips an id already
 ///   recorded (a duplicate receipt). A receipt older than this run may have
 ///   been recorded by the previous one right before it died (emit happened,
@@ -24,11 +26,9 @@ import Foundation
 /// - **Never lost:** nothing is deleted unless the event log is recording and
 ///   has confirmed each delivery was written. Uncertain writes retain the claim
 ///   for recovery after this process exits; disabled recording leaves unclaimed
-///   receipts for the existing retry path. Spools of
-///   workspaces that are not open are swept again every
-///   `everyWorkspaceSweepInterval`.
+///   receipts for the existing retry path.
 /// - **One app at a time per receipt:** several c11 builds can share the state
-///   directory (a tagged dev build beside the installed app). A receipt is
+///   directory (the release app beside its staging or nightly channel). A receipt is
 ///   claimed by renaming it to `.<name>.<pid>.claim` before it is read, so only
 ///   one process records it; a claim whose process died is put back.
 final class MailboxReceiptRecorder {
@@ -100,13 +100,13 @@ final class MailboxReceiptRecorder {
     // MARK: - Lifecycle
 
     /// Starts recording one workspace's spool. The first call per recorder
-    /// also sweeps every workspace's spool under `workspacesRoot`.
+    /// also schedules the sweep of every workspace's spool under
+    /// `workspacesRoot`, first run one interval later, never now.
     func watch(workspaceId: UUID, mailboxesRoot: URL, workspacesRoot: URL) {
         let spool = MailboxDeliveryReceipt.spoolURL(mailboxesRoot: mailboxesRoot)
         queue.async { [self] in
             if !sweptEveryWorkspace {
                 sweptEveryWorkspace = true
-                sweepEveryWorkspace(workspacesRoot: workspacesRoot)
                 let timer = DispatchSource.makeTimerSource(queue: queue)
                 timer.schedule(
                     deadline: .now() + Self.everyWorkspaceSweepInterval,
@@ -138,12 +138,14 @@ final class MailboxReceiptRecorder {
 
     /// Stops watching a workspace's spool after one last sweep of it, so a
     /// receipt written just before the workspace closed is still recorded.
-    func unwatch(workspaceId: UUID) {
+    /// `then` runs on the recorder's queue after that sweep.
+    func unwatch(workspaceId: UUID, then: (() -> Void)? = nil) {
         queue.async { [self] in
             watchers.removeValue(forKey: workspaceId)?.stop()
             if let spool = spools.removeValue(forKey: workspaceId) {
                 sweep(spool: spool, workspaceId: workspaceId)
             }
+            then?()
         }
     }
 

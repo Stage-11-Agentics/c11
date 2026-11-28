@@ -6898,6 +6898,10 @@ final class Workspace: Identifiable, ObservableObject {
     /// C11H-306: a test workspace has no dispatcher to confirm its queued mail is still in the inbox; this treats
     /// it as there, so a held look plans its next look as it does with one.
     var mailboxQueueLiveWithoutDispatcherForTesting = false
+    /// C11H-445: the mailbox state folder a test workspace (no dispatcher) rescans.
+    var mailboxStateURLForTesting: URL?
+    /// C11H-445: each inbox rescan that queued mail (panel, envelopes queued).
+    var onMailboxInboxRescanForTesting: ((UUID, Int) -> Void)?
     /// C11H-306: the last composer read of each headless panel, and the reads in flight.
     private var mailboxHeadlessComposerReads: [UUID: MailboxHeadlessComposerRead] = [:]
     private var mailboxHeadlessComposerReadsInFlight: Set<UUID> = []
@@ -7977,6 +7981,15 @@ final class Workspace: Identifiable, ObservableObject {
         lastKnownPanelIds = newIds
     }
 
+    /// The workspace is closed for good: stop its dispatcher and remove its
+    /// mailbox folder if no file is in it (C11H-439). A workspace that opens
+    /// again under the same id makes a new one.
+    func retireMailboxForGood() {
+        guard let dispatcher = mailboxDispatcher else { return }
+        mailboxDispatcher = nil
+        dispatcher.retire()
+    }
+
     /// Creates a per-workspace mailbox dispatcher bound to this workspace's
     /// UUID and starts watching `$C11_STATE/workspaces/<id>/mailboxes/_outbox/`.
     /// Idempotent. A no-op `silent` handler is registered so topic-silent
@@ -8008,18 +8021,41 @@ final class Workspace: Identifiable, ObservableObject {
             guard let owner = ConversationStorePanelRefCache.shared.mailboxOwner(surfaceId: panelID),
                   let workspaceID = JournalCoordinator.shared.target(panelID: owner.panelID) else { return nil }
             return (owner.panelID, workspaceID)
-        }, linkedMachines: { [weak self] in
+        }, panelFacts: { [weak self] in
             // C11H-360: which of this workspace's panels run on a linked machine.
-            let read: () -> [UUID: String] = {
+            // C11H-445: and the kind detection sees in each, so the delivery
+            // default follows the live agent (a shell once it exits, a remote
+            // agent hc names). One main read per dispatch.
+            let read: () -> [UUID: MailboxPanelResolver.PanelFacts] = {
                 MainActor.assumeIsolated {
                     guard let self else { return [:] }
-                    return self.panels.reduce(into: [UUID: String]()) { result, entry in
-                        if let machine = (entry.value as? TerminalPanel)?.hcRemoteTarget?.machine { result[entry.key] = machine }
+                    var facts: [UUID: MailboxPanelResolver.PanelFacts] = [:]
+                    for (id, panel) in self.panels {
+                        if let machine = (panel as? TerminalPanel)?.hcRemoteTarget?.machine {
+                            facts[id, default: .init()].linkedMachine = machine
+                        }
                     }
+                    for (id, kind) in self.detectedTerminalTypesByPanel where self.panels[id] != nil {
+                        facts[id, default: .init()].detectedKind = kind
+                    }
+                    return facts
                 }
             }
             if Thread.isMainThread { return read() }
-            var result: [UUID: String] = [:]
+            var result: [UUID: MailboxPanelResolver.PanelFacts] = [:]
+            DispatchQueue.main.sync { result = read() }
+            return result
+        }, detectedKindAnywhere: { panelID in
+            // C11H-445: a shared OpenCode owner's detected kind, wherever it
+            // is, so an alias and a direct send pick the same delivery.
+            let read: () -> String? = {
+                MainActor.assumeIsolated {
+                    AppDelegate.shared?.workspaceContainingPanel(panelId: panelID)?.workspace
+                        .detectedTerminalTypesByPanel[panelID]
+                }
+            }
+            if Thread.isMainThread { return read() }
+            var result: String?
             DispatchQueue.main.sync { result = read() }
             return result
         }, localAnswersAnywhere: { address in
@@ -8097,6 +8133,12 @@ final class Workspace: Identifiable, ObservableObject {
             mailboxDispatcher?.logStdinLifecycle(id: envelopeId, recipient: recipientName,
                 outcome: .doorbellSkipped, reason: "not_terminal", recipientPanel: surfaceId)
             return .surfaceNotTerminal
+        }
+
+        // C11H-445: the panel's inbox rescan may have queued this envelope
+        // already (a dispatch's post-copy recheck racing it); queue it once.
+        if mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId).contains(where: { $0.id == envelopeId }) {
+            return .buffered(bytes: block.utf8.count)
         }
 
         if let reason = mailboxDoorbellUnavailableReason(surfaceId: surfaceId) {
@@ -8423,21 +8465,27 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func mailboxDeliveryIncludesStdin(surfaceId: UUID) -> Bool {
-        guard let raw = PanelMetadataStore.shared.metadataValue(
-            workspaceId: id,
-            surfaceId: surfaceId,
-            key: "mailbox.delivery"
-        ) as? String else { return false }
-        return raw.split(separator: ",", omittingEmptySubsequences: true).contains {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare("stdin") == .orderedSame
-        }
+        mailboxDeliveryEffective(surfaceId: surfaceId).includesStdin
+    }
+
+    /// C11H-445: the panel's own `mailbox.delivery`, or the default for the
+    /// live agent kind in it. The dispatcher reads the same policy.
+    func mailboxDeliveryEffective(surfaceId: UUID) -> MailboxDeliveryPolicy.Effective {
+        let store = PanelMetadataStore.shared
+        return MailboxDeliveryPolicy.effective(
+            delivery: store.metadataValue(workspaceId: id, surfaceId: surfaceId,
+                                          key: MailboxDeliveryPolicy.deliveryKey) as? String,
+            doorbell: store.metadataValue(workspaceId: id, surfaceId: surfaceId,
+                                          key: MailboxDeliveryPolicy.doorbellKey) as? String,
+            agentKind: surfaceActivityTerminalKind(panelId: surfaceId)
+        )
     }
 
     private func mailboxDoorbellOptedOut(surfaceId: UUID) -> Bool {
         guard let raw = PanelMetadataStore.shared.metadataValue(
             workspaceId: id,
             surfaceId: surfaceId,
-            key: "mailbox.doorbell"
+            key: MailboxDeliveryPolicy.doorbellKey
         ) as? String else { return false }
         return raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "off"
     }
@@ -10524,6 +10572,53 @@ final class Workspace: Identifiable, ObservableObject {
         mailboxStdinState.buffer.noteAgentAttached(surfaceId: surfaceId, at: eventAt)
         retryCarriedMailboxClaim(surfaceId: surfaceId)
         flushBufferedMailboxStdin(surfaceId: surfaceId, trigger: .agentPrompt)
+        rescanMailboxInboxForLateAgent(surfaceId: surfaceId)
+    }
+
+    /// C11H-445: queue the unread mail this panel's inbox holds and its queue
+    /// does not, once push is on for it. Mail that arrived while the panel
+    /// read as a shell (a launch still at its startup shell, an agent started
+    /// in a shell that had mail) was copied but never queued, and only the
+    /// queue rings. Only mail this app process accepted; the inbox read runs
+    /// off main, and every ring check still applies to what it queues.
+    private func rescanMailboxInboxForLateAgent(surfaceId: UUID) {
+        guard panels[surfaceId] is TerminalPanel, mailboxDeliveryIncludesStdin(surfaceId: surfaceId),
+              let stateURL = mailboxDispatcher?.stateURL ?? mailboxStateURLForTesting else { return }
+        let skipping = Set(mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId).map(\.id))
+            .union(mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds)
+        let title = PanelMetadataStore.shared.metadataValue(workspaceId: id, surfaceId: surfaceId,
+                                                            key: MetadataKey.title) as? String
+        let name = title.flatMap { $0.isEmpty ? nil : $0 } ?? "id:\(surfaceId.uuidString)"
+        let origin = id
+        let inbox = MailboxLayout.inboxURL(state: stateURL, workspaceId: origin, panelId: surfaceId)
+        let owner = mailboxDoorbellOwner(surfaceId: surfaceId)
+        Self.mailboxPushIOQueue.async {
+            let found = MailboxStdinDelivery.inboxEntriesToQueue(
+                inbox: inbox, inboxWorkspaceId: origin, panelId: surfaceId, recipientName: name,
+                skipping: skipping, since: MailboxStdinDelivery.processStartedAt)
+            guard !found.isEmpty else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let workspace = owner.workspace,
+                          workspace.mailboxDeliveryIncludesStdin(surfaceId: surfaceId) else { return }
+                    let queued = Set(workspace.mailboxStdinState.buffer.queuedEntries(surfaceId: surfaceId).map(\.id))
+                    let covered = workspace.mailboxStdinState.doorbell.ledger(for: surfaceId).coveredIds
+                    var added = 0
+                    for entry in found where !queued.contains(entry.id) && !covered.contains(entry.id) {
+                        if let evicted = workspace.mailboxStdinState.buffer.enqueue(surfaceId: surfaceId, entry: entry) {
+                            workspace.mailboxDispatcher?.logStdinLifecycle(id: evicted.id, recipient: evicted.recipientName,
+                                outcome: .evicted, recipientPanel: evicted.recipientPanelId)
+                        }
+                        workspace.mailboxDispatcher?.logStdinLifecycle(id: entry.id, recipient: entry.recipientName,
+                            outcome: .buffered, reason: "inbox_rescan", recipientPanel: surfaceId)
+                        added += 1
+                    }
+                    guard added > 0 else { return }
+                    workspace.onMailboxInboxRescanForTesting?(surfaceId, added)
+                    workspace.ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+                }
+            }
+        }
     }
 
     /// A surviving hc terminal does not repeat the agent's SessionStart.
@@ -11956,6 +12051,10 @@ final class Workspace: Identifiable, ObservableObject {
             let kind = surfaceActivityTerminalKind(panelId: surfaceId)
             if kind != previousKind, AreaSizePolicy.isAgentKind(kind) {
                 ringMailboxDoorbellIfStillBuffered(surfaceId: surfaceId)
+                // C11H-445: mail that came while this panel read as a shell (a
+                // launch at its startup shell, an agent typed into a shell)
+                // was never queued; push is on for it now.
+                rescanMailboxInboxForLateAgent(surfaceId: surfaceId)
             }
         }
     }
@@ -14402,9 +14501,15 @@ final class Workspace: Identifiable, ObservableObject {
     /// Retire a graph displaced by session restore, even when external callers
     /// still retain it. ID-keyed cleanup must finish before its replacement is
     /// constructed. Normal close's notifications/last-workspace policy do not apply.
-    func retireForSessionRestore() {
-        mailboxDispatcher?.stop()
-        mailboxDispatcher = nil
+    /// `closedForGood` when the restore does not bring this workspace back (the
+    /// launch placeholder): its empty mailbox folder goes too.
+    func retireForSessionRestore(closedForGood: Bool = false) {
+        if closedForGood {
+            retireMailboxForGood()
+        } else {
+            mailboxDispatcher?.stop()
+            mailboxDispatcher = nil
+        }
         teardownRemoteConnection()
         owningWorkspaceManager = nil
         teardownAllPanels(markPanelsClosedForGood: false)

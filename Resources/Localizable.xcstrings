@@ -37532,6 +37532,194 @@
         "ru": {"stringUnit": {"state": "translated", "value": "%1$@ через %2$@"}}
       }
     },
+    "mailbox.status.push.default": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "push       %@, on by default"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プッシュ   %@、デフォルトでオン"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "надсилання  %@, увімкнено за замовчуванням"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "푸시       %@, 기본적으로 켜짐"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送       %@, 默认开启"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送       %@, 預設開啟"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "push        %@, включён по умолчанию"
+          }
+        }
+      }
+    },
+    "mailbox.status.push.explicit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "push       %@, set by the panel"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プッシュ   %@、パネルが設定"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "надсилання  %@, задано панеллю"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "푸시       %@, 패널이 설정함"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送       %@, 由面板设置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送       %@, 由面板設定"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "push        %@, задано панелью"
+          }
+        }
+      }
+    },
+    "mailbox.status.push.doorbellOff": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "push       off, the panel set mailbox.doorbell=off"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プッシュ   off、パネルが mailbox.doorbell=off を設定"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "надсилання  off, панель встановила mailbox.doorbell=off"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "푸시       off, 패널이 mailbox.doorbell=off로 설정함"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送       off, 面板设置了 mailbox.doorbell=off"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送       off, 面板設定了 mailbox.doorbell=off"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "push        off, панель задала mailbox.doorbell=off"
+          }
+        }
+      }
+    },
+    "mailbox.status.push.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "push       off, no agent with a doorbell in this panel"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プッシュ   off、このパネルに呼び鈴を使うエージェントなし"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "надсилання  off, у цій панелі немає агента з дзвінком"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "푸시       off, 이 패널에 초인종을 쓰는 에이전트 없음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送       off, 此面板中没有使用门铃的智能体"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送       off, 此面板中沒有使用門鈴的智慧代理"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "push        off, в этой панели нет агента со звонком"
+          }
+        }
+      }
+    },
     "mailbox.status.queued": {
       "extractionState": "manual",
       "localizations": {

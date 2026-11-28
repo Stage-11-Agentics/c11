@@ -4870,6 +4870,9 @@ final class BrowserPanel: Panel, ObservableObject {
 
     private func updateMessagesPageReloadObserver(for url: URL) {
         let nextURL = MessagesPageLayout.isMessagesPageURL(url) ? url.standardizedFileURL : nil
+        // C11H-439: loading the page is a look, so the writer rebuilds it. A
+        // hibernated panel restored on the page loads it only when it wakes.
+        if nextURL != nil { MessagesPageWriter.shared.noteViewer() }
         guard nextURL != messagesPageURL else {
             installMessagesPageReloadObserverIfNeeded()
             return

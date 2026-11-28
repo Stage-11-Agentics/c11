@@ -54,10 +54,10 @@ enum EventLogLayout {
 
     // MARK: - State root
 
-    /// Resolves the c11 state root (default:
-    /// `~/Library/Application Support/c11`). Mirrors
-    /// `MailboxLayout.defaultStateURL` exactly, including the legacy→current
-    /// migration latch, so the events tree lands beside the mailbox tree.
+    /// Resolves the c11 state root (`~/Library/Application Support/c11`) for
+    /// every build. The mailbox tree has its own resolver
+    /// (`MailboxLayout.defaultStateURL`), which differs for debug, tagged and
+    /// test processes (C11H-439).
     static func defaultStateURL(fileManager: FileManager = .default) throws -> URL {
         StateDirectoryMigration.ensureMigrated(fileManager: fileManager)
         guard let appSupport = fileManager.urls(

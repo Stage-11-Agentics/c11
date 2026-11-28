@@ -29,6 +29,13 @@ final class HCInputCoordinator: HCInputPort, @unchecked Sendable {
     private let encoder: any HCInputEncoder
     private let screen: any HCScreenProvider
     private let report: @Sendable (HCInputOutcome) -> Void
+    /// Where submitted outcomes in `reportedSources` go; nil sends them to `report`. Raw
+    /// outcomes always go to `report` (C11H-443: the owner tells them apart).
+    private let reportSubmitted: (@Sendable (HCInputOutcome) -> Void)?
+    /// Raw outcomes with who made the bytes, by their shape (C11H-443): every closed-port
+    /// refusal, and each successful write while `attributesWrites` is on. Nil sends them to
+    /// `report`.
+    private let reportRawAttributed: (@Sendable (HCInputOutcome, HCInputAttribution) -> Void)?
     private let claimInBandGrid: @Sendable (UInt16, UInt16) -> Bool
     /// Programmatic outcomes the owner records itself (it receives them from
     /// `submit`) are not also sent to `report`; raw outcomes always are.
@@ -44,12 +51,20 @@ final class HCInputCoordinator: HCInputPort, @unchecked Sendable {
     private var rawHead = 0
     private var rawCount = 0
     private var rawDraining = false
+    /// C11H-443: the first raw writes this port refuses while closed are logged by byte class.
+    private var refusalsLogged = 0
+    /// C11H-443: on only while the operator's reconnect notice is up. Each successful raw
+    /// write is then classified, so the notice clears on the operator's own keystroke and on
+    /// nothing else. Off, a successful write is reported exactly as before.
+    private var attributesWrites = false
 
     init(panelID: UUID, key: HCTerminalKey, generation: UInt64,
          writer: any HCFrameWriter, encoder: any HCInputEncoder,
          screen: any HCScreenProvider,
          displayRevision: @escaping @Sendable () -> HCDisplayRevision,
          report: @escaping @Sendable (HCInputOutcome) -> Void,
+         reportSubmitted: (@Sendable (HCInputOutcome) -> Void)? = nil,
+         reportRawAttributed: (@Sendable (HCInputOutcome, HCInputAttribution) -> Void)? = nil,
          claimInBandGrid: @escaping @Sendable (UInt16, UInt16) -> Bool = { _, _ in true },
          admitted: Bool = true,
          reportedSources: Set<HCInputSource> = Set([.socket, .textBox, .filePaste, .feed, .mailbox,
@@ -62,6 +77,8 @@ final class HCInputCoordinator: HCInputPort, @unchecked Sendable {
         self.screen = screen
         self.displayRevision = displayRevision
         self.report = report
+        self.reportSubmitted = reportSubmitted
+        self.reportRawAttributed = reportRawAttributed
         self.claimInBandGrid = claimInBandGrid
         self.admitted = admitted
         self.reportedSources = reportedSources
@@ -70,7 +87,7 @@ final class HCInputCoordinator: HCInputPort, @unchecked Sendable {
 
     func submit(_ request: HCInputRequest) async -> HCInputOutcome {
         let outcome = await perform(request)
-        if reportedSources.contains(request.source) { report(outcome) }
+        if reportedSources.contains(request.source) { (reportSubmitted ?? report)(outcome) }
         return outcome
     }
 
@@ -257,10 +274,10 @@ final class HCInputCoordinator: HCInputPort, @unchecked Sendable {
         lock.unlock()
         // A reconnecting port refuses raw bytes visibly and drops them; unlike a
         // queue overflow this is an expected state and does not latch a fault.
-        if closed { report(.refused(.unavailable)); return }
+        if closed { refuseClosed(bytes, .unavailable); return }
         // A port closed by a connection loss or a detach is the same expected
         // state, not a fault: nothing was written and nothing is half-sent.
-        if let reason = closedReason, reason != .inputFault { report(.refused(reason)); return }
+        if let reason = closedReason, reason != .inputFault { refuseClosed(bytes, reason); return }
         guard kind != .paste else { fault(.unavailable); return }
         guard bytes.count <= HCLimits.transactionBytes - 9 else { fault(.tooLarge); return }
         let grid = Self.inBandGrid(bytes)
@@ -280,6 +297,23 @@ final class HCInputCoordinator: HCInputPort, @unchecked Sendable {
         enqueueRaw(frames, reservation: reservation)
     }
 
+    /// Refusal path only: an open port never comes here. The refusal says who made the bytes
+    /// (C11H-443): Ghostty's own reports raise no bar.
+    private func refuseClosed(_ bytes: Data, _ reason: HCInputRefusal) {
+        lock.lock()
+        let logs = refusalsLogged < HCRawInputClass.logLimit
+        if logs { refusalsLogged += 1 }
+        lock.unlock()
+        bytes.withUnsafeBytes { raw in
+            if logs { HCRawInputClass.log(panelID: panelID, port: String(generation), raw) }
+            if let reportRawAttributed {
+                reportRawAttributed(.refused(reason), HCRawInputClass.attribution(raw))
+            } else {
+                report(.refused(reason))
+            }
+        }
+    }
+
     private func enqueueRaw(_ frames: [HCOutboundFrame], reservation: HCWriteReservation) {
         lock.lock()
         // Every retained byte has an existing wire reservation. One task drains
@@ -295,7 +329,7 @@ final class HCInputCoordinator: HCInputPort, @unchecked Sendable {
         lock.unlock()
     }
 
-    private func takeRaw() -> ([HCOutboundFrame], HCWriteReservation)? {
+    private func takeRaw() -> ([HCOutboundFrame], HCWriteReservation, attributes: Bool)? {
         lock.lock()
         defer { lock.unlock() }
         guard rawCount > 0 else { rawDraining = false; return nil }
@@ -303,17 +337,43 @@ final class HCInputCoordinator: HCInputPort, @unchecked Sendable {
         rawQueue[rawHead] = nil
         rawHead = (rawHead + 1) % rawQueue.count
         rawCount -= 1
-        return result
+        return result.map { ($0.0, $0.1, attributesWrites) }
     }
 
     private func drainRaw() async {
-        while let (frames, reservation) = takeRaw() {
+        while let (frames, reservation, attributes) = takeRaw() {
             let outcome = await writer.write(HCWriteBatch(operationID: reservation.operationID,
                 attachmentGeneration: generation, frames: frames), reservation: reservation)
             finish(reservation, programmatic: false)
             if case .uncertain = outcome { invalidate(generation: generation, reason: .inputFault) }
-            report(outcome)
+            // The flag was read under the lock takeRaw already holds: off, nothing more runs.
+            if attributes, case .written = outcome, let reportRawAttributed {
+                reportRawAttributed(outcome, Self.attribution(of: frames))
+            } else {
+                report(outcome)
+            }
         }
+    }
+
+    /// Who made a raw write that went through: a claimed in-band RESIZE is Ghostty's size
+    /// report; otherwise the bytes' shape says.
+    private static func attribution(of frames: [HCOutboundFrame]) -> HCInputAttribution {
+        for frame in frames {
+            switch frame {
+            case .resize: return .terminal
+            case .data(let bytes): return bytes.withUnsafeBytes { HCRawInputClass.attribution($0) }
+            default: continue
+            }
+        }
+        return .native
+    }
+
+    /// Turns attribution of successful raw writes on or off (C11H-443). The owner turns it on
+    /// only while the operator's reconnect notice is up.
+    func attributeWrites(_ on: Bool) {
+        lock.lock()
+        attributesWrites = on
+        lock.unlock()
     }
 
     /// Only a complete native mode-2048 report is translated. Every other byte

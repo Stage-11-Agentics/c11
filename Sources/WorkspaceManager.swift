@@ -3232,6 +3232,7 @@ class WorkspaceManager: ObservableObject {
         DispatchQueue.main.async { MainActor.assumeIsolated { HCHeldEndNotices.shared.reassert() } }
         // C11H-24: closing a workspace ends every hc session in it.
         workspace.teardownAllPanels(endingSessions: .workspaceClose)
+        workspace.retireMailboxForGood()
         PanelAllocationRegistry.shared.releaseWorkspacesClosedForGood(
             [workspace.id],
             isTerminatingApp: AppDelegate.shared?.isTerminatingApp ?? false
@@ -3263,6 +3264,8 @@ class WorkspaceManager: ObservableObject {
             PanelLineage.shared.captureFinalIdentity(workspacePanelIds, in: workspace)
             closedPanelIds.formUnion(workspacePanelIds)
             workspace.retireForWindowClose()
+            // Quit keeps the folders its restore will use again.
+            if endingSessions { workspace.retireMailboxForGood() }
         }
         PanelLineage.shared.panelsClosedForGood(closedPanelIds)
         PanelAllocationRegistry.shared.releaseWorkspacesClosedForGood(
@@ -6572,8 +6575,9 @@ extension WorkspaceManager {
         PanelAllocationRegistry.shared.releaseDisplacedPanels(
             Set(displacedWorkspaces.flatMap { $0.panels.keys }).subtracting(restoredPanelIds)
         )
+        let returningIds = Set(snapshot.workspaces.map(\.id))
         for workspace in displacedWorkspaces {
-            workspace.retireForSessionRestore()
+            workspace.retireForSessionRestore(closedForGood: !returningIds.contains(workspace.id))
         }
 
         // Clear non-@Published state without touching tabs/selectedTabId yet.

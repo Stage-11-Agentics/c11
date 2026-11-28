@@ -1477,6 +1477,75 @@ final class MailboxAdmissionCLITests: XCTestCase {
         XCTAssertTrue(unsupported.stderr.contains("captain_unverified"), unsupported.stderr)
     }
 
+    /// C11H-439: a send the CLI makes with no stamp, to `target`, as the migration guest driver's CLI does.
+    private func unstampedSend(to target: UUID, extraEnvironment: [String: String]) throws -> (status: Int32, stdout: String, stderr: String) {
+        let payload: [String: Any] = [
+            "resolution": "unique", "captain": "lead", "requested_recipient": "panel:lead",
+            "caller_panel_id": caller.uuidString, "sender_workspace_id": workspace.uuidString,
+            "target_workspace_id": target.uuidString, "panel_ids": [other.uuidString],
+            "sender_title": "worker", "sender_mailbox_address": "worker-address",
+            "recipients": [["requested_panel_id": other.uuidString, "panel_id": other.uuidString,
+                            "workspace_id": target.uuidString, "name": "lead", "can_ring": true]]
+        ]
+        var environment = extraEnvironment
+        environment["C11_PANEL_ID"] = caller.uuidString
+        return try run(["mailbox", "send", "--to-captain", "--body", "report", "--id", mailID, "--json"],
+                       extraEnvironment: environment, stamped: false, answer: ["mailbox.resolve": .success(payload)])
+    }
+
+    private func debugBuildCLI() throws -> String {
+        let id = try XCTUnwrap(MailboxStateRoot.enclosingAppBundleIdentifier(executablePath: Self.bundledCLI().path))
+        XCTAssertFalse(MailboxStateRoot.sharedBundleIdentifiers.contains(id), "the test needs a debug build's CLI: \(id)")
+        return id
+    }
+
+    /// C11H-439: a tagged app launched as the migration stand-in keeps the
+    /// release folder. Its own CLI, run from a clean shell with no stamp but
+    /// the same two migration variables (the migration guest driver's shape),
+    /// sends, reports status and receives in that same folder.
+    func testAnUnstampedCLIWithTheMigrationFlagsUsesTheReleaseFolder() throws {
+        let flags = ["C11_MIGRATION_QA": "1", "C11_QA_LAUNCH": "resume"]
+        let support = home.appendingPathComponent("Library/Application Support", isDirectory: true)
+        let cliApp = try debugBuildCLI()
+        let app = MailboxStateRoot.resolve(appSupport: support, environment: flags, bundleIdentifier: cliApp, isApp: true,
+                                           temporaryDirectory: FileManager.default.temporaryDirectory, processIdentifier: 1)
+        XCTAssertEqual(app.url.standardizedFileURL.path, state.standardizedFileURL.path)
+
+        let target = UUID()
+        let sent = try unstampedSend(to: target, extraEnvironment: flags)
+        XCTAssertEqual(sent.status, 0, sent.stderr)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: MailboxLayout.outboxURL(state: state, workspaceId: target)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: mailID)).path), "the send landed outside the app's folder")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: MailboxStateRoot.buildFolder(appSupport: support, bundleIdentifier: cliApp).path))
+
+        let status = try run(["mailbox", "status", mailID, "--json"], extraEnvironment: flags, stamped: false, answer: [:])
+        XCTAssertEqual(status.status, 0, status.stderr)
+        XCTAssertTrue(status.stdout.contains(mailID), status.stdout)
+
+        let inbox = MailboxLayout.inboxURL(state: state, workspaceId: workspace, panelId: other)
+        _ = try seed(inbox)
+        let received = try run(["mailbox", "recv", "--panel", other.uuidString, "--drain", "--ack"], extraEnvironment: flags,
+                               stamped: false, answer: ["panel.get_metadata": .failure("internal_error")])
+        XCTAssertEqual(received.status, 0, received.stderr)
+        XCTAssertTrue(received.stdout.contains("c11-40 seeded mail"), received.stdout)
+        XCTAssertFalse(pending(inbox), "recv read another folder")
+    }
+
+    /// C11H-439: without the migration variables or a stamp, a tagged build's
+    /// CLI keeps to its build's own folder, never the release app's.
+    func testAnUnstampedTaggedCLIWithoutTheFlagsKeepsItsOwnFolder() throws {
+        let support = home.appendingPathComponent("Library/Application Support", isDirectory: true)
+        let cliApp = try debugBuildCLI()
+        let own = MailboxStateRoot.buildFolder(appSupport: support, bundleIdentifier: cliApp)
+        let target = UUID()
+        let sent = try unstampedSend(to: target, extraEnvironment: [:])
+        XCTAssertEqual(sent.status, 0, sent.stderr)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: MailboxLayout.outboxURL(state: own, workspaceId: target)
+            .appendingPathComponent(MailboxLayout.envelopeFilename(id: mailID)).path), "the send left the build's own folder")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: state.appendingPathComponent(MailboxLayout.workspacesDirectoryName).path),
+                       "a tagged CLI wrote the release folder")
+    }
+
     func testCaptainSendUsesCurrentWorkspaceAndLiteralAddressBeforeWriting() throws {
         let movedWorkspace = UUID()
         let targetWorkspace = UUID()
@@ -1511,6 +1580,7 @@ final class MailboxAdmissionCLITests: XCTestCase {
     private enum Answer { case refuse, failure(String), success([String: Any]) }
 
     private func run(_ args: [String], stdin: String = "", extraEnvironment: [String: String] = [:],
+                     stamped: Bool = true,
                      answer: [String: Answer]) throws -> (status: Int32, stdout: String, stderr: String) {
         let socket = try FakeAppSocket(answers: answer)
         defer { socket.stop() }
@@ -1523,6 +1593,11 @@ final class MailboxAdmissionCLITests: XCTestCase {
         }
         environment["HOME"] = home.path
         environment["CFFIXED_USER_HOME"] = home.path
+        // The folder c11 stamps on its terminals (C11H-439).
+        if stamped {
+            try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+            environment[MailboxStateRoot.stampEnvironmentKey] = state.path
+        }
         // Never let the CLI read the operator's socket password file or keychain.
         environment["CMUX_SOCKET_PASSWORD"] = "c11-40-test-only"
         environment["C11_WORKSPACE_ID"] = workspace.uuidString

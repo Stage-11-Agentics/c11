@@ -277,7 +277,7 @@ enum HCLaunchEnvironmentScrub {
         "SHELL_INTEGRATION", "SHELL_INTEGRATION_DIR",
         "LOAD_GHOSTTY_ZSH_INTEGRATION", "LOAD_GHOSTTY_BASH_INTEGRATION",
         "ZSH_ZDOTDIR", "RESTORE_SCROLLBACK_FILE",
-        "BUNDLE_ID", "BUNDLED_CLI_PATH", "CLAUDE_HOOKS_DISABLED",
+        "BUNDLE_ID", "BUNDLED_CLI_PATH", "CLAUDE_HOOKS_DISABLED", "MAILBOX_STATE_DIR",
         "AGENT_TYPE", "AGENT_MODEL", "AGENT_TASK", "AGENT_ROLE",
         "CLAUDE_WRAPPER_REENTRY", "CODEX_WRAPPER_REENTRY", "AGENT_INTERACTIVE_PID", "AGENT_HOOK_CLI", "CLAUDE_PID",
         "OPENCODE_EXPECTED_RESUME_ID", "OPENCODE_TUI_CLAIMED", "OPENCODE_RESUME_RESERVED",
@@ -651,6 +651,8 @@ enum ManagedTerminalEnvironmentKey: String, CaseIterable {
     case c11SocketPath = "C11_SOCKET_PATH"
     case bundledCLIPath = "CMUX_BUNDLED_CLI_PATH"
     case bundleId = "CMUX_BUNDLE_ID"
+    /// The app's mailbox folder, which the CLI follows (C11H-439).
+    case mailboxStateDir = "C11_MAILBOX_STATE_DIR"
     case defaultAgentLaunch = "C11_DEFAULT_AGENT_LAUNCH"
     case defaultAgentSeedPrompt = "C11_DEFAULT_AGENT_SEED_PROMPT"
     case port = "CMUX_PORT"
@@ -847,6 +849,8 @@ struct HCCoreBinary: Equatable, Sendable {
         "2744b886409c742b5b1bb2d36730dcfef805860f83d742c20dc1691d52338311",
         // c11 2.0.1 (build 201, 12ef69ed6), from the published release's hc-pin.json.
         "23c26bb71dcccf3057308aba0323714230be0897d6e34acc8abebd5f7c0c429b",
+        // c11 2.0.2 (build 202, 5c85f57b4), from the published release's hc-pin.json.
+        "b4f7cb5f221ba8efaff67c48549acb672c5a2ccf7bae4039dcab7453884e0b2f",
     ]
 
     static func decodeManifest(at url: URL) throws -> Manifest {

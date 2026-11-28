@@ -1463,3 +1463,44 @@ extension MessagesPageTests {
         XCTAssertEqual(MessagesPagePanelHistory.build(events: source.events).panels[panel.uuidString]?.title, "Named From Log")
     }
 }
+
+// MARK: - C11H-439: launch never reads the mailbox tree
+
+extension MessagesPageTests {
+    func testWriterWaitsForAFirstLookBeforeReadingTheMailboxTree() throws {
+        let envelope = try MailboxEnvelope.build(from: "sender", to: "recipient", body: "C11H_439_HISTORY",
+                                                 id: "01K3A2B7X8PQRTVWYZ01234439")
+        let read = MailboxLayout.mailboxesRoot(state: tempDir, workspaceId: UUID())
+            .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+            .appendingPathComponent("_read", isDirectory: true)
+        try FileManager.default.createDirectory(at: read, withIntermediateDirectories: true)
+        try envelope.encode().write(to: read.appendingPathComponent("\(envelope.id).msg"))
+
+        let writer = MessagesPageWriter(stateURL: tempDir, debounceInterval: 0, observeEvents: false,
+                                        allowStartUnderXCTest: true,
+                                        label: "com.stage11.c11.messages-page-tests-\(UUID().uuidString)")
+        defer { writer.stopForTesting() }
+        let page = MessagesPageLayout.pageURL(state: tempDir)
+        writer.start()
+        writer.scheduleRebuildForTesting()
+        Thread.sleep(forTimeInterval: 0.2)
+        writer.syncForTesting()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: page.path), "launch and events before a look write nothing")
+
+        writer.noteViewer()
+        writer.syncForTesting()
+        XCTAssertTrue(try String(contentsOf: page, encoding: .utf8).contains(envelope.id), "the first look reads every tree")
+    }
+
+    /// A browser panel restored on the page looks before the writer starts.
+    func testALookBeforeStartIsHonouredAtStart() throws {
+        let writer = MessagesPageWriter(stateURL: tempDir, debounceInterval: 0, observeEvents: false,
+                                        allowStartUnderXCTest: true,
+                                        label: "com.stage11.c11.messages-page-tests-\(UUID().uuidString)")
+        defer { writer.stopForTesting() }
+        writer.noteViewer()
+        writer.start()
+        writer.syncForTesting()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: MessagesPageLayout.pageURL(state: tempDir).path))
+    }
+}

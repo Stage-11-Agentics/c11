@@ -50,7 +50,10 @@ final class MailboxDispatchLog {
         case nativeUnconfirmed(MailboxNativeDoorbell.FailureDiagnostic)
         case received(id: String, from: String, to: String?, topic: String?)
         case resolved(id: String, recipients: [String], requestedRecipient: String? = nil, recipientPanelIds: [String] = [])
-        case copied(id: String, recipient: String, recipientUsageLimit: String? = nil, recipientPanel: UUID? = nil, recipientWorkspace: UUID? = nil)
+        /// `delivery` and `deliverySource` (C11H-445): the recipient's
+        /// delivery when the copy landed and whether the panel set it
+        /// (`explicit`) or c11 chose it (`default`, `doorbell_off`, `none`).
+        case copied(id: String, recipient: String, recipientUsageLimit: String? = nil, recipientPanel: UUID? = nil, recipientWorkspace: UUID? = nil, delivery: String? = nil, deliverySource: String? = nil)
         case handler(
             id: String,
             recipient: String,
@@ -193,13 +196,15 @@ final class MailboxDispatchLog {
             payload["recipients"] = recipients
             if let requestedRecipient { payload["requested_recipient"] = requestedRecipient }
             if !recipientPanelIds.isEmpty { payload["recipient_panel_ids"] = recipientPanelIds }
-        case .copied(let id, let recipient, let recipientUsageLimit, let recipientPanel, let recipientWorkspace):
+        case .copied(let id, let recipient, let recipientUsageLimit, let recipientPanel, let recipientWorkspace, let delivery, let deliverySource):
             payload["event"] = "copied"
             payload["id"] = id
             payload["recipient"] = recipient
             if let recipientUsageLimit { payload["recipient_usage_limit"] = recipientUsageLimit }
             if let recipientPanel { payload["recipient_panel"] = recipientPanel.uuidString.lowercased() }
             if let recipientWorkspace { payload["recipient_workspace"] = recipientWorkspace.uuidString }
+            if let delivery { payload["delivery"] = delivery }
+            if let deliverySource { payload["delivery_source"] = deliverySource }
         case .handler(let id, let recipient, let handler, let outcome, let bytes, let elapsedMs, let reason, let route, let nativeRoute, let nativeFailure, let recipientPanel, let nativeState, let hold, let holdSince, let why):
             payload["event"] = "handler"
             payload["id"] = id

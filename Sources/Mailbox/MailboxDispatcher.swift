@@ -88,6 +88,9 @@ final class MailboxDispatcher {
     }
 
     deinit {
+        if watcher != nil {
+            MailboxWorkspaceFolder.noteStopped(state: stateURL, workspaceId: workspaceId)
+        }
         watcher?.stop()
     }
 
@@ -115,9 +118,12 @@ final class MailboxDispatcher {
     @discardableResult
     func start() -> Bool {
         if watcher != nil { return true }
+        // Before the tree exists, so a closed twin's removal leaves it alone.
+        MailboxWorkspaceFolder.noteStarted(state: stateURL, workspaceId: workspaceId)
         do {
             try createMailboxTree()
         } catch {
+            MailboxWorkspaceFolder.noteStopped(state: stateURL, workspaceId: workspaceId)
             return false
         }
 
@@ -159,13 +165,46 @@ final class MailboxDispatcher {
     }
 
     func stop() {
-        if watcher != nil {
-            MailboxReceiptRecorder.shared.unwatch(workspaceId: workspaceId)
+        stop(then: nil)
+    }
+
+    /// Retirements still on their way to the folder removal (test seam).
+    private static let pendingRetirements = DispatchGroup()
+
+    /// The workspace is closed for good (C11H-439): stop, then remove its
+    /// folder when no file is in it, after the receipt recorder's last sweep
+    /// of it, the dispatches already queued and the log's pending lines.
+    /// `completion` gets the outcome on the dispatcher's queue.
+    func retire(completion: ((MailboxWorkspaceFolder.Outcome) -> Void)? = nil) {
+        Self.pendingRetirements.enter()
+        stop { [stateURL, workspaceId, queue, log] in
+            queue.async {
+                log.flush()
+                let outcome = MailboxWorkspaceFolder.removeIfEmpty(state: stateURL, workspaceId: workspaceId)
+                completion?(outcome)
+                Self.pendingRetirements.leave()
+            }
         }
+    }
+
+    /// Test seam: waits until every retirement started so far has run its removal.
+    static func waitForRetirementsForTesting(timeout: TimeInterval = 10) -> Bool {
+        pendingRetirements.wait(timeout: .now() + timeout) == .success
+    }
+
+    private func stop(then: (() -> Void)?) {
+        let wasRunning = watcher != nil
         watcher?.stop()
         watcher = nil
         gcTimer?.cancel()
         gcTimer = nil
+        guard wasRunning else {
+            then?()
+            return
+        }
+        // Not live before the removal `then` leads to can look.
+        MailboxWorkspaceFolder.noteStopped(state: stateURL, workspaceId: workspaceId)
+        MailboxReceiptRecorder.shared.unwatch(workspaceId: workspaceId, then: then)
     }
 
     /// C11-144: append a `handler` event for a buffered-stdin lifecycle step
@@ -561,10 +600,13 @@ final class MailboxDispatcher {
                 MailboxLayout.envelopeFilename(id: envelope.id)
             )
             try MailboxIO.atomicWrite(data: envelopeBytes, to: target)
+            let delivery = recipient.deliveryEffective
             log.append(.copied(id: envelope.id, recipient: recipient.displayName,
                                recipientUsageLimit: recipientUsageLimit(recipient.surfaceId)?.rawValue,
                                recipientPanel: recipient.surfaceId,
-                               recipientWorkspace: recipient.inboxWorkspaceId ?? workspaceId))
+                               recipientWorkspace: recipient.inboxWorkspaceId ?? workspaceId,
+                               delivery: delivery.value,
+                               deliverySource: delivery.source.rawValue))
             // C11-163: mailbox envelope delivered to a recipient inbox.
             EventEmitter.shared.emitMailboxDelivered(
                 workspace: recipient.inboxWorkspaceId ?? workspaceId,
@@ -611,7 +653,18 @@ final class MailboxDispatcher {
         envelope: MailboxEnvelope,
         recipients: [MailboxPanelResolver.PanelMetadata]
     ) {
-        for recipient in recipients {
+        for resolved in recipients {
+            var recipient = resolved
+            // C11H-445: a panel resolved before its agent appeared (its kind
+            // still read as a shell) got no default. Read it again now that
+            // the copy is in its inbox: if the agent appeared in between, and
+            // that panel's inbox rescan ran before the copy landed, this is
+            // what queues the mail. Only for that case, never for a value
+            // the panel set.
+            if resolved.delivery.isEmpty, resolved.deliveryEffective.source == .none {
+                let current = resolver.refreshed(resolved)
+                if !current.delivery.isEmpty { recipient = current }
+            }
             for handlerName in recipient.delivery {
                 let handler = lock.withLock { handlers[handlerName] }
                 guard let handler else {

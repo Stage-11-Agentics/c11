@@ -11,6 +11,20 @@ final class MailboxNativeDoorbell {
         case typed, piExtension = "pi_extension", ompExtension = "omp_extension"
         case codexQueue = "codex_queue", claudeInbox = "claude_inbox", opencodePlugin = "opencode_plugin"
         case grokLeader = "grok_leader"
+
+        /// The native route a harness kind can register, if any. Exact kind
+        /// names, the same ones `Registration.matches` accepts.
+        static func forKind(_ kind: String?) -> Route? {
+            switch kind {
+            case "pi": return .piExtension
+            case "omp": return .ompExtension
+            case "codex": return .codexQueue
+            case "claude-code", "claude": return .claudeInbox
+            case "opencode": return .opencodePlugin
+            case "grok": return .grokLeader
+            default: return nil
+            }
+        }
     }
     struct Registration: Equatable {
         let id: UUID
@@ -44,15 +58,7 @@ final class MailboxNativeDoorbell {
 
         func matches(process: MailboxStdinBuffer.AgentProcess?, kind: String) -> Bool {
             guard let process, process.pid == agentPID, process.startTime == processStart else { return false }
-            switch route {
-            case .piExtension: return kind == "pi"
-            case .ompExtension: return kind == "omp"
-            case .codexQueue: return kind == "codex"
-            case .claudeInbox: return kind == "claude-code" || kind == "claude"
-            case .opencodePlugin: return kind == "opencode"
-            case .grokLeader: return kind == "grok"
-            case .typed: return false
-            }
+            return route != .typed && Route.forKind(kind) == route
         }
     }
     /// `queued`: the harness holds the text behind a running turn. Neither

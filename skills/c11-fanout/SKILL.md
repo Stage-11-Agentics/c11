@@ -35,11 +35,10 @@ Comparability is decided here. Members that answered slightly different question
 
 ## 3 · Launch
 
-**Your own address first.** Receipts come to you by mailbox, so declare where they go before any member launches:
+**Your own address first.** Receipts come to you by mailbox, and your mail is on by default, so declare where they go before any member launches:
 
 ```bash
 c11 set-metadata --panel "$C11_PANEL_ID" --key mailbox.address --value "<your-handle>" --type string
-c11 set-metadata --panel "$C11_PANEL_ID" --key mailbox.delivery --value stdin --type string
 ```
 
 **Worktrees** (write fan-out only). Put them beside the repo, not inside it, so members can't see each other's work. Creating and provisioning them is the project's job (submodules, dependencies, env files), so run the project's own setup.

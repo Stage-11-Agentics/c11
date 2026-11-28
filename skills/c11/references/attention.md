@@ -263,8 +263,8 @@ worker whose output you will review and act on. Launch normal when the operator 
 the child directly (they asked for an instance they can watch or drive), or when you are
 handing the work off for good. A delegate is yours in three ways:
 
-- **Completion.** Opt into the mailbox doorbell (`mailbox.delivery=stdin`) and tell the
-  delegate to finish with `c11 mailbox send --to-parent`. Its report becomes your next turn.
+- **Completion.** Your mail is on by default; tell the delegate to finish with
+  `c11 mailbox send --to-parent`. Its report becomes your next turn.
 - **Escalation.** Put this in its prompt: *"Report results and recoverable blockers to your
   parent by mailbox. If something needs the operator, or your parent can't or shouldn't judge
   it, raise a c11 flag."*

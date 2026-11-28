@@ -433,6 +433,40 @@ final class MailboxStdinBufferStore {
 enum MailboxStdinDelivery {
     /// Off-main only. A moved panel can have unread mail in several retained
     /// inboxes. The entry remembers the arrival workspace; no file is moved.
+    /// C11H-445: when this app process started. Mail accepted before it was
+    /// the previous process's to ring, so an inbox rescan leaves it alone.
+    static let processStartedAt: Date = {
+        if let start = MailboxAgentForeground.processTerminalInfo(pid: getpid())?.startTime, start > 0 {
+            return Date(timeIntervalSince1970: Double(start) / 1_000_000)
+        }
+        return Date()
+    }()
+
+    /// C11H-445: unread mail in a panel's inbox that its queue does not hold
+    /// (`skipping`: queued or already rung), accepted at or after `since`,
+    /// oldest first, at most the queue's cap. Push came on for the panel after
+    /// this mail arrived: a launch still at its startup shell, or an agent
+    /// started in a shell that had mail. Queued, it rings at the first idle
+    /// like any other mail, with every ring check. File I/O: call off main.
+    static func inboxEntriesToQueue(inbox: URL, inboxWorkspaceId: UUID, panelId: UUID, recipientName: String,
+                                    skipping: Set<String>, since: Date) -> [MailboxStdinBuffer.Entry] {
+        let found: [MailboxStdinBuffer.Entry] = MailboxDrain.pendingEntries(inbox: inbox).compactMap { url in
+            let id = url.deletingPathExtension().lastPathComponent
+            guard !skipping.contains(id), let at = MailboxReceiptStatus.ulidTime(id), at >= since,
+                  let data = try? Data(contentsOf: url),
+                  let envelope = try? MailboxEnvelope.validate(data: data) else { return nil }
+            return MailboxStdinBuffer.Entry(
+                id: id,
+                recipientName: recipientName,
+                block: StdinMailboxHandler.formatFramedBlock(envelope: envelope),
+                bufferedAt: Date(),
+                inboxWorkspaceId: inboxWorkspaceId,
+                recipientPanelId: panelId
+            )
+        }
+        return Array(found.suffix(MailboxStdinBuffer.perSurfaceCap))
+    }
+
     static func pendingIDs(_ entries: [MailboxStdinBuffer.Entry], stateURL: URL,
                            workspaceId: UUID, panelId: UUID) -> Set<String> {
         Set(entries.compactMap { entry in

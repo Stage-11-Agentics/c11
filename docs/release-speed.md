@@ -95,6 +95,9 @@ Releases through `release-local.sh` on the build host, from `build-release-local
 | v1.8.1 | 493 (464) | 120 | 112 | 78 (40 + 38) | 10 | 2 |
 | v2.0.0 | 641 (612) | 125 | 116 | 73 (35 + 38) | 12 | 2 |
 | v2.0.1 | 655 (620) | 109 | 100 | 63 (33 + 30) | 13 | 2 |
+| v2.0.2 | 632 (534), `--stage` | 119 | 110 | 70 (33 + 37) | 12 | 2 |
+
+v2.0.2's run before the tag was `release-local.sh --stage` (#424): the real run's signing, app and DMG notarization (33 + 39 s) and appcast signing, nothing published, so its first column includes notarization; guests then took the staged update through Sparkle before the tag. The real run after the tag signed and notarized the same build again.
 
 End-to-end rehearsal (#815 proof, 2026-10-31, nothing published): scratch release branch to would-publish in 8 min 52 s. Cheap CI was green at 1:57, `c11/pr-swift` at 3:45 (166 s), the build-host dry run finished at 7:10, and notarization at 8:52. With the build done during the staging smoke, tag to published is about 2.5 min. Each run appends its step seconds to `build-release-local/timings.jsonl`; add a row to the release table above.
 

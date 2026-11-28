@@ -6,6 +6,9 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+- Agents c11 launches get their mail without setting anything. An interactive Claude Code, Codex, Grok, OpenCode, Pi or omp session started through c11 (including every `launch-agent` seat) is rung when mail arrives and it is idle; before, each had to set `mailbox.delivery=stdin` itself, and a seat that skipped it sat on its replies. Plain shells and one-shot commands are never rung, and every doorbell check still applies. To opt a panel out, set `mailbox.delivery=off` (or `mailbox.doorbell=off`); a value a panel already set is kept. `mailbox status`, `get-metadata` and `fleet --json` say whether delivery is on by default or set by the panel. (C11H-445)
+- Workspace mailbox folders no longer pile up in `~/Library/Application Support/c11/workspaces`. A workspace closed for good takes its folder with it when the folder holds no file; tests use a temporary folder and debug or tagged builds their own (`~/Library/Application Support/c11-dev/<bundle id>/`), so neither writes the release app's; and launch no longer reads every workspace's folder (the receipt sweep first runs ten minutes in, the messages page reads the mailbox trees when someone first looks at it). A build host had 229,031 folders and took 38 s to answer its socket at launch. (C11H-439)
+
 ## [2.0.2] - 2026-11-27
 
 Headline: **c11 2.0.2. Updating from inside the app keeps your terminals again.**

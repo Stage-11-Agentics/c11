@@ -114,6 +114,15 @@ enum C11Identity {
             .appendingPathComponent("blueprints", isDirectory: true)
     }
 
+    /// A QA launch standing in for the release app in a c11h migration guest
+    /// proof: `C11_MIGRATION_QA=1` with a `C11_QA_LAUNCH` mode. The app migrates
+    /// into the release app's folders (`C11MigrationPlanner.allowed`) and keeps
+    /// its mail there; a CLI given the same two variables follows it
+    /// (`MailboxStateRoot`, C11H-439).
+    static func isMigrationQALaunch(environment: [String: String]) -> Bool {
+        environment["C11_MIGRATION_QA"] == "1" && !(environment["C11_QA_LAUNCH"] ?? "").isEmpty
+    }
+
     /// `com.stage11.c11` or `com.stage11.c11.*`. The retired line's ids
     /// (`Legacy.releaseBundleIdentifier`) are outside the family.
     static func isFamilyBundleIdentifier(_ identifier: String) -> Bool {

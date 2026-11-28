@@ -3103,9 +3103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // c11 (C11H-197): display.changed and window.moved events.
         WindowGeometryEventMonitor.shared.start()
         // C11-257 D: keep the local, self-contained messages page current.
-        // The writer rebuilds off-main and starts from the existing event and
-        // mailbox history before listening for new message events. XCTest
-        // hosts intentionally do not write the operator's shared page.
+        // The writer listens for message events from now on and rebuilds
+        // off-main, reading the event and mailbox history, the first time
+        // someone looks (C11H-439). XCTest hosts intentionally do not write
+        // the operator's shared page.
         if !MessagesPageWriter.isRunningUnderXCTest() {
             MessagesPageWriter.shared.start()
         }

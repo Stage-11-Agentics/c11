@@ -21,6 +21,14 @@ final class MessagesPageWriter {
     private let observeEvents: Bool
     private let allowStartUnderXCTest: Bool
     private var stateURL: URL?
+    /// Where the mailbox tree is: the state root for the release app, a debug
+    /// or tagged build's own folder (`MailboxStateRoot`, C11H-439).
+    private var mailboxStateURL: URL?
+    /// Queue-confined: someone has looked at the page in this run. Until then
+    /// the writer does not rebuild, so launch never reads the mailbox tree.
+    private var viewed = false
+    /// A look that came before `start()` (a restored browser panel).
+    private var viewerPending = false
     private var eventObserver: NSObjectProtocol?
     private var started = false
     private var generation: UInt64 = 0
@@ -32,8 +40,8 @@ final class MessagesPageWriter {
     /// Queue-confined durable mailbox snapshot. Plain `c11 send` events do
     /// not touch envelope files, and mailbox event payloads carry the body
     /// needed by the live page, so both channels can reuse this snapshot.
-    /// Startup/relaunch still performs the full scan so older bodies survive
-    /// event-log rotation via `_read/`, inbox, and `_rejected/`.
+    /// The first rebuild after someone looks performs the full scan so older
+    /// bodies survive event-log rotation via `_read/`, inbox, and `_rejected/`.
     private var mailboxArtifactsCache: [MessagesPageMailboxArtifact]?
     private var mailboxRefreshRequested = true
     /// Queue-confined: the last decoded panel directory and the session file
@@ -79,6 +87,7 @@ final class MessagesPageWriter {
             return
         }
         stateURL = resolvedStateURL
+        mailboxStateURL = fixedStateURL ?? (try? MailboxLayout.defaultStateURL()) ?? resolvedStateURL
         sessionURL = fixedSessionURL
             ?? (fixedStateURL == nil ? SessionPersistenceStore.defaultSnapshotFileURL() : nil)
         started = true
@@ -94,12 +103,36 @@ final class MessagesPageWriter {
                 self?.scheduleRebuild(refreshMailbox: false)
             }
         }
+        let lookedAlready = viewerPending
+        viewerPending = false
         lock.unlock()
 
-        // Rebuild immediately on app start so the page is useful before the
-        // first new event arrives in this process.
+        // C11H-439: no rebuild at launch. The page the last run wrote stays
+        // until someone looks; the first look rebuilds it, reading every
+        // workspace's mailbox tree once, and message events keep it current
+        // from then on. Launch never walks the workspaces folder.
+        if lookedAlready { noteViewer() }
+    }
+
+    /// Someone is looking at the page (a browser panel showing it, the
+    /// conversation web). The first look in a run rebuilds it with the full
+    /// mailbox scan; the panel reloads when the page is written.
+    func noteViewer() {
+        lock.lock()
+        guard started, let resolvedStateURL = stateURL else {
+            viewerPending = true
+            lock.unlock()
+            return
+        }
+        lock.unlock()
         queue.async { [weak self] in
-            self?.rebuildQuietly()
+            guard let self, !self.viewed else { return }
+            self.viewed = true
+            do {
+                try self.rebuild(stateURL: resolvedStateURL, forceMailboxRefresh: false)
+            } catch {
+                Self.logRebuildFailure(error: error, stateURL: resolvedStateURL, phase: "first_look")
+            }
         }
     }
 
@@ -116,7 +149,9 @@ final class MessagesPageWriter {
         mailboxArtifactsCache = nil
         directoryCache = nil
         liveOverlay = nil
+        viewerPending = false
         lock.unlock()
+        queue.sync { viewed = false }
         if let observer {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -134,6 +169,7 @@ final class MessagesPageWriter {
             throw EventLogLayout.Error.stateDirectoryUnavailable
         }
         try queue.sync {
+            viewed = true
             try rebuild(stateURL: resolvedStateURL, forceMailboxRefresh: true)
         }
     }
@@ -142,6 +178,11 @@ final class MessagesPageWriter {
     /// explicit at the call site.
     func rebuildNowForTesting() throws {
         try rebuildNow()
+    }
+
+    /// Test seam: returns after everything queued on the writer so far.
+    func syncForTesting() {
+        queue.sync {}
     }
 
     /// Test-only trigger for exercising debounce/max-wait behavior without
@@ -167,11 +208,13 @@ final class MessagesPageWriter {
         let pageURL = MessagesPageLayout.pageURL(state: resolvedStateURL)
         if FileManager.default.fileExists(atPath: pageURL.path) {
             onReady(.success(pageURL))
+            noteViewer()
             return
         }
 
         queue.async { [weak self] in
             guard let self else { return }
+            self.viewed = true
             do {
                 if !FileManager.default.fileExists(atPath: pageURL.path) {
                     try self.rebuild(
@@ -208,6 +251,7 @@ final class MessagesPageWriter {
         queue.async { [weak self] in
             guard let self else { return }
             if let livePanels { self.liveOverlay = (capturedAt, livePanels) }
+            self.viewed = true
             do {
                 try self.rebuild(stateURL: resolvedStateURL, forceMailboxRefresh: false)
                 onReady(.success(pageURL))
@@ -287,7 +331,7 @@ final class MessagesPageWriter {
         let resolvedStateURL = stateURL
         let isStarted = started
         lock.unlock()
-        guard isStarted, let resolvedStateURL else { return }
+        guard isStarted, viewed, let resolvedStateURL else { return }
         do {
             try rebuild(stateURL: resolvedStateURL, forceMailboxRefresh: false)
         } catch {
@@ -300,12 +344,14 @@ final class MessagesPageWriter {
         let refreshMailbox = forceMailboxRefresh || mailboxRefreshRequested || mailboxArtifactsCache == nil
         mailboxRefreshRequested = false
         let resolvedSessionURL = sessionURL ?? fixedSessionURL
+        let resolvedMailboxStateURL = mailboxStateURL ?? stateURL
         lock.unlock()
 
         let source = MessagesPageSource.load(
             stateURL: stateURL,
             eventLogCache: &eventLogCache,
-            mailboxArtifacts: refreshMailbox ? nil : mailboxArtifactsCache
+            mailboxArtifacts: refreshMailbox ? nil : mailboxArtifactsCache,
+            mailboxStateURL: resolvedMailboxStateURL
         )
         mailboxArtifactsCache = source.mailboxArtifacts
         var snapshot = MessagesPageBuilder.build(
@@ -405,12 +451,7 @@ final class MessagesPageWriter {
     static func isRunningUnderXCTest(
         _ environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Bool {
-        environment["XCTestConfigurationFilePath"] != nil
-            || environment["XCTestBundlePath"] != nil
-            || environment["XCTestSessionIdentifier"] != nil
-            || environment["XCInjectBundle"] != nil
-            || environment["XCInjectBundleInto"] != nil
-            || environment["DYLD_INSERT_LIBRARIES"]?.contains("libXCTest") == true
+        MailboxStateRoot.isRunningUnderXCTest(environment)
     }
 
     private static func isMessageEvent(_ type: String) -> Bool {

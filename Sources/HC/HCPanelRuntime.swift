@@ -558,7 +558,8 @@ final class HCBackendComposition {
         guard let bridge = sink as? HCNativeBridge else { throw HCUnavailableReason.backendNotInstalled }
         let attachment = HCPanelAttachment(panelID: bridge.panelID, key: key, generation: generation,
             channel: channel, sink: bridge, rendering: bridge.rendering, display: display,
-            encoder: bridge.encoder, report: bridge.report, displayChanged: bridge.displayChanged)
+            encoder: bridge.encoder, report: bridge.report, reportSubmitted: bridge.reportSubmitted,
+            reportRawAttributed: bridge.reportRawAttributed, displayChanged: bridge.displayChanged)
         guard bridge.bind(generation: generation, input: attachment.input) else {
             throw HCUnavailableReason.cancelled
         }
@@ -568,6 +569,28 @@ final class HCBackendComposition {
         return attachment
     }
 
+}
+
+extension HCNativeBridge {
+    /// The bridge a terminal surface gives its hc runtime. Every outcome hops to main.
+    /// C11H-443: Ghostty's write callback carries the operator's keys and Ghostty's own
+    /// replies and reports alike, so raw outcomes arrive as `.native`. A refusal, and a
+    /// success while the operator's notice is up, carry who made the bytes, by their shape.
+    /// Submitted initial input stays a program's.
+    @MainActor
+    static func reporting(to runtime: HCPanelSession, panelID: UUID, rendering: any HCRenderingAdapter,
+                          encoder: any HCInputEncoder) -> HCNativeBridge {
+        HCNativeBridge(panelID: panelID, rendering: rendering, encoder: encoder,
+            report: { [weak runtime] outcome in
+                Task { @MainActor in runtime?.recordInputOutcome(outcome, from: .native) }
+            }, reportSubmitted: { [weak runtime] outcome in
+                Task { @MainActor in runtime?.recordInputOutcome(outcome) }
+            }, reportRawAttributed: { [weak runtime] outcome, attribution in
+                Task { @MainActor in runtime?.recordInputOutcome(outcome, from: attribution) }
+            }, displayChanged: { [weak runtime] display in
+                Task { @MainActor in runtime?.updateDisplayState(display) }
+            })
+    }
 }
 
 struct HCPanelLaunchSpec: Sendable {
@@ -683,7 +706,10 @@ final class HCPanelSession: ObservableObject {
     /// whether an agent was in front of the terminal when its root died.
     private(set) var lastLiveRecord: HCTerminalRecord?
     var onFallback: (() -> Void)?
-    var onInputOutcome: ((HCInputOutcome) -> Void)?
+    var onInputOutcome: ((HCInputOutcome, HCInputAttribution) -> Void)?
+    /// C11H-443: when the operator last pressed a key in this panel. The panel's surface
+    /// installs it; the input policy reads it only on a refused native write.
+    var lastOperatorKey: () -> Date? = { nil }
     var onWillCreate: ((UUID, HCEndEvidence?) -> Void)?
     var onCreationOutcome: ((UUID, HCCreateResult) -> Void)?
     /// C11H-313: (attempt, adopted): the attempt bound to the terminal another
@@ -786,7 +812,9 @@ final class HCPanelSession: ObservableObject {
             }
             return await self.clearInputFault(using: receipt)
         }, currentDisplay: { [weak self] in self?.currentDisplayState },
-           reattach: { [weak self] in self?.requestInputFaultReattach?() })
+           reattach: { [weak self] in self?.requestInputFaultReattach?() },
+           lastOperatorKey: { [weak self] in self?.lastOperatorKey() },
+           attributeWrites: { attachment, on in (attachment as? HCPanelAttachment)?.attributeWrites(on) })
         disconnectedInput = policy
         onAttachmentBound = { [weak self, weak policy] attachment, display in
             guard let self else { return }
@@ -825,7 +853,7 @@ final class HCPanelSession: ObservableObject {
             self?.reconnectCoordinator?.disconnected(generation: generation, reason: reason)
         }
         onDisplayChanged = { [weak policy] display in policy?.updateDisplay(display) }
-        onInputOutcome = { [weak policy] outcome in policy?.record(outcome) }
+        onInputOutcome = { [weak policy] outcome, attribution in policy?.record(outcome, from: attribution) }
         onInputFault = { [weak policy] _ in policy?.record(.refused(.inputFault)) }
         requestInputFaultReattach = { [weak self] in
             guard let self, let attachment = self.attachment else { return }
@@ -1309,7 +1337,9 @@ final class HCPanelSession: ObservableObject {
         onConnectionLoss?(reason)
     }
 
-    func recordInputOutcome(_ outcome: HCInputOutcome) {
+    /// `from`: who made the input (C11H-443). The native bridge's callback carries the
+    /// operator's keys and Ghostty's own replies and reports; its refusals say which by shape.
+    func recordInputOutcome(_ outcome: HCInputOutcome, from attribution: HCInputAttribution = .program) {
         let isFault: Bool
         // The port an interruption belongs to. An uncertain write names its own,
         // which a reattach may already have replaced (C11H-124). A paused port
@@ -1335,7 +1365,7 @@ final class HCPanelSession: ObservableObject {
             inputFault = .inputFault
             if let attachment { attachment.input.invalidate(generation: attachment.generation, reason: .inputFault) }
         }
-        onInputOutcome?(outcome)
+        onInputOutcome?(outcome, attribution)
         if isFault { onInputFault?(.inputFault) }
     }
 

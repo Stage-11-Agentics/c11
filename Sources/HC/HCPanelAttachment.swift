@@ -18,6 +18,8 @@ final class HCPanelAttachment: HCAttachment, @unchecked Sendable {
          sink: any HCOutputSink, rendering: any HCRenderingAdapter, display: HCDisplayState,
          encoder: any HCInputEncoder,
          report: @escaping @Sendable (HCInputOutcome) -> Void,
+         reportSubmitted: (@Sendable (HCInputOutcome) -> Void)? = nil,
+         reportRawAttributed: (@Sendable (HCInputOutcome, HCInputAttribution) -> Void)? = nil,
          displayChanged: @escaping @Sendable (HCDisplayState) -> Void = { _ in }) {
         self.key = key
         self.generation = generation
@@ -29,7 +31,8 @@ final class HCPanelAttachment: HCAttachment, @unchecked Sendable {
         self.state = state
         coordinator = HCInputCoordinator(panelID: panelID, key: key, generation: generation,
             writer: channel, encoder: encoder, screen: rendering,
-            displayRevision: { state.read().revision }, report: report,
+            displayRevision: { state.read().revision }, report: report, reportSubmitted: reportSubmitted,
+            reportRawAttributed: reportRawAttributed,
             claimInBandGrid: { rendering.claimInBandGrid(columns: $0, rows: $1) },
             // Replacement ports are exposed to native callbacks closed; the
             // reconnect policy opens them once the new port is adopted.
@@ -40,6 +43,8 @@ final class HCPanelAttachment: HCAttachment, @unchecked Sendable {
     }
 
     func setAdmission(_ open: Bool) { coordinator.setAdmission(open) }
+    /// C11H-443: classify successful raw writes while the operator's reconnect notice is up.
+    func attributeWrites(_ on: Bool) { coordinator.attributeWrites(on) }
 
     func submit(_ request: HCInputRequest) async -> HCInputOutcome { await coordinator.submit(request) }
     func screenCurrent(after revision: HCDisplayRevision) async -> HCScreenReceipt? {

@@ -91,7 +91,11 @@ class CLI:
     def __init__(self, app, sock):
         self.bin = cli_path(app)
         self.env = {"HOME": HOME, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                    "C11_SOCKET": sock, "C11_SOCKET_PATH": sock, "USER": os.environ.get("USER", "admin")}
+                    "C11_SOCKET": sock, "C11_SOCKET_PATH": sock, "USER": os.environ.get("USER", "admin"),
+                    # The 2.0 app under test always runs as the migration stand-in (run.sh's mig_env), so it
+                    # keeps the release mail folder; its CLI follows it only with the same two variables
+                    # (C11H-439). The c11h and 1.x CLIs ignore them.
+                    "C11_MIGRATION_QA": "1", "C11_QA_LAUNCH": "resume"}
 
     def run(self, *args, check=True, timeout=30):
         return sh([self.bin, *args], check=check, timeout=timeout, env=self.env)

@@ -769,3 +769,109 @@ final class MailboxAddressTests: XCTestCase {
                        .unique(workspaceId: workspace, surfaceIds: [linked]), "alone with an operator-set name, still reachable")
     }
 }
+
+// MARK: - C11H-445: mail on by default for agents with a doorbell
+
+extension MailboxPanelResolverTests {
+    private func policy(_ delivery: String?, doorbell: String? = nil, kind: String?) -> MailboxDeliveryPolicy.Effective {
+        MailboxDeliveryPolicy.effective(delivery: delivery, doorbell: doorbell, agentKind: kind)
+    }
+
+    func testDeliveryDefaultsToStdinForEveryHarnessWithAReaderOrNativeRoute() {
+        for kind in ["claude-code", "claude", "codex", "grok", "opencode", "pi", "omp", " Codex "] {
+            XCTAssertEqual(policy(nil, kind: kind), .init(handlers: ["stdin"], source: .default), kind)
+        }
+        for kind in ["copilot", "shell", "unknown", "", nil] as [String?] {
+            XCTAssertEqual(policy(nil, kind: kind), .init(handlers: [], source: .none), kind ?? "nil")
+        }
+    }
+
+    func testAPanelsOwnDeliveryWinsVerbatim() {
+        XCTAssertEqual(policy("silent", kind: "claude-code"), .init(handlers: ["silent"], source: .explicit))
+        XCTAssertEqual(policy("stdin", kind: nil), .init(handlers: ["stdin"], source: .explicit))
+        XCTAssertEqual(policy("stdin, silent", kind: "shell").handlers, ["stdin", "silent"])
+        // `off` and `none` run no handler, and are never an unknown handler.
+        for word in ["off", "OFF", " none "] {
+            let effective = policy(word, kind: "claude-code")
+            XCTAssertEqual(effective, .init(handlers: [], source: .explicit), word)
+            XCTAssertEqual(effective.value, "off")
+            XCTAssertFalse(effective.includesStdin)
+        }
+        // An empty value reads as unset, so the default comes back.
+        XCTAssertEqual(policy("  ", kind: "pi"), .init(handlers: ["stdin"], source: .default))
+    }
+
+    func testDoorbellOffWithholdsTheDefaultButNotAnExplicitValue() {
+        XCTAssertEqual(policy(nil, doorbell: "off", kind: "claude-code"), .init(handlers: [], source: .doorbellOff))
+        XCTAssertEqual(policy(nil, doorbell: "on", kind: "claude-code").source, .default)
+        // The doorbell's own `doorbell=off` hold still applies to this panel.
+        XCTAssertEqual(policy("stdin", doorbell: "off", kind: "claude-code"), .init(handlers: ["stdin"], source: .explicit))
+    }
+
+    func testResolverAppliesTheDefaultFromTheLiveAgentKind() throws {
+        let declared = UUID(), exited = UUID(), remote = UUID(), shell = UUID(), optedOut = UUID()
+        for (panel, partial) in [
+            (declared, [MetadataKey.title: "declared", MetadataKey.terminalType: "claude-code"]),
+            (exited, [MetadataKey.title: "exited", MetadataKey.terminalType: "codex"]),
+            (remote, [MetadataKey.title: "remote"]),
+            (shell, [MetadataKey.title: "shell"]),
+            (optedOut, [MetadataKey.title: "opted-out", MetadataKey.terminalType: "grok", "mailbox.delivery": "off"]),
+        ] as [(UUID, [String: Any])] {
+            _ = try store.setMetadata(workspaceId: workspaceId, surfaceId: panel, partial: partial,
+                                      mode: .merge, source: .explicit)
+        }
+        let resolver = MailboxPanelResolver(
+            workspaceId: workspaceId,
+            detectedKinds: { [exited: "shell", remote: "grok"] },
+            livePanels: { [declared, exited, remote, shell, optedOut] }
+        )
+        let byId = Dictionary(uniqueKeysWithValues: resolver.panelsWithMailboxMetadata().map { ($0.surfaceId, $0) })
+        XCTAssertEqual(byId[declared]?.delivery, ["stdin"], "a launch-agent seat's declared kind is enough")
+        XCTAssertEqual(byId[declared]?.deliveryEffective.source, .default)
+        XCTAssertEqual(byId[exited]?.delivery, [], "a shell once the agent exits")
+        XCTAssertEqual(byId[remote]?.delivery, ["stdin"], "a remote agent hc names")
+        XCTAssertEqual(byId[shell]?.delivery, [], "a plain shell")
+        XCTAssertEqual(byId[optedOut]?.deliveryEffective, .init(handlers: [], source: .explicit))
+    }
+}
+
+// MARK: - C11H-445: an alias and a direct send agree on a shared owner's delivery
+
+extension MailboxPanelResolverTests {
+    /// A shared OpenCode owner whose declared kind is stale (`copilot`) and
+    /// whose detected kind is live (`opencode`), no delivery set: a send to the
+    /// owner and a send through its duplicate view pick the same delivery,
+    /// from the owner's live kind, wherever the owner is.
+    func testAnAliasAndADirectSendAgreeOnTheOwnersLiveKind() throws {
+        let ownerWorkspace = UUID(), owner = UUID(), alias = UUID()
+        _ = try store.setMetadata(workspaceId: ownerWorkspace, surfaceId: owner,
+            partial: [MetadataKey.title: "owner", MetadataKey.terminalType: "copilot"], mode: .merge, source: .explicit)
+        _ = try store.setMetadata(workspaceId: workspaceId, surfaceId: alias,
+            partial: [MetadataKey.title: "duplicate", MetadataKey.terminalType: "opencode"], mode: .merge, source: .explicit)
+
+        let direct = MailboxPanelResolver(workspaceId: ownerWorkspace, detectedKinds: { [owner: "opencode"] },
+                                          livePanels: { [owner] })
+        let ownerRecord = try XCTUnwrap(direct.panelsWithMailboxMetadata().first)
+
+        let viaAlias = MailboxPanelResolver(
+            workspaceId: workspaceId,
+            canonicalOwner: { $0 == alias ? (owner, ownerWorkspace) : nil },
+            detectedKindAnywhere: { $0 == owner ? "opencode" : nil },
+            livePanels: { [alias] })
+        let aliasRecord = try XCTUnwrap(viaAlias.panelsWithMailboxMetadata().first)
+        let canonical = viaAlias.canonicalRecipient(aliasRecord)
+
+        XCTAssertEqual(canonical.surfaceId, owner)
+        XCTAssertEqual(ownerRecord.deliveryEffective, .init(handlers: ["stdin"], source: .default))
+        XCTAssertEqual(canonical.deliveryEffective, ownerRecord.deliveryEffective)
+
+        // The owner's detection is what counts, never the alias's kind.
+        let ownerShell = MailboxPanelResolver(
+            workspaceId: workspaceId,
+            canonicalOwner: { $0 == alias ? (owner, ownerWorkspace) : nil },
+            detectedKindAnywhere: { $0 == owner ? "shell" : nil },
+            livePanels: { [alias] })
+        let shellCanonical = ownerShell.canonicalRecipient(try XCTUnwrap(ownerShell.panelsWithMailboxMetadata().first))
+        XCTAssertEqual(shellCanonical.deliveryEffective.source, .none)
+    }
+}

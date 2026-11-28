@@ -27,6 +27,8 @@ SHIPPED_HELPER_SHA256 = frozenset({
     "2744b886409c742b5b1bb2d36730dcfef805860f83d742c20dc1691d52338311",
     # c11 2.0.1 (build 201, 12ef69ed6), from the published release's hc-pin.json.
     "23c26bb71dcccf3057308aba0323714230be0897d6e34acc8abebd5f7c0c429b",
+    # c11 2.0.2 (build 202, 5c85f57b4), from the published release's hc-pin.json.
+    "b4f7cb5f221ba8efaff67c48549acb672c5a2ccf7bae4039dcab7453884e0b2f",
 })
 RELEASE_TEAM = "UKQ4QALWD4"
 APP_IDENTIFIER = "com.stage11.c11"

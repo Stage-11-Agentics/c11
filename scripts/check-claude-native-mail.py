@@ -75,7 +75,7 @@ print(json.dumps(rows))'''))
     def inspect(target):
         return json.loads(guest('''from pathlib import Path
 import json,sys
-mail=Path.home()/'Library/Application Support/c11/workspaces'/sys.argv[1].upper()/'mailboxes'
+mail=next((d for d in [Path.home()/'Library/Application Support/c11/workspaces',*sorted(Path.home().glob('Library/Application Support/c11-dev/*/workspaces'))] if (d/sys.argv[1].upper()).is_dir()),Path.home()/'Library/Application Support/c11/workspaces')/sys.argv[1].upper()/'mailboxes'
 def rows(path):
  if not path.exists():return []
  out=[]

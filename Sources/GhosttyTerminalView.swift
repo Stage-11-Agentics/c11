@@ -2959,7 +2959,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
     private var runtimeSurfaceCreatedAt: Date?
     private var teardownRequestedAt: Date?
     private var teardownRequestReason: String?
-    @MainActor private(set) var hcSession: HCPanelSession?
+    @MainActor private(set) var hcSession: HCPanelSession? {
+        // C11H-443: the input policy asks whether the operator pressed a key here.
+        didSet { hcSession?.lastOperatorKey = { [weak self] in self?.lastOperatorKeystrokeAt } }
+    }
     @MainActor private var hcCompositionChecked = false
     /// C11H-434: the operator ended this panel's terminal and its panel stays
     /// (End All), so the surface keeps its last screen when hc closes the stream.
@@ -4515,6 +4518,10 @@ final class TerminalSurface: Identifiable, ObservableObject {
         if let bundleId = Bundle.main.bundleIdentifier, !bundleId.isEmpty {
             setManagedEnvironmentValue(.bundleId, bundleId)
         }
+        // C11H-439: the CLI in this terminal uses this app's mailbox folder.
+        if let mailboxState = try? MailboxLayout.defaultStateURL() {
+            setManagedEnvironmentValue(.mailboxStateDir, mailboxState.path)
+        }
 
         // C11_DEFAULT_AGENT_LAUNCH carries the bare launcher command (no
         // operator-configured seed prompt) so callers can append their own
@@ -4738,16 +4745,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
         surfaceConfig.context = surfaceContext
         let nativeBridge: HCNativeBridge? = MainActor.assumeIsolated {
             guard let hcRuntime else { return nil }
-            return HCNativeBridge(panelID: id,
+            return HCNativeBridge.reporting(to: hcRuntime, panelID: id,
                 rendering: HCBackendComposition.shared.makeRenderingAdapter(self),
-                encoder: HCBackendComposition.shared.makeInputEncoder(self), report: { [weak hcRuntime] outcome in
-                    Task { @MainActor in
-                        guard let hcRuntime else { return }
-                        hcRuntime.recordInputOutcome(outcome)
-                    }
-                }, displayChanged: { [weak hcRuntime] display in
-                    Task { @MainActor in hcRuntime?.updateDisplayState(display) }
-                })
+                encoder: HCBackendComposition.shared.makeInputEncoder(self))
         }
         // Splits inherit native config, including callback pointers. Every new
         // surface overwrites the complete IO tuple before native creation.
@@ -5116,6 +5116,15 @@ final class TerminalSurface: Identifiable, ObservableObject {
     /// sent with `c11 send --no-submit`. The mailbox push reads it to avoid
     /// splicing onto that draft.
     var lastOperatorKeyAt: Date?
+    /// C11H-443: when the operator last pressed a key here, from the two stamps above and no
+    /// new store. keyDown sets both to one time; a click sets only the input stamp and a
+    /// program's draft only the key stamp, so the earlier of the two is the last key the
+    /// operator pressed, unless both a click and a draft came after it. Read on the refused-
+    /// input path only, never per keystroke.
+    var lastOperatorKeystrokeAt: Date? {
+        guard let key = lastOperatorKeyAt, let input = lastOperatorInputAt else { return nil }
+        return min(key, input)
+    }
     /// When the scrollback last grew while the surface was visible: real output,
     /// not an in-place repaint. Not `@Published`.
     var lastOutputGrowthAt: Date?
@@ -5158,13 +5167,13 @@ final class TerminalSurface: Identifiable, ObservableObject {
             guard usesPersistentHCInput else { return false }
             var kind = GHOSTTY_CLIPBOARD_REQUEST_PASTE
             guard ghostty_clipboard_request_get_type(request, &kind) else {
-                hcSession?.recordInputOutcome(.refused(.unavailable))
+                hcSession?.recordInputOutcome(.refused(.unavailable), from: .operatorInput)
                 return true
             }
             guard kind == GHOSTTY_CLIPBOARD_REQUEST_PASTE else { return false }
             "".withCString { ghostty_surface_complete_clipboard_request(native, $0, request, false) }
             guard surface == native else {
-                hcSession?.recordInputOutcome(.refused(.staleIdentity)); return true
+                hcSession?.recordInputOutcome(.refused(.staleIdentity), from: .operatorInput); return true
             }
             guard !text.isEmpty else { return true }
             return enqueueHCInput(text, submit: false, source: .filePaste)
@@ -5186,7 +5195,9 @@ final class TerminalSurface: Identifiable, ObservableObject {
                        eligibility: (@Sendable () async -> Bool)? = nil) async -> HCInputOutcome {
         guard let runtime = hcSession, runtime.identity.persistence == .persistent else { return .refused(.unavailable) }
         guard text.utf8.count <= HCLimits.transactionBytes else {
-            let result = HCInputOutcome.refused(.tooLarge); runtime.recordInputOutcome(result); return result
+            let result = HCInputOutcome.refused(.tooLarge)
+            runtime.recordInputOutcome(result, from: HCInputAttribution(source))
+            return result
         }
         let panelID = id
         var submitted = false
@@ -5215,7 +5226,7 @@ final class TerminalSurface: Identifiable, ObservableObject {
             return await runtime.submitInput(request)
         }
         // A submission that never reached the port is recorded here, once.
-        if !submitted { runtime.recordInputOutcome(outcome) }
+        if !submitted { runtime.recordInputOutcome(outcome, from: HCInputAttribution(source)) }
         #if DEBUG
         if case .refused(let reason) = outcome {
             let attachment = runtime.attachment

@@ -730,6 +730,7 @@ enum MessagesPageSource {
         fileManager: FileManager = .default,
         eventLogCache: inout MessagesPageEventLogCache,
         mailboxArtifacts: [MessagesPageMailboxArtifact]? = nil,
+        mailboxStateURL: URL? = nil,
         readEventData: (URL) throws -> Data = { url in
             guard let data = MessagesPageSource.boundedFileData(
                 at: url,
@@ -748,7 +749,7 @@ enum MessagesPageSource {
                 readEventData: readEventData
             ),
             mailboxArtifacts: mailboxArtifacts
-                ?? readMailboxArtifacts(stateURL: stateURL, fileManager: fileManager)
+                ?? readMailboxArtifacts(stateURL: mailboxStateURL ?? stateURL, fileManager: fileManager)
         )
     }
 

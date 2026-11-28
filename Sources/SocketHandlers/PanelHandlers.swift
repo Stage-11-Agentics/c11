@@ -2624,6 +2624,17 @@ extension TerminalController {
         fullSources.removeValue(forKey: MetadataKey.panelOriginDetail)
         fullMetadata["journal"] = JournalCoordinator.shared.readback(panelID: resolved.surfaceId)
         fullMetadata["supervisor"] = SupervisorMonitor.shared.readback(panel: resolved.surfaceId)
+        // C11H-445: the delivery c11 uses for this panel and whether the panel
+        // set it, so a sender can see it. Read-only; nothing is stored, and it
+        // is computed only when the read asks for it. This handler runs on
+        // main, so the read below is no second hop.
+        if keys?.contains("mailbox_delivery") ?? true {
+            let deliveryEffective: MailboxDeliveryPolicy.Effective? = v2MainSync {
+                resolved.workspaceManager.workspaces.first(where: { $0.id == resolved.workspaceId })?
+                    .mailboxDeliveryEffective(surfaceId: resolved.surfaceId)
+            }
+            fullMetadata["mailbox_delivery"] = deliveryEffective?.jsonObject ?? NSNull()
+        }
         var metadataOut: [String: Any] = fullMetadata
         var sourcesOut: [String: [String: Any]] = fullSources
         if let filterKeys = keys {

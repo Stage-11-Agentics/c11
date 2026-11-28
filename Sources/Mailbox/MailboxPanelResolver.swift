@@ -21,18 +21,52 @@ struct MailboxPanelResolver {
     let metadataStore: PanelMetadataStore
     let livePanels: () -> [UUID]
     let canonicalOwner: (UUID) -> (panelID: UUID, workspaceID: UUID)?
-    /// C11H-360: the machine each of this workspace's linked-machine panels
-    /// runs on; panels on this Mac are absent.
-    let linkedMachines: () -> [UUID: String]
+    /// What the app knows about this workspace's panels beyond their metadata,
+    /// read in one main-thread pass per dispatch.
+    let panelFacts: () -> [UUID: PanelFacts]
+    /// C11H-445: the kind detection sees in any panel on this Mac, for a
+    /// shared OpenCode owner that may be in another workspace.
+    let detectedKindAnywhere: (UUID) -> String?
     /// C11H-360: whether a panel on this Mac, in any workspace, answers to an
     /// address. Asked only when every match here is a linked panel.
     let localAnswersAnywhere: (MailboxAddress) -> Bool
+
+    struct PanelFacts: Equatable {
+        /// C11H-360: the linked machine the panel's terminal runs on; nil here.
+        var linkedMachine: String?
+        /// C11H-445: the kind detection sees in the panel's foreground
+        /// (`shell` once its agent exits, a remote agent hc names); nil when
+        /// detection has no word and the declared `terminal_type` stands.
+        var detectedKind: String?
+    }
 
     init(
         workspaceId: UUID,
         metadataStore: PanelMetadataStore = .shared,
         canonicalOwner: @escaping (UUID) -> (panelID: UUID, workspaceID: UUID)? = { _ in nil },
         linkedMachines: @escaping () -> [UUID: String] = { [:] },
+        detectedKinds: @escaping () -> [UUID: String] = { [:] },
+        detectedKindAnywhere: @escaping (UUID) -> String? = { _ in nil },
+        localAnswersAnywhere: @escaping (MailboxAddress) -> Bool = { _ in false },
+        livePanels: @escaping () -> [UUID]
+    ) {
+        self.init(workspaceId: workspaceId, metadataStore: metadataStore, canonicalOwner: canonicalOwner,
+                  panelFacts: {
+                      var facts: [UUID: PanelFacts] = [:]
+                      for (panel, machine) in linkedMachines() { facts[panel, default: PanelFacts()].linkedMachine = machine }
+                      for (panel, kind) in detectedKinds() { facts[panel, default: PanelFacts()].detectedKind = kind }
+                      return facts
+                  },
+                  detectedKindAnywhere: detectedKindAnywhere,
+                  localAnswersAnywhere: localAnswersAnywhere, livePanels: livePanels)
+    }
+
+    init(
+        workspaceId: UUID,
+        metadataStore: PanelMetadataStore = .shared,
+        canonicalOwner: @escaping (UUID) -> (panelID: UUID, workspaceID: UUID)? = { _ in nil },
+        panelFacts: @escaping () -> [UUID: PanelFacts],
+        detectedKindAnywhere: @escaping (UUID) -> String? = { _ in nil },
         localAnswersAnywhere: @escaping (MailboxAddress) -> Bool = { _ in false },
         livePanels: @escaping () -> [UUID]
     ) {
@@ -40,7 +74,8 @@ struct MailboxPanelResolver {
         self.metadataStore = metadataStore
         self.livePanels = livePanels
         self.canonicalOwner = canonicalOwner
-        self.linkedMachines = linkedMachines
+        self.panelFacts = panelFacts
+        self.detectedKindAnywhere = detectedKindAnywhere
         self.localAnswersAnywhere = localAnswersAnywhere
     }
 
@@ -81,7 +116,7 @@ struct MailboxPanelResolver {
     ///
     func panelsWithMailboxMetadata() -> [PanelMetadata] {
         let panels = livePanels()
-        let linked = linkedMachines()
+        let facts = panelFacts()
         return panels.compactMap { panelId in
             let (metadata, sources) = metadataStore.getMetadata(
                 workspaceId: workspaceId,
@@ -99,8 +134,13 @@ struct MailboxPanelResolver {
                 name: title,
                 mailboxKeys: mailboxKeys
             )
-            record.linkedMachine = linked[panelId]
+            record.linkedMachine = facts[panelId]?.linkedMachine
             record.titleFromOSC = Self.isOSCSource(sources[MetadataKey.title])
+            // C11H-445: the live agent kind, as the sidebar and the doorbell read it.
+            record.agentKind = PanelActivityTerminalKindResolver.resolve(
+                detectedTerminalType: facts[panelId]?.detectedKind,
+                declaredTerminalType: metadata[MetadataKey.terminalType] as? String
+            )
             return record
         }
     }
@@ -112,6 +152,32 @@ struct MailboxPanelResolver {
             return text == MetadataSource.osc.rawValue
         }
         return false
+    }
+
+    /// C11H-445: the same recipient with its mailbox keys and live kind read
+    /// again now. The dispatcher asks this after the inbox copy is published,
+    /// for a recipient whose kind gave it no delivery, so mail never falls
+    /// between that resolution and the panel's inbox rescan.
+    func refreshed(_ recipient: PanelMetadata) -> PanelMetadata {
+        let home = recipient.inboxWorkspaceId ?? workspaceId
+        let (metadata, _) = metadataStore.getMetadata(workspaceId: home, surfaceId: recipient.surfaceId)
+        let keys = metadata.reduce(into: [String: String]()) { result, entry in
+            if entry.key.hasPrefix(Self.metadataPrefix), let value = entry.value as? String {
+                result[entry.key] = value
+            }
+        }
+        var result = PanelMetadata(surfaceId: recipient.surfaceId, name: recipient.name, mailboxKeys: keys)
+        result.inboxWorkspaceId = recipient.inboxWorkspaceId
+        result.linkedMachine = recipient.linkedMachine
+        result.titleFromOSC = recipient.titleFromOSC
+        let detected = recipient.inboxWorkspaceId == nil
+            ? panelFacts()[recipient.surfaceId]?.detectedKind
+            : detectedKindAnywhere(recipient.surfaceId)
+        result.agentKind = PanelActivityTerminalKindResolver.resolve(
+            detectedTerminalType: detected,
+            declaredTerminalType: metadata[MetadataKey.terminalType] as? String
+        )
+        return result
     }
 
     func canonicalRecipient(_ requested: PanelMetadata) -> PanelMetadata {
@@ -127,6 +193,12 @@ struct MailboxPanelResolver {
         var result = PanelMetadata(surfaceId: owner.panelID, name: metadata[MetadataKey.title] as? String ?? "",
                                    mailboxKeys: keys)
         result.inboxWorkspaceId = owner.workspaceID
+        // C11H-445: the owner's live kind, by the same rule as every reader,
+        // never the alias's kind.
+        result.agentKind = PanelActivityTerminalKindResolver.resolve(
+            detectedTerminalType: detectedKindAnywhere(owner.panelID),
+            declaredTerminalType: metadata[MetadataKey.terminalType] as? String
+        )
         return result
     }
 
@@ -172,9 +244,21 @@ struct MailboxPanelResolver {
         var linkedMachine: String? = nil
         /// C11H-360: the title came from the terminal's own OSC 0/2 output.
         var titleFromOSC = false
+        /// C11H-445: the panel's live agent kind (detected over declared).
+        var agentKind: String? = nil
 
+        /// The handlers the dispatcher runs: the panel's own value, or the
+        /// default for an agent kind with a doorbell (`MailboxDeliveryPolicy`).
         var delivery: [String] {
-            splitCommaSeparated(mailboxKeys["mailbox.delivery"])
+            deliveryEffective.handlers
+        }
+
+        var deliveryEffective: MailboxDeliveryPolicy.Effective {
+            MailboxDeliveryPolicy.effective(
+                delivery: mailboxKeys[MailboxDeliveryPolicy.deliveryKey],
+                doorbell: mailboxKeys[MailboxDeliveryPolicy.doorbellKey],
+                agentKind: agentKind
+            )
         }
 
         var subscribe: [String] {
@@ -218,6 +302,82 @@ struct MailboxPanelResolver {
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
         }
+    }
+}
+
+/// C11H-445: a panel's mail delivery, decided in one place for every reader:
+/// the dispatcher's handlers, the doorbell, `can_ring`, `mailbox status`,
+/// `get-metadata` and `fleet`. Nothing is written back. A panel's own
+/// `mailbox.delivery` wins verbatim (`off` or `none` runs no handler). Without
+/// one, a panel whose live agent kind has a typed composer reader or a native
+/// route takes `stdin`, unless it set `mailbox.doorbell=off`. The default only
+/// makes a panel eligible: every ring check still applies (the wrapper's
+/// interactive PID and the kernel's foreground check, native ancestry, the
+/// composer, holds, flags, the cap), so a plain shell or a one-shot command is
+/// never rung.
+enum MailboxDeliveryPolicy {
+    static let deliveryKey = "mailbox.delivery"
+    static let doorbellKey = "mailbox.doorbell"
+    static let offWords: Set<String> = ["off", "none"]
+
+    enum Source: String {
+        /// The panel set `mailbox.delivery`.
+        case explicit
+        /// No value set; the panel's agent kind has a doorbell.
+        case `default`
+        /// No value set, and the panel set `mailbox.doorbell=off`.
+        case doorbellOff = "doorbell_off"
+        /// No value set, and no agent with a doorbell is in the panel.
+        case none
+    }
+
+    struct Effective: Equatable {
+        let handlers: [String]
+        let source: Source
+
+        var includesStdin: Bool {
+            handlers.contains { $0.caseInsensitiveCompare("stdin") == .orderedSame }
+        }
+
+        /// The value a reader prints: the handlers, or `off` when none run.
+        var value: String {
+            handlers.isEmpty ? "off" : handlers.joined(separator: ",")
+        }
+
+        var jsonObject: [String: Any] {
+            ["value": value, "source": source.rawValue]
+        }
+    }
+
+    /// Claude Code, Codex, Grok, OpenCode, Pi (typed readers) and omp (native
+    /// only). Copilot, unknown programs and shells have neither.
+    static func hasReaderOrNativeRoute(_ kind: String?) -> Bool {
+        guard let kind = kind?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !kind.isEmpty else { return false }
+        return PromptInputClassifier.supportsComposer(harness: kind)
+            || MailboxNativeDoorbell.Route.forKind(kind) != nil
+    }
+
+    static func effective(delivery: String?, doorbell: String?, agentKind: String?) -> Effective {
+        if let raw = delivery?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            let handlers = raw.split(separator: ",", omittingEmptySubsequences: true)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty && !offWords.contains($0.lowercased()) }
+            return Effective(handlers: handlers, source: .explicit)
+        }
+        if doorbell?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "off" {
+            return Effective(handlers: [], source: .doorbellOff)
+        }
+        return hasReaderOrNativeRoute(agentKind)
+            ? Effective(handlers: ["stdin"], source: .default)
+            : Effective(handlers: [], source: .none)
+    }
+
+    /// The same decision from a panel's metadata dictionary.
+    static func effective(metadata: [String: Any], agentKind: String?) -> Effective {
+        effective(delivery: metadata[deliveryKey] as? String,
+                  doorbell: metadata[doorbellKey] as? String,
+                  agentKind: agentKind)
     }
 }
 

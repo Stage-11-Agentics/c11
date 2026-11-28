@@ -94,6 +94,7 @@ Releases through `release-local.sh` on the build host, from `build-release-local
 | v1.8.0 | 411 (385) | 111 | 104 | 70 (32 + 38) | 11 | 2 |
 | v1.8.1 | 493 (464) | 120 | 112 | 78 (40 + 38) | 10 | 2 |
 | v2.0.0 | 641 (612) | 125 | 116 | 73 (35 + 38) | 12 | 2 |
+| v2.0.1 | 655 (620) | 109 | 100 | 63 (33 + 30) | 13 | 2 |
 
 End-to-end rehearsal (#815 proof, 2026-10-31, nothing published): scratch release branch to would-publish in 8 min 52 s. Cheap CI was green at 1:57, `c11/pr-swift` at 3:45 (166 s), the build-host dry run finished at 7:10, and notarization at 8:52. With the build done during the staging smoke, tag to published is about 2.5 min. Each run appends its step seconds to `build-release-local/timings.jsonl`; add a row to the release table above.
 

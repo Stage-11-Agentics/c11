@@ -6,6 +6,8 @@ Note: historical entries below pre-date the `c11mux` → `c11` rename and refere
 
 ## [Unreleased]
 
+- Updating c11 from inside the app no longer strands your terminals. After 2.0.0 updated to 2.0.1, the new app could not reach the terminals the old one left running: every panel stayed on Reconnecting and new panels ended at once. c11 now hands the old version's terminal engine over to its own, and your programs keep running. (C11H-441)
+
 ## [2.0.1] - 2026-11-27
 
 Headline: **c11 2.0.1. A panel whose session ended says so and keeps its last screen, a plain click opens c11 links, and the default theme's sidebar is plain again.**

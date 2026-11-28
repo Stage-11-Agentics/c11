@@ -50,11 +50,33 @@ actor HCBuildVerifier {
             throw HCUnavailableReason.foreignSession
         }
         let before = try Self.processIdentity(peer.pid)
-        guard let path = executablePath(peer.pid) else { throw HCUnavailableReason.connectionLost }
-        let executable = URL(fileURLWithPath: path)
         _ = try verifyPin(configuration)
-        let (file, hash) = try fingerprint(executable)
+        // C11H-441: an update that replaces the app in place (Sparkle swaps the
+        // bundle, then deletes the old one) leaves the previous release's core
+        // running from a file that no longer exists. The kernel then names no
+        // path for it (proc_pidpath fails with ENOENT), or a path already gone.
+        var served: (executable: URL, file: HCFileIdentity, hash: String)?
+        if let path = executablePath(peer.pid) {
+            let executable = URL(fileURLWithPath: path)
+            do {
+                let (file, hash) = try fingerprint(executable)
+                served = (executable, file, hash)
+            } catch HCUnavailableReason.coreUnreachable {}
+        }
         guard try Self.processIdentity(peer.pid) == before else { throw HCUnavailableReason.connectionLost }
+        guard let served else {
+            // Still this session's core (uid, pid, socket, core.lock and core.json
+            // checked above), so a same-session foreign build: the planned restart
+            // hands it to this build's pin, and the holder keeps every program
+            // running. Nothing is hashed, so it is never adopted as pinned.
+            Self.logger.notice("hc_serving_executable_gone served_version=\(peer.version, privacy: .public) pid=\(peer.pid) start_us=\(before.startTimeMicroseconds)")
+            let unknown = HCPin(version: peer.version, archiveSHA256: "", executableSHA256: "", protocolGeneration: peer.protocolGeneration)
+            return HCVerifiedPeer(identity: HCBuildIdentity(pin: unknown, executablePath: "",
+                fileIdentity: HCFileIdentity(device: 0, inode: 0, size: 0, modifiedSeconds: 0, modifiedNanoseconds: 0),
+                process: before, coreID: peer.coreID, protocolGeneration: peer.protocolGeneration),
+                isPinnedBuild: false)
+        }
+        let (executable, file, hash) = served
         // L2: the serving binary is the launch binary, or one the tuple accepts
         // as already serving (C11H-66's transition from M1's external pin).
         let accepted = configuration.servingBinaries.first { serving in

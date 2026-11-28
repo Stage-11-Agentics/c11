@@ -562,6 +562,30 @@ final class HCBundledCoreTests: XCTestCase {
         return (c, peer, serving, servingHash, accepted)
     }
 
+    /// C11H-441: a core whose executable an update deleted. The kernel names no
+    /// path for it, or one already gone when it is hashed: either way the core
+    /// is attested as this session's foreign build (for the planned restart),
+    /// never as lost and never as pinned. This build's own helper is checked
+    /// first: with it missing nothing could take over, so verify still refuses.
+    func testACoreWhoseExecutableIsGoneIsThisSessionsForeignBuild() async throws {
+        let (c, peer, _, _, accepted) = try servingFixture()
+        var tuple = c
+        tuple.acceptedServing = [HCServingBinary(executableURL: c.executableURL, pin: c.pin), accepted]
+        let gone = root.appendingPathComponent("replaced.app/Contents/Helpers/herdr-core").path
+        for answer in [nil, gone] as [String?] {
+            let verified = try await HCBuildVerifier(executablePath: { _ in answer }).verify(peer, configuration: tuple)
+            XCTAssertFalse(verified.isPinnedBuild, "kernel path \(answer ?? "none")")
+            XCTAssertEqual(verified.identity.process.pid, getpid())
+            XCTAssertEqual(verified.identity.coreID, "core")
+            XCTAssertEqual(verified.identity.executablePath, "")
+        }
+        try FileManager.default.removeItem(at: c.executableURL)
+        do {
+            _ = try await HCBuildVerifier(executablePath: { _ in nil }).verify(peer, configuration: tuple)
+            XCTFail("this build's own helper is gone, so no handover")
+        } catch { XCTAssertEqual(error as? HCUnavailableReason, .coreUnreachable) }
+    }
+
     func testACoreAlreadyServingFromTheExternalPinIsAdoptedAsPinnedDuringTheTransition() async throws {
         let fixture = try servingFixture()
         var c = fixture.0

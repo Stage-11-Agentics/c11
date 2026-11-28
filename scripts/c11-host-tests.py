@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime
 
 
-REPO_URL = "https://github.com/Stage-11-Agentics/c11h.git"
+REPO_URL = "https://github.com/Stage-11-Agentics/c11.git"
 # The slot runner comes from the tested checkout (main's current copy), not an older installed one.
 SLOT_RUNNER_OVERRIDE = os.environ.get("C11_HOST_TESTS_SLOT_RUNNER")
 XCODE_APP = Path(os.environ.get("C11_HOST_TESTS_XCODE", "/Applications/Xcode-26.3.app"))

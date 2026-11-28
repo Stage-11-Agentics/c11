@@ -8,7 +8,7 @@ description: "c11 is a native macOS terminal multiplexer. Load this skill anytim
 
 **c11** is a native macOS terminal multiplexer for the operator:agent pair. One operator runs many agents in parallel; c11 gives every terminal, browser, and markdown panel a handle so the whole field stays legible. Hierarchy: **window → workspace (a sidebar entry) → area (a split region) → panel (a terminal, browser, or markdown viewer)**.
 
-This card holds what you need at launch and every rule whose breach destroys work. Everything else is a page `c11 guide <page>` prints; the map at the end says when to load each.
+This card holds what you need at launch and every rule whose breach destroys work; for the rest, the map at the end names a `c11 guide <page>`.
 
 **This guide matches the build you are in; an installed c11 skill may not.** `c11 guide` is the authority for this build's commands. A command another c11 skill or doc names that this guide and its pages lack does not exist here: don't try it, and don't edit an installed skill to add it.
 
@@ -36,7 +36,7 @@ c11 set-metadata --panel "$C11_PANEL_ID" --key mailbox.address --value "<stable-
 - No task yet, only a "load the skill" message? Leave the placeholder, reply in one line that you're ready, and orient on the next real message.
 - `C11_MISSION_FILE` names the project's `C11.md`; read it only when the task concerns the project's direction.
 
-**Title** is stable identity: 2-3 words, role-first, a first word distinct from siblings' (`C11-184 Attention` is fine). No `Parent :: Child` chains. **Description** is your live subtitle: its first sentence says what you are doing now and the next gate, in plain English, present tense. Refresh it at transitions, not every command; the operator sees how long ago its text last changed ("edited 12 min ago"), so a stale one shows. If you have a parent, the last line is `Lineage: <parent> → <role>`. Detail: `c11 guide identity`.
+**Title** is stable identity: 2-3 words, role-first, a first word distinct from siblings' (`C11-184 Attention` is fine). No `Parent :: Child` chains. **Description** is your live subtitle: its first sentence says what you are doing now and the next gate, in plain English, present tense. Refresh it at transitions, not every command; the operator sees its age, so a stale one shows. If you have a parent, the last line is `Lineage: <parent> → <role>`. Detail: `c11 guide identity`.
 
 ## Targeting
 
@@ -51,17 +51,17 @@ Detail: `c11 guide targeting`.
 
 ## Where new work goes
 
-- **A new panel in an existing area** for nearly everything. A new **workspace** only when the operator asks or names a *different project*; isolating agents is a prompt rule, never a reason for one.
+- **A new panel in an existing area** for nearly everything. A new **workspace** only when the operator asks or names a *different project*; isolating agents is a prompt rule, never a reason for one. An agent's workspace is born with it: `c11 launch-agent --new-workspace --cwd <dir> --json`, then `c11 rename-workspace --workspace <workspace_ref> "<title>"`. `new-workspace` then a launch leaves an empty shell beside the agent.
 - **Two areas is the ceiling you reach on your own.** Count first: `c11 list-areas`. With one area, you may split once (`launch-agent --split right`, `new-split right`). With two or more, add panels: `--area <ref>` on `new-panel`, `launch-agent`, `browser open`, `markdown open`. A third area needs the operator's word.
 - **Group by kind.** What the operator reads (browsers, markdown) shares one area; what runs (agents, shells, tails) shares another.
 - **`launch-agent` without `--area` lands wherever the operator's focus is.** Pass an area explicitly.
 - **Browsers:** `c11 browser open <url>` anchors on you: the first one splits beside you when there is room, later ones join that browser area. Use it, not `open`, for a c11 browser panel.
 
 ```bash
-c11 launch-agent --type claude-code --delegated --area area:<n> --prompt-file <brief.md> --json   # or --split right while the workspace has one area
+c11 launch-agent --type claude-code --delegated --area area:<n> --prompt-file <brief.md> --json
 ```
 
-`--json` returns the worker's `panel_ref`; keep it to message or close the worker. With two areas, use the one holding agents and shells (`c11 tree`).
+`--json` returns the worker's `panel_ref`; keep it to message or close the worker. With two areas, pass the agents' area (`c11 tree`).
 
 Undersized splits are refused (`pane_too_small`). Detail: `c11 guide layout`.
 
@@ -95,8 +95,6 @@ c11 lower-flag --panel "$C11_PANEL_ID"
 Detail: `c11 guide attention`.
 
 ## Talking to other agents
-
-Two channels:
 
 - **`c11 send --workspace <ws> --panel <p> "<text>"`** types into another panel's terminal and submits one turn: a nudge or a short brief. It refuses a panel holding a draft or dialog and exits nonzero; never press Enter after a refused send. To an agent at its prompt, `delivered, submitted` means the agent took the line; `send_unconfirmed` (nonzero) means the text was typed but not taken: don't resend, read the panel. Detail: `c11 guide sending`.
 - **`c11 mailbox send --to <address> "<text>"`** is durable: requests, handoffs, completion reports, blockers. `--to-parent` reaches the panel that launched you, by UUID. Use the mailbox, not Claude's SendMessage, to reach another panel.

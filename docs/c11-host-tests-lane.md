@@ -33,7 +33,7 @@ The lane records that run as `yielded` and tries the same tip on a later wake. O
 
 ## The board
 
-Board writes go through `lattice` in `~/c11-host-tests/board` (a directory attached to `stage11/c11h`) as `agent:c11-host-tests`, with the lane's own token: the LaunchAgent sets `C11_HOST_TESTS_LATTICE` to `bin/lattice-lane`, a wrapper that loads `LATTICE_REMOTE_STAGE11_TOKEN` from `~/.config/stage11/c11-host-tests.env` (0600) for that one process. The build host's shared `~/.config/lattice/remotes.json`, which every other seat there uses, is never touched.
+Board writes go through `lattice` in `~/c11-host-tests/board` (a directory attached to `stage11/c11`) as `agent:c11-host-tests`, with the lane's own token: the LaunchAgent sets `C11_HOST_TESTS_LATTICE` to `bin/lattice-lane`, a wrapper that loads `LATTICE_REMOTE_STAGE11_TOKEN` from `~/.config/stage11/c11-host-tests.env` (0600) for that one process. The build host's shared `~/.config/lattice/remotes.json`, which every other seat there uses, is never touched.
 
 | Run | Board |
 |---|---|
@@ -56,7 +56,7 @@ On the build host, as its user:
 
 ```sh
 mkdir -p "$HOME/c11-host-tests/bin" "$HOME/c11-host-tests/logs" "$HOME/c11-host-tests/board" "$HOME/Library/LaunchAgents"
-git clone --no-tags https://github.com/Stage-11-Agentics/c11h.git "$HOME/c11-host-tests/worktree"
+git clone --no-tags https://github.com/Stage-11-Agentics/c11.git "$HOME/c11-host-tests/worktree"
 W="$HOME/c11-host-tests/worktree"
 git -C "$W" show origin/main:scripts/c11-host-tests.py > "$HOME/c11-host-tests/bin/.c11-host-tests.py.new"
 test "$(git -C "$W" show origin/main:scripts/c11-host-tests.py | shasum -a 256 | awk '{print $1}')" = \
@@ -72,7 +72,7 @@ set +a
 exec "$HOME/.local/bin/lattice" "$@"
 WRAPPER
 chmod 700 "$HOME/c11-host-tests/bin/lattice-lane"
-(cd "$HOME/c11-host-tests/board" && git init -q . && "$HOME/c11-host-tests/bin/lattice-lane" remote attach stage11 c11h)
+(cd "$HOME/c11-host-tests/board" && git init -q . && "$HOME/c11-host-tests/bin/lattice-lane" remote attach stage11 c11)
 sed "s|@HOME@|$HOME|g" "$W/scripts/launchd/com.stage11.c11-host-tests.plist.in" \
   > "$HOME/Library/LaunchAgents/com.stage11.c11-host-tests.plist"
 plutil -lint "$HOME/Library/LaunchAgents/com.stage11.c11-host-tests.plist"
@@ -80,7 +80,7 @@ launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.stage11.c11-h
 launchctl kickstart "gui/$(id -u)/com.stage11.c11-host-tests"
 ```
 
-Before installing, mint the lane's token on the build host (`lattice server token create --user human:atin --machine atlas-host-tests --actor agent:c11-host-tests --project c11h --json`, per `platform/lattice-hosted.md`) straight into `~/.config/stage11/c11-host-tests.env` (0600) as `LATTICE_REMOTE_STAGE11_TOKEN=<token>`, never printing it. Update: stage and verify the new script the same way, `launchctl bootout`, run `stop` (below), replace `bin/c11-host-tests.py`, bootstrap. Never point the LaunchAgent at the worktree copy.
+Before installing, mint the lane's token on the build host (`lattice server token create --user human:atin --machine atlas-host-tests --actor agent:c11-host-tests --project c11 --json`, per `platform/lattice-hosted.md`) straight into `~/.config/stage11/c11-host-tests.env` (0600) as `LATTICE_REMOTE_STAGE11_TOKEN=<token>`, never printing it. Update: stage and verify the new script the same way, `launchctl bootout`, run `stop` (below), replace `bin/c11-host-tests.py`, bootstrap. Never point the LaunchAgent at the worktree copy. A lane installed before 2026-11-28 has a worktree cloned from the archived private repo and a board directory and token for `stage11/c11h`: the script refuses that worktree's origin, so on that update move the old worktree aside (or `git -C "$W" remote set-url origin https://github.com/Stage-11-Agentics/c11.git`), re-attach `board` to `stage11/c11`, and mint a `--project c11` token.
 
 ## Check, run, stop, remove
 

@@ -1,6 +1,5 @@
-# C11H-130: keep c11's main shareable with a friend (Atin, 2026-11-03). The only workflow
-# enabled on c11: GitHub Actions run nothing else here, since macOS minutes are billed on a
-# private repo and the build host is the build gate. Budget: push 30 s, PR 2 min.
+# C11H-130: keep c11's main shareable with a friend (Atin, 2026-11-03): the scan, the guards'
+# tests, the localization catalog and the c11 card's size, on Linux. Budget: push 30 s, PR 2 min.
 name: c11 shareable
 
 on:
@@ -10,8 +9,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
-  pull-requests: read
 
 concurrency:
   group: c11-shareable-${{ github.ref }}
@@ -53,40 +50,3 @@ jobs:
       - name: The c11 card stays a card
         timeout-minutes: 1
         run: python3 scripts/check-skill-card-size.py
-
-      # A workflow file a PR adds runs on that PR before anything can disable it, and a c11
-      # sync brings c11's. Such a file stays out of c11: drop it from the sync (git rm).
-      # This and the next step hold the private development repo to this one workflow; the
-      # public repo runs its full CI.
-      - name: No new workflow files
-        if: github.event_name == 'pull_request' && github.repository == 'Stage-11-Agentics/c11h'
-        timeout-minutes: 1
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          added="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --paginate \
-            --jq '.[] | select((.status == "added" or .status == "renamed" or .status == "copied") and (.filename | startswith(".github/workflows/")) and .filename != ".github/workflows/c11-shareable.yml") | .filename')"
-          if [ -n "$added" ]; then
-            echo "This PR adds, renames or copies workflow files; c11 runs only c11-shareable.yml. Remove them from the PR:"
-            echo "$added"
-            exit 1
-          fi
-          echo "ok: no new workflow files"
-
-      - name: Only this workflow is enabled
-        if: github.repository == 'Stage-11-Agentics/c11h'
-        timeout-minutes: 1
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          others="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows" --paginate \
-            --jq '.workflows[] | select(.state == "active" and (.path | startswith(".github/workflows/")) and .path != ".github/workflows/c11-shareable.yml") | .path')"
-          # Until the rename's landing step disables it, main's old guard is still active (C11H-265).
-          others="$(printf '%s\n' "$others" | grep -v -x '.github/workflows/c11h-shareable.yml' || true)" # c11-2.0:keep
-          if [ -n "$others" ]; then
-            echo "These workflows are enabled on c11 and should not be (gh workflow disable <name>):"
-            echo "$others"
-            exit 1
-          fi
-          echo "ok: c11-shareable is the only enabled workflow"

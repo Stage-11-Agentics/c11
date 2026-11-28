@@ -26,7 +26,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENTITLEMENTS="$ROOT/c11.entitlements"
 INSTALL_SH="$ROOT/scripts/c11-install.sh"
 # C11H-130: the friend's install guide rides in the zip as README.md, so whoever is handed
-# the zip has the instructions without the private repo.
+# the zip has the instructions with it.
 GUIDE="${C11_FRIEND_GUIDE:-$ROOT/docs/c11-friend-install.md}"
 ARTIFACT="${C11_ARTIFACT:-$HOME/c11h-run/artifacts/c11/c11-macos.zip}"
 # c11-b is the shared tag for seats without their own lane. A private tag

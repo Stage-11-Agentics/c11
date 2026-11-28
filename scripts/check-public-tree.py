@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """C11H-268, C11H-284: fail when c11's tree holds something public c11 must not carry.
 
-c11's main becomes c11 2.0 in the public Stage-11-Agentics/c11 repo (C11.md, 2026-11-13).
+c11's main is the public Stage-11-Agentics/c11 repo's main (C11.md).
 
     scripts/check-public-tree.py [--root <repo>] [--allow-pending] [--no-gitleaks]
     scripts/check-public-tree.py --inherit [--baseline <ref>]
@@ -23,7 +23,8 @@ scripts/public-tree-allowlist.txt. It needs no baseline ref, so it runs in any c
   --allow-pending, which prepping uses to see the rest of the tree.
 
 --inherit is C11H-268's 1.x bar: measured against public c11's tree (--baseline, default
-`c11/main`), kinds and values that tree already carries are counted as inherited, not blocked.
+`origin/main`, else `c11/main` where a checkout names public c11 that way), kinds and values that
+tree already carries are counted as inherited, not blocked.
 
 Private terms (client and people names) can't be written into a public script, so they come
 from a private file, one term per line, matched case-insensitively as whole words: --terms, or
@@ -327,8 +328,9 @@ def main(argv):
     parser.add_argument("--strict", action="store_true", help="every kind blocks (the default)")
     parser.add_argument("--inherit", action="store_true",
                         help="the 1.x bar: pass kinds and values public c11 already carries (needs --baseline)")
-    parser.add_argument("--baseline", default="c11/main",
-                        help="with --inherit, public c11's tree to measure against (default c11/main)")
+    parser.add_argument("--baseline",
+                        help="with --inherit, public c11's tree to measure against "
+                             "(default origin/main, else c11/main)")
     parser.add_argument("--allow-pending", action="store_true",
                         help="report PENDING_PATHS without failing on them (prep only; never for the push)")
     parser.add_argument("--allowlist")
@@ -363,10 +365,16 @@ def main(argv):
 
     base_sha = None
     if not strict:
-        try:
-            base_sha = git(root, "rev-parse", "--verify", args.baseline + "^{tree}").strip()
-        except RuntimeError:
-            config_error("baseline %s is missing, so nothing was measured (git fetch c11 main)" % args.baseline)
+        for ref in [args.baseline] if args.baseline else ["origin/main", "c11/main"]:
+            try:
+                base_sha = git(root, "rev-parse", "--verify", ref + "^{tree}").strip()
+            except RuntimeError:
+                continue
+            args.baseline = ref
+            break
+        if base_sha is None:
+            config_error("baseline %s is missing, so nothing was measured (git fetch origin main)"
+                         % (args.baseline or "origin/main (or c11/main)"))
 
     started = None if args.no_gitleaks else start_gitleaks(root)
     base_kinds, base_values = measure_baseline(root, base_sha) if not strict else ({}, set())

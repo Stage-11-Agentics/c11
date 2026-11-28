@@ -29,8 +29,9 @@ this taxonomy:
 - **Agents inside c11 terminals (semi-trusted).** Processes spawned
   inside a c11 panel — typically Claude Code, Codex, shell sessions.
   Treated as semi-trusted by default: the socket-control mode
-  (`cmuxOnly`) limits commands to processes that are descendants of the
-  c11 app, but those processes can run arbitrary code in the operator's
+  (`c11Only`) limits commands to processes that are descendants of the
+  c11 app or run in a terminal c11's own hc core holds (section 8), but
+  those processes can run arbitrary code in the operator's
   environment. The trust delegation is "the operator put this agent
   here on purpose" — c11 doesn't sandbox agents beyond what macOS
   hardened runtime gives it.
@@ -43,7 +44,7 @@ this taxonomy:
 
 - **External local processes (gated).** Other processes on the same
   machine (not descended from c11) attempting to talk to the c11
-  socket. Default `cmuxOnly` rejects them via an ancestor-PID gate.
+  socket. Default `c11Only` rejects them via an ancestor-PID gate.
   `automation` opens to any same-uid process. `password` requires the
   shared secret. `allowAll` removes all gates and widens socket
   permissions to `0o666`.
@@ -52,7 +53,8 @@ Evidence:
 
 ```
 Sources/SocketControlSettings.swift                   (mode definitions)
-Sources/TerminalController.swift:2228-2233            (c11Only ancestry check)
+Sources/TerminalController.swift:2456-2483            (c11Only gate: ancestry, then hc terminal ownership)
+Sources/HC/HCProcessAdmission.swift:276               (ownership walk against c11's own hc core)
 ```
 
 ---
@@ -105,6 +107,10 @@ canonical parser as in-app links: at most 128 UTF-8 bytes; only
 port, escaping, query, fragment or extra path segment. Malformed,
 oversized and unavailable targets produce a bounded notice and are
 consumed, never passed to another application or treated as paths.
+`c11h://` is a hidden alias for the same two forms (`PanelLinkFormat.swift:14`):
+the parser, the outside confirmation and every in-app gate treat it exactly as
+`c11://`, and no c11 build registers it with Launch Services (see below), so it
+grants nothing `c11://` does not.
 
 Every admitted outside request shows a nonmodal, nonactivating confirmation
 window above the frontmost app, on the pointer's display and active Space.
@@ -186,7 +192,9 @@ The build generates its Info.plist with that identity/configuration policy;
 Debug products omit only `c11`, preserving their existing web schemes. The
 nightly rebrand and, since 1.7.9 (C11-556), proof-signed QA apps
 (`scripts/sign_artifact.py`, purpose `proof`) also remove only `c11`. c11 does not set Launch Services
-preferences or appoint itself as the default handler.
+preferences or appoint itself as the default handler. The same generator removes
+`c11h` from every c11 build in every configuration
+(`scripts/prepare-info-plist.py:14-31`).
 
 Staging copies use the C11-536 isolation procedure: remove the entire
 `CFBundleURLTypes` entry before ad hoc signing and launch, so they claim
@@ -210,7 +218,9 @@ Evidence:
 
 ```
 Resources/Info.plist                                   (CFBundleURLTypes)
-Sources/AppDelegate.swift                              (application(_:open:), exact live target resolution)
+Sources/AppDelegate.swift:2799-2872                    (Get URL handler, routeExternalGetURL, application(_:open:))
+Sources/AppDelegate.swift                              (exact live target resolution)
+Sources/PanelLinkFormat.swift:14-23                    (accepted schemes: c11, and the hidden c11h alias)
 Sources/PanelLinkActivation.swift                      (strict parser and outside confirmation)
 scripts/prepare-info-plist.py                         (production identity and Release configuration only)
 GhosttyTabs.xcodeproj/project.pbxproj                  (generated Info.plist is the build input)
@@ -239,11 +249,14 @@ renders HTML. The relevant ATS posture:
 
 The browser exposes no page-reachable bridge to the c11 socket. Markdown
 uses a separate, allowlisted `c11md` script-message channel described below;
-its controller is never shared with browser content. As of 1.6 there are
-two `WKScriptMessageHandler`s: `c11md` (markdown only) and `c11PanelLink`
-(Panel links, below), which is registered only in the isolated
-`c11.panel-links` content world. New handlers must be recorded here when
-introduced. The ATS relaxation applies to markdown too,
+its controller is never shared with browser content. There are four
+`WKScriptMessageHandler`s: `c11md` (markdown only); `c11PanelLink` (Panel
+links, below), registered only in the isolated `c11.panel-links` content
+world; `c11FocusState` (Page guards, below), registered only in the isolated
+`c11-focus` world of every browser panel; and `c11ShowFrame` (see "The `c11
+show` viewer"), registered only in the isolated `c11-show` world of a show
+viewer. Page scripts can reach none of the last three. New handlers must be
+recorded here when introduced. The ATS relaxation applies to markdown too,
 so its CSP and native navigation policy enforce the offline boundary.
 
 Terminal and markdown link clicks share one router (`openC11WebLink`,
@@ -268,12 +281,18 @@ selected workspace, so it is gated on native operator input:
   left click or Return with no modifiers and no `target` other than `_self`,
   and a matching native mouse-up (within 2 points) or Return recorded by the
   web view within one second. A recent input alone never grants navigation.
+  Known fail-closed gap: the listener's pattern
+  (`PanelLinkActivation.swift:275`) matches `c11://` but not the `c11h://`
+  alias, so a `c11h://` anchor in a web view never activates and its
+  navigation is cancelled like any other panel link.
 - Browser origins are limited to main-frame `file://` pages and HTTP(S) on
   exactly `localhost`, `127.0.0.1` or `::1`; the markdown renderer only from
   its own entry page. Other origins, iframes, scripts, redirects, forms,
   popups, `window.open`, Cmd/middle/modified clicks and `target=_blank` are
-  refused, and every `c11:` navigation that reaches `decidePolicyFor` is
-  cancelled, as is a popup to one. The omnibar refuses a typed `c11://` URL
+  refused, and every `c11:` or `c11h:` navigation that reaches
+  `decidePolicyFor` is cancelled, as is a popup to one; neither is ever
+  handed to macOS (`BrowserPanel.swift:1757-1771`). The omnibar refuses a
+  typed `c11://` URL
   with a notice; `browser open|goto` and the CLI return
   `operator_activation_required`.
 - Terminals act only on a native Cmd-click on a bare `c11://` URL (Ghostty's
@@ -362,6 +381,37 @@ added to the allowlist. An unattended app therefore cannot be walked
 into an `http://` allowlist entry by a page that raises a prompt
 nobody can answer.
 
+Page guards (2.0, C11H-377). A page reaches the operator's screen and keys
+only with the operator's activation: a real key or mouse event AppKit
+delivered to that page's web view. A page's own `click()` or `dispatchEvent`
+never reaches AppKit, so it never counts. One gate per panel, shared with its
+popups, decides:
+
+- **JavaScript dialogs.** `alert`, `confirm` and `prompt` show at once only
+  while the page is on screen and the operator is with it: the page holds
+  focus in the key window, or the operator touched it in the last five
+  seconds. Otherwise one dialog per web view waits, with a notice, until the
+  operator clicks or types in that page; a second request while one waits
+  gets its safe default. At most three dialogs show per ten seconds per panel;
+  past that, the safe default. A waiting dialog answers its safe default when
+  its web view is replaced (crash recovery, hibernation, a profile switch) or
+  the panel closes. Presentation is still only a sheet through
+  `browserPresentModalAlert`.
+- **Downloads.** A download proceeds only within ten seconds of the
+  operator's input on the page, an address-bar submit, or a local `browser.*`
+  socket command on the panel; otherwise it is cancelled with a notice.
+  Closing a panel cancels its downloads and removes their partial files.
+- **Popups.** A scripted `window.open` opens a window only within five
+  seconds of the operator's input on that page while it is on screen. A
+  refused popup does not fall back to a new panel.
+- **Focus tracking.** Address-bar focus restore runs in the isolated
+  `c11-focus` content world in every frame. Page scripts cannot see it or
+  reach its `c11FocusState` handler, which accepts only messages from that
+  world and its own web view and records only whether a field holds focus;
+  WebKit's `frameInfo`, not the message, names the frame. A configuration's
+  script message handlers are removed when the last web view made from it
+  closes.
+
 A socket caller may instead consent explicitly (0.65.1, C11-207):
 `browser open|goto --allow-insecure-http` (socket field
 `allow_insecure_http: true`) grants exactly one navigation to exactly
@@ -374,6 +424,23 @@ the panel at any https site, and the loopback hosts agents actually
 validate against (`localhost`, `127.0.0.1`, `::1`, `*.localtest.me`)
 were allowed by default before this change. Page content cannot set the
 flag; only the socket caller can.
+
+Browsers in a `c11 ssh` workspace (2.0, #370). Such a panel sends its traffic
+through the workspace's loopback proxy broker, which accepts only clients that
+present its credential (SOCKS5 username and password, or HTTP CONNECT Basic),
+drawn fresh from the system random generator at each broker start and compared
+in constant time. WebKit sends literal loopback hosts around any proxy, so a
+content rule list blocks every load (documents, subresources, fetch/XHR,
+WebSockets) whose host is `localhost`, a `.localhost` name, 127.0.0.0/8,
+0.0.0.0, `::1` or an IPv4-mapped loopback address. c11's own
+`c11-loopback.localtest.me` rewrite, which the proxy carries to the remote's
+loopback, is unaffected, and panels outside those workspaces never get the
+list. A load waits until both the broker endpoint and the list are in place.
+While the broker is down, the panel proxies to a listener c11 holds on
+127.0.0.1 that resets every connection, so requests fail rather than go
+direct, and the panel shows a banner; if that listener cannot open, the page
+is taken down and held until the broker returns. Favicon fetches take the
+same route, and a favicon redirect to a loopback host is refused.
 
 Browser profiles (1.0, C11-289/C11-311): each non-default profile has
 its own `WKWebsiteDataStore(forIdentifier:)`, so cookies and storage do
@@ -444,14 +511,36 @@ opened by path, not atomically. Open Link in Default Browser applies the
 same checks to a show link. A linked machine's viewer hands out nothing:
 no page, and no link from its menu. The session refuses its paths itself,
 and a show viewer's web view whose session is gone refuses every link.
+The viewer's own fence is described in "The `c11 show` viewer".
 
 Evidence:
 
 ```
-Resources/Info.plist:204-218                           (NSAppTransportSecurity)
+Resources/Info.plist:206-220                           (NSAppTransportSecurity)
 Sources/Panels/BrowserPanel.swift                      (browser substrate; websiteDataStore(for:) per profile)
 Sources/Panels/BrowserPanel.swift:17-38                (openC11WebLink, shared terminal/markdown link router)
+Sources/Panels/BrowserPanel.swift:1757-1771            (panel links never handed to macOS; c11:/c11h: navigations cancelled)
 Sources/PanelLinkActivation.swift                      (c11:// parser, origin and native-intent policy, isolated-world listener, terminal policy and preview)
+Sources/PanelLinkActivation.swift:275                  (isolated-world listener pattern; c11h:// not matched, fail-closed)
+Sources/Panels/BrowserPageGuards.swift:13-31           (operator activation windows)
+Sources/Panels/BrowserPageGuards.swift:43-112          (download policy; downloads cancelled and removed on close)
+Sources/Panels/BrowserPageGuards.swift:116-129         (popup policy)
+Sources/Panels/BrowserPageGuards.swift:133-314         (JS dialog policy, rate limit and gate)
+Sources/Panels/BrowserPageGuards.swift:323-458         (c11-focus world, c11FocusState handler)
+Sources/Panels/BrowserPageGuards.swift:471             (script message handler lease)
+Sources/Panels/BrowserPanel.swift:2822                 (a replaced web view's waiting dialog answers its safe default)
+Sources/Panels/BrowserPanel.swift:3363                 (focus tracking installed in every browser configuration)
+Sources/Panels/BrowserPanel.swift:7949                 (download decision)
+Sources/Panels/BrowserPanel.swift:8016                 (JS dialogs through the gate)
+Sources/Panels/BrowserPanel.swift:8088                 (scripted popups need operator input)
+Sources/Panels/BrowserPanel.swift:52-67                (c11 ssh broker credential)
+Sources/Panels/BrowserPanel.swift:80-189               (c11 ssh routing; favicon route and redirect guard)
+Sources/Panels/BrowserPanel.swift:196                  (load gate: waits for broker endpoint and loopback list)
+Sources/Panels/BrowserPanel.swift:250-354              (c11 ssh loopback content rule list)
+Sources/Panels/BrowserPanel.swift:356-429              (refusing 127.0.0.1 listener while the broker is down)
+Sources/Panels/BrowserPanelView.swift:611              (broker-down banner)
+Sources/Workspace.swift:3745-4055                      (broker handshake: credential, constant-time compare)
+Sources/Workspace.swift:4615-4630                      (fresh credential per broker start)
 Sources/AppDelegate.swift                              (openPanelLink: the only link-driven workspace selection)
 Sources/Panels/MarkdownWebRenderer.swift               (installs the panel-link listener for the markdown entry page)
 Resources/markdown-viewer/viewer.js                    (sanitizer ALLOWED_URI_REGEXP admits c11:)
@@ -679,34 +768,34 @@ Evidence:
 Sources/MarkdownAssetPolicy.swift:19-55               (pinned descriptor reads)
 Sources/MarkdownAssetPolicy.swift:58-74               (scope root: nearest .git ancestor)
 Sources/MarkdownAssetPolicy.swift:80                  (CSP)
-Sources/MarkdownAssetPolicy.swift:85-93               (retargeted image root, never wider)
-Sources/MarkdownAssetPolicy.swift:98-141              (scheme handler path and type policy)
-Sources/MarkdownAssetPolicy.swift:152-214             (link and mailto validation)
-Sources/MarkdownAssetPolicy.swift:235-345             (navigation scope, markdown-only, agentCLI exemption)
-Sources/Panels/MarkdownWebRenderer.swift:552-689       (c11md message validation and dispatch)
-Sources/Panels/MarkdownWebRenderer.swift:753-868       (link routing and peek reads)
-Sources/Panels/MarkdownWebRenderer.swift:874-885       (navigation and new-window denial)
-Sources/Panels/MarkdownWebRenderer.swift:5-25         (scheme handler; image root retargeted per document)
-Sources/Panels/MarkdownWebRenderer.swift:965-985       (configuration)
-Sources/MarkdownCorpusIndex.swift:99-117               (corpusNavigate validation)
-Sources/MarkdownCorpusIndex.swift:177-196              (corpus bounds and skipped directories)
-Sources/MarkdownCorpusIndex.swift:422-449              (git check-ignore on file events)
-Sources/MarkdownCorpusIndex.swift:678-690              (git ls-files discovery)
-Sources/MarkdownCorpusIndex.swift:839-891              (read-only .lattice ticket cards)
+Sources/MarkdownAssetPolicy.swift:89-93               (retargeted image root, never wider)
+Sources/MarkdownAssetPolicy.swift:95-151              (scheme handler path and type policy)
+Sources/MarkdownAssetPolicy.swift:155-224             (link and mailto validation)
+Sources/MarkdownAssetPolicy.swift:234-355             (navigation scope, markdown-only, agentCLI exemption)
+Sources/Panels/MarkdownWebRenderer.swift:607-747       (c11md message validation and dispatch)
+Sources/Panels/MarkdownWebRenderer.swift:811-933       (link routing and peek reads)
+Sources/Panels/MarkdownWebRenderer.swift:938-949       (navigation and new-window denial)
+Sources/Panels/MarkdownWebRenderer.swift:7-55         (scheme handler; image root retargeted per document)
+Sources/Panels/MarkdownWebRenderer.swift:1016-1053     (configuration and c11md handler)
+Sources/MarkdownCorpusIndex.swift:100-118              (corpusNavigate validation)
+Sources/MarkdownCorpusIndex.swift:245-265              (corpus bounds and skipped directories)
+Sources/MarkdownCorpusIndex.swift:557-587              (git check-ignore on file events)
+Sources/MarkdownCorpusIndex.swift:827-839              (git ls-files discovery)
+Sources/MarkdownCorpusIndex.swift:988-1040             (read-only .lattice ticket cards)
 Sources/UntrustedRepositoryGit.swift:45-59             (git -c overrides)
 Sources/UntrustedRepositoryGit.swift:86-123            (git environment; work-tree pin for .topLevel)
 Sources/UntrustedRepositoryGit.swift:176-256           (filter.* scan and overrides for status)
 Sources/WorkspaceBlueprintStore.swift:29-49            (reference normalization, path shape and safe default)
-Sources/WorkspaceBlueprintStore.swift:187-196          (builtInEntry and reserved reference lookup)
-Sources/WorkspaceBlueprintStore.swift:200-216          (resolveLayoutReference: saved URL and name precedence)
-Sources/WorkspaceManager.swift:1922-1983               (workspace git probe, hardened status)
+Sources/WorkspaceBlueprintStore.swift:278-287          (builtInEntry and reserved reference lookup)
+Sources/WorkspaceBlueprintStore.swift:291-307          (resolveLayoutReference: saved URL and name precedence)
+Sources/WorkspaceManager.swift:2354-2416               (workspace git probe, hardened status)
 Sources/Metadata/GitContextResolver.swift:198-266      (ProcessGitRunner via UntrustedRepositoryGit)
 Sources/SocketHandlers/MarkdownFeedbackHandlers.swift:295-315   (markdown socket methods)
 Sources/SocketHandlers/MarkdownFeedbackHandlers.swift:460-517   (markdown.navigate, agentCLI origin)
 Sources/SocketHandlers/MarkdownFeedbackHandlers.swift:859-900   (markdown.open_external)
 Resources/markdown-viewer/viewer.js:28-33              (markdown-it config)
-Resources/markdown-viewer/viewer.js:164-168            (DOMPurify config)
-Resources/markdown-viewer/viewer.js:913-1060           (Mermaid config, math labels and SVG cleaning)
+Resources/markdown-viewer/viewer.js:200-203            (DOMPurify config)
+Resources/markdown-viewer/viewer.js:1041-1194          (Mermaid config, math labels and SVG cleaning)
 Resources/markdown-viewer/BRIDGE.md                    (renderer contract)
 c11Tests/MarkdownAssetPolicyTests.swift               (positive and negative capabilities)
 c11Tests/MarkdownCorpusIndexTests.swift               (corpus discovery and bounds; hostile repository config)
@@ -742,11 +831,11 @@ require an entry there and must be reflected in this doc.
 Evidence:
 
 ```
-Resources/Info.plist:94-138                            (NSAppleScriptEnabled, OSAScriptingDefinition, NSServices)
+Resources/Info.plist:106-150                           (NSAppleScriptEnabled, OSAScriptingDefinition, NSServices)
 Resources/c11.sdef                                     (scripting dictionary; 1.0 changes description text only)
-Sources/AppDelegate.swift:7168                         (openWindow service entry)
-Sources/AppDelegate.swift:7176                         (openTab service entry)
-Sources/AppDelegate.swift:7189                         (openFromServicePasteboard)
+Sources/AppDelegate.swift:8247                         (openWindow service entry)
+Sources/AppDelegate.swift:8255                         (openTab service entry)
+Sources/AppDelegate.swift:8268                         (openFromServicePasteboard)
 ```
 
 ---
@@ -802,23 +891,46 @@ ghostty/                                               (Zig submodule loaded as 
 ## 8. Socket control
 
 The c11 socket is a Unix-domain socket at
-`~/Library/Application Support/c11/c11.sock` (release) or
-`/tmp/c11-debug*.sock` (debug; tagged builds use
-`/tmp/c11-debug-<tag>.sock`). Control modes are defined by
+`~/Library/Application Support/c11/c11.sock` (release). Debug, staging,
+nightly and tagged builds bind in c11's per-user folder,
+`$(getconf DARWIN_USER_TEMP_DIR)c11`, as `c11-debug.sock`,
+`c11-staging.sock`, `c11-nightly.sock` or `c11-debug-<tag>.sock` (a long
+name is shortened with a hash to fit `sun_path`). That folder is created
+`0700`, must be owned by the operator and must not be a symlink, so another
+local account cannot take a fixed socket name first, as it could in shared
+`/tmp`. For shells started with an older `/tmp/<name>.sock` path, c11 keeps a
+symlink at that name pointing at its socket. It replaces the name only when it
+is missing, c11's own symlink, or c11's own socket with no listener, and an
+entry another account owns is left alone. Control modes are defined by
 `SocketControlMode`:
 
 | Mode         | Who can connect                                  | Socket perms |
 | ------------ | ------------------------------------------------ | ------------ |
 | `off`        | Nobody — listener disabled.                       | n/a          |
-| `c11Only`    | Processes whose ancestry includes the c11 app.    | `0o600`      |
+| `c11Only`    | Processes whose ancestry includes the c11 app or a terminal c11's own hc core holds. | `0o600`      |
 | `automation` | Any local process with the same uid.              | `0o600`      |
 | `password`   | Any local process that authenticates.             | `0o600`      |
 | `allowAll`   | Anyone with filesystem access to the socket file. | `0o666`      |
 
-Default mode on a fresh install: `c11Only`. The ancestry gate walks the
-connecting process's parents (`TerminalController.parentPid(of:)`,
-`TerminalController.swift:1102`) and rejects when c11 is not on the
-chain. As of v0.58.0, command *dispatch* lives in per-domain handlers
+A `C11_SOCKET_PATH` override is honored only for a path c11 owns: one under
+`Application Support/c11/`, or one named `c11.sock`, `c11-…` or `c11.…` in
+the per-user folder or `/tmp`. Any other path is never bound. The
+breadcrumbs that name the last bound socket (in `Application Support/c11/`,
+the per-user folder, and `/tmp/c11-last-socket-path` for older readers) are
+written `0600` through an exclusive, no-follow temporary file and a rename.
+One another account owns is left alone, and a breadcrumb is read only when it
+is a regular file the operator owns with a single link.
+
+Default mode on a fresh install: `c11Only`. The gate walks the connecting
+process's parents (`TerminalController.parentPid(of:)`,
+`TerminalController.swift:1274`). A process with c11 on that chain is
+admitted. Terminals that hc holds are not descendants of c11, so a process
+outside c11's chain is admitted only when its own chain, with the operator's
+uid at every step, reaches the root process of a terminal that c11's own hc
+core records; until that is proven, each command is refused
+(`hc_inventory_pending`, `hc_caller_not_owned`). A peer whose pid cannot be
+read is admitted only when it runs as the operator's uid. As of v0.58.0,
+command *dispatch* lives in per-domain handlers
 under `Sources/SocketHandlers/`; the connection ACL and ancestry gate
 remain in `TerminalController`. Also as of v0.58.0, panel-scoped
 write commands reject empty or absent panel refs outright — a write
@@ -827,9 +939,11 @@ malformed ref.
 
 Password mode reads its secret from (in order):
 1. `C11_SOCKET_PASSWORD` environment variable
-   (`SocketControlSettings.swift:337`).
+   (`SocketControlSettings.swift:301`).
 2. The file `~/Library/Application Support/c11/socket-control-password`.
-3. The legacy Keychain item, read lazily at most once per process.
+
+c11 neither reads nor deletes the legacy cmux Keychain item and does not
+migrate it (`SocketControlSettings.swift:136-147`, `:223-235`).
 
 Login (`auth` / `auth.login`) lasts for one connection. The mode is read
 per command, so switching to password mode also locks connections that
@@ -933,11 +1047,26 @@ Other local artifacts added in 1.0, all owner-only:
   created `O_EXCL | O_NOFOLLOW`, removed when the panel closes).
 - The messages page (section 4).
 
+Private storage modes (2.0, C11H-364):
+
+- c11's per-user folder (`$(getconf DARWIN_USER_TEMP_DIR)c11`, `0700`) holds
+  non-release sockets, dev and debug logs, breadcrumbs and `wait-for`
+  channels. c11 writes shared `/tmp` names only through helpers that never
+  write through an entry another account owns.
+- At launch, c11 sets its store folders `~/.c11-snapshots`, `~/.cmuxterm` and
+  `~/.c11` to `0700` when each exists, is a folder the operator owns and is
+  not a symlink. Files inside are left as they are, since the folder closes
+  them, and store files c11 writes there are `0600`.
+- A `c11 state save --out` copy (socket `session.save`), which holds
+  scrollback, is written `0600`, with missing folders created `0700`. A
+  non-empty folder at the destination is refused, never deleted.
+
 Changes to what reaches the socket and agents in 1.0:
 
 - The `c11 ssh` remote command relay is gone: c11 no longer serves
   socket commands back to a remote host, and `c11` inside an ssh
-  workspace reports itself unavailable. The SSH browser proxy remains.
+  workspace reports itself unavailable. The SSH browser proxy remains
+  (its 2.0 guards are in section 4).
 - `c11 rpc <method> [json]` is a CLI convenience that sends one raw
   v2 request. It goes through the same connection gate and reaches no
   method the socket did not already expose.
@@ -1021,14 +1150,31 @@ Evidence:
 
 ```
 Sources/SocketControlSettings.swift:9                  (mode enum; .c11Only)
-Sources/SocketControlSettings.swift:79-135             (password source order: env, file, legacy Keychain)
-Sources/SocketControlSettings.swift:337                (C11_SOCKET_PASSWORD)
-Sources/TerminalController.swift:358                   (accessMode = .c11Only default)
-Sources/TerminalController.swift:1102                  (ancestry walk, parentPid(of:))
-Sources/TerminalController.swift:1916                  (authResponseIfNeeded, per-connection login)
-Sources/TerminalController.swift:2228                  (c11Only connection check)
-Sources/TerminalController.swift:2267                  (serveClientCommandLines; watch-stream login check)
-Sources/TerminalController.swift:2363                  (serveCommandLines, newline framing)
+Sources/SocketControlSettings.swift:80-102             (password source order: env, then file)
+Sources/SocketControlSettings.swift:136-147            (legacy Keychain migration removed)
+Sources/SocketControlSettings.swift:223-235            (legacy Keychain never read or deleted)
+Sources/SocketControlSettings.swift:301                (C11_SOCKET_PASSWORD)
+Sources/SocketControlSettings.swift:488-496            (tagged Debug override: own paths only)
+Sources/SocketControlSettings.swift:596-606            (last-socket-path breadcrumbs)
+Sources/SocketControlSettings.swift:612-638            (legacy /tmp alias names)
+Sources/SocketControlSettings.swift:653-664            (override honored only for c11's own paths)
+Sources/C11Identity.swift:73-92                        (non-release sockets in the per-user folder)
+Sources/C11Identity.swift:139-161                      (isOwnSocketFileName, isOwnSocketPath)
+Sources/C11UserRuntime.swift:5-14                      (per-user folder rules)
+Sources/C11UserRuntime.swift:52-64                     (folder location, 0700, owned, not a symlink)
+Sources/C11UserRuntime.swift:100-139                   (breadcrumb write and read)
+Sources/C11UserRuntime.swift:283-322                   (legacy /tmp alias install)
+Sources/TerminalController.swift:441                   (accessMode = .c11Only default)
+Sources/TerminalController.swift:1274                  (ancestry walk, parentPid(of:))
+Sources/TerminalController.swift:2136                  (authResponseIfNeeded, per-connection login)
+Sources/TerminalController.swift:2456-2483             (c11Only connection check and hc ownership admission)
+Sources/HC/HCProcessAdmission.swift:276                (ownership walk against c11's own hc core)
+Sources/TerminalController.swift:2492                  (serveClientCommandLines; watch-stream login check)
+Sources/TerminalController.swift:2627                  (serveCommandLines, newline framing)
+Sources/PrivateFileWriter.swift:57-88                  (store folders tightened to 0700 at launch)
+Sources/PrivateFileWriter.swift:150-162                (state save --out copy: 0600, non-empty folder refused)
+Sources/AppDelegate.swift:3184-3195                    (launch-time store folder tightening)
+Sources/AppDelegate.swift:3907-3916                    (state save --out copy)
 Sources/Events/EventEmitter.swift:5-21                 (activity history policy keys and defaults)
 Sources/Events/EventEmitter.swift                      (panel.input_sent payload, 256 KiB text cap)
 Sources/Events/EventLog.swift                          (per-instance log, 0600/0700 modes, age and byte retention)
@@ -1119,6 +1265,124 @@ c11Tests/HCRemotePanelTests.swift                      (HCRemoteFileDropTests)
 
 ---
 
+## The `c11 show` viewer (2.0: C11H-228, C11H-247, C11H-353, C11H-377, C11H-386)
+
+`c11 show <path|url>` opens a display-only browser viewer beside the calling
+agent's panel. An agent on a linked machine reaches it through the relay,
+whose only panel-creating methods are `show.open` and `show.close`. A relayed
+show carries no machine, placement or session parameter, and a path is always
+read on the caller's own machine. The agent can show, show again and close
+what it showed. It cannot evaluate script in a viewer, click in it, read it or
+navigate it. A show that lands while c11 is away waits as a Feed row and
+opens only when the operator opens the panel that showed it (from Feed or a
+jump), never from an agent's request.
+
+Every viewer, wherever its show came from:
+
+- uses its own non-persistent `WKWebsiteDataStore`, so a shown page never
+  rides the operator's cookies or storage;
+- serves a shown file under `c11-show://` through a `WKURLSchemeHandler` that
+  maps an address back only to the shown file and, with `--dir`, to files
+  strictly inside that folder (symlinks resolved, and an extension allowlist
+  that excludes SVG and anything executable);
+- never downloads, opens no popup window, and shows no JavaScript dialog
+  (each gets its safe default);
+- carries the `c11ShowFrame` handler in the isolated `c11-show` world. Its
+  script posts from every frame but the top one, WebKit's `frameInfo`, not the
+  message, decides that the message came from a subframe, and the handler only
+  marks the current document as having embedded content;
+- never treats a `localtest.me` name as a known plain-HTTP host, because
+  every such name answers with 127.0.0.1.
+
+A `c11-show:` address typed or picked in any other panel is refused with a
+notice and is never searched. A show from this Mac has no further fence,
+because its agent can already run anything here.
+
+**The fence for a linked machine's show.** A viewer of anything shown from a
+linked machine is fenced so that nothing it loads reaches this Mac:
+
+- Page script runs only in a document c11 serves itself under `c11-show:`.
+  Any other main-frame document (a URL shown from there, or a page the viewer
+  reaches) runs with JavaScript off. A CSP does not govern WebRTC, so peer
+  connections are turned off; where WebKit cannot turn them off, no page in
+  the viewer runs script.
+- Every response the scheme handler serves carries a CSP that confines
+  script, styles, images, fonts, media and connections to `c11-show:` (plus
+  inline, `data:` and `blob:` content that loads nothing). It denies frames,
+  workers, objects, manifests, forms and base override, and sandboxes the page
+  to `allow-scripts allow-same-origin`.
+- Every navigation, server redirect hop and popup passes the rule for a shown
+  URL. `file:` and other schemes, loopback, unspecified, link-local and every
+  address or name of this Mac are refused. A host name is judged by what it
+  resolves to, and a name that does not resolve in time is refused. A popup
+  loads in the viewer, through the same rule.
+- A content rule list blocks every load, document or subresource, to
+  loopback, link-local and this Mac's own interface addresses before any
+  connection is made. It is rebuilt when an interface changes, and the viewer
+  loads nothing until it is in place.
+- Every connection from the viewer's data store goes through a SOCKS5
+  listener inside c11, bound to 127.0.0.1 and requiring a per-process secret
+  as its password. It resolves each name once, refuses the connection when
+  any answer is forbidden, and dials the exact address it checked, so a name
+  that answers differently at connect time (DNS rebinding) still cannot reach
+  this Mac. If the listener cannot start, the viewer loads nothing. c11
+  fetches no favicon for the viewer, since that fetch would bypass the
+  listener.
+- The viewer hands nothing to the default browser (section 4).
+
+What the fence does not stop: a document in the viewer can still send
+requests whose answers it cannot read (the subresources of a page that runs
+no script, a link the operator clicks, a preconnect) to any address that is
+not this Mac's, including other devices on the operator's networks. A served
+page's own loads stay inside `c11-show:` under its CSP.
+
+**Point and say.** An operator's Option-click on a viewer (a real mouse-down
+the window server delivered to its web view, with Option and without Command
+or Control) on the shown page, or another page of the same source, reads the
+clicked element after the click, from WebKit's client content world
+(`.defaultClient`), which page scripts cannot see or alter. There is no
+script message handler for it, so a page cannot start it.
+The operator's typed line goes as mail to the showing agent's panel with the
+element's selector, up to 280 characters of its text, the page's address and
+hash, and a cropped screenshot. On any other page the Option-click belongs to
+the page and nothing is read. A page with any embedded document gets no
+screenshot: WebKit's frame reports and the `c11ShowFrame` probe mark it, and a
+whole-page check runs again just before the capture. The element text is page
+content: the agent receives it as mail text, within the semi-trusted agent
+tier (section 1).
+
+```
+Sources/Relay/C11RelayPolicy.swift:80-86               (show.open and show.close, forbidden placement keys)
+Sources/AppDelegate.swift:15738-15743                  (away shows open only on the operator's own open)
+Sources/Show/ShowRecords.swift:168-203                 (away shows: opened from Feed or a jump)
+Sources/Show/ShowViewers.swift:76-117                  (embedded-content mark, non-persistent store, guard, scheme handler, no hand-off)
+Sources/Show/ShowViewers.swift:1128-1156               (c11ShowFrame probe in the c11-show world)
+Sources/Show/ShowSchemeHandler.swift:5-105             (serve scope: entry file and --dir only)
+Sources/Show/ShowPolicy.swift:84-186                   (shown-URL rule, forbidden addresses, resolved names)
+Sources/Show/ShowPolicy.swift:234-285                  (asset extension allowlist, inside-root check)
+Sources/Show/ShowPolicy.swift:337-447                  (ShowPageGuard: script rule, CSP, navigation rule)
+Sources/Show/ShowViewerLoopbackBlocker.swift:7-23      (own-address content rule list)
+Sources/Show/ShowGuardProxy.swift:5-16                 (guard proxy: 127.0.0.1, per-process secret, pinned dial)
+Sources/Show/ShowGuardProxy.swift:64-137               (listener start and data store pin)
+Sources/Show/ShowGuardProxy.swift:328-347              (SOCKS5 password check)
+Sources/Show/ShowPointAndSay.swift:5-26                (point and say: native Option-click only)
+Sources/Show/ShowPointAndSay.swift:55-90               (element read and embedded-content check scripts)
+Sources/Show/ShowPointAndSay.swift:348-349             (element read in .defaultClient world)
+Sources/Panels/BrowserPageGuards.swift:162-182         (a viewer shows no JS dialog)
+Sources/Panels/BrowserPanel.swift:1279                 (viewer insecure-HTTP list excludes localtest.me)
+Sources/Panels/BrowserPanel.swift:3300                 (viewer never downloads)
+Sources/Panels/BrowserPanel.swift:3332-3351            (viewer store, scheme handler, probe, script off, peer connections off)
+Sources/Panels/BrowserPanel.swift:3684-3690            (no popup window in a viewer)
+Sources/Panels/BrowserPanel.swift:3805-3812            (guard proxy pinned on a fenced viewer's store)
+Sources/Panels/BrowserPanel.swift:3838-3863            (own-address list installed before load)
+Sources/Panels/BrowserPanel.swift:4604-4605            (no favicon fetch for a fenced viewer)
+Sources/Panels/BrowserPanel.swift:5126-5135            (c11-show addresses never searched)
+Sources/Panels/BrowserPanel.swift:7758-7774            (navigation and redirect rule; script per main-frame document)
+Sources/Panels/BrowserPanel.swift:8054-8061            (popup rule)
+```
+
+---
+
 ## 9. Release checklist
 
 This threat model is reviewed at release time. The release agent
@@ -1162,7 +1426,8 @@ the activity history. `skills/release/SKILL.md` carries its own copy of
 this list and must match it.
 
 Within `AppDelegate.swift`, the area around `application(_:open:)`
-(currently `Sources/AppDelegate.swift:2594`) is the URL-handler
+(currently `Sources/AppDelegate.swift:2845`, with the Get URL handler and
+`routeExternalGetURL` just above it at `:2799-2833`) is the URL-handler
 choke point and warrants extra scrutiny when touched. Any new
 `WKWebViewConfiguration` or `WKContentController` configuration is a
 trigger because the JS-bridge surface is the chief untrusted-input

@@ -40,6 +40,13 @@ jobs:
         timeout-minutes: 1
         run: python3 scripts/check-shareable.py
 
+      # The public-tree bar (hosts, home paths, tailnet, token shapes) on every PR and push.
+      # Client and people names come from a private terms file that only the local gates
+      # (pre-push, remote-build) read; CI has none. About 1.5 s.
+      - name: The tree stays public
+        timeout-minutes: 1
+        run: python3 scripts/check-public-tree.py --strict --allow-pending --no-gitleaks
+
       # C11H-385: every String(localized:) key in Sources/ and CLI/ has its catalog entry with
       # English and all six locales, and no locale drops an interpolation token. About a second.
       - name: Every localized key has its six translations
